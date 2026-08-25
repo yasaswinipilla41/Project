@@ -1,0 +1,298 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { Card, CardBody, EmptyState } from "@/components/ui/primitives";
+import {
+  IssueKey,
+  IssueTypeIcon,
+  PriorityIndicator,
+  SeverityChip,
+  StatusPill,
+} from "@/components/ui/Indicators";
+import {
+  IconBug,
+  IconEmptyBox,
+  IconIssues,
+  IconProjects,
+  IconSearch,
+  IconUsers,
+} from "@/components/ui/Icon";
+import { SearchForm } from "@/components/search/SearchForm";
+import { issueScope, projectScope } from "@/lib/authz";
+import { prisma } from "@/lib/prisma";
+import { requireUser } from "@/lib/session";
+import { issueTextSearch } from "@/server/queries/issues";
+import { formatRelative } from "@/lib/format";
+
+export const metadata: Metadata = { title: "Search" };
+export const dynamic = "force-dynamic";
+
+/** An exact issue key such as ENG-1 or eng-1. */
+const ISSUE_KEY = /^([A-Za-z][A-Za-z0-9]*)-(\d+)$/;
+
+/**
+ * Global search (§34), grouped by what was found.
+ *
+ * Typing an exact issue key jumps straight to that issue rather than showing a
+ * result list of one.
+ */
+export default async function SearchPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>;
+}) {
+  const user = await requireUser();
+  const { q } = await searchParams;
+  const query = q?.trim() ?? "";
+
+  if (query.length > 0) {
+    const keyMatch = ISSUE_KEY.exec(query);
+    if (keyMatch) {
+      // Only jump if the caller may actually see it; otherwise fall through to
+      // a normal (empty) result set rather than leaking its existence.
+      const exact = await prisma.issue.findFirst({
+        where: { key: query.toUpperCase(), ...issueScope(user) },
+        select: { key: true },
+      });
+      if (exact) redirect(`/issues/${exact.key.toLowerCase()}`);
+    }
+  }
+
+  const hasQuery = query.length >= 2;
+
+  const [issues, projects, people] = hasQuery
+    ? await Promise.all([
+        prisma.issue.findMany({
+          where: { AND: [issueScope(user), issueTextSearch(query)] },
+          orderBy: { updatedAt: "desc" },
+          take: 40,
+          select: {
+            id: true,
+            key: true,
+            type: true,
+            title: true,
+            status: true,
+            priority: true,
+            severity: true,
+            updatedAt: true,
+            project: { select: { name: true } },
+            assignee: { select: { name: true } },
+          },
+        }),
+        prisma.project.findMany({
+          where: {
+            ...projectScope(user),
+            OR: [
+              { name: { contains: query, mode: "insensitive" } },
+              { key: { contains: query, mode: "insensitive" } },
+              { description: { contains: query, mode: "insensitive" } },
+            ],
+          },
+          take: 10,
+          select: {
+            id: true,
+            key: true,
+            name: true,
+            description: true,
+            _count: { select: { issues: true } },
+          },
+        }),
+        prisma.user.findMany({
+          where: {
+            isActive: true,
+            OR: [
+              { name: { contains: query, mode: "insensitive" } },
+              { email: { contains: query, mode: "insensitive" } },
+            ],
+            // Only people who share a project with the caller.
+            ...(user.role === "ADMIN"
+              ? {}
+              : {
+                  projectMemberships: {
+                    some: { project: { members: { some: { userId: user.id } } } },
+                  },
+                }),
+          },
+          take: 10,
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            jobTitle: true,
+            _count: { select: { assignedIssues: true } },
+          },
+        }),
+      ])
+    : [[], [], []];
+
+  const bugs = issues.filter((i) => i.type === "BUG");
+  const others = issues.filter((i) => i.type !== "BUG");
+  const totalResults = issues.length + projects.length + people.length;
+
+  return (
+    <>
+      <div className="prio-page-header">
+        <div className="prio-page-header__text">
+          <h1 className="prio-page-header__title">
+            <IconSearch />
+            Search
+          </h1>
+          <p className="prio-page-header__subtitle">
+            Issues, bugs, projects and people. Enter an issue key such as{" "}
+            <span className="prio-key">ENG-1</span> to jump straight to it.
+          </p>
+        </div>
+      </div>
+
+      <SearchForm initialQuery={query} />
+
+      {!hasQuery ? (
+        <Card>
+          <EmptyState
+            icon={<IconSearch size={24} />}
+            title={query.length === 0 ? "Search Prio" : "Keep typing"}
+            body={
+              query.length === 0
+                ? "Search across issue keys, titles, descriptions, reproduction steps, environments, labels, people and projects."
+                : "Enter at least two characters to search."
+            }
+          />
+        </Card>
+      ) : totalResults === 0 ? (
+        <Card>
+          <EmptyState
+            icon={<IconEmptyBox />}
+            title="No results found"
+            body={`Nothing matches “${query}”. Try a different term, or check that you have access to the project it belongs to.`}
+          />
+        </Card>
+      ) : (
+        <div className="prio-searchresults">
+          {bugs.length > 0 ? (
+            <ResultGroup
+              icon={<IconBug />}
+              title="Bugs"
+              count={bugs.length}
+            >
+              {bugs.map((issue) => (
+                <IssueResult key={issue.id} issue={issue} />
+              ))}
+            </ResultGroup>
+          ) : null}
+
+          {others.length > 0 ? (
+            <ResultGroup
+              icon={<IconIssues />}
+              title="Issues"
+              count={others.length}
+            >
+              {others.map((issue) => (
+                <IssueResult key={issue.id} issue={issue} />
+              ))}
+            </ResultGroup>
+          ) : null}
+
+          {projects.length > 0 ? (
+            <ResultGroup
+              icon={<IconProjects />}
+              title="Projects"
+              count={projects.length}
+            >
+              {projects.map((project) => (
+                <Link
+                  key={project.id}
+                  href={`/projects/${project.key.toLowerCase()}`}
+                  className="prio-relatedrow"
+                >
+                  <span className="prio-project-chip" aria-hidden>
+                    {project.key.slice(0, 2)}
+                  </span>
+                  <span className="prio-relatedrow__title">{project.name}</span>
+                  <span className="prio-key">{project.key}</span>
+                  <span className="prio-text-muted">
+                    {project._count.issues} issues
+                  </span>
+                </Link>
+              ))}
+            </ResultGroup>
+          ) : null}
+
+          {people.length > 0 ? (
+            <ResultGroup icon={<IconUsers />} title="People" count={people.length}>
+              {people.map((person) => (
+                <Link
+                  key={person.id}
+                  href={`/issues?assignee=${person.id}`}
+                  className="prio-relatedrow"
+                >
+                  <span className="prio-relatedrow__title">{person.name}</span>
+                  <span className="prio-text-muted">
+                    {person.jobTitle ?? person.email}
+                  </span>
+                  <span className="prio-text-muted">
+                    {person._count.assignedIssues} assigned
+                  </span>
+                </Link>
+              ))}
+            </ResultGroup>
+          ) : null}
+        </div>
+      )}
+    </>
+  );
+}
+
+function ResultGroup({
+  icon,
+  title,
+  count,
+  children,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  count: number;
+  children: React.ReactNode;
+}) {
+  return (
+    <Card className="prio-issue__section">
+      <CardBody>
+        <h2 className="prio-issue__section-title">
+          {icon}
+          {title}
+          <span className="prio-text-muted">{count}</span>
+        </h2>
+        {children}
+      </CardBody>
+    </Card>
+  );
+}
+
+function IssueResult({
+  issue,
+}: {
+  issue: {
+    key: string;
+    type: "TASK" | "BUG" | "STORY";
+    title: string;
+    status: "BACKLOG" | "TODO" | "IN_PROGRESS" | "IN_REVIEW" | "DONE" | "CANCELLED";
+    priority: "URGENT" | "HIGH" | "MEDIUM" | "LOW" | "NONE";
+    severity: "CRITICAL" | "MAJOR" | "MINOR" | "TRIVIAL" | null;
+    updatedAt: Date;
+    project: { name: string };
+    assignee: { name: string } | null;
+  };
+}) {
+  return (
+    <Link href={`/issues/${issue.key.toLowerCase()}`} className="prio-relatedrow">
+      <IssueTypeIcon type={issue.type} size={17} />
+      <IssueKey issueKey={issue.key} />
+      <span className="prio-relatedrow__title prio-truncate">{issue.title}</span>
+      {issue.severity ? <SeverityChip severity={issue.severity} /> : null}
+      <PriorityIndicator priority={issue.priority} showLabel={false} />
+      <StatusPill status={issue.status} />
+      <span className="prio-text-muted prio-searchresults__project">
+        {issue.project.name} · {formatRelative(issue.updatedAt)}
+      </span>
+    </Link>
+  );
+}

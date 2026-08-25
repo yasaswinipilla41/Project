@@ -1,0 +1,42 @@
+{
+  "name": "Prio — Internal Project & Issue Management",
+  "short_name": "Prio",
+  "description": "Track, prioritize and deliver. Projects, issues and bug management for Symbiosys Technologies.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#131C2B",
+  "theme_color": "#131C2B",
+  "icons": [
+    {
+      "src": "/brand/prio-mark.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any"
+    },
+    {
+      "src": "/brand/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/brand/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/brand/prio-mark-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any"
+    },
+    {
+      "src": "/brand/prio-mark-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any"
+    }
+  ]
+}

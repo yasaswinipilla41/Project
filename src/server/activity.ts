@@ -1,0 +1,166 @@
+import type { Prisma, PrismaClient } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
+
+/**
+ * Immutable activity history (§31) and the notifications derived from it.
+ *
+ * Nothing in Prio updates or deletes an ActivityLogEntry — every recorded
+ * change is append-only. All write paths funnel through here so the trail can
+ * never diverge from what actually happened.
+ */
+
+/** Works inside a transaction or against the base client. */
+type Db = PrismaClient | Prisma.TransactionClient;
+
+export interface FieldChange {
+  field: string;
+  oldValue: string | null;
+  newValue: string | null;
+}
+
+/** Records issue creation. */
+export async function recordIssueCreated(
+  db: Db,
+  params: { issueId: string; actorId: string; isBug: boolean },
+): Promise<void> {
+  await db.activityLogEntry.create({
+    data: {
+      issueId: params.issueId,
+      actorId: params.actorId,
+      action: params.isBug ? "bug.created" : "issue.created",
+    },
+  });
+}
+
+/** Records one entry per changed field. No changes means no rows. */
+export async function recordFieldChanges(
+  db: Db,
+  params: { issueId: string; actorId: string; changes: FieldChange[] },
+): Promise<void> {
+  if (params.changes.length === 0) return;
+
+  await db.activityLogEntry.createMany({
+    data: params.changes.map((change) => ({
+      issueId: params.issueId,
+      actorId: params.actorId,
+      action: "issue.updated",
+      field: change.field,
+      oldValue: change.oldValue,
+      newValue: change.newValue,
+    })),
+  });
+}
+
+export async function recordCommentCreated(
+  db: Db,
+  params: { issueId: string; actorId: string },
+): Promise<void> {
+  await db.activityLogEntry.create({
+    data: {
+      issueId: params.issueId,
+      actorId: params.actorId,
+      action: "comment.created",
+    },
+  });
+}
+
+/* ------------------------------------------------------------- watchers */
+
+/**
+ * Implicit watchers (§32): the reporter, the assignee and anyone who has
+ * commented. Adding is idempotent.
+ */
+export async function addWatchers(
+  db: Db,
+  issueId: string,
+  userIds: (string | null | undefined)[],
+): Promise<void> {
+  const unique = [...new Set(userIds.filter((id): id is string => Boolean(id)))];
+  if (unique.length === 0) return;
+
+  await db.issueWatcher.createMany({
+    data: unique.map((userId) => ({ issueId, userId })),
+    skipDuplicates: true,
+  });
+}
+
+export async function watcherIds(
+  db: Db,
+  issueId: string,
+): Promise<string[]> {
+  const rows = await db.issueWatcher.findMany({
+    where: { issueId },
+    select: { userId: true },
+  });
+  return rows.map((r) => r.userId);
+}
+
+/* --------------------------------------------------------- notifications */
+
+export interface NotifyParams {
+  issueId: string;
+  actorId: string;
+  /** Recipients; the actor is always filtered out — nobody notifies themselves. */
+  userIds: (string | null | undefined)[];
+  type: "ISSUE_ASSIGNED" | "MENTIONED" | "STATUS_CHANGED" | "COMMENT_ADDED";
+  message: string;
+  commentId?: string | null;
+}
+
+export async function notify(db: Db, params: NotifyParams): Promise<void> {
+  const recipients = [
+    ...new Set(params.userIds.filter((id): id is string => Boolean(id))),
+  ].filter((id) => id !== params.actorId);
+
+  if (recipients.length === 0) return;
+
+  await db.notification.createMany({
+    data: recipients.map((userId) => ({
+      userId,
+      type: params.type,
+      actorId: params.actorId,
+      issueId: params.issueId,
+      commentId: params.commentId ?? null,
+      message: params.message,
+    })),
+  });
+}
+
+/** Unread notification count for the chrome badge. */
+export async function unreadCount(userId: string): Promise<number> {
+  return prisma.notification.count({ where: { userId, readAt: null } });
+}
+
+/**
+ * Tells every other active admin that someone new has joined, the first time
+ * that person ever signs in. Not issue-scoped — `notify()` above requires an
+ * `issueId`, which this event has none of — so it writes the same
+ * `Notification` row shape directly rather than stretching that helper's
+ * signature to fit a case it was not built for.
+ */
+export async function notifyAdminsOfNewUser(
+  db: Db,
+  params: { newUserId: string; newUserName: string },
+): Promise<void> {
+  const admins = await db.user.findMany({
+    where: { role: "ADMIN", isActive: true, id: { not: params.newUserId } },
+    select: { id: true },
+  });
+  if (admins.length === 0) return;
+
+  await db.notification.createMany({
+    data: admins.map((admin) => ({
+      userId: admin.id,
+      type: "USER_JOINED",
+      actorId: params.newUserId,
+      /*
+       * No name prefix here — `NotificationList` already renders
+       * `<strong>{actor.name}</strong> {message}`, the same convention
+       * `issues.ts`'s "assigned X to you" messages follow. Prefixing the name
+       * again here would show it twice.
+       */
+      message:
+        "has joined Prio and is now available in Bugs → Reporter and Assignee.",
+    })),
+  });
+}

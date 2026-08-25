@@ -1,0 +1,156 @@
+import { prisma } from "@/lib/prisma";
+import type { CurrentUser } from "@/lib/session";
+
+/**
+ * Project-level authorization.
+ *
+ * Rules (§18):
+ *   - ADMIN sees and edits every project.
+ *   - MEMBER sees only projects they belong to, and may create/edit issues
+ *     inside those projects.
+ *
+ * Every read and write path calls one of these helpers with a *server-derived*
+ * user. Nothing here trusts a client-supplied role or project id.
+ */
+
+export class AuthorizationError extends Error {
+  readonly code = "FORBIDDEN";
+  constructor(message = "You do not have access to this resource.") {
+    super(message);
+    this.name = "AuthorizationError";
+  }
+}
+
+export class NotFoundError extends Error {
+  readonly code = "NOT_FOUND";
+  constructor(message = "The requested item no longer exists.") {
+    super(message);
+    this.name = "NotFoundError";
+  }
+}
+
+/** Prisma `where` fragment restricting Project rows to what the user may see. */
+export function projectScope(user: CurrentUser) {
+  if (user.role === "ADMIN") return {};
+  return { members: { some: { userId: user.id } } };
+}
+
+/** Prisma `where` fragment restricting Issue rows to what the user may see. */
+export function issueScope(user: CurrentUser) {
+  if (user.role === "ADMIN") return {};
+  return { project: { members: { some: { userId: user.id } } } };
+}
+
+export async function canAccessProject(
+  user: CurrentUser,
+  projectId: string,
+): Promise<boolean> {
+  if (user.role === "ADMIN") {
+    const count = await prisma.project.count({ where: { id: projectId } });
+    return count > 0;
+  }
+  const count = await prisma.projectMember.count({
+    where: { projectId, userId: user.id },
+  });
+  return count > 0;
+}
+
+/** Throws unless the user may read the project. */
+export async function assertProjectAccess(
+  user: CurrentUser,
+  projectId: string,
+): Promise<void> {
+  if (!(await canAccessProject(user, projectId))) {
+    throw new AuthorizationError("You do not have access to this project.");
+  }
+}
+
+/** Throws unless the user may read the issue; returns its project id. */
+export async function assertIssueAccess(
+  user: CurrentUser,
+  issueId: string,
+): Promise<string> {
+  const issue = await prisma.issue.findUnique({
+    where: { id: issueId },
+    select: { projectId: true },
+  });
+  if (!issue) throw new NotFoundError("This issue no longer exists.");
+  await assertProjectAccess(user, issue.projectId);
+  return issue.projectId;
+}
+
+/** Organization-level administration (users, invitations) is admin-only. */
+export function assertAdmin(user: CurrentUser): void {
+  if (user.role !== "ADMIN") {
+    throw new AuthorizationError("This action requires an administrator.");
+  }
+}
+
+/* ------------------------------------------------------ project ownership */
+
+/**
+ * Who may edit or delete a project.
+ *
+ * Exactly two answers, and no third:
+ *
+ *   - an ADMIN, for any project;
+ *   - the person who created the project, for that project only.
+ *
+ * Belonging to a project is *not* enough. A member of a project someone else
+ * created can read it and work in it, but cannot rename or destroy it. This is
+ * deliberately narrower than `canAccessProject`, and the two must never be
+ * confused: one governs reading, this one governs the project's existence.
+ *
+ * No new role is involved. Ownership is a fact about a row — `createdById` —
+ * not a rank a person holds.
+ */
+export function canManageProject(
+  user: CurrentUser,
+  project: { createdById: string },
+): boolean {
+  return user.role === "ADMIN" || project.createdById === user.id;
+}
+
+/**
+ * Throws unless the user may edit or delete the project; returns the row.
+ *
+ * Reads `createdById` from the database on every call. A caller may not pass in
+ * an owner id — that would let the client nominate itself as the creator.
+ *
+ * A user who cannot even see the project gets "no longer exists" rather than
+ * "forbidden", so that probing for project ids reveals nothing about which ones
+ * are real.
+ */
+export async function assertProjectManage(
+  user: CurrentUser,
+  projectId: string,
+): Promise<{ id: string; key: string; name: string; createdById: string }> {
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    select: { id: true, key: true, name: true, createdById: true },
+  });
+
+  if (!project) throw new NotFoundError("This project no longer exists.");
+
+  if (!canManageProject(user, project)) {
+    if (!(await canAccessProject(user, projectId))) {
+      throw new NotFoundError("This project no longer exists.");
+    }
+    throw new AuthorizationError(
+      "Only an administrator or the person who created this project can change it.",
+    );
+  }
+
+  return project;
+}
+
+/** Ids of every project the user may see — used by global views and filters. */
+export async function accessibleProjectIds(
+  user: CurrentUser,
+): Promise<string[]> {
+  const projects = await prisma.project.findMany({
+    where: { ...projectScope(user), isArchived: false },
+    select: { id: true },
+  });
+  return projects.map((p) => p.id);
+}

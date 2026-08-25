@@ -1,0 +1,287 @@
+/* ============================================================================
+   Prio — authentication surfaces (sign-in, invitation acceptance, splash)
+   A two-panel composition: brand panel on dark chrome, form on light surface.
+   ========================================================================= */
+
+.prio-auth {
+  display: flex;
+  min-height: 100vh;
+  background: var(--prio-bg-surface);
+}
+
+/* ------------------------------------------------------------ brand panel */
+.prio-auth__brand {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  width: 44%;
+  max-width: 560px;
+  padding: var(--prio-space-9);
+  background: var(--prio-chrome-bg);
+  overflow: hidden;
+}
+
+/* Soft brand-gradient bloom behind the copy. */
+.prio-auth__brand::before {
+  content: "";
+  position: absolute;
+  top: -20%;
+  right: -30%;
+  width: 90%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--prio-gradient-brand);
+  opacity: 0.22;
+  filter: blur(70px);
+  pointer-events: none;
+}
+
+.prio-auth__brand::after {
+  content: "";
+  position: absolute;
+  bottom: -25%;
+  left: -20%;
+  width: 70%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--prio-accent-500);
+  opacity: 0.16;
+  filter: blur(80px);
+  pointer-events: none;
+}
+
+.prio-auth__brand > * {
+  position: relative;
+  z-index: 1;
+}
+
+.prio-auth__headline {
+  font-size: clamp(1.5rem, 2.4vw, 2rem);
+  font-weight: var(--prio-weight-bold);
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  color: var(--prio-chrome-text-strong);
+  max-width: 15ch;
+}
+
+.prio-auth__lede {
+  margin-top: var(--prio-space-5);
+  max-width: 42ch;
+  font-size: var(--prio-text-md);
+  line-height: var(--prio-leading-relaxed);
+  color: var(--prio-chrome-text);
+}
+
+.prio-auth__points {
+  margin-top: var(--prio-space-8);
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-4);
+}
+
+.prio-auth__point {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--prio-space-4);
+  font-size: var(--prio-text-sm);
+  color: var(--prio-chrome-text);
+}
+
+.prio-auth__point-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--prio-radius-md);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--prio-chrome-text-strong);
+}
+
+.prio-auth__footnote {
+  font-size: var(--prio-text-xs);
+  color: var(--prio-chrome-text-muted);
+}
+
+/* ------------------------------------------------------------- form panel */
+.prio-auth__panel {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--prio-space-8) var(--prio-space-6);
+}
+
+.prio-auth__form {
+  width: 100%;
+  max-width: 372px;
+}
+
+.prio-auth__form-brand {
+  display: none;
+  margin-bottom: var(--prio-space-7);
+}
+
+.prio-auth__title {
+  font-size: var(--prio-text-2xl);
+  font-weight: var(--prio-weight-semibold);
+  letter-spacing: var(--prio-tracking-tight);
+}
+
+.prio-auth__subtitle {
+  margin-top: var(--prio-space-2);
+  margin-bottom: var(--prio-space-7);
+  font-size: var(--prio-text-sm);
+  color: var(--prio-text-secondary);
+}
+
+.prio-auth__submit {
+  margin-top: var(--prio-space-6);
+}
+
+.prio-auth__note {
+  margin-top: var(--prio-space-7);
+  padding-top: var(--prio-space-5);
+  border-top: 1px solid var(--prio-border-subtle);
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-muted);
+  line-height: var(--prio-leading-normal);
+}
+
+.prio-auth__password-wrap {
+  position: relative;
+}
+
+.prio-auth__password-toggle {
+  position: absolute;
+  top: 50%;
+  right: var(--prio-space-2);
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--prio-radius-sm);
+  color: var(--prio-text-muted);
+}
+
+.prio-auth__password-toggle:hover {
+  background: var(--prio-bg-hover);
+  color: var(--prio-text-primary);
+}
+
+@media (max-width: 900px) {
+  .prio-auth__brand {
+    display: none;
+  }
+
+  .prio-auth__form-brand {
+    display: block;
+  }
+}
+
+/* ---------------------------------------------------------------- splash */
+.prio-splash {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--prio-space-5);
+  min-height: 100vh;
+  background: var(--prio-chrome-bg);
+}
+
+.prio-splash__mark {
+  animation: prio-splash-pulse 1.6s var(--prio-ease) infinite;
+}
+
+@keyframes prio-splash-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.72;
+    transform: scale(0.965);
+  }
+}
+
+.prio-splash__bar {
+  width: 132px;
+  height: 3px;
+  border-radius: var(--prio-radius-pill);
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.prio-splash__bar::after {
+  content: "";
+  display: block;
+  width: 40%;
+  height: 100%;
+  border-radius: var(--prio-radius-pill);
+  background: var(--prio-gradient-brand);
+  animation: prio-splash-slide 1.15s var(--prio-ease) infinite;
+}
+
+@keyframes prio-splash-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
+
+.prio-splash__label {
+  font-size: var(--prio-text-xs);
+  letter-spacing: var(--prio-tracking-caps);
+  text-transform: uppercase;
+  color: var(--prio-chrome-text-muted);
+}
+
+/* -------------------------------------------------------- sign-up success */
+
+/* Replaces the form in place after registration. No auto sign-in happens, so
+   this is a deliberate stop — read the message, then choose to move on — not
+   a transient toast on the way to somewhere else. */
+.prio-auth__success {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--prio-space-2);
+  padding: var(--prio-space-2) 0;
+}
+
+.prio-auth__success-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: var(--prio-space-2);
+  border-radius: var(--prio-radius-lg);
+  background: var(--prio-green-50);
+  color: var(--prio-green-600);
+}
+
+.prio-auth__success-title {
+  margin: 0;
+  font-size: var(--prio-text-lg);
+  font-weight: var(--prio-weight-semibold);
+  color: var(--prio-text-primary);
+}
+
+.prio-auth__success-body {
+  margin: 0 0 var(--prio-space-5);
+  font-size: var(--prio-text-sm);
+  color: var(--prio-text-secondary);
+  line-height: var(--prio-leading-normal);
+}
+
+.prio-auth__success .prio-btn {
+  width: 100%;
+}

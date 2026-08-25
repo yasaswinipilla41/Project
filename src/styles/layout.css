@@ -1,0 +1,598 @@
+/* ============================================================================
+   Prio — Application shell
+   Fixed sidebar + sticky top bar + scrolling content well.
+
+   The sidebar reads `--prio-nav-*`, not `--prio-chrome-*`. Navigation follows
+   the reader's theme; chrome is the brand's own dark surface and stays dark
+   wherever it is used (the sign-in splash). Keeping them apart is what stops a
+   light page from being served with a dark sidebar attached to it.
+   ========================================================================= */
+
+.prio-shell {
+  display: flex;
+  min-height: 100vh;
+  background: var(--prio-bg-app);
+}
+
+/* ---------------------------------------------------------------- sidebar */
+.prio-sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: var(--prio-z-sticky);
+  display: flex;
+  flex-direction: column;
+  width: var(--prio-sidebar-width);
+  background: var(--prio-nav-bg);
+  border-right: 1px solid var(--prio-nav-border);
+  transition: width var(--prio-duration) var(--prio-ease);
+}
+
+.prio-sidebar[data-collapsed="true"] {
+  width: var(--prio-sidebar-width-collapsed);
+}
+
+.prio-sidebar__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-3);
+  height: var(--prio-topbar-height);
+  padding: 0 var(--prio-space-4);
+  border-bottom: 1px solid var(--prio-nav-border);
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.prio-sidebar[data-collapsed="true"] .prio-sidebar__brand {
+  justify-content: center;
+  padding: 0;
+}
+
+.prio-sidebar__nav {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--prio-space-4) var(--prio-space-3);
+}
+
+.prio-sidebar__section + .prio-sidebar__section {
+  margin-top: var(--prio-space-6);
+}
+
+.prio-sidebar__section-label {
+  padding: 0 var(--prio-space-3);
+  margin-bottom: var(--prio-space-2);
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-semibold);
+  letter-spacing: var(--prio-tracking-caps);
+  text-transform: uppercase;
+  color: var(--prio-nav-fg-muted);
+  white-space: nowrap;
+}
+
+.prio-sidebar[data-collapsed="true"] .prio-sidebar__section-label {
+  height: 1px;
+  padding: 0;
+  margin: var(--prio-space-4) var(--prio-space-2);
+  overflow: hidden;
+  color: transparent;
+  background: var(--prio-nav-border);
+}
+
+.prio-navitem {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-4);
+  width: 100%;
+  padding: var(--prio-space-3) var(--prio-space-3);
+  margin-bottom: 1px;
+  border-radius: var(--prio-radius-md);
+  color: var(--prio-nav-fg);
+  font-size: var(--prio-text-sm);
+  font-weight: var(--prio-weight-medium);
+  white-space: nowrap;
+  text-decoration: none;
+  transition:
+    background var(--prio-duration-fast) var(--prio-ease),
+    color var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-navitem:hover {
+  background: var(--prio-nav-bg-hover);
+  color: var(--prio-nav-fg-strong);
+  text-decoration: none;
+}
+
+.prio-navitem[aria-current="page"],
+.prio-navitem[data-active="true"] {
+  background: var(--prio-nav-bg-active);
+  color: var(--prio-nav-fg-active);
+  font-weight: var(--prio-weight-semibold);
+}
+
+/* The brand-gradient rail marking the active route. */
+.prio-navitem[aria-current="page"]::before,
+.prio-navitem[data-active="true"]::before {
+  content: "";
+  position: absolute;
+  left: calc(var(--prio-space-3) * -1);
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 18px;
+  border-radius: 0 var(--prio-radius-pill) var(--prio-radius-pill) 0;
+  background: var(--prio-gradient-brand);
+}
+
+.prio-navitem__icon {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  color: currentColor;
+}
+
+.prio-navitem__label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.prio-navitem__count {
+  flex-shrink: 0;
+  min-width: 20px;
+  padding: 1px var(--prio-space-2);
+  border-radius: var(--prio-radius-pill);
+  background: var(--prio-nav-pill-bg);
+  color: var(--prio-nav-fg-muted);
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-semibold);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.prio-navitem__count[data-tone="brand"] {
+  background: var(--prio-primary-600);
+  color: #fff;
+}
+
+.prio-sidebar[data-collapsed="true"] .prio-navitem {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.prio-sidebar[data-collapsed="true"] .prio-navitem__label,
+.prio-sidebar[data-collapsed="true"] .prio-navitem__count {
+  display: none;
+}
+
+.prio-sidebar__footer {
+  flex-shrink: 0;
+  padding: var(--prio-space-3);
+  border-top: 1px solid var(--prio-nav-border);
+}
+
+.prio-sidebar__collapse {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 30px;
+  margin-bottom: var(--prio-space-2);
+  border-radius: var(--prio-radius-md);
+  color: var(--prio-nav-fg-muted);
+  transition: all var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-sidebar__collapse:hover {
+  background: var(--prio-nav-bg-hover);
+  color: var(--prio-nav-fg-strong);
+}
+
+/* Project shortcut swatch. */
+.prio-project-chip {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--prio-radius-xs);
+  background: var(--prio-gradient-brand);
+  color: #fff;
+  font-size: 9px;
+  font-weight: var(--prio-weight-bold);
+  letter-spacing: 0;
+}
+
+/* ----------------------------------------------------------------- main */
+.prio-main {
+  flex: 1;
+  min-width: 0;
+  margin-left: var(--prio-sidebar-width);
+  display: flex;
+  flex-direction: column;
+  transition: margin-left var(--prio-duration) var(--prio-ease);
+}
+
+.prio-main[data-collapsed="true"] {
+  margin-left: var(--prio-sidebar-width-collapsed);
+}
+
+/* ---------------------------------------------------------------- topbar */
+.prio-topbar {
+  position: sticky;
+  top: 0;
+  z-index: var(--prio-z-sticky);
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-4);
+  height: var(--prio-topbar-height);
+  padding: 0 var(--prio-space-5);
+  /* Translucent, so content scrolling under it stays faintly visible. It needs
+     its own token rather than `--prio-bg-surface`: an opaque surface colour
+     would defeat the frosting, and a hard-coded white breaks in dark mode. */
+  background: var(--prio-topbar-bg);
+  backdrop-filter: saturate(180%) blur(12px);
+  border-bottom: 1px solid var(--prio-border);
+  flex-shrink: 0;
+}
+
+.prio-topbar__spacer {
+  flex: 1;
+}
+
+.prio-topbar__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+}
+
+.prio-topbar__divider {
+  width: 1px;
+  height: 22px;
+  background: var(--prio-border);
+  margin: 0 var(--prio-space-1);
+}
+
+/* --------------------------------------------------------------- content */
+.prio-content {
+  flex: 1;
+  min-height: 0;
+  padding: var(--prio-space-7);
+}
+
+.prio-content--flush {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.prio-content__inner {
+  max-width: var(--prio-content-max);
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* ------------------------------------------------------------ page header */
+.prio-page-header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--prio-space-5);
+  margin-bottom: var(--prio-space-7);
+}
+
+.prio-page-header__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.prio-page-header__title {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-3);
+  font-size: var(--prio-text-xl);
+  font-weight: var(--prio-weight-semibold);
+  letter-spacing: var(--prio-tracking-tight);
+}
+
+.prio-page-header__subtitle {
+  margin-top: var(--prio-space-2);
+  font-size: var(--prio-text-sm);
+  color: var(--prio-text-secondary);
+}
+
+.prio-page-header__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-3);
+  flex-shrink: 0;
+}
+
+/* ------------------------------------------------------------------ tabs */
+.prio-tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-1);
+  border-bottom: 1px solid var(--prio-border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.prio-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.prio-tab {
+  position: relative;
+  padding: var(--prio-space-4) var(--prio-space-4);
+  font-size: var(--prio-text-sm);
+  font-weight: var(--prio-weight-medium);
+  color: var(--prio-text-secondary);
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: color var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-tab:hover {
+  color: var(--prio-text-primary);
+  text-decoration: none;
+}
+
+.prio-tab[aria-current="page"],
+.prio-tab[data-active="true"] {
+  color: var(--prio-primary-600);
+  border-bottom-color: var(--prio-primary-500);
+}
+
+/* ------------------------------------------------------------- responsive */
+.prio-sidebar__scrim {
+  display: none;
+}
+
+@media (max-width: 1024px) {
+  .prio-sidebar {
+    transform: translateX(-100%);
+    transition: transform var(--prio-duration) var(--prio-ease);
+    box-shadow: var(--prio-shadow-xl);
+  }
+
+  .prio-sidebar[data-mobile-open="true"] {
+    transform: translateX(0);
+  }
+
+  .prio-main,
+  .prio-main[data-collapsed="true"] {
+    margin-left: 0;
+  }
+
+  .prio-sidebar__scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: calc(var(--prio-z-sticky) - 1);
+    background: rgba(11, 18, 32, 0.45);
+    backdrop-filter: blur(2px);
+  }
+
+  .prio-content {
+    padding: var(--prio-space-5);
+  }
+}
+
+@media (max-width: 640px) {
+  .prio-content {
+    padding: var(--prio-space-4);
+  }
+
+  .prio-page-header {
+    flex-direction: column;
+    gap: var(--prio-space-4);
+  }
+
+  .prio-page-header__actions {
+    width: 100%;
+    /* Project pages can carry five buttons here (Issues, Bugs, Settings, Edit,
+       More). Full width was not enough on its own — at phone widths they still
+       ran past the edge in a single row — so they wrap onto as many lines as
+       they need instead of pushing the page sideways. */
+    flex-wrap: wrap;
+  }
+}
+
+/* ------------------------------------------------------ topbar internals */
+.prio-topbar__search {
+  flex: 1;
+  /* A flex item's default min-width is `auto`, which floors it at its content's
+     intrinsic width — the search input refused to shrink and pushed the
+     account menu off the right edge on narrow screens. This is what actually
+     lets it shrink. */
+  min-width: 0;
+  max-width: 460px;
+}
+
+/*
+ * `.prio-btn` (components.css) sets `display: inline-flex` at the same
+ * specificity as this rule and loads after it, so a bare `display: none` here
+ * lost every time — the button was visible on desktop no matter what this
+ * said. Qualifying the selector with `.prio-topbar` raises the specificity
+ * enough to actually win.
+ */
+.prio-topbar .prio-topbar__mobile-nav {
+  display: none;
+}
+
+.prio-topbar__project-select {
+  gap: var(--prio-space-2);
+}
+
+.prio-topbar__bell {
+  position: relative;
+}
+
+.prio-topbar__bell-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--prio-red-500);
+  box-shadow: 0 0 0 2px var(--prio-bg-surface);
+}
+
+.prio-topbar__account {
+  gap: var(--prio-space-2);
+  padding: 0 var(--prio-space-2);
+}
+
+.prio-topbar__account-card {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-4);
+  padding: var(--prio-space-3);
+}
+
+.prio-topbar__account-name {
+  margin: 0;
+  font-size: var(--prio-text-sm);
+  font-weight: var(--prio-weight-semibold);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prio-topbar__account-email {
+  margin: 0;
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prio-topbar__help {
+  padding: var(--prio-space-2) var(--prio-space-3) var(--prio-space-3);
+  font-size: var(--prio-text-xs);
+  line-height: var(--prio-leading-normal);
+  color: var(--prio-text-secondary);
+  white-space: normal;
+}
+
+.prio-topbar__help p {
+  margin-bottom: var(--prio-space-3);
+}
+
+@media (max-width: 1024px) {
+  .prio-topbar .prio-topbar__mobile-nav {
+    display: inline-flex;
+  }
+
+  .prio-topbar__project-select span {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .prio-topbar__search {
+    max-width: none;
+  }
+
+  /* At phone widths the action row runs out of room. Help is the one control
+     here that carries no state and does nothing you cannot do elsewhere, so it
+     is the one that goes; create, theme, notifications and the account menu all
+     stay reachable. */
+  .prio-topbar__help-trigger,
+  .prio-topbar__divider {
+    display: none;
+  }
+}
+
+@media (max-width: 380px) {
+  /* Below this the search field, Create, theme, notifications and account
+     menu no longer all fit on one row even with Help already gone. Create
+     drops its label and becomes icon-only — its icon alone still opens the
+     same menu, so nothing is lost, only the caption. */
+  .prio-create__label {
+    display: none;
+  }
+
+  .prio-create .prio-create__main {
+    padding-left: var(--prio-space-3);
+    padding-right: var(--prio-space-3);
+  }
+
+  .prio-topbar {
+    padding: 0 var(--prio-space-3);
+    gap: var(--prio-space-2);
+  }
+
+  .prio-topbar__actions {
+    gap: 2px;
+  }
+
+  /* The account control's padding is the last few pixels worth reclaiming at
+     this width; the avatar alone is still a large enough target. */
+  .prio-topbar__account {
+    padding: 0;
+    gap: 0;
+  }
+
+  .prio-topbar__account svg {
+    display: none;
+  }
+}
+
+
+/* ------------------------------------------------------- search shortcut */
+
+/* The Ctrl+K / ⌘K affordance inside the search field. Quiet until the field is
+   worth noticing, and out of the way once someone is actually typing. */
+.prio-search {
+  position: relative;
+}
+
+.prio-search__kbd {
+  position: absolute;
+  right: var(--prio-space-3);
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 2px var(--prio-space-2);
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-xs);
+  background: var(--prio-bg-subtle);
+  color: var(--prio-text-disabled);
+  font-family: var(--prio-font-sans);
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-medium);
+  line-height: 1.5;
+  white-space: nowrap;
+  pointer-events: none;
+  transition: opacity var(--prio-duration-fast) var(--prio-ease);
+}
+
+/* Once the caret is in the field the hint has done its job. */
+.prio-search:focus-within .prio-search__kbd {
+  opacity: 0;
+}
+
+/* Leave room for it so a long query never runs underneath. */
+.prio-search__kbd + input,
+.prio-search input[type="search"] {
+  padding-right: 56px;
+}
+
+@media (max-width: 640px) {
+  /* Not enough width, and no keyboard to press it on. */
+  .prio-search__kbd {
+    display: none;
+  }
+
+  .prio-search input[type="search"] {
+    padding-right: var(--prio-space-4);
+  }
+}

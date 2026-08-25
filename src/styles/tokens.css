@@ -1,0 +1,334 @@
+/* ============================================================================
+   Prio — Design Tokens
+   The single source of truth for colour, type, space, radius, elevation and
+   motion. Derived from the official Prio logo (blue -> purple gradient over
+   slate ink). Nothing in the app hard-codes a colour; everything reads a token.
+   ========================================================================= */
+
+:root {
+  /* -------------------------------------------------------------- brand */
+  /*
+   * Primary — Prio's brand-primary colour: the shade every "this is Prio, and
+   * this is important" surface reads from — buttons, links, focus rings, the
+   * active navigation item, primary badges. Currently Deep Purple (#5B2C83),
+   * at 600, the applied shade.
+   *
+   * It is deliberately NOT read by the semantic status/priority/severity/type
+   * tokens further down (TODO, Medium priority, Minor severity, Task type) —
+   * those anchor to `--prio-info-*` instead, a small frozen ramp kept apart
+   * from whatever this one currently is. Coupling them here would make
+   * "Medium priority" turn the brand colour alongside every button on the next
+   * rebrand, which is exactly the kind of semantic drift a status colour must
+   * never have — and this is the third time this ramp's values have changed,
+   * which is the whole argument for keeping the two apart rather than a
+   * one-off precaution.
+   */
+  --prio-primary-50: #f6f1fb;
+  --prio-primary-100: #ebdef6;
+  --prio-primary-200: #d6bcec;
+  --prio-primary-300: #bc96dd;
+  --prio-primary-400: #9c6bc7;
+  --prio-primary-500: #7c48ac;
+  --prio-primary-600: #5b2c83;
+  --prio-primary-700: #47215f;
+  --prio-primary-800: #341843;
+  --prio-primary-900: #200e2a;
+
+  /*
+   * Info — a blue frozen under its own name so TODO/Medium/Minor/Task keep
+   * meaning exactly what they meant before the brand colour changed, whatever
+   * the brand colour currently is. See the note above.
+   */
+  --prio-info-50: #eff5ff;
+  --prio-info-100: #dbe8fe;
+  --prio-info-400: #609ffa;
+  --prio-info-600: #2563eb;
+  --prio-info-700: #1d4fd8;
+
+  /*
+   * Secondary — Prio's supporting brand colour, for surfaces that carry the
+   * identity without acting as a button: soft badges, a hovered table row, the
+   * informational alert. Currently Light Periwinkle (#CCCCFF) at 50, the base
+   * tint. 700 reads text on top of it, and is deliberately the *primary*
+   * ramp's 700 — periwinkle and deep purple are one coordinated identity here,
+   * not a brand colour paired with a neutral "calm" one, so the pairing is
+   * meant to read as obviously related rather than kept apart.
+   */
+  --prio-secondary-50: #ccccff;
+  --prio-secondary-100: #b3b3f5;
+  --prio-secondary-700: var(--prio-primary-700);
+
+  /* Accent — the violet of the Prio mark (#8B5CF6). */
+  --prio-accent-50: #f5f2ff;
+  --prio-accent-100: #ece5ff;
+  --prio-accent-200: #dccdff;
+  --prio-accent-300: #c4a9fd;
+  --prio-accent-400: #a97ffa;
+  --prio-accent-500: #8b5cf6;
+  --prio-accent-600: #7739ea;
+  --prio-accent-700: #6828d0;
+  --prio-accent-800: #5722ab;
+  --prio-accent-900: #481e8b;
+
+  /* Neutrals — slate ink (#1E293B) and muted grey (#94A3BB). */
+  --prio-neutral-0: #ffffff;
+  --prio-neutral-25: #fbfcfe;
+  --prio-neutral-50: #f6f8fb;
+  --prio-neutral-100: #eef1f6;
+  --prio-neutral-200: #e2e7ef;
+  --prio-neutral-300: #cbd3e1;
+  --prio-neutral-400: #94a3bb;
+  --prio-neutral-500: #6b7c98;
+  --prio-neutral-600: #506078;
+  --prio-neutral-700: #3b4a60;
+  --prio-neutral-800: #1e293b;
+  --prio-neutral-900: #131c2b;
+  --prio-neutral-950: #0b1220;
+
+  /* Signal colours (status, severity, feedback). */
+  --prio-red-50: #fef2f3;
+  --prio-red-100: #fde3e5;
+  --prio-red-500: #e5484d;
+  --prio-red-600: #cc3237;
+  --prio-red-700: #a82227;
+  --prio-amber-50: #fff8ed;
+  --prio-amber-100: #ffefd6;
+  --prio-amber-500: #f0961f;
+  --prio-amber-600: #d97b0c;
+  --prio-amber-700: #ab5d09;
+  --prio-green-50: #edfaf3;
+  --prio-green-100: #d5f3e3;
+  --prio-green-500: #14a06d;
+  --prio-green-600: #0f8b5f;
+  --prio-green-700: #0b6c4a;
+  --prio-teal-500: #0d9488;
+
+  /* --------------------------------------------------------- semantic */
+  --prio-bg-app: var(--prio-neutral-50);
+  --prio-bg-surface: var(--prio-neutral-0);
+  --prio-bg-surface-raised: var(--prio-neutral-0);
+  --prio-bg-subtle: var(--prio-neutral-100);
+  --prio-bg-hover: var(--prio-neutral-100);
+  --prio-bg-active: var(--prio-neutral-200);
+  --prio-bg-inverse: var(--prio-neutral-900);
+  /* The frosted top bar: translucent by design, so it is its own value rather
+     than a step on the surface ramp. */
+  --prio-topbar-bg: rgba(255, 255, 255, 0.86);
+
+  --prio-text-primary: var(--prio-neutral-800);
+  --prio-text-secondary: var(--prio-neutral-600);
+  --prio-text-muted: var(--prio-neutral-500);
+  --prio-text-disabled: var(--prio-neutral-400);
+  --prio-text-inverse: var(--prio-neutral-0);
+  --prio-text-brand: var(--prio-primary-600);
+  --prio-text-link: var(--prio-primary-600);
+
+  --prio-border: var(--prio-neutral-200);
+  --prio-border-strong: var(--prio-neutral-300);
+  --prio-border-subtle: var(--prio-neutral-100);
+  --prio-border-focus: var(--prio-primary-500);
+
+  /* ------------------------------------------------------- navigation */
+  /*
+   * The sidebar and top bar.
+   *
+   * These are deliberately separate from `--prio-chrome-*` below. Chrome is a
+   * *brand* surface: the sign-in splash panel is dark in both themes because
+   * that is what the brand sheet specifies. Navigation is a *product* surface
+   * and has to follow the reader's chosen theme — a light page with a dark
+   * sidebar bolted to it is two designs sharing a screen.
+   *
+   * Light values live here; `theme-dark.css` redefines them.
+   */
+  --prio-nav-bg: var(--prio-neutral-0);
+  --prio-nav-bg-hover: var(--prio-neutral-100);
+  --prio-nav-bg-active: var(--prio-primary-50);
+  --prio-nav-fg: var(--prio-neutral-700);
+  --prio-nav-fg-strong: var(--prio-neutral-900);
+  --prio-nav-fg-muted: var(--prio-neutral-500);
+  --prio-nav-fg-active: var(--prio-primary-700);
+  --prio-nav-border: var(--prio-neutral-200);
+  /* The count pill sitting on the navigation surface. */
+  --prio-nav-pill-bg: var(--prio-neutral-100);
+
+  /* Dark chrome — the splash and sign-in brand panel from the brand sheet. */
+  --prio-chrome-bg: var(--prio-neutral-900);
+  --prio-chrome-bg-hover: #1c2739;
+  --prio-chrome-bg-active: #233047;
+  --prio-chrome-border: #23304a;
+  --prio-chrome-text: #c8d3e5;
+  --prio-chrome-text-strong: #ffffff;
+  --prio-chrome-text-muted: #7f8ca6;
+
+  /* --------------------------------------------------------- gradient */
+  --prio-gradient-brand: linear-gradient(135deg, var(--prio-primary-500) 0%, var(--prio-accent-500) 100%);
+  --prio-gradient-brand-soft: linear-gradient(135deg, var(--prio-primary-50) 0%, var(--prio-accent-50) 100%);
+
+  /* ------------------------------------------------------------ brand */
+  /*
+   * Semantic brand tokens. The logo mark is a self-coloured SVG, so these
+   * describe the type and rules set *around* it — nothing else in the app
+   * should hard-code a brand colour.
+   *
+   * Named `--prio-brand-primary`, not after any specific hue: this is the
+   * ramp's third colour in as many rebrands (blue, then Raspberry, now Deep
+   * Purple), and a token whose name locks in whichever one happened to be
+   * current is exactly the kind of stale reference that made the second
+   * rename necessary in the first place.
+   */
+  --prio-brand-primary: var(--prio-primary-500);
+  --prio-brand-purple: var(--prio-accent-500);
+  --prio-brand-gradient: var(--prio-gradient-brand);
+
+  /* Wordmark and tagline, per surface. */
+  --prio-logo-text: var(--prio-neutral-800);
+  --prio-logo-text-on-dark: #ffffff;
+  --prio-logo-muted: var(--prio-neutral-500);
+  --prio-logo-muted-on-dark: var(--prio-chrome-text-muted);
+  /* The dot on the i keeps the brand purple on every ground. */
+  --prio-logo-dot: var(--prio-accent-500);
+  --prio-logo-dot-on-dark: var(--prio-accent-400);
+
+  /* ----------------------------------------------------------- type */
+  --prio-font-sans: "Segoe UI Variable Display", "Segoe UI", -apple-system,
+    BlinkMacSystemFont, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --prio-font-mono: "Cascadia Mono", "JetBrains Mono", "SF Mono", ui-monospace,
+    Menlo, Consolas, monospace;
+
+  --prio-text-2xs: 0.6875rem; /* 11px — issue keys, meta */
+  --prio-text-xs: 0.75rem; /* 12px — labels, table meta */
+  --prio-text-sm: 0.8125rem; /* 13px — dense UI default */
+  --prio-text-base: 0.875rem; /* 14px — body */
+  --prio-text-md: 0.9375rem; /* 15px — comfortable body */
+  --prio-text-lg: 1.0625rem; /* 17px — card / section titles */
+  --prio-text-xl: 1.25rem; /* 20px — page titles */
+  --prio-text-2xl: 1.5rem; /* 24px — issue titles */
+  --prio-text-3xl: 1.875rem; /* 30px — dashboard headline */
+
+  --prio-weight-regular: 400;
+  --prio-weight-medium: 500;
+  --prio-weight-semibold: 600;
+  --prio-weight-bold: 700;
+
+  --prio-leading-tight: 1.25;
+  --prio-leading-snug: 1.4;
+  --prio-leading-normal: 1.55;
+  --prio-leading-relaxed: 1.7;
+
+  --prio-tracking-tight: -0.011em;
+  --prio-tracking-wide: 0.04em;
+  --prio-tracking-caps: 0.09em;
+
+  /* ---------------------------------------------------------- space */
+  --prio-space-0: 0;
+  --prio-space-1: 0.25rem;
+  --prio-space-2: 0.375rem;
+  --prio-space-3: 0.5rem;
+  --prio-space-4: 0.75rem;
+  --prio-space-5: 1rem;
+  --prio-space-6: 1.25rem;
+  --prio-space-7: 1.5rem;
+  --prio-space-8: 2rem;
+  --prio-space-9: 2.5rem;
+  --prio-space-10: 3rem;
+  --prio-space-12: 4rem;
+
+  /* --------------------------------------------------------- radius */
+  --prio-radius-xs: 3px;
+  --prio-radius-sm: 5px;
+  --prio-radius-md: 7px;
+  --prio-radius-lg: 10px;
+  --prio-radius-xl: 14px;
+  --prio-radius-2xl: 20px;
+  --prio-radius-pill: 999px;
+
+  /* ------------------------------------------------------ elevation */
+  --prio-shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --prio-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.08);
+  --prio-shadow-md: 0 2px 4px rgba(15, 23, 42, 0.05), 0 4px 12px rgba(15, 23, 42, 0.08);
+  --prio-shadow-lg: 0 8px 16px rgba(15, 23, 42, 0.08), 0 16px 32px rgba(15, 23, 42, 0.1);
+  --prio-shadow-xl: 0 24px 48px rgba(15, 23, 42, 0.18);
+  --prio-shadow-focus: 0 0 0 3px rgba(124, 72, 172, 0.28);
+  --prio-shadow-focus-danger: 0 0 0 3px rgba(229, 72, 77, 0.28);
+
+  /* --------------------------------------------------------- motion */
+  --prio-ease: cubic-bezier(0.2, 0, 0.13, 1);
+  --prio-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --prio-duration-fast: 110ms;
+  --prio-duration: 170ms;
+  --prio-duration-slow: 280ms;
+
+  /* --------------------------------------------------------- layout */
+  --prio-sidebar-width: 248px;
+  --prio-sidebar-width-collapsed: 60px;
+  --prio-topbar-height: 52px;
+  --prio-content-max: 1560px;
+  --prio-z-dropdown: 1000;
+  --prio-z-sticky: 1010;
+  --prio-z-drawer: 1040;
+  --prio-z-modal: 1050;
+  --prio-z-toast: 1080;
+
+  /* ----------------------------------------- issue status semantics */
+  --prio-status-backlog-fg: var(--prio-neutral-600);
+  --prio-status-backlog-bg: var(--prio-neutral-100);
+  --prio-status-backlog-dot: var(--prio-neutral-400);
+
+  --prio-status-todo-fg: var(--prio-info-700);
+  --prio-status-todo-bg: var(--prio-info-50);
+  --prio-status-todo-dot: var(--prio-info-400);
+
+  --prio-status-progress-fg: #b06400;
+  --prio-status-progress-bg: var(--prio-amber-50);
+  --prio-status-progress-dot: var(--prio-amber-500);
+
+  --prio-status-review-fg: var(--prio-accent-700);
+  --prio-status-review-bg: var(--prio-accent-50);
+  --prio-status-review-dot: var(--prio-accent-500);
+
+  --prio-status-done-fg: var(--prio-green-700);
+  --prio-status-done-bg: var(--prio-green-50);
+  --prio-status-done-dot: var(--prio-green-600);
+
+  --prio-status-cancelled-fg: var(--prio-neutral-500);
+  --prio-status-cancelled-bg: var(--prio-neutral-100);
+  --prio-status-cancelled-dot: var(--prio-neutral-400);
+
+  /* --------------------------------------------- priority semantics */
+  --prio-priority-urgent: var(--prio-red-600);
+  --prio-priority-urgent-bg: var(--prio-red-50);
+  --prio-priority-high: #e06c0a;
+  --prio-priority-high-bg: var(--prio-amber-50);
+  --prio-priority-medium: var(--prio-info-600);
+  --prio-priority-medium-bg: var(--prio-info-50);
+  --prio-priority-low: var(--prio-neutral-500);
+  --prio-priority-low-bg: var(--prio-neutral-100);
+  --prio-priority-none: var(--prio-neutral-400);
+  --prio-priority-none-bg: var(--prio-neutral-100);
+
+  /* --------------------------------------------- severity semantics */
+  --prio-severity-critical: #a82227;
+  --prio-severity-critical-bg: var(--prio-red-100);
+  --prio-severity-major: #b45309;
+  --prio-severity-major-bg: var(--prio-amber-100);
+  --prio-severity-minor: var(--prio-info-700);
+  --prio-severity-minor-bg: var(--prio-info-100);
+  --prio-severity-trivial: var(--prio-neutral-600);
+  --prio-severity-trivial-bg: var(--prio-neutral-200);
+
+  /* ------------------------------------------------ issue type hues */
+  --prio-type-task: var(--prio-info-600);
+  --prio-type-task-bg: var(--prio-info-50);
+  --prio-type-bug: var(--prio-red-600);
+  --prio-type-bug-bg: var(--prio-red-50);
+  --prio-type-story: var(--prio-green-600);
+  --prio-type-story-bg: var(--prio-green-50);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --prio-duration-fast: 0ms;
+    --prio-duration: 0ms;
+    --prio-duration-slow: 0ms;
+  }
+}

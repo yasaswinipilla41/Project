@@ -1,0 +1,962 @@
+/* ============================================================================
+   Conversation — comments, the composer, attachments and issue links.
+
+   Everything here reads the semantic tokens, so the dark theme is inherited
+   rather than restated. Colours are only ever named through a token; nothing
+   in this file knows which theme is active.
+   ========================================================================= */
+
+/* ------------------------------------------------------------- timeline */
+
+.prio-conversation {
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-5);
+}
+
+.prio-conversation__timeline {
+  margin-bottom: 0;
+}
+
+/*
+ * A comment is a card on the same rail as the system events beside it. The rail
+ * keeps the chronology readable; the card is what says "a person wrote this"
+ * rather than "something changed".
+ */
+.prio-comment {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--prio-space-4);
+  padding: var(--prio-space-3) 0;
+}
+
+.prio-comment__card {
+  flex: 1;
+  min-width: 0;
+  padding: var(--prio-space-4);
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-lg);
+  background: var(--prio-bg-surface-raised);
+}
+
+.prio-comment__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--prio-space-3);
+  margin-bottom: var(--prio-space-2);
+}
+
+.prio-comment__author {
+  font-size: var(--prio-text-sm);
+  font-weight: var(--prio-weight-semibold);
+  color: var(--prio-text-primary);
+}
+
+.prio-comment__edited {
+  padding: 1px var(--prio-space-2);
+  border-radius: var(--prio-radius-pill);
+  background: var(--prio-bg-subtle);
+  font-size: var(--prio-text-2xs);
+  color: var(--prio-text-muted);
+}
+
+/* Kept quiet until the comment is hovered or the menu is focused, so a long
+   thread is not a column of icons. */
+.prio-comment__menu {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: var(--prio-radius-sm);
+  background: transparent;
+  color: var(--prio-text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--prio-duration-fast) var(--prio-ease),
+    background var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-comment:hover .prio-comment__menu,
+.prio-comment__menu:focus-visible,
+.prio-comment__menu[aria-expanded="true"] {
+  opacity: 1;
+}
+
+.prio-comment__menu:hover {
+  background: var(--prio-bg-hover);
+  color: var(--prio-text-primary);
+}
+
+/* Touch has no hover, so the control is simply always there. */
+@media (hover: none) {
+  .prio-comment__menu {
+    opacity: 1;
+  }
+}
+
+.prio-comment__body {
+  font-size: var(--prio-text-sm);
+}
+
+/* ------------------------------------------------------------- composer */
+
+.prio-conversation__composer {
+  padding-top: var(--prio-space-5);
+  border-top: 1px solid var(--prio-border-subtle);
+}
+
+.prio-conversation__composer-title {
+  margin: 0 0 var(--prio-space-3);
+  font-size: var(--prio-text-sm);
+  font-weight: var(--prio-weight-semibold);
+  color: var(--prio-text-primary);
+}
+
+.prio-composer {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--prio-space-3);
+}
+
+.prio-composer__avatar {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.prio-composer__main {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-lg);
+  background: var(--prio-bg-surface);
+  overflow: hidden;
+  transition: border-color var(--prio-duration-fast) var(--prio-ease),
+    box-shadow var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-composer__main:focus-within {
+  border-color: var(--prio-border-focus);
+  box-shadow: var(--prio-shadow-focus);
+}
+
+/* A file dragged anywhere over the composer lands on it. */
+.prio-composer[data-dragging] .prio-composer__main {
+  border-color: var(--prio-border-focus);
+  border-style: dashed;
+  background: var(--prio-bg-subtle);
+}
+
+.prio-composer__tabs {
+  display: flex;
+  gap: var(--prio-space-1);
+  padding: var(--prio-space-2) var(--prio-space-2) 0;
+  border-bottom: 1px solid var(--prio-border-subtle);
+}
+
+.prio-composer__tab {
+  padding: var(--prio-space-2) var(--prio-space-4);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  font: inherit;
+  font-size: var(--prio-text-xs);
+  font-weight: var(--prio-weight-medium);
+  color: var(--prio-text-secondary);
+  cursor: pointer;
+}
+
+.prio-composer__tab[aria-selected="true"] {
+  border-bottom-color: var(--prio-primary-500);
+  color: var(--prio-text-primary);
+}
+
+.prio-composer__tab:disabled {
+  color: var(--prio-text-disabled);
+  cursor: not-allowed;
+}
+
+.prio-composer__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  padding: var(--prio-space-2) var(--prio-space-3);
+  border-bottom: 1px solid var(--prio-border-subtle);
+}
+
+.prio-composer__tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--prio-space-2);
+  min-width: 28px;
+  height: 28px;
+  padding: 0 var(--prio-space-2);
+  border: 0;
+  border-radius: var(--prio-radius-sm);
+  background: transparent;
+  color: var(--prio-text-secondary);
+  font: inherit;
+  font-size: var(--prio-text-xs);
+  cursor: pointer;
+  transition: background var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-composer__tool:hover {
+  background: var(--prio-bg-hover);
+  color: var(--prio-text-primary);
+}
+
+.prio-composer__tool:focus-visible {
+  outline: none;
+  box-shadow: var(--prio-shadow-focus);
+}
+
+/* Each glyph is styled as the thing it does, which reads faster than an icon. */
+.prio-composer__tool [data-format="bold"] {
+  font-weight: var(--prio-weight-bold);
+}
+.prio-composer__tool [data-format="italic"] {
+  font-style: italic;
+  font-family: var(--prio-font-sans);
+}
+.prio-composer__tool [data-format="underline"] {
+  text-decoration: underline;
+}
+.prio-composer__tool [data-format="code"] {
+  font-family: var(--prio-font-mono);
+}
+
+.prio-composer__toolsep {
+  width: 1px;
+  height: 18px;
+  margin: 0 var(--prio-space-2);
+  background: var(--prio-border);
+}
+
+.prio-composer__field {
+  position: relative;
+}
+
+.prio-composer__textarea {
+  display: block;
+  width: 100%;
+  min-height: 84px;
+  padding: var(--prio-space-4);
+  border: 0;
+  background: transparent;
+  color: var(--prio-text-primary);
+  font: inherit;
+  font-size: var(--prio-text-sm);
+  line-height: var(--prio-leading-normal);
+  resize: none;
+}
+
+.prio-composer__textarea:focus {
+  outline: none;
+}
+
+.prio-composer__textarea::placeholder {
+  color: var(--prio-text-disabled);
+}
+
+.prio-composer__preview {
+  min-height: 84px;
+  padding: var(--prio-space-4);
+  font-size: var(--prio-text-sm);
+}
+
+.prio-composer__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--prio-space-2);
+  padding: var(--prio-space-3);
+  border-top: 1px solid var(--prio-border-subtle);
+  background: var(--prio-bg-subtle);
+}
+
+.prio-composer__attach {
+  height: 30px;
+}
+
+.prio-composer__hint {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--prio-text-2xs);
+  font-family: var(--prio-font-mono);
+  color: var(--prio-text-disabled);
+}
+
+.prio-composer__error {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  margin: 0;
+  padding: var(--prio-space-3) var(--prio-space-4);
+  background: var(--prio-red-50);
+  color: var(--prio-red-700);
+  font-size: var(--prio-text-xs);
+}
+
+/* -------------------------------------------------- composer file chips */
+
+.prio-composer__files {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--prio-space-2);
+  margin: 0;
+  padding: var(--prio-space-3) var(--prio-space-4);
+  border-top: 1px solid var(--prio-border-subtle);
+}
+
+.prio-composer__file {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  max-width: 260px;
+  padding: var(--prio-space-2) var(--prio-space-3);
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-pill);
+  background: var(--prio-bg-surface);
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-secondary);
+}
+
+.prio-composer__file img {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--prio-radius-xs);
+  object-fit: cover;
+}
+
+.prio-composer__file .prio-progress {
+  display: block;
+  width: 60px;
+}
+
+.prio-composer__filesize {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  color: var(--prio-text-disabled);
+}
+
+.prio-composer__fileremove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--prio-text-muted);
+  cursor: pointer;
+}
+
+.prio-composer__fileremove:hover {
+  background: var(--prio-red-50);
+  color: var(--prio-red-600);
+}
+
+/* --------------------------------------------------------- mention list */
+
+.prio-mentions {
+  position: absolute;
+  left: var(--prio-space-4);
+  right: var(--prio-space-4);
+  bottom: var(--prio-space-2);
+  z-index: var(--prio-z-dropdown);
+  list-style: none;
+  max-width: 280px;
+  max-height: 232px;
+  overflow-y: auto;
+  margin: 0;
+  padding: var(--prio-space-2);
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-md);
+  background: var(--prio-bg-surface-raised);
+  box-shadow: var(--prio-shadow-lg);
+}
+
+.prio-mentions__item {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-3);
+  width: 100%;
+  padding: var(--prio-space-2) var(--prio-space-3);
+  border: 0;
+  border-radius: var(--prio-radius-sm);
+  background: transparent;
+  color: var(--prio-text-primary);
+  font: inherit;
+  font-size: var(--prio-text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.prio-mentions__item[data-active] {
+  background: var(--prio-bg-active);
+}
+
+.prio-mentions__empty {
+  position: absolute;
+  left: var(--prio-space-4);
+  bottom: var(--prio-space-2);
+  margin: 0;
+  padding: var(--prio-space-2) var(--prio-space-3);
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-md);
+  background: var(--prio-bg-surface-raised);
+  box-shadow: var(--prio-shadow-md);
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-muted);
+}
+
+/* ------------------------------------------------------------ rich text */
+
+.prio-rt {
+  color: var(--prio-text-primary);
+  line-height: var(--prio-leading-normal);
+  overflow-wrap: anywhere;
+}
+
+.prio-rt > *:first-child {
+  margin-top: 0;
+}
+.prio-rt > *:last-child {
+  margin-bottom: 0;
+}
+
+.prio-rt__p {
+  margin: 0 0 var(--prio-space-3);
+  white-space: pre-wrap;
+}
+
+.prio-rt__h {
+  margin: var(--prio-space-4) 0 var(--prio-space-2);
+  font-weight: var(--prio-weight-semibold);
+  color: var(--prio-text-primary);
+  letter-spacing: var(--prio-tracking-tight);
+}
+
+.prio-rt__h[data-level="1"] {
+  font-size: var(--prio-text-lg);
+}
+.prio-rt__h[data-level="2"] {
+  font-size: var(--prio-text-md);
+}
+.prio-rt__h[data-level="3"] {
+  font-size: var(--prio-text-base);
+}
+
+.prio-rt__list {
+  margin: 0 0 var(--prio-space-3);
+  padding-left: var(--prio-space-6);
+}
+
+.prio-rt__list li {
+  margin-bottom: var(--prio-space-1);
+}
+
+.prio-rt__quote {
+  margin: 0 0 var(--prio-space-3);
+  padding: var(--prio-space-2) var(--prio-space-4);
+  border-left: 3px solid var(--prio-border-strong);
+  border-radius: 0 var(--prio-radius-sm) var(--prio-radius-sm) 0;
+  background: var(--prio-bg-subtle);
+  color: var(--prio-text-secondary);
+}
+
+.prio-rt__code {
+  padding: 1px 5px;
+  border-radius: var(--prio-radius-xs);
+  background: var(--prio-bg-subtle);
+  border: 1px solid var(--prio-border-subtle);
+  font-family: var(--prio-font-mono);
+  font-size: 0.92em;
+  color: var(--prio-text-primary);
+}
+
+.prio-rt__pre {
+  margin: 0 0 var(--prio-space-3);
+  padding: var(--prio-space-4);
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-md);
+  background: var(--prio-bg-subtle);
+  /* Code must scroll inside its own box; it may never widen the page. */
+  overflow-x: auto;
+}
+
+.prio-rt__pre code {
+  font-family: var(--prio-font-mono);
+  font-size: var(--prio-text-xs);
+  line-height: var(--prio-leading-relaxed);
+  color: var(--prio-text-primary);
+  white-space: pre;
+}
+
+.prio-rt__rule {
+  margin: var(--prio-space-4) 0;
+  border: 0;
+  border-top: 1px solid var(--prio-border);
+}
+
+.prio-rt__link {
+  color: var(--prio-text-link);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.prio-rt__mention {
+  padding: 1px 5px;
+  border-radius: var(--prio-radius-pill);
+  background: var(--prio-primary-50);
+  color: var(--prio-primary-700);
+  font-weight: var(--prio-weight-medium);
+}
+
+/* ---------------------------------------------------------- attachments */
+
+.prio-dropzone {
+  position: relative;
+  border-radius: var(--prio-radius-md);
+  transition: background var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-dropzone[data-dragging] {
+  outline: 2px dashed var(--prio-border-focus);
+  outline-offset: 6px;
+  background: var(--prio-bg-subtle);
+}
+
+.prio-dropzone__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--prio-space-3);
+}
+
+.prio-dropzone__head .prio-issue__section-title {
+  margin-bottom: 0;
+}
+
+.prio-dropzone__empty {
+  margin: var(--prio-space-3) 0 0;
+  font-size: var(--prio-text-sm);
+  color: var(--prio-text-secondary);
+}
+
+.prio-dropzone__progress {
+  list-style: none;
+  margin: var(--prio-space-3) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-2);
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-secondary);
+}
+
+.prio-dropzone__progress li {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-3);
+}
+
+.prio-dropzone__progress .prio-progress {
+  display: block;
+  flex: 1;
+}
+
+.prio-attachments {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: var(--prio-space-3);
+  margin: var(--prio-space-4) 0 0;
+  padding: 0;
+}
+
+.prio-attachments[data-compact] {
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  margin-top: var(--prio-space-3);
+}
+
+.prio-attachment {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-md);
+  background: var(--prio-bg-surface);
+  overflow: hidden;
+  transition: border-color var(--prio-duration-fast) var(--prio-ease),
+    opacity var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-attachment:hover {
+  border-color: var(--prio-border-strong);
+}
+
+.prio-attachment[data-busy] {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.prio-attachment__preview {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: var(--prio-bg-subtle);
+  cursor: zoom-in;
+}
+
+.prio-attachment__preview img {
+  display: block;
+  width: 100%;
+  height: 118px;
+  object-fit: cover;
+}
+
+.prio-attachment__video {
+  display: block;
+  width: 100%;
+  height: 118px;
+  background: #000;
+  object-fit: contain;
+}
+
+.prio-attachment__doc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--prio-space-2);
+  height: 118px;
+  background: var(--prio-bg-subtle);
+  color: var(--prio-text-secondary);
+  text-decoration: none;
+}
+
+.prio-attachment__ext {
+  font-family: var(--prio-font-mono);
+  font-size: var(--prio-text-md);
+  font-weight: var(--prio-weight-bold);
+  letter-spacing: var(--prio-tracking-caps);
+}
+
+.prio-attachment__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--prio-space-3);
+  min-width: 0;
+}
+
+.prio-attachment__name {
+  font-size: var(--prio-text-xs);
+  font-weight: var(--prio-weight-medium);
+  color: var(--prio-text-primary);
+  text-decoration: none;
+}
+
+.prio-attachment__name:hover {
+  text-decoration: underline;
+}
+
+.prio-attachment__sub {
+  font-size: var(--prio-text-2xs);
+  color: var(--prio-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prio-attachment__remove {
+  position: absolute;
+  top: var(--prio-space-2);
+  right: var(--prio-space-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: var(--prio-radius-sm);
+  background: var(--prio-bg-surface);
+  color: var(--prio-text-muted);
+  box-shadow: var(--prio-shadow-sm);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-attachment:hover .prio-attachment__remove,
+.prio-attachment__remove:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .prio-attachment__remove {
+    opacity: 1;
+  }
+}
+
+.prio-attachment__remove:hover {
+  background: var(--prio-red-50);
+  color: var(--prio-red-600);
+}
+
+/* ------------------------------------------------------------ lightbox */
+
+.prio-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: var(--prio-z-modal);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--prio-space-4);
+  padding: var(--prio-space-6);
+  background: rgba(6, 10, 18, 0.88);
+  backdrop-filter: blur(4px);
+  animation: prio-lightbox-in var(--prio-duration) var(--prio-ease-out);
+}
+
+@keyframes prio-lightbox-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.prio-lightbox__image {
+  max-width: min(100%, 1200px);
+  max-height: 78vh;
+  border-radius: var(--prio-radius-md);
+  box-shadow: var(--prio-shadow-xl);
+  cursor: default;
+}
+
+.prio-lightbox__close {
+  position: absolute;
+  top: var(--prio-space-5);
+  right: var(--prio-space-5);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: var(--prio-radius-md);
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  cursor: pointer;
+}
+
+.prio-lightbox__close:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.prio-lightbox__caption {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-3);
+  color: rgba(255, 255, 255, 0.86);
+  font-size: var(--prio-text-sm);
+}
+
+.prio-lightbox__size {
+  color: rgba(255, 255, 255, 0.56);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------- related issues */
+
+.prio-related__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--prio-space-3);
+  margin-bottom: var(--prio-space-3);
+}
+
+.prio-related__head .prio-issue__section-title {
+  margin-bottom: 0;
+}
+
+.prio-related {
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-4);
+}
+
+.prio-related__label {
+  margin: 0 0 var(--prio-space-2);
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-semibold);
+  letter-spacing: var(--prio-tracking-caps);
+  text-transform: uppercase;
+  color: var(--prio-text-muted);
+}
+
+.prio-related__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.prio-related__item {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+}
+
+.prio-related__item .prio-relatedrow {
+  flex: 1;
+  min-width: 0;
+}
+
+.prio-related__remove {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: var(--prio-radius-sm);
+  background: transparent;
+  color: var(--prio-text-muted);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.prio-related__item:hover .prio-related__remove,
+.prio-related__remove:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .prio-related__remove {
+    opacity: 1;
+  }
+}
+
+.prio-related__remove:hover {
+  background: var(--prio-red-50);
+  color: var(--prio-red-600);
+}
+
+.prio-linkresults {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-md);
+}
+
+.prio-linkresults__item {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-3);
+  width: 100%;
+  padding: var(--prio-space-3);
+  border: 0;
+  border-bottom: 1px solid var(--prio-border-subtle);
+  background: transparent;
+  color: var(--prio-text-primary);
+  font: inherit;
+  font-size: var(--prio-text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.prio-linkresults li:last-child .prio-linkresults__item {
+  border-bottom: 0;
+}
+
+.prio-linkresults__item:hover,
+.prio-linkresults__item[data-active] {
+  background: var(--prio-bg-hover);
+}
+
+/* ---------------------------------------------------------- responsive */
+
+@media (max-width: 767.98px) {
+  .prio-comment {
+    gap: var(--prio-space-3);
+  }
+
+  .prio-composer {
+    gap: var(--prio-space-2);
+  }
+
+  /* The avatar is a nicety; on a phone the composer needs the width more. */
+  .prio-composer__avatar {
+    display: none;
+  }
+
+  .prio-composer__hint {
+    display: none;
+  }
+
+  .prio-composer__actions {
+    justify-content: flex-end;
+  }
+
+  .prio-attachments,
+  .prio-attachments[data-compact] {
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  }
+
+  .prio-lightbox {
+    padding: var(--prio-space-4);
+  }
+
+  .prio-mentions {
+    max-width: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prio-lightbox {
+    animation: none;
+  }
+}
+
+/* Older activity is collapsed by default so the composer stays within reach.
+   The control is a full-width line rather than a small link — it is a section
+   boundary, and reads as one. */
+.prio-conversation__more {
+  width: 100%;
+  padding: var(--prio-space-2) var(--prio-space-3);
+  border: 1px dashed var(--prio-border);
+  border-radius: var(--prio-radius-md);
+  background: transparent;
+  color: var(--prio-text-secondary);
+  font: inherit;
+  font-size: var(--prio-text-xs);
+  cursor: pointer;
+  transition: background var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-conversation__more:hover {
+  background: var(--prio-bg-hover);
+  color: var(--prio-text-primary);
+}

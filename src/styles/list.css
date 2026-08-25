@@ -1,0 +1,505 @@
+/* ============================================================================
+   Prio — list surfaces: filter bar, issue table, pagination
+   ========================================================================= */
+
+/* --------------------------------------------------------------- filters */
+.prio-filters {
+  margin-bottom: var(--prio-space-5);
+  transition: opacity var(--prio-duration) var(--prio-ease);
+}
+
+.prio-filters[data-pending="true"] {
+  opacity: 0.6;
+}
+
+.prio-filters__search {
+  max-width: 460px;
+  margin-bottom: var(--prio-space-4);
+}
+
+.prio-filters__chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--prio-space-2);
+}
+
+.prio-filters__icon {
+  display: grid;
+  place-items: center;
+  color: var(--prio-text-muted);
+  margin-right: var(--prio-space-1);
+}
+
+.prio-filterchip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  height: 28px;
+  padding: 0 var(--prio-space-3);
+  border: 1px solid var(--prio-border-strong);
+  border-radius: var(--prio-radius-md);
+  background: var(--prio-bg-surface);
+  font-size: var(--prio-text-xs);
+  font-weight: var(--prio-weight-medium);
+  color: var(--prio-text-secondary);
+  white-space: nowrap;
+  transition: all var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-filterchip:hover {
+  border-color: var(--prio-neutral-400);
+  color: var(--prio-text-primary);
+}
+
+.prio-filterchip[data-active="true"] {
+  border-color: var(--prio-primary-400);
+  background: var(--prio-primary-50);
+  color: var(--prio-primary-700);
+}
+
+.prio-filterchip__count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: var(--prio-radius-pill);
+  background: var(--prio-primary-600);
+  color: #fff;
+  font-size: 10px;
+  font-weight: var(--prio-weight-bold);
+}
+
+.prio-filters__option {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+}
+
+.prio-filters__total {
+  margin-left: auto;
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ----------------------------------------------------------- issue table */
+.prio-col-key {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.prio-col-status,
+.prio-col-priority,
+.prio-col-severity {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.prio-col-person {
+  width: 150px;
+  max-width: 150px;
+}
+
+.prio-col-date {
+  width: 1%;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Always reachable — this is the only way to delete an issue from the table,
+   so unlike the other columns it is never hidden at a narrower width.
+   `.prio-table td.prio-col-actions` (0,2,1) rather than `.prio-col-actions`
+   alone (0,1,0): `.prio-table tbody td`'s own padding is (0,1,2), which beats
+   a bare single class on specificity regardless of import order — the same
+   trap documented on `.prio-create` in components.css. */
+.prio-table td.prio-col-actions {
+  width: 1%;
+  padding-left: var(--prio-space-2);
+  padding-right: var(--prio-space-3);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.prio-issuelink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+}
+
+.prio-issuelink:hover {
+  text-decoration: none;
+}
+
+.prio-issuetitle {
+  display: block;
+  font-size: var(--prio-text-sm);
+  font-weight: var(--prio-weight-medium);
+  color: var(--prio-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 60ch;
+}
+
+.prio-issuetitle:hover {
+  color: var(--prio-primary-600);
+  text-decoration: none;
+}
+
+.prio-issuemeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--prio-space-2);
+  margin-top: 3px;
+}
+
+.prio-issuemeta:empty {
+  display: none;
+}
+
+.prio-issuemeta__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--prio-text-2xs);
+  color: var(--prio-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.prio-col-person .prio-person {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.prio-col-person .prio-truncate {
+  max-width: 110px;
+}
+
+/* ------------------------------------------------------------ pagination */
+.prio-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--prio-space-5);
+  margin-top: var(--prio-space-5);
+  font-size: var(--prio-text-xs);
+}
+
+.prio-pagination__summary {
+  color: var(--prio-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.prio-pagination__controls {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-3);
+}
+
+.prio-pagination__page {
+  color: var(--prio-text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.prio-pagination [aria-disabled="true"] {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.prio-pagination__size {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  margin-left: auto;
+}
+
+.prio-pagination__size .prio-segmented__item {
+  height: 24px;
+  padding: 0 var(--prio-space-3);
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-sm);
+}
+
+.prio-pagination__size .prio-segmented__item[data-active="true"] {
+  border-color: var(--prio-primary-400);
+  background: var(--prio-primary-50);
+  color: var(--prio-primary-700);
+}
+
+@media (max-width: 900px) {
+  .prio-col-severity,
+  .prio-col-date:last-child {
+    display: none;
+  }
+
+  .prio-filters__total {
+    margin-left: 0;
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .prio-col-person,
+  .prio-col-priority {
+    display: none;
+  }
+
+  .prio-pagination__size {
+    margin-left: 0;
+  }
+}
+
+/* --------------------------------------------------------- notifications */
+.prio-notifications__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--prio-space-4);
+  margin-bottom: var(--prio-space-4);
+  font-size: var(--prio-text-sm);
+}
+
+.prio-notifications {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-lg);
+  background: var(--prio-bg-surface);
+  overflow: hidden;
+}
+
+.prio-notification {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--prio-space-4);
+  padding: var(--prio-space-4) var(--prio-space-5);
+  border-bottom: 1px solid var(--prio-border-subtle);
+  transition: background var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-notification:last-child {
+  border-bottom: 0;
+}
+
+.prio-notification:hover {
+  background: var(--prio-neutral-25);
+}
+
+/* Unread rows carry a brand dot and a tinted ground. */
+.prio-notification[data-read="false"] {
+  background: var(--prio-primary-50);
+}
+
+.prio-notification[data-read="false"]:hover {
+  background: var(--prio-primary-100);
+}
+
+.prio-notification__dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  margin-top: 11px;
+  border-radius: 50%;
+  background: var(--prio-primary-500);
+}
+
+.prio-notification[data-read="true"] .prio-notification__dot {
+  background: transparent;
+}
+
+.prio-notification__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-2);
+}
+
+.prio-notification__text {
+  margin: 0;
+  font-size: var(--prio-text-sm);
+  color: var(--prio-text-secondary);
+}
+
+.prio-notification__text strong {
+  color: var(--prio-text-primary);
+  font-weight: var(--prio-weight-semibold);
+}
+
+.prio-notification__issue {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  max-width: 100%;
+  font-size: var(--prio-text-sm);
+  color: var(--prio-text-primary);
+}
+
+.prio-notification__issue:hover {
+  color: var(--prio-primary-600);
+  text-decoration: none;
+}
+
+.prio-notification__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-3);
+  font-size: var(--prio-text-2xs);
+  color: var(--prio-text-muted);
+}
+
+/* ------------------------------------------------------------- work link */
+.prio-worklink {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-3);
+  padding: var(--prio-space-3);
+  border-radius: var(--prio-radius-md);
+  border-bottom: 1px solid var(--prio-border-subtle);
+  color: var(--prio-text-primary);
+  transition: background var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-worklink:last-child {
+  border-bottom: 0;
+}
+
+.prio-worklink:hover {
+  background: var(--prio-bg-hover);
+  text-decoration: none;
+  color: var(--prio-text-primary);
+}
+
+.prio-worklink__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.prio-worklink__title {
+  font-size: var(--prio-text-sm);
+}
+
+.prio-worklink__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--prio-space-3);
+  font-size: var(--prio-text-2xs);
+}
+
+.prio-worklink__right {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-3);
+  flex-shrink: 0;
+}
+
+/* -------------------------------------------------------------- search */
+.prio-searchpage__form {
+  max-width: 640px;
+  margin-bottom: var(--prio-space-6);
+}
+
+.prio-input--lg {
+  min-height: 42px;
+  font-size: var(--prio-text-md);
+}
+
+.prio-searchresults__project {
+  font-size: var(--prio-text-2xs);
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .prio-searchresults__project {
+    display: none;
+  }
+}
+
+/* ------------------------------------------------------ project settings */
+.prio-settings__addrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--prio-space-3);
+  margin-bottom: var(--prio-space-5);
+}
+
+.prio-settings__addrow .prio-select,
+.prio-settings__addrow .prio-input {
+  flex: 1;
+  min-width: 200px;
+}
+
+.prio-settings__list {
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.prio-settings__swatches {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+}
+
+.prio-settings__swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  box-shadow: 0 0 0 1px var(--prio-border);
+  transition: transform var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-settings__swatch:hover {
+  transform: scale(1.12);
+}
+
+.prio-settings__swatch[data-selected="true"] {
+  border-color: var(--prio-bg-surface);
+  box-shadow: 0 0 0 2px var(--prio-text-primary);
+}
+
+/* ------------------------------------------------------------- profile */
+.prio-profile__identity {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-5);
+}
+
+.prio-profile__name {
+  font-size: var(--prio-text-lg);
+  font-weight: var(--prio-weight-semibold);
+  margin-bottom: 2px;
+}
+
+.prio-profile__email {
+  margin: 0 0 var(--prio-space-3);
+  font-size: var(--prio-text-sm);
+  color: var(--prio-text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* Deactivated rows in the admin table read as inactive without hiding data. */
+.prio-table tbody tr[data-inactive="true"] {
+  opacity: 0.62;
+}
+
+/* The viewer's own assigned work stands out in a shared list without hiding
+   anyone else's permitted rows — a tint plus the "You" badge in the cell. */
+.prio-table tbody tr[data-mine="true"] {
+  background: var(--prio-primary-50);
+}
+
+.prio-table tbody tr[data-mine="true"]:hover {
+  background: var(--prio-secondary-50);
+}

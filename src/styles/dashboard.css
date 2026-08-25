@@ -1,0 +1,1015 @@
+/* ============================================================================
+   Dashboard — the signed-in home page.
+
+   The page has one job: show a person what they should look at next. So the
+   visual hierarchy is deliberate and narrow:
+
+     1. their own assigned work, largest and first;
+     2. the numbers that describe it;
+     3. everything else — projects, analytics, activity — quieter, below.
+
+   Every rule here is scoped under a dashboard-only block name, so nothing in
+   this file can reach the rest of the application.
+   ========================================================================= */
+
+.prio-dash {
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-8);
+}
+
+/* ------------------------------------------------------------------ hero */
+
+/* The greeting strip. A soft brand wash rather than a solid block, so it reads
+   as the top of the page without competing with the assigned-work list. */
+.prio-dash__hero {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--prio-space-5);
+  padding: var(--prio-space-7);
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-xl);
+  background: var(--prio-bg-surface);
+}
+
+/* Brand wash, drawn behind the text and kept out of the accessibility tree. */
+.prio-dash__hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--prio-gradient-brand-soft);
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.prio-dash__hero > * {
+  position: relative;
+}
+
+.prio-dash__greeting {
+  margin: 0;
+  font-size: var(--prio-text-2xl);
+  font-weight: var(--prio-weight-bold);
+  letter-spacing: var(--prio-tracking-tight);
+  color: var(--prio-text-primary);
+}
+
+.prio-dash__subtitle {
+  margin: var(--prio-space-2) 0 0;
+  font-size: var(--prio-text-sm);
+  color: var(--prio-text-secondary);
+}
+
+.prio-dash__herometa {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--prio-space-3);
+  margin-top: var(--prio-space-4);
+}
+
+/* Role badge. Shows the account's real role — Administrator or Member — never
+   an invented one. */
+.prio-rolebadge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  padding: 3px var(--prio-space-3);
+  border-radius: var(--prio-radius-pill);
+  border: 1px solid transparent;
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-semibold);
+  letter-spacing: var(--prio-tracking-caps);
+  text-transform: uppercase;
+}
+
+.prio-rolebadge[data-role="ADMIN"] {
+  background: var(--prio-accent-50);
+  border-color: var(--prio-accent-200);
+  color: var(--prio-accent-700);
+}
+
+/* The secondary tint, not primary: a role badge is context, not a call to
+   action, and ADMIN already has the accent purple — giving MEMBER the same
+   colour as every button would blur "this is your role" into "click me". */
+.prio-rolebadge[data-role="MEMBER"] {
+  background: var(--prio-secondary-50);
+  border-color: var(--prio-secondary-100);
+  color: var(--prio-secondary-700);
+}
+
+.prio-dash__date {
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-secondary);
+}
+
+/* Quick actions live in the hero, on the right. */
+.prio-dash__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--prio-space-3);
+}
+
+/* --------------------------------------------------------------- due bar */
+
+/* Overdue / due today / due this week. Each chip is a link into the issue list
+   with that filter applied — the number is a doorway, not a decoration. */
+.prio-duebar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--prio-space-3);
+}
+
+.prio-duebar__item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  padding: var(--prio-space-2) var(--prio-space-4);
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-pill);
+  background: var(--prio-bg-surface);
+  color: var(--prio-text-secondary);
+  font-size: var(--prio-text-sm);
+  text-decoration: none;
+  transition:
+    border-color var(--prio-duration-fast) var(--prio-ease),
+    transform var(--prio-duration-fast) var(--prio-ease),
+    box-shadow var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-duebar__item strong {
+  font-size: var(--prio-text-md);
+  font-weight: var(--prio-weight-bold);
+  font-variant-numeric: tabular-nums;
+  color: var(--prio-text-primary);
+}
+
+.prio-duebar__item:hover {
+  transform: translateY(-1px);
+  border-color: var(--prio-border-strong);
+  box-shadow: var(--prio-shadow-sm);
+  text-decoration: none;
+}
+
+.prio-duebar__item[data-tone="danger"] {
+  background: var(--prio-red-50);
+  border-color: var(--prio-red-100);
+  color: var(--prio-red-700);
+}
+
+.prio-duebar__item[data-tone="danger"] strong {
+  color: var(--prio-red-700);
+}
+
+.prio-duebar__item[data-tone="warning"] {
+  background: var(--prio-amber-50);
+  border-color: var(--prio-amber-100);
+  color: var(--prio-amber-700);
+}
+
+.prio-duebar__item[data-tone="warning"] strong {
+  color: var(--prio-amber-700);
+}
+
+/* ------------------------------------------------------------- kpi cards */
+
+.prio-kpi {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-2);
+  height: 100%;
+  padding: var(--prio-space-5);
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-lg);
+  background: var(--prio-bg-surface);
+  color: inherit;
+  text-decoration: none;
+  transition:
+    border-color var(--prio-duration-fast) var(--prio-ease),
+    transform var(--prio-duration-fast) var(--prio-ease),
+    box-shadow var(--prio-duration-fast) var(--prio-ease);
+}
+
+a.prio-kpi:hover {
+  transform: translateY(-2px);
+  border-color: var(--prio-border-strong);
+  box-shadow: var(--prio-shadow-md);
+  text-decoration: none;
+}
+
+a.prio-kpi:focus-visible {
+  outline: none;
+  border-color: var(--prio-border-focus);
+  box-shadow: var(--prio-shadow-focus);
+}
+
+.prio-kpi__label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-semibold);
+  letter-spacing: var(--prio-tracking-caps);
+  text-transform: uppercase;
+  color: var(--prio-text-muted);
+}
+
+.prio-kpi__value {
+  font-size: var(--prio-text-3xl);
+  font-weight: var(--prio-weight-bold);
+  line-height: var(--prio-leading-tight);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--prio-tracking-tight);
+  color: var(--prio-text-primary);
+}
+
+.prio-kpi__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--prio-space-2) var(--prio-space-3);
+}
+
+.prio-kpi__hint {
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-secondary);
+}
+
+/* Month-over-month change. Only rendered when there is a previous period to
+   compare against — never a placeholder arrow. */
+.prio-kpi__trend {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--prio-text-xs);
+  font-weight: var(--prio-weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.prio-kpi__trend[data-dir="up"] {
+  color: var(--prio-green-600);
+}
+.prio-kpi__trend[data-dir="down"] {
+  color: var(--prio-red-600);
+}
+
+.prio-kpi[data-tone="brand"] .prio-kpi__value {
+  color: var(--prio-primary-600);
+}
+.prio-kpi[data-tone="danger"] .prio-kpi__value {
+  color: var(--prio-red-600);
+}
+.prio-kpi[data-tone="warning"] .prio-kpi__value {
+  color: var(--prio-amber-600);
+}
+.prio-kpi[data-tone="success"] .prio-kpi__value {
+  color: var(--prio-green-600);
+}
+
+/* ------------------------------------------------------------- sections */
+
+.prio-dash__section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--prio-space-3);
+  margin-bottom: var(--prio-space-4);
+}
+
+.prio-dash__section-title {
+  margin: 0;
+  font-size: var(--prio-text-lg);
+  font-weight: var(--prio-weight-semibold);
+  letter-spacing: var(--prio-tracking-tight);
+  color: var(--prio-text-primary);
+}
+
+.prio-dash__count {
+  margin-left: var(--prio-space-2);
+  padding: 1px var(--prio-space-2);
+  border-radius: var(--prio-radius-pill);
+  background: var(--prio-bg-subtle);
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--prio-text-secondary);
+  vertical-align: middle;
+}
+
+.prio-dash__section-link {
+  font-size: var(--prio-text-sm);
+  font-weight: var(--prio-weight-medium);
+  white-space: nowrap;
+}
+
+/* ----------------------------------------------------- linked analytics */
+
+/* On the dashboard each distribution row is a link into the filtered list.
+   Wrapping the row's three parts in an anchor moves them out of the row's flex
+   context, so the anchor has to become the flex container in its place —
+   otherwise the label, bar and count stack and the bar collapses to nothing. */
+.prio-distribution__link {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-4);
+  padding: 2px var(--prio-space-2);
+  margin: -2px calc(var(--prio-space-2) * -1);
+  border-radius: var(--prio-radius-sm);
+  color: inherit;
+  text-decoration: none;
+  transition: background var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-distribution__link:hover {
+  background: var(--prio-bg-hover);
+  text-decoration: none;
+}
+
+.prio-distribution__link:focus-visible {
+  outline: none;
+  box-shadow: var(--prio-shadow-focus);
+}
+
+/* ------------------------------------------------------- assigned to me */
+
+/* The most important block on the page, so it gets the most room: a card per
+   issue rather than a table row, with a coloured rail carrying priority. */
+.prio-assignedlist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-3);
+}
+
+.prio-assigned {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-2);
+  padding: var(--prio-space-4) var(--prio-space-5);
+  padding-left: calc(var(--prio-space-5) + 4px);
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-lg);
+  background: var(--prio-bg-surface);
+  color: inherit;
+  text-decoration: none;
+  overflow: hidden;
+  transition:
+    border-color var(--prio-duration-fast) var(--prio-ease),
+    transform var(--prio-duration-fast) var(--prio-ease),
+    box-shadow var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-assigned:hover {
+  transform: translateY(-1px);
+  border-color: var(--prio-border-strong);
+  box-shadow: var(--prio-shadow-md);
+  text-decoration: none;
+}
+
+.prio-assigned:focus-visible {
+  outline: none;
+  border-color: var(--prio-border-focus);
+  box-shadow: var(--prio-shadow-focus);
+}
+
+/* The rail encodes priority; overdue overrides it, because a late URGENT and a
+   late LOW both need looking at today. */
+.prio-assigned__rail {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--prio-priority-none);
+}
+
+.prio-assigned[data-priority="URGENT"] .prio-assigned__rail {
+  background: var(--prio-priority-urgent);
+}
+.prio-assigned[data-priority="HIGH"] .prio-assigned__rail {
+  background: var(--prio-priority-high);
+}
+.prio-assigned[data-priority="MEDIUM"] .prio-assigned__rail {
+  background: var(--prio-priority-medium);
+}
+.prio-assigned[data-priority="LOW"] .prio-assigned__rail {
+  background: var(--prio-priority-low);
+}
+
+/* A freshly assigned item — until read from the notification it came with.
+   Overdue is the more urgent fact, so its rule comes after and wins when
+   both apply. */
+.prio-assigned[data-new="true"] {
+  border-color: var(--prio-primary-100);
+  background: var(--prio-primary-50);
+}
+
+.prio-assigned[data-due="overdue"] {
+  border-color: var(--prio-red-100);
+  background: var(--prio-red-50);
+}
+
+.prio-assigned[data-due="overdue"] .prio-assigned__rail {
+  background: var(--prio-red-500);
+}
+
+.prio-assigned__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--prio-space-3);
+}
+
+.prio-assigned__project {
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-secondary);
+}
+
+.prio-assigned__updated {
+  margin-left: auto;
+  font-size: var(--prio-text-2xs);
+  color: var(--prio-text-disabled);
+  white-space: nowrap;
+}
+
+.prio-assigned__title {
+  display: block;
+  font-size: var(--prio-text-md);
+  font-weight: var(--prio-weight-semibold);
+  line-height: var(--prio-leading-snug);
+  color: var(--prio-text-primary);
+}
+
+.prio-assigned__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--prio-space-2) var(--prio-space-4);
+}
+
+.prio-assigned__due {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-secondary);
+}
+
+.prio-assigned__due[data-state="overdue"] {
+  font-weight: var(--prio-weight-semibold);
+  color: var(--prio-red-600);
+}
+
+.prio-assigned__due[data-state="today"] {
+  font-weight: var(--prio-weight-semibold);
+  color: var(--prio-amber-700);
+}
+
+.prio-assigned__progress {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  font-size: var(--prio-text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--prio-text-secondary);
+}
+
+/* The shared progress bar is a block element; inside these inline rows it needs
+   to be told so, and given a width to fill. */
+.prio-assigned__progress .prio-progress {
+  display: block;
+  width: 72px;
+}
+
+/* ------------------------------------------------------------- projects */
+
+.prio-projrow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-3);
+  height: 100%;
+  padding: var(--prio-space-5);
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-lg);
+  background: var(--prio-bg-surface);
+  color: inherit;
+  text-decoration: none;
+  transition:
+    border-color var(--prio-duration-fast) var(--prio-ease),
+    transform var(--prio-duration-fast) var(--prio-ease),
+    box-shadow var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-projrow:hover {
+  transform: translateY(-2px);
+  border-color: var(--prio-border-strong);
+  box-shadow: var(--prio-shadow-md);
+  text-decoration: none;
+}
+
+.prio-projrow:focus-visible {
+  outline: none;
+  border-color: var(--prio-border-focus);
+  box-shadow: var(--prio-shadow-focus);
+}
+
+.prio-projrow .prio-progress {
+  display: block;
+}
+
+.prio-projrow__top {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-3);
+}
+
+.prio-projrow__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--prio-text-md);
+  font-weight: var(--prio-weight-semibold);
+  color: var(--prio-text-primary);
+}
+
+/* Health is derived at read time from open bugs and overdue work — it is not a
+   field anyone sets, so it can never go stale. */
+.prio-projrow__health {
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 2px var(--prio-space-3);
+  border-radius: var(--prio-radius-pill);
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-semibold);
+  white-space: nowrap;
+}
+
+.prio-projrow__health[data-health="healthy"] {
+  background: var(--prio-green-50);
+  color: var(--prio-green-700);
+}
+.prio-projrow__health[data-health="attention"] {
+  background: var(--prio-amber-50);
+  color: var(--prio-amber-700);
+}
+.prio-projrow__health[data-health="at-risk"] {
+  background: var(--prio-red-50);
+  color: var(--prio-red-700);
+}
+
+.prio-projrow__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--prio-space-2) var(--prio-space-4);
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-secondary);
+}
+
+.prio-projrow__stats [data-tone="danger"] {
+  color: var(--prio-red-600);
+  font-weight: var(--prio-weight-medium);
+}
+
+.prio-projrow__stats [data-tone="brand"] {
+  color: var(--prio-primary-600);
+  font-weight: var(--prio-weight-medium);
+}
+
+/* --------------------------------------------------------- my work grid */
+
+/* Six small figures describing the person's own queue. Grid rather than flex so
+   the columns stay aligned as the numbers change width. */
+.prio-workgrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  border-radius: var(--prio-radius-md);
+  overflow: hidden;
+  background: var(--prio-border);
+}
+
+.prio-worktile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--prio-space-4);
+  background: var(--prio-bg-surface);
+  color: inherit;
+  text-decoration: none;
+  transition: background var(--prio-duration-fast) var(--prio-ease);
+}
+
+a.prio-worktile:hover {
+  background: var(--prio-bg-hover);
+  text-decoration: none;
+}
+
+.prio-worktile__value {
+  font-size: var(--prio-text-xl);
+  font-weight: var(--prio-weight-bold);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--prio-leading-tight);
+  color: var(--prio-text-primary);
+}
+
+.prio-worktile[data-tone="danger"] .prio-worktile__value {
+  color: var(--prio-red-600);
+}
+
+.prio-worktile__label {
+  font-size: var(--prio-text-2xs);
+  letter-spacing: var(--prio-tracking-caps);
+  text-transform: uppercase;
+  color: var(--prio-text-muted);
+}
+
+/* --------------------------------------------------------- team workload */
+
+/* Admin only: who is carrying how much open work. The bar is relative to the
+   busiest person, so it answers "is this evenly spread?" at a glance. */
+.prio-workload {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-3);
+}
+
+.prio-workload__row {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-3);
+}
+
+.prio-workload__name {
+  flex-shrink: 0;
+  width: 132px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--prio-text-sm);
+  color: var(--prio-text-primary);
+}
+
+.prio-workload__track {
+  flex: 1;
+  height: 7px;
+  border-radius: var(--prio-radius-pill);
+  background: var(--prio-neutral-100);
+  overflow: hidden;
+}
+
+.prio-workload__bar {
+  display: block;
+  height: 100%;
+  border-radius: var(--prio-radius-pill);
+  background: var(--prio-gradient-brand);
+}
+
+.prio-workload__value {
+  flex-shrink: 0;
+  min-width: 28px;
+  text-align: right;
+  font-size: var(--prio-text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--prio-text-secondary);
+}
+
+/* ------------------------------------------------------------- entrance */
+
+/* A short, once-only rise as the server-rendered page paints. Purely additive:
+   if it is suppressed the page is already in its final position. */
+@keyframes prio-dash-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.prio-dash > * {
+  animation: prio-dash-rise var(--prio-duration-slow) var(--prio-ease-out) both;
+}
+
+.prio-dash > *:nth-child(1) { animation-delay: 0ms; }
+.prio-dash > *:nth-child(2) { animation-delay: 40ms; }
+.prio-dash > *:nth-child(3) { animation-delay: 80ms; }
+.prio-dash > *:nth-child(4) { animation-delay: 120ms; }
+.prio-dash > *:nth-child(5) { animation-delay: 160ms; }
+.prio-dash > *:nth-child(6) { animation-delay: 200ms; }
+.prio-dash > *:nth-child(n + 7) { animation-delay: 240ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .prio-dash > * {
+    animation: none;
+  }
+}
+
+/* ----------------------------------------------------------- responsive */
+
+@media (max-width: 767.98px) {
+  .prio-dash {
+    gap: var(--prio-space-6);
+  }
+
+  .prio-dash__hero {
+    padding: var(--prio-space-5);
+  }
+
+  .prio-dash__greeting {
+    font-size: var(--prio-text-xl);
+  }
+
+  .prio-dash__actions {
+    width: 100%;
+  }
+
+  .prio-workgrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .prio-assigned__updated {
+    margin-left: 0;
+  }
+
+  .prio-workload__name {
+    width: 96px;
+  }
+
+  /* "Needs attention" is a single dense row built for a wide table. At phone
+     width the badges squeeze the title down to a couple of characters, which
+     defeats the point of the section — so the title takes its own line and the
+     badges wrap beneath it. */
+  .prio-dash__attention .prio-relatedrow {
+    flex-wrap: wrap;
+    row-gap: var(--prio-space-2);
+  }
+
+  .prio-dash__attention .prio-relatedrow__title {
+    flex-basis: 100%;
+    white-space: normal;
+    overflow: visible;
+  }
+}
+
+/* ------------------------------------------------------------- team list */
+
+/* Visible to every signed-in person by default — unlike `.prio-workload`
+   above (admin-only, organization-wide), this is the viewer's own project
+   teammates, and every figure on it is scoped to what they can already see. */
+.prio-team {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--prio-space-3);
+}
+
+.prio-team__member {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-3);
+  height: 100%;
+  padding: var(--prio-space-3);
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-lg);
+  background: var(--prio-bg-surface);
+  color: inherit;
+  text-decoration: none;
+  transition:
+    border-color var(--prio-duration-fast) var(--prio-ease),
+    transform var(--prio-duration-fast) var(--prio-ease),
+    box-shadow var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-team__member:hover {
+  transform: translateY(-1px);
+  border-color: var(--prio-border-strong);
+  box-shadow: var(--prio-shadow-sm);
+  text-decoration: none;
+}
+
+.prio-team__member:focus-visible {
+  outline: none;
+  border-color: var(--prio-border-focus);
+  box-shadow: var(--prio-shadow-focus);
+}
+
+.prio-team__info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.prio-team__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--prio-text-sm);
+  font-weight: var(--prio-weight-semibold);
+  color: var(--prio-text-primary);
+}
+
+.prio-team__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+}
+
+.prio-team__inactive {
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-medium);
+  color: var(--prio-text-disabled);
+}
+
+.prio-team__count {
+  flex-shrink: 0;
+  min-width: 28px;
+  padding: 2px var(--prio-space-2);
+  border-radius: var(--prio-radius-pill);
+  background: var(--prio-bg-subtle);
+  color: var(--prio-text-secondary);
+  font-size: var(--prio-text-xs);
+  font-weight: var(--prio-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+@media (max-width: 480px) {
+  .prio-team {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ------------------------------------------------------------- new users */
+
+.prio-newusers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-2);
+}
+
+.prio-newusers__row {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-3);
+  padding: var(--prio-space-3);
+  border-radius: var(--prio-radius-md);
+  transition: background var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-newusers__row:hover {
+  background: var(--prio-secondary-50);
+}
+
+.prio-newusers__info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.prio-newusers__name {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--prio-text-sm);
+  font-weight: var(--prio-weight-semibold);
+  color: var(--prio-text-primary);
+}
+
+.prio-newusers__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-secondary);
+}
+
+.prio-newusers__joined {
+  flex-shrink: 0;
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-muted);
+  white-space: nowrap;
+}
+
+@media (max-width: 480px) {
+  .prio-newusers__joined {
+    display: none;
+  }
+}
+
+/* ------------------------------------------------------- member detail */
+
+.prio-memberdetail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-5);
+}
+
+.prio-memberdetail__section {
+  padding-bottom: var(--prio-space-4);
+  border-bottom: 1px solid var(--prio-border-subtle);
+}
+
+.prio-memberdetail__section:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.prio-memberdetail__heading {
+  margin: 0 0 var(--prio-space-3);
+  font-size: var(--prio-text-sm);
+  font-weight: var(--prio-weight-semibold);
+  color: var(--prio-text-primary);
+}
+
+.prio-memberdetail__profile {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--prio-space-4);
+}
+
+.prio-memberdetail__row {
+  margin: 0 0 var(--prio-space-1);
+  font-size: var(--prio-text-sm);
+  color: var(--prio-text-secondary);
+}
+
+.prio-memberdetail__row strong {
+  display: inline-block;
+  min-width: 70px;
+  color: var(--prio-text-primary);
+  font-weight: var(--prio-weight-medium);
+}
+
+.prio-memberdetail__issuelist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-2);
+}
+
+.prio-memberdetail__issue {
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-1);
+  padding: var(--prio-space-3);
+  border: 1px solid var(--prio-border-subtle);
+  border-radius: var(--prio-radius-md);
+}
+
+.prio-memberdetail__issue-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--prio-space-2);
+  font-size: var(--prio-text-xs);
+}
+
+.prio-memberdetail__assign {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--prio-space-3);
+  align-items: center;
+}
+
+.prio-memberdetail__assign .prio-select {
+  flex: 1;
+  min-width: 220px;
+}
+
+.prio-memberdetail__activity {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-2);
+  font-size: var(--prio-text-sm);
+}

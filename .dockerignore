@@ -1,0 +1,16 @@
+# The builder stage does `COPY . .`, so anything listed here never enters the
+# image or the build context.
+
+node_modules
+.next
+test-results
+playwright-report
+
+# Inert archive of the removed marketing site. Kept in the repository for
+# restoration; it is not part of the application and must not be built.
+landing page
+
+.env
+.git
+.gitignore
+tsconfig.tsbuildinfo

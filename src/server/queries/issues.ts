@@ -1,0 +1,346 @@
+import type { Prisma } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
+import { issueScope } from "@/lib/authz";
+import type { CurrentUser } from "@/lib/session";
+import {
+  CLOSED_STATUSES,
+  OPEN_STATUSES,
+  isIssueStatus,
+  isIssueType,
+  isPriority,
+  isSeverity,
+} from "@/lib/domain";
+
+/**
+ * The one place issues are queried for list surfaces.
+ *
+ * `/issues`, `/bugs`, `/my-work` and `/search` all funnel through here so
+ * filtering, sorting, pagination and — critically — the project-access scope
+ * behave identically everywhere. Every query is scoped in SQL, never filtered
+ * after the fact.
+ */
+
+export const SORT_FIELDS = [
+  "updated",
+  "created",
+  "priority",
+  "severity",
+  "due",
+  "status",
+  "key",
+  "title",
+] as const;
+
+export type SortField = (typeof SORT_FIELDS)[number];
+export type SortDirection = "asc" | "desc";
+
+export const PAGE_SIZES = [25, 50, 100] as const;
+export const DEFAULT_PAGE_SIZE = 25;
+
+export interface IssueFilters {
+  q?: string;
+  projectIds?: string[];
+  types?: string[];
+  statuses?: string[];
+  priorities?: string[];
+  severities?: string[];
+  assigneeIds?: string[];
+  reporterIds?: string[];
+  labelIds?: string[];
+  /** "open" | "closed" | undefined (all) */
+  resolution?: string;
+  /** Restricts to overdue items. */
+  overdue?: boolean;
+  environment?: string;
+  affectedModule?: string;
+  /** Forces a single type, e.g. the /bugs surface. */
+  lockedType?: "TASK" | "BUG" | "STORY";
+  sort?: SortField;
+  dir?: SortDirection;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface IssueListRow {
+  id: string;
+  key: string;
+  type: "TASK" | "BUG" | "STORY";
+  title: string;
+  status: (typeof OPEN_STATUSES)[number] | (typeof CLOSED_STATUSES)[number];
+  priority: "URGENT" | "HIGH" | "MEDIUM" | "LOW" | "NONE";
+  severity: "CRITICAL" | "MAJOR" | "MINOR" | "TRIVIAL" | null;
+  dueDate: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+  project: { key: string; name: string };
+  assignee: { id: string; name: string; image: string | null } | null;
+  reporter: { id: string; name: string; image: string | null };
+  labels: { label: { id: string; name: string; color: string } }[];
+  parent: { key: string } | null;
+  _count: { children: number; comments: number };
+}
+
+/** Builds the Prisma `where` clause, already scoped to the caller's access. */
+export function buildIssueWhere(
+  user: CurrentUser,
+  filters: IssueFilters,
+): Prisma.IssueWhereInput {
+  const where: Prisma.IssueWhereInput = { ...issueScope(user) };
+  const and: Prisma.IssueWhereInput[] = [];
+
+  if (filters.lockedType) {
+    where.type = filters.lockedType;
+  } else {
+    const types = (filters.types ?? []).filter(isIssueType);
+    if (types.length > 0) where.type = { in: types };
+  }
+
+  if (filters.projectIds?.length) {
+    where.projectId = { in: filters.projectIds };
+  }
+
+  const statuses = (filters.statuses ?? []).filter(isIssueStatus);
+  if (statuses.length > 0) {
+    where.status = { in: statuses };
+  } else if (filters.resolution === "open") {
+    where.status = { in: [...OPEN_STATUSES] };
+  } else if (filters.resolution === "closed") {
+    where.status = { in: [...CLOSED_STATUSES] };
+  }
+
+  const priorities = (filters.priorities ?? []).filter(isPriority);
+  if (priorities.length > 0) where.priority = { in: priorities };
+
+  const severities = (filters.severities ?? []).filter(isSeverity);
+  if (severities.length > 0) where.severity = { in: severities };
+
+  if (filters.assigneeIds?.length) {
+    // "unassigned" is a first-class choice, not the absence of a filter.
+    const ids = filters.assigneeIds.filter((id) => id !== "none");
+    const wantsUnassigned = filters.assigneeIds.includes("none");
+    if (ids.length > 0 && wantsUnassigned) {
+      and.push({ OR: [{ assigneeId: { in: ids } }, { assigneeId: null }] });
+    } else if (wantsUnassigned) {
+      where.assigneeId = null;
+    } else {
+      where.assigneeId = { in: ids };
+    }
+  }
+
+  if (filters.reporterIds?.length) {
+    where.reporterId = { in: filters.reporterIds };
+  }
+
+  if (filters.labelIds?.length) {
+    // An issue matches if it carries any of the selected labels.
+    where.labels = { some: { labelId: { in: filters.labelIds } } };
+  }
+
+  if (filters.overdue) {
+    and.push({
+      dueDate: { lt: new Date() },
+      status: { notIn: [...CLOSED_STATUSES] },
+    });
+  }
+
+  if (filters.environment) {
+    where.environment = { contains: filters.environment, mode: "insensitive" };
+  }
+
+  if (filters.affectedModule) {
+    where.affectedModule = {
+      contains: filters.affectedModule,
+      mode: "insensitive",
+    };
+  }
+
+  const q = filters.q?.trim();
+  if (q) {
+    and.push(issueTextSearch(q));
+  }
+
+  if (and.length > 0) where.AND = and;
+  return where;
+}
+
+/**
+ * Free-text matching across everything §34 asks for, including the bug
+ * narrative. An exact issue key is matched directly so `ENG-1` resolves.
+ */
+export function issueTextSearch(q: string): Prisma.IssueWhereInput {
+  const insensitive = { contains: q, mode: "insensitive" as const };
+
+  return {
+    OR: [
+      { key: { equals: q.toUpperCase() } },
+      { key: insensitive },
+      { title: insensitive },
+      { description: insensitive },
+      { stepsToReproduce: insensitive },
+      { expectedResult: insensitive },
+      { actualResult: insensitive },
+      { environment: insensitive },
+      { affectedModule: insensitive },
+      { versionBuild: insensitive },
+      { labels: { some: { label: { name: insensitive } } } },
+      { assignee: { name: insensitive } },
+      { reporter: { name: insensitive } },
+      { project: { name: insensitive } },
+      { project: { key: { equals: q.toUpperCase() } } },
+    ],
+  };
+}
+
+/**
+ * Sort order. Priority and severity are enums whose declaration order runs from
+ * most to least urgent, so Postgres sorts them meaningfully with no extra
+ * column: ascending enum order === descending urgency.
+ */
+function buildOrderBy(
+  sort: SortField,
+  dir: SortDirection,
+): Prisma.IssueOrderByWithRelationInput[] {
+  const flip = (d: SortDirection): SortDirection => (d === "asc" ? "desc" : "asc");
+
+  switch (sort) {
+    case "created":
+      return [{ createdAt: dir }];
+    case "priority":
+      // URGENT is first in the enum, so "desc" urgency is "asc" enum order.
+      return [{ priority: dir === "desc" ? "asc" : "desc" }, { updatedAt: "desc" }];
+    case "severity":
+      return [
+        { severity: dir === "desc" ? "asc" : "desc" },
+        { updatedAt: "desc" },
+      ];
+    case "due":
+      // Items without a due date sort last regardless of direction.
+      return [{ dueDate: { sort: dir, nulls: "last" } }, { updatedAt: "desc" }];
+    case "status":
+      return [{ status: dir }, { updatedAt: "desc" }];
+    case "key":
+      return [{ project: { key: dir } }, { number: dir }];
+    case "title":
+      return [{ title: dir }];
+    case "updated":
+    default:
+      return [{ updatedAt: dir }, { id: flip(dir) }];
+  }
+}
+
+const LIST_SELECT = {
+  id: true,
+  key: true,
+  type: true,
+  title: true,
+  status: true,
+  priority: true,
+  severity: true,
+  dueDate: true,
+  createdAt: true,
+  updatedAt: true,
+  project: { select: { key: true, name: true } },
+  assignee: { select: { id: true, name: true, image: true } },
+  reporter: { select: { id: true, name: true, image: true } },
+  labels: {
+    select: { label: { select: { id: true, name: true, color: true } } },
+  },
+  parent: { select: { key: true } },
+  _count: { select: { children: true, comments: true } },
+} satisfies Prisma.IssueSelect;
+
+export interface IssueListResult {
+  rows: IssueListRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  pageCount: number;
+}
+
+/**
+ * One page of issues plus the total. The count and the page are fetched in a
+ * single round trip, and every relation the table renders is selected up front
+ * so the list never triggers a per-row query.
+ */
+export async function listIssues(
+  user: CurrentUser,
+  filters: IssueFilters,
+): Promise<IssueListResult> {
+  const where = buildIssueWhere(user, filters);
+  const sort = filters.sort ?? "updated";
+  const dir = filters.dir ?? "desc";
+  const pageSize = filters.pageSize ?? DEFAULT_PAGE_SIZE;
+  const page = Math.max(1, filters.page ?? 1);
+
+  const [total, rows] = await prisma.$transaction([
+    prisma.issue.count({ where }),
+    prisma.issue.findMany({
+      where,
+      select: LIST_SELECT,
+      orderBy: buildOrderBy(sort, dir),
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+  ]);
+
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+
+  return {
+    rows: rows as unknown as IssueListRow[],
+    total,
+    page: Math.min(page, pageCount),
+    pageSize,
+    pageCount,
+  };
+}
+
+/** Counts grouped by status for the filter bar's summary chips. */
+export async function countByStatus(
+  user: CurrentUser,
+  filters: IssueFilters,
+): Promise<Record<string, number>> {
+  const rows = await prisma.issue.groupBy({
+    by: ["status"],
+    where: buildIssueWhere(user, filters),
+    _count: { _all: true },
+  });
+
+  const result: Record<string, number> = {};
+  for (const row of rows) result[row.status] = row._count._all;
+  return result;
+}
+
+/**
+ * The option lists the filter bar offers: only projects the caller can see,
+ * only people who are members of those projects, only labels in them.
+ */
+export async function filterOptions(user: CurrentUser) {
+  const projects = await prisma.project.findMany({
+    where: {
+      isArchived: false,
+      ...(user.role === "ADMIN" ? {} : { members: { some: { userId: user.id } } }),
+    },
+    select: { id: true, key: true, name: true },
+    orderBy: { name: "asc" },
+  });
+
+  const projectIds = projects.map((p) => p.id);
+
+  const [people, labels] = await Promise.all([
+    prisma.user.findMany({
+      where: {
+        isActive: true,
+        projectMemberships: { some: { projectId: { in: projectIds } } },
+      },
+      select: { id: true, name: true, image: true },
+      orderBy: { name: "asc" },
+    }),
+    prisma.label.findMany({
+      where: { projectId: { in: projectIds } },
+      select: { id: true, name: true, color: true, projectId: true },
+      orderBy: { name: "asc" },
+    }),
+  ]);
+
+  return { projects, people, labels };
+}

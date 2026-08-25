@@ -1,0 +1,110 @@
+/* ============================================================================
+   Prio — brand lockup
+   Geometry and colour for the logo. The mark itself is an SVG asset; this file
+   only positions it and styles the wordmark that sits beside it.
+   ========================================================================= */
+
+.prio-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--prio-space-3);
+  min-width: 0;
+}
+
+/* Never let flex layout squash or stretch the mark out of proportion. */
+.prio-logo__mark {
+  display: block;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
+.prio-logo__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* ---------------------------------------------------------------- wordmark */
+.prio-wordmark {
+  display: inline-flex;
+  align-items: baseline;
+  font-weight: var(--prio-weight-bold);
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+  color: var(--prio-logo-text);
+  white-space: nowrap;
+}
+
+.prio-wordmark[data-tone="dark"] {
+  color: var(--prio-logo-text-on-dark);
+}
+
+/* On the navigation surface the wordmark takes the navigation's own strongest
+   foreground, so it is legible whichever theme is active. */
+.prio-wordmark[data-tone="nav"] {
+  color: var(--prio-nav-fg-strong);
+}
+
+/*
+ * The "i" is rebuilt so the dot can carry the brand purple: the glyph's own
+ * tittle is hidden by clipping the stem, and a round element is placed above
+ * it. Sized in em so it tracks the type at every scale.
+ */
+.prio-wordmark__i {
+  position: relative;
+  display: inline-block;
+}
+
+.prio-wordmark__stem {
+  /* Hides the font's own dot, leaving only the stem visible. */
+  display: inline-block;
+  clip-path: inset(0.28em 0 0 0);
+}
+
+.prio-wordmark__dot {
+  position: absolute;
+  top: 0.06em;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0.26em;
+  height: 0.26em;
+  border-radius: 50%;
+  background: var(--prio-logo-dot);
+}
+
+.prio-wordmark[data-tone="dark"] .prio-wordmark__dot {
+  background: var(--prio-logo-dot-on-dark);
+}
+
+/* The dot keeps the brand purple on every ground; it only needs lifting when
+   the ground is dark. */
+.prio-wordmark[data-tone="nav"] .prio-wordmark__dot {
+  background: var(--prio-logo-dot);
+}
+
+/* ---------------------------------------------------------------- tagline */
+.prio-logo__tagline {
+  margin-top: 0.28em;
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-medium);
+  letter-spacing: var(--prio-tracking-caps);
+  text-transform: uppercase;
+  color: var(--prio-logo-muted);
+  white-space: nowrap;
+}
+
+.prio-logo__tagline[data-tone="dark"] {
+  color: var(--prio-logo-muted-on-dark);
+}
+
+.prio-logo__tagline[data-tone="nav"] {
+  color: var(--prio-nav-fg-muted);
+}
+
+/* ------------------------------------------------------------ responsive */
+@media (max-width: 640px) {
+  /* Below this the lockup competes with the navigation for width. */
+  .prio-logo--lockup .prio-logo__tagline {
+    display: none;
+  }
+}

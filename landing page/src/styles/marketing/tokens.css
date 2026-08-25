@@ -1,0 +1,240 @@
+/* ============================================================================
+   Prio — marketing site theme tokens
+
+   Deliberately namespaced `--site-*` and kept separate from the application's
+   `--prio-*` tokens. The product UI is light-only by design; the marketing site
+   is a fully themed surface. Sharing one variable set would drag one design
+   into the other.
+
+   Three states are supported:
+     - no attribute  -> follow the operating system
+     - data-theme="light" / "dark" -> an explicit choice, which always wins
+   ========================================================================= */
+
+:root {
+  /* ---------------------------------------------------------- light theme */
+  --site-bg: #f8fafc;
+  --site-bg-alt: #f1f5f9;
+  --site-surface: #ffffff;
+  --site-surface-elevated: #ffffff;
+  --site-surface-sunken: #f8fafc;
+  /* Glass panels sit over gradients, so they need their own alpha. */
+  --site-glass: rgba(255, 255, 255, 0.72);
+  --site-glass-strong: rgba(255, 255, 255, 0.86);
+
+  --site-text: #111827;
+  --site-text-secondary: #475569;
+  --site-text-muted: #64748b;
+  --site-text-faint: #94a3b8;
+
+  --site-border: rgba(15, 23, 42, 0.09);
+  --site-border-strong: rgba(15, 23, 42, 0.16);
+  --site-border-glow: rgba(99, 102, 241, 0.35);
+
+  --site-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --site-shadow: 0 4px 16px rgba(15, 23, 42, 0.07),
+    0 1px 3px rgba(15, 23, 42, 0.05);
+  --site-shadow-lg: 0 18px 50px rgba(15, 23, 42, 0.12),
+    0 4px 12px rgba(15, 23, 42, 0.06);
+  --site-shadow-xl: 0 40px 90px rgba(15, 23, 42, 0.16);
+  --site-shadow-brand: 0 16px 40px rgba(79, 70, 229, 0.24);
+
+  /* Ambient lighting behind hero and section headers. */
+  --site-glow-blue: rgba(59, 130, 246, 0.22);
+  --site-glow-purple: rgba(139, 92, 246, 0.2);
+  --site-glow-strength: 0.75;
+
+  --site-grid-line: rgba(15, 23, 42, 0.05);
+  --site-dot: rgba(15, 23, 42, 0.1);
+  --site-noise-opacity: 0.02;
+
+  /* Product mockup surfaces — these follow the theme too (§23). */
+  --ui-bg: #f6f8fb;
+  --ui-surface: #ffffff;
+  --ui-chrome: #0f172a;
+  --ui-chrome-text: #cbd5e1;
+  --ui-border: rgba(15, 23, 42, 0.08);
+  --ui-text: #0f172a;
+  --ui-text-muted: #64748b;
+  --ui-track: rgba(15, 23, 42, 0.07);
+
+  /* ------------------------------------------------------------- constant */
+  /* Brand hues stay identical across themes: the logo does not change. */
+  --site-blue: #3b82f6;
+  --site-blue-bright: #60a5fa;
+  --site-indigo: #6366f1;
+  --site-purple: #8b5cf6;
+  --site-purple-bright: #a855f7;
+  --site-violet: #7c3aed;
+
+  --site-gradient: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+  --site-gradient-bright: linear-gradient(135deg, #60a5fa 0%, #a855f7 100%);
+  --site-gradient-text: linear-gradient(120deg, #3b82f6 10%, #8b5cf6 60%, #a855f7 90%);
+  --site-gradient-sheen: linear-gradient(
+    100deg,
+    transparent 20%,
+    rgba(255, 255, 255, 0.55) 50%,
+    transparent 80%
+  );
+
+  --site-on-accent: #ffffff;
+
+  /* Status hues used by the product mockups. */
+  --ui-status-todo: #3b82f6;
+  --ui-status-progress: #f59e0b;
+  --ui-status-review: #8b5cf6;
+  --ui-status-done: #10b981;
+  --ui-status-backlog: #94a3b8;
+  --ui-danger: #ef4444;
+
+  /* ---------------------------------------------------------------- motion */
+  --site-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --site-ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --site-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --site-fast: 180ms;
+  --site-normal: 320ms;
+  --site-slow: 620ms;
+  /* Theme crossfade. Long enough to read as a transition, short enough to
+     stay responsive (§5). */
+  --site-theme-duration: 520ms;
+
+  --site-radius-sm: 8px;
+  --site-radius: 14px;
+  --site-radius-lg: 20px;
+  --site-radius-xl: 28px;
+  --site-maxw: 1200px;
+}
+
+/* --------------------------------------------------------------- dark theme */
+/*
+ * Written once and applied from two selectors: the system preference (unless
+ * the visitor explicitly chose light) and the explicit dark choice. Keeping the
+ * values in one place stops the two paths drifting apart.
+ */
+:root[data-theme="dark"] {
+  --site-bg: #050816;
+  --site-bg-alt: #080d1f;
+  --site-surface: #0b1020;
+  --site-surface-elevated: #11182b;
+  --site-surface-sunken: #060a16;
+  --site-glass: rgba(17, 24, 43, 0.62);
+  --site-glass-strong: rgba(11, 16, 32, 0.86);
+
+  --site-text: #f8fafc;
+  --site-text-secondary: #cbd5e1;
+  --site-text-muted: #94a3b8;
+  --site-text-faint: #64748b;
+
+  --site-border: rgba(148, 163, 184, 0.14);
+  --site-border-strong: rgba(148, 163, 184, 0.26);
+  --site-border-glow: rgba(139, 92, 246, 0.55);
+
+  --site-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --site-shadow: 0 6px 22px rgba(0, 0, 0, 0.5);
+  --site-shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.62);
+  --site-shadow-xl: 0 44px 110px rgba(0, 0, 0, 0.7);
+  --site-shadow-brand: 0 18px 50px rgba(124, 58, 237, 0.42);
+
+  --site-glow-blue: rgba(59, 130, 246, 0.3);
+  --site-glow-purple: rgba(168, 85, 247, 0.28);
+  --site-glow-strength: 1;
+
+  --site-grid-line: rgba(148, 163, 184, 0.08);
+  --site-dot: rgba(148, 163, 184, 0.16);
+  --site-noise-opacity: 0.035;
+
+  --ui-bg: #070c1a;
+  --ui-surface: #0e1526;
+  --ui-chrome: #070b16;
+  --ui-chrome-text: #94a3b8;
+  --ui-border: rgba(148, 163, 184, 0.14);
+  --ui-text: #e2e8f0;
+  --ui-text-muted: #8296b0;
+  --ui-track: rgba(148, 163, 184, 0.14);
+
+  --site-gradient-sheen: linear-gradient(
+    100deg,
+    transparent 20%,
+    rgba(148, 163, 184, 0.22) 50%,
+    transparent 80%
+  );
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --site-bg: #050816;
+    --site-bg-alt: #080d1f;
+    --site-surface: #0b1020;
+    --site-surface-elevated: #11182b;
+    --site-surface-sunken: #060a16;
+    --site-glass: rgba(17, 24, 43, 0.62);
+    --site-glass-strong: rgba(11, 16, 32, 0.86);
+
+    --site-text: #f8fafc;
+    --site-text-secondary: #cbd5e1;
+    --site-text-muted: #94a3b8;
+    --site-text-faint: #64748b;
+
+    --site-border: rgba(148, 163, 184, 0.14);
+    --site-border-strong: rgba(148, 163, 184, 0.26);
+    --site-border-glow: rgba(139, 92, 246, 0.55);
+
+    --site-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+    --site-shadow: 0 6px 22px rgba(0, 0, 0, 0.5);
+    --site-shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.62);
+    --site-shadow-xl: 0 44px 110px rgba(0, 0, 0, 0.7);
+    --site-shadow-brand: 0 18px 50px rgba(124, 58, 237, 0.42);
+
+    --site-glow-blue: rgba(59, 130, 246, 0.3);
+    --site-glow-purple: rgba(168, 85, 247, 0.28);
+    --site-glow-strength: 1;
+
+    --site-grid-line: rgba(148, 163, 184, 0.08);
+    --site-dot: rgba(148, 163, 184, 0.16);
+    --site-noise-opacity: 0.035;
+
+    --ui-bg: #070c1a;
+    --ui-surface: #0e1526;
+    --ui-chrome: #070b16;
+    --ui-chrome-text: #94a3b8;
+    --ui-border: rgba(148, 163, 184, 0.14);
+    --ui-text: #e2e8f0;
+    --ui-text-muted: #8296b0;
+    --ui-track: rgba(148, 163, 184, 0.14);
+
+    --site-gradient-sheen: linear-gradient(
+      100deg,
+      transparent 20%,
+      rgba(148, 163, 184, 0.22) 50%,
+      transparent 80%
+    );
+  }
+}
+
+/* ---------------------------------------------------------- theme crossfade */
+/*
+ * Only colour-bearing properties are transitioned, and only while the switch is
+ * active. Leaving a global transition on would make every hover and scroll
+ * animation feel laggy.
+ */
+.prio-site.is-theme-switching,
+.prio-site.is-theme-switching *:not(svg):not(path) {
+  transition:
+    background-color var(--site-theme-duration) var(--site-ease-in-out),
+    background-image var(--site-theme-duration) var(--site-ease-in-out),
+    border-color var(--site-theme-duration) var(--site-ease-in-out),
+    color var(--site-theme-duration) var(--site-ease-in-out),
+    fill var(--site-theme-duration) var(--site-ease-in-out),
+    box-shadow var(--site-theme-duration) var(--site-ease-in-out),
+    opacity var(--site-theme-duration) var(--site-ease-in-out) !important;
+  transition-delay: 0s !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --site-fast: 0ms;
+    --site-normal: 0ms;
+    --site-slow: 0ms;
+    --site-theme-duration: 0ms;
+  }
+}

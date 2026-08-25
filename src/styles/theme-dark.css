@@ -1,0 +1,350 @@
+/* ============================================================================
+   Prio — dark theme.
+
+   The application never hard-codes a colour: every surface reads a semantic
+   token from `tokens.css`. So a whole dark theme is a re-declaration of those
+   tokens and nothing else — no component, no page and no one-off override
+   below this file knows which theme is active.
+
+   Three states, matching what people actually expect from a theme control:
+
+     - explicit dark  -> `<html data-theme="dark">`
+     - explicit light -> `<html data-theme="light">`
+     - system default -> no attribute; `prefers-color-scheme` decides
+
+   The rules below are written twice for that reason. The `[data-theme="dark"]`
+   block is the explicit choice; the media block repeats it for people who have
+   expressed no choice, guarded by `:not([data-theme="light"])` so that choosing
+   light still wins on a machine set to dark.
+
+   Order matters here: `theme-dark.css` is imported last, so its declarations
+   sit after the light values they replace.
+   ========================================================================= */
+
+/* The variables are declared once and shared by both selectors below. Keeping
+   a single source avoids the two drifting apart, which is the usual way a dark
+   theme ends up with one stale colour nobody notices for months. */
+
+/* stylelint-disable-next-line no-duplicate-selectors */
+:root[data-theme="dark"] {
+  /* ------------------------------------------------------------ neutrals */
+  /* The ramp is inverted rather than replaced. Every existing rule that reads
+     a raw neutral — progress tracks, avatar overflow chips, table zebra — then
+     keeps meaning the same thing: "one step away from the page". */
+  --prio-neutral-0: #131c2b;
+  --prio-neutral-25: #16202f;
+  --prio-neutral-50: #0f1623;
+  --prio-neutral-100: #1e293b;
+  --prio-neutral-200: #26344a;
+  --prio-neutral-300: #35455e;
+  --prio-neutral-400: #64748b;
+  --prio-neutral-500: #8494ad;
+  --prio-neutral-600: #a3b1c6;
+  --prio-neutral-700: #c2ccdb;
+  --prio-neutral-800: #e2e8f0;
+  --prio-neutral-900: #f1f5f9;
+  --prio-neutral-950: #ffffff;
+
+  /* ------------------------------------------------------ signal tints */
+  /* The 50/100 steps exist to sit behind text as a chip background, so on a
+     dark ground they become deep, low-saturation washes. The 700 step exists
+     to be that chip's text, so it becomes light. The mid steps (500/600) are
+     solid marks — dots, bars, rails — and are only lifted enough to hold up
+     against a dark background. */
+  --prio-red-50: #2c1416;
+  --prio-red-100: #3d1a1e;
+  --prio-red-500: #f2666b;
+  --prio-red-600: #f47c80;
+  --prio-red-700: #ffb3b6;
+
+  --prio-amber-50: #2b1d0c;
+  --prio-amber-100: #3b2711;
+  --prio-amber-500: #f5a63a;
+  --prio-amber-600: #f7b558;
+  --prio-amber-700: #ffd79a;
+
+  --prio-green-50: #0d2620;
+  --prio-green-100: #12352b;
+  --prio-green-500: #2bbd88;
+  --prio-green-600: #45ce9c;
+  --prio-green-700: #9fe8c9;
+
+  --prio-primary-50: #241a33;
+  --prio-primary-100: #2f2144;
+  --prio-primary-200: #3d2b58;
+  --prio-primary-600: #b794f4;
+  --prio-primary-700: #d6bcfa;
+
+  /* A blue frozen under its own name here too — see the long note in
+     tokens.css. Exactly the dark-tuned values `--prio-primary-600/700`
+     carried before this rebrand, so TODO/Medium/Minor/Task keep
+     looking the same in dark mode across every brand change. */
+  --prio-info-50: #14213a;
+  --prio-info-100: #1b2c4c;
+  --prio-info-400: #609ffa;
+  --prio-info-600: #7cb0fb;
+  --prio-info-700: #a5c9fc;
+
+  /* Periwinkle, tuned for a dark ground: a dim violet wash rather than
+     the light-mode tint at full strength, with the primary ramp's own
+     readable text on top — same pairing as light mode. */
+  --prio-secondary-50: #262a4a;
+  --prio-secondary-100: #333865;
+  --prio-secondary-700: var(--prio-primary-700);
+
+  --prio-accent-50: #1e1836;
+  --prio-accent-100: #281e46;
+  --prio-accent-200: #342857;
+  --prio-accent-600: #b49bfb;
+  --prio-accent-700: #cbbafc;
+
+  /* -------------------------------------------------------- navigation */
+  /*
+   * In light mode navigation is a white plane beside a pale page. Here it goes
+   * a step darker than the content well instead, so the sidebar still reads as
+   * the anchor rather than dissolving into the page.
+   */
+  --prio-nav-bg: #0d141f;
+  --prio-nav-bg-hover: #1a2434;
+  --prio-nav-bg-active: #2f2144;
+  --prio-nav-fg: #c8d3e5;
+  --prio-nav-fg-strong: #ffffff;
+  --prio-nav-fg-muted: #7f8ca6;
+  --prio-nav-fg-active: #d6bcfa;
+  --prio-nav-border: #1e293b;
+  --prio-nav-pill-bg: #26344a;
+
+  /* ------------------------------------------------------- backgrounds */
+  /* Surfaces lift as they come forward, rather than borrowing a border. */
+  --prio-bg-app: #0b111c;
+  --prio-bg-surface: #131c2b;
+  --prio-bg-surface-raised: #182334;
+  --prio-bg-subtle: #1a2434;
+  --prio-bg-hover: #1e293b;
+  --prio-bg-active: #26344a;
+  --prio-bg-inverse: #f1f5f9;
+  --prio-topbar-bg: rgba(19, 28, 43, 0.82);
+
+  /* ------------------------------------------------------------- text */
+  --prio-text-primary: #e8eef7;
+  --prio-text-secondary: #a9b7cc;
+  --prio-text-muted: #8494ad;
+  --prio-text-disabled: #64748b;
+  --prio-text-inverse: #0b111c;
+  --prio-text-brand: #b794f4;
+  --prio-text-link: #b794f4;
+
+  /* ----------------------------------------------------------- borders */
+  --prio-border: #26344a;
+  --prio-border-strong: #35455e;
+  --prio-border-subtle: #1c2637;
+  --prio-border-focus: #a855f7;
+
+  /* ------------------------------------------------------------ chrome */
+  /* In light mode the sidebar is a dark slab against a pale page. Here the
+     page is already dark, so chrome separates itself by going darker still —
+     the navigation stays the anchor rather than merging into the content. */
+  --prio-chrome-bg: #080d16;
+  --prio-chrome-bg-hover: #141d2c;
+  --prio-chrome-bg-active: #1c2739;
+  --prio-chrome-border: #1a2434;
+  --prio-chrome-text: #c8d3e5;
+  --prio-chrome-text-strong: #ffffff;
+  --prio-chrome-text-muted: #7f8ca6;
+
+  /* --------------------------------------------------------- gradients */
+  --prio-gradient-brand-soft: linear-gradient(
+    135deg,
+    rgba(91, 44, 131, 0.16) 0%,
+    rgba(139, 92, 246, 0.16) 100%
+  );
+
+  /* --------------------------------------------------------- elevation */
+  /* A light-mode shadow is invisible on a dark ground, so elevation is carried
+     by a real shadow plus a hairline highlight along the top edge. */
+  --prio-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --prio-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.4);
+  --prio-shadow-md: 0 2px 4px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.45);
+  --prio-shadow-lg: 0 8px 18px rgba(0, 0, 0, 0.45), 0 18px 36px rgba(0, 0, 0, 0.5);
+  --prio-shadow-xl: 0 26px 52px rgba(0, 0, 0, 0.6);
+  --prio-shadow-focus: 0 0 0 3px rgba(168, 85, 247, 0.4);
+  --prio-shadow-focus-danger: 0 0 0 3px rgba(242, 102, 107, 0.4);
+
+  /* ------------------------------------------------- hard-coded hues */
+  /* These five were written as literal hex in the light palette because they
+     are hand-tuned rather than a ramp step; each needs its dark counterpart. */
+  --prio-status-todo-fg: var(--prio-info-700);
+  --prio-status-progress-fg: #f7c37a;
+  --prio-priority-high: #f5a63a;
+  --prio-severity-critical: #ffb3b6;
+  --prio-severity-major: #ffd79a;
+
+  /* ----------------------------------------------------------- wordmark */
+  --prio-logo-text: #ffffff;
+  --prio-logo-muted: var(--prio-chrome-text-muted);
+  --prio-logo-dot: var(--prio-accent-400);
+
+  /* Tells the browser to draw its own furniture — scrollbars, form controls,
+     spellcheck underlines — in dark, so nothing native flashes white. */
+  color-scheme: dark;
+}
+
+/* The same values for anyone who has expressed no preference in Prio and whose
+   system is set to dark. `:not([data-theme="light"])` keeps an explicit light
+   choice winning here. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --prio-neutral-0: #131c2b;
+    --prio-neutral-25: #16202f;
+    --prio-neutral-50: #0f1623;
+    --prio-neutral-100: #1e293b;
+    --prio-neutral-200: #26344a;
+    --prio-neutral-300: #35455e;
+    --prio-neutral-400: #64748b;
+    --prio-neutral-500: #8494ad;
+    --prio-neutral-600: #a3b1c6;
+    --prio-neutral-700: #c2ccdb;
+    --prio-neutral-800: #e2e8f0;
+    --prio-neutral-900: #f1f5f9;
+    --prio-neutral-950: #ffffff;
+
+    --prio-red-50: #2c1416;
+    --prio-red-100: #3d1a1e;
+    --prio-red-500: #f2666b;
+    --prio-red-600: #f47c80;
+    --prio-red-700: #ffb3b6;
+
+    --prio-amber-50: #2b1d0c;
+    --prio-amber-100: #3b2711;
+    --prio-amber-500: #f5a63a;
+    --prio-amber-600: #f7b558;
+    --prio-amber-700: #ffd79a;
+
+    --prio-green-50: #0d2620;
+    --prio-green-100: #12352b;
+    --prio-green-500: #2bbd88;
+    --prio-green-600: #45ce9c;
+    --prio-green-700: #9fe8c9;
+
+    --prio-primary-50: #241a33;
+    --prio-primary-100: #2f2144;
+    --prio-primary-200: #3d2b58;
+    --prio-primary-600: #b794f4;
+    --prio-primary-700: #d6bcfa;
+
+    /* A blue frozen under its own name here too — see the long note in
+       tokens.css. Exactly the dark-tuned values `--prio-primary-600/700`
+       carried before this rebrand, so TODO/Medium/Minor/Task keep
+       looking the same in dark mode across every brand change. */
+    --prio-info-50: #14213a;
+    --prio-info-100: #1b2c4c;
+    --prio-info-400: #609ffa;
+    --prio-info-600: #7cb0fb;
+    --prio-info-700: #a5c9fc;
+
+    /* Periwinkle, tuned for a dark ground: a dim violet wash rather than
+       the light-mode tint at full strength, with the primary ramp's own
+       readable text on top — same pairing as light mode. */
+    --prio-secondary-50: #262a4a;
+    --prio-secondary-100: #333865;
+    --prio-secondary-700: var(--prio-primary-700);
+
+    --prio-accent-50: #1e1836;
+    --prio-accent-100: #281e46;
+    --prio-accent-200: #342857;
+    --prio-accent-600: #b49bfb;
+    --prio-accent-700: #cbbafc;
+
+    /* -------------------------------------------------------- navigation */
+    /*
+    * In light mode navigation is a white plane beside a pale page. Here it goes
+    * a step darker than the content well instead, so the sidebar still reads as
+    * the anchor rather than dissolving into the page.
+    */
+    --prio-nav-bg: #0d141f;
+    --prio-nav-bg-hover: #1a2434;
+    --prio-nav-bg-active: #2f2144;
+    --prio-nav-fg: #c8d3e5;
+    --prio-nav-fg-strong: #ffffff;
+    --prio-nav-fg-muted: #7f8ca6;
+    --prio-nav-fg-active: #d6bcfa;
+    --prio-nav-border: #1e293b;
+    --prio-nav-pill-bg: #26344a;
+
+    --prio-bg-app: #0b111c;
+    --prio-bg-surface: #131c2b;
+    --prio-bg-surface-raised: #182334;
+    --prio-bg-subtle: #1a2434;
+    --prio-bg-hover: #1e293b;
+    --prio-bg-active: #26344a;
+    --prio-bg-inverse: #f1f5f9;
+    --prio-topbar-bg: rgba(19, 28, 43, 0.82);
+  --prio-topbar-bg: rgba(19, 28, 43, 0.82);
+
+    --prio-text-primary: #e8eef7;
+    --prio-text-secondary: #a9b7cc;
+    --prio-text-muted: #8494ad;
+    --prio-text-disabled: #64748b;
+    --prio-text-inverse: #0b111c;
+    --prio-text-brand: #b794f4;
+    --prio-text-link: #b794f4;
+
+    --prio-border: #26344a;
+    --prio-border-strong: #35455e;
+    --prio-border-subtle: #1c2637;
+    --prio-border-focus: #a855f7;
+
+    --prio-chrome-bg: #080d16;
+    --prio-chrome-bg-hover: #141d2c;
+    --prio-chrome-bg-active: #1c2739;
+    --prio-chrome-border: #1a2434;
+    --prio-chrome-text: #c8d3e5;
+    --prio-chrome-text-strong: #ffffff;
+    --prio-chrome-text-muted: #7f8ca6;
+
+    --prio-gradient-brand-soft: linear-gradient(
+      135deg,
+      rgba(91, 44, 131, 0.16) 0%,
+      rgba(139, 92, 246, 0.16) 100%
+    );
+
+    --prio-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --prio-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.4);
+    --prio-shadow-md: 0 2px 4px rgba(0, 0, 0, 0.4), 0 4px 14px rgba(0, 0, 0, 0.45);
+    --prio-shadow-lg: 0 8px 18px rgba(0, 0, 0, 0.45), 0 18px 36px rgba(0, 0, 0, 0.5);
+    --prio-shadow-xl: 0 26px 52px rgba(0, 0, 0, 0.6);
+    --prio-shadow-focus: 0 0 0 3px rgba(168, 85, 247, 0.4);
+    --prio-shadow-focus-danger: 0 0 0 3px rgba(242, 102, 107, 0.4);
+
+    --prio-status-todo-fg: var(--prio-info-700);
+    --prio-status-progress-fg: #f7c37a;
+    --prio-priority-high: #f5a63a;
+    --prio-severity-critical: #ffb3b6;
+    --prio-severity-major: #ffd79a;
+
+    --prio-logo-text: #ffffff;
+    --prio-logo-muted: var(--prio-chrome-text-muted);
+    --prio-logo-dot: var(--prio-accent-400);
+
+    color-scheme: dark;
+  }
+}
+
+/* An explicit light choice on a dark machine still gets light furniture. */
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+/* --------------------------------------------------------------- images */
+
+/* Photographic content is left alone, but the two places where the app paints
+   a light plate behind artwork would glare on a dark page. */
+:root[data-theme="dark"] .prio-avatar img {
+  filter: brightness(0.94);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .prio-avatar img {
+    filter: brightness(0.94);
+  }
+}

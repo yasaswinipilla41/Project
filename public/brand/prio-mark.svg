@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Prio">
+  <title>Prio</title>
+  <defs>
+    <linearGradient id="prioBowl" x1="0.05" y1="0" x2="0.95" y2="1">
+      <stop offset="0" stop-color="#4C8DF8"/>
+      <stop offset="0.5" stop-color="#3172F2"/>
+      <stop offset="1" stop-color="#2748DE"/>
+    </linearGradient>
+    <linearGradient id="prioChevron" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3B82F6"/>
+      <stop offset="1" stop-color="#2258E8"/>
+    </linearGradient>
+    <linearGradient id="prioRibbon" x1="0.1" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#A855F7"/>
+      <stop offset="1" stop-color="#7C3AED"/>
+    </linearGradient>
+    <linearGradient id="prioRibbonFold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#C79CFB"/>
+      <stop offset="1" stop-color="#A164F5"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Bowl of the P: chamfered top-left, heavy rounded right shoulder. -->
+  <path
+    fill="url(#prioBowl)"
+    d="M158 62h140c96 0 162 70 162 162s-66 162-162 162h-52v-82h52c50 0 80-36 80-80s-30-80-80-80H104z"/>
+
+  <!-- Descender: a folded ribbon carrying the blue-to-purple transition. -->
+  <path
+    fill="url(#prioRibbon)"
+    d="M156 194h60v144l-28 32v100H98V272z"/>
+  <!-- Upper facet of the fold, lit from the top-left. -->
+  <path
+    fill="url(#prioRibbonFold)"
+    d="M156 194h60v112H98v-34z"/>
+
+  <!-- Chevron nested in the counter, integral to the mark rather than an overlay. -->
+  <path
+    fill="url(#prioChevron)"
+    d="M186 168h74l64 62-64 62h-74l64-62z"/>
+</svg>

@@ -1,0 +1,23 @@
+/* ============================================================================
+   Prio — global stylesheet entry point.
+
+   Bootstrap contributes ONLY its grid + layout/responsive utilities
+   (`bootstrap-grid`, which carries no Reboot and no component styles). Every
+   visual decision below it is Prio's own, driven by the design tokens.
+   ========================================================================= */
+
+@import "bootstrap/dist/css/bootstrap-grid.min.css";
+
+@import "../styles/tokens.css";
+@import "../styles/base.css";
+@import "../styles/layout.css";
+@import "../styles/components.css";
+@import "../styles/brand.css";
+@import "../styles/auth.css";
+@import "../styles/issue.css";
+@import "../styles/list.css";
+@import "../styles/dashboard.css";
+@import "../styles/conversation.css";
+
+/* Last, so its token re-declarations sit after the light values they replace. */
+@import "../styles/theme-dark.css";

@@ -1,0 +1,1688 @@
+/* ============================================================================
+   Prio — Component primitives
+   Buttons, fields, cards, badges, avatars, menus, dialogs, tables, feedback.
+   ========================================================================= */
+
+/* ---------------------------------------------------------------- button */
+.prio-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--prio-space-2);
+  height: 32px;
+  padding: 0 var(--prio-space-4);
+  border: 1px solid transparent;
+  border-radius: var(--prio-radius-md);
+  font-size: var(--prio-text-sm);
+  font-weight: var(--prio-weight-medium);
+  line-height: 1;
+  white-space: nowrap;
+  text-decoration: none;
+  transition:
+    background var(--prio-duration-fast) var(--prio-ease),
+    border-color var(--prio-duration-fast) var(--prio-ease),
+    color var(--prio-duration-fast) var(--prio-ease),
+    box-shadow var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-btn:hover {
+  text-decoration: none;
+}
+
+.prio-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--prio-shadow-focus);
+}
+
+.prio-btn:disabled,
+.prio-btn[aria-disabled="true"] {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.prio-btn--primary {
+  background: var(--prio-primary-600);
+  color: #fff;
+  box-shadow: var(--prio-shadow-xs);
+}
+
+.prio-btn--primary:hover {
+  background: var(--prio-primary-700);
+  color: #fff;
+}
+
+.prio-btn--brand {
+  background: var(--prio-gradient-brand);
+  color: #fff;
+  box-shadow: var(--prio-shadow-sm);
+}
+
+.prio-btn--brand:hover {
+  filter: brightness(1.06);
+  color: #fff;
+}
+
+.prio-btn--secondary {
+  background: var(--prio-bg-surface);
+  border-color: var(--prio-border-strong);
+  color: var(--prio-text-primary);
+}
+
+.prio-btn--secondary:hover {
+  background: var(--prio-bg-hover);
+  color: var(--prio-text-primary);
+}
+
+.prio-btn--ghost {
+  background: transparent;
+  color: var(--prio-text-secondary);
+}
+
+.prio-btn--ghost:hover {
+  background: var(--prio-bg-hover);
+  color: var(--prio-text-primary);
+}
+
+.prio-btn--danger {
+  background: var(--prio-red-600);
+  color: #fff;
+}
+
+.prio-btn--danger:hover {
+  background: var(--prio-red-700);
+  color: #fff;
+}
+
+.prio-btn--danger-outline {
+  background: var(--prio-bg-surface);
+  border-color: var(--prio-red-500);
+  color: var(--prio-red-600);
+}
+
+.prio-btn--danger-outline:hover {
+  background: var(--prio-red-50);
+  color: var(--prio-red-700);
+}
+
+.prio-btn--sm {
+  height: 26px;
+  padding: 0 var(--prio-space-3);
+  font-size: var(--prio-text-xs);
+}
+
+.prio-btn--lg {
+  height: 40px;
+  padding: 0 var(--prio-space-6);
+  font-size: var(--prio-text-md);
+}
+
+.prio-btn--block {
+  width: 100%;
+}
+
+.prio-btn--icon {
+  width: 32px;
+  padding: 0;
+}
+
+.prio-btn--icon.prio-btn--sm {
+  width: 26px;
+}
+
+.prio-btn--icon.prio-btn--lg {
+  width: 40px;
+}
+
+/* Icon button living on the dark chrome. */
+.prio-btn--chrome {
+  background: transparent;
+  color: var(--prio-chrome-text);
+}
+
+.prio-btn--chrome:hover {
+  background: var(--prio-chrome-bg-hover);
+  color: var(--prio-chrome-text-strong);
+}
+
+/* ----------------------------------------------------------------- field */
+.prio-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-2);
+  margin-bottom: var(--prio-space-5);
+}
+
+.prio-field:last-child {
+  margin-bottom: 0;
+}
+
+.prio-label {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  font-size: var(--prio-text-xs);
+  font-weight: var(--prio-weight-semibold);
+  color: var(--prio-text-secondary);
+  letter-spacing: 0.01em;
+}
+
+.prio-label__required {
+  color: var(--prio-red-500);
+}
+
+.prio-hint {
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-muted);
+}
+
+.prio-error {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  font-size: var(--prio-text-xs);
+  font-weight: var(--prio-weight-medium);
+  color: var(--prio-red-600);
+}
+
+.prio-input,
+.prio-textarea,
+.prio-select {
+  width: 100%;
+  min-height: 34px;
+  padding: var(--prio-space-3) var(--prio-space-4);
+  background: var(--prio-bg-surface);
+  border: 1px solid var(--prio-border-strong);
+  border-radius: var(--prio-radius-md);
+  font-size: var(--prio-text-sm);
+  color: var(--prio-text-primary);
+  transition:
+    border-color var(--prio-duration-fast) var(--prio-ease),
+    box-shadow var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-input::placeholder,
+.prio-textarea::placeholder {
+  color: var(--prio-text-disabled);
+}
+
+.prio-input:hover,
+.prio-textarea:hover,
+.prio-select:hover {
+  border-color: var(--prio-neutral-400);
+}
+
+.prio-input:focus,
+.prio-textarea:focus,
+.prio-select:focus {
+  outline: none;
+  border-color: var(--prio-primary-500);
+  box-shadow: var(--prio-shadow-focus);
+}
+
+.prio-input[aria-invalid="true"],
+.prio-textarea[aria-invalid="true"],
+.prio-select[aria-invalid="true"] {
+  border-color: var(--prio-red-500);
+}
+
+.prio-input[aria-invalid="true"]:focus,
+.prio-textarea[aria-invalid="true"]:focus {
+  box-shadow: var(--prio-shadow-focus-danger);
+}
+
+.prio-input:disabled,
+.prio-textarea:disabled,
+.prio-select:disabled {
+  background: var(--prio-bg-subtle);
+  color: var(--prio-text-disabled);
+  cursor: not-allowed;
+}
+
+.prio-textarea {
+  min-height: 88px;
+  resize: vertical;
+  line-height: var(--prio-leading-normal);
+}
+
+.prio-select {
+  appearance: none;
+  padding-right: var(--prio-space-8);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%236b7c98' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 6.5 8 10.5 12 6.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--prio-space-3) center;
+  background-size: 15px;
+  cursor: pointer;
+}
+
+.prio-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--prio-space-3);
+  font-size: var(--prio-text-sm);
+  cursor: pointer;
+}
+
+.prio-checkbox input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--prio-primary-600);
+  cursor: pointer;
+}
+
+/* Search input with leading icon. */
+.prio-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.prio-search__icon {
+  position: absolute;
+  left: var(--prio-space-3);
+  display: grid;
+  place-items: center;
+  color: var(--prio-text-muted);
+  pointer-events: none;
+}
+
+.prio-search .prio-input {
+  padding-left: var(--prio-space-8);
+}
+
+.prio-search__kbd {
+  position: absolute;
+  right: var(--prio-space-3);
+  pointer-events: none;
+}
+
+/* ------------------------------------------------------------------- kbd */
+.prio-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 var(--prio-space-2);
+  background: var(--prio-bg-subtle);
+  border: 1px solid var(--prio-border);
+  border-bottom-width: 2px;
+  border-radius: var(--prio-radius-xs);
+  font-family: var(--prio-font-sans);
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-semibold);
+  color: var(--prio-text-muted);
+}
+
+/* ------------------------------------------------------------------ card */
+.prio-card {
+  background: var(--prio-bg-surface);
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-lg);
+  box-shadow: var(--prio-shadow-xs);
+}
+
+.prio-card--flat {
+  box-shadow: none;
+}
+
+.prio-card--interactive {
+  transition:
+    border-color var(--prio-duration-fast) var(--prio-ease),
+    box-shadow var(--prio-duration-fast) var(--prio-ease),
+    transform var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-card--interactive:hover {
+  border-color: var(--prio-border-strong);
+  box-shadow: var(--prio-shadow-md);
+}
+
+.prio-card__header {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-4);
+  padding: var(--prio-space-5) var(--prio-space-6);
+  border-bottom: 1px solid var(--prio-border-subtle);
+}
+
+.prio-card__title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--prio-text-md);
+  font-weight: var(--prio-weight-semibold);
+}
+
+.prio-card__body {
+  padding: var(--prio-space-6);
+}
+
+.prio-card__body--tight {
+  padding: var(--prio-space-4);
+}
+
+.prio-card__footer {
+  padding: var(--prio-space-4) var(--prio-space-6);
+  border-top: 1px solid var(--prio-border-subtle);
+  background: var(--prio-neutral-25);
+  border-radius: 0 0 var(--prio-radius-lg) var(--prio-radius-lg);
+}
+
+/* ----------------------------------------------------------------- badge */
+.prio-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  height: 20px;
+  padding: 0 var(--prio-space-3);
+  border-radius: var(--prio-radius-sm);
+  background: var(--prio-bg-subtle);
+  color: var(--prio-text-secondary);
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-semibold);
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.prio-badge--pill {
+  border-radius: var(--prio-radius-pill);
+}
+
+/* A badge that calls out something belonging to the viewer specifically —
+   their own assignment, a person they should notice — rather than a neutral
+   fact about the row. */
+.prio-badge[data-tone="brand"] {
+  background: var(--prio-primary-50);
+  color: var(--prio-primary-700);
+}
+
+.prio-badge__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+/* Status pills — colours come from the status tokens. */
+.prio-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  height: 21px;
+  padding: 0 var(--prio-space-3);
+  border-radius: var(--prio-radius-sm);
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-semibold);
+  white-space: nowrap;
+}
+
+.prio-status__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.prio-status[data-status="BACKLOG"] {
+  background: var(--prio-status-backlog-bg);
+  color: var(--prio-status-backlog-fg);
+}
+.prio-status[data-status="BACKLOG"] .prio-status__dot {
+  background: var(--prio-status-backlog-dot);
+}
+.prio-status[data-status="TODO"] {
+  background: var(--prio-status-todo-bg);
+  color: var(--prio-status-todo-fg);
+}
+.prio-status[data-status="TODO"] .prio-status__dot {
+  background: var(--prio-status-todo-dot);
+}
+.prio-status[data-status="IN_PROGRESS"] {
+  background: var(--prio-status-progress-bg);
+  color: var(--prio-status-progress-fg);
+}
+.prio-status[data-status="IN_PROGRESS"] .prio-status__dot {
+  background: var(--prio-status-progress-dot);
+}
+.prio-status[data-status="IN_REVIEW"] {
+  background: var(--prio-status-review-bg);
+  color: var(--prio-status-review-fg);
+}
+.prio-status[data-status="IN_REVIEW"] .prio-status__dot {
+  background: var(--prio-status-review-dot);
+}
+.prio-status[data-status="DONE"] {
+  background: var(--prio-status-done-bg);
+  color: var(--prio-status-done-fg);
+}
+.prio-status[data-status="DONE"] .prio-status__dot {
+  background: var(--prio-status-done-dot);
+}
+.prio-status[data-status="CANCELLED"] {
+  background: var(--prio-status-cancelled-bg);
+  color: var(--prio-status-cancelled-fg);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+.prio-status[data-status="CANCELLED"] .prio-status__dot {
+  background: var(--prio-status-cancelled-dot);
+}
+
+/* Severity chips — visually distinct from priority so the two never blur. */
+.prio-severity {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  height: 20px;
+  padding: 0 var(--prio-space-3);
+  border-radius: var(--prio-radius-pill);
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-bold);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.prio-severity[data-severity="CRITICAL"] {
+  background: var(--prio-severity-critical-bg);
+  color: var(--prio-severity-critical);
+}
+.prio-severity[data-severity="MAJOR"] {
+  background: var(--prio-severity-major-bg);
+  color: var(--prio-severity-major);
+}
+.prio-severity[data-severity="MINOR"] {
+  background: var(--prio-severity-minor-bg);
+  color: var(--prio-severity-minor);
+}
+.prio-severity[data-severity="TRIVIAL"] {
+  background: var(--prio-severity-trivial-bg);
+  color: var(--prio-severity-trivial);
+}
+
+/* Priority indicator — bar glyph + label. */
+.prio-priority {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  font-size: var(--prio-text-xs);
+  font-weight: var(--prio-weight-medium);
+  white-space: nowrap;
+}
+
+.prio-priority[data-priority="URGENT"] {
+  color: var(--prio-priority-urgent);
+}
+.prio-priority[data-priority="HIGH"] {
+  color: var(--prio-priority-high);
+}
+.prio-priority[data-priority="MEDIUM"] {
+  color: var(--prio-priority-medium);
+}
+.prio-priority[data-priority="LOW"] {
+  color: var(--prio-priority-low);
+}
+.prio-priority[data-priority="NONE"] {
+  color: var(--prio-priority-none);
+}
+
+/* Issue-type glyph. */
+.prio-type {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--prio-radius-xs);
+  flex-shrink: 0;
+}
+
+.prio-type[data-type="TASK"] {
+  background: var(--prio-type-task-bg);
+  color: var(--prio-type-task);
+}
+.prio-type[data-type="BUG"] {
+  background: var(--prio-type-bug-bg);
+  color: var(--prio-type-bug);
+}
+.prio-type[data-type="STORY"] {
+  background: var(--prio-type-story-bg);
+  color: var(--prio-type-story);
+}
+
+/* Issue key. */
+.prio-key {
+  font-family: var(--prio-font-mono);
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-semibold);
+  letter-spacing: 0.02em;
+  color: var(--prio-text-muted);
+  white-space: nowrap;
+}
+
+a.prio-key:hover {
+  color: var(--prio-primary-600);
+}
+
+/* Project / issue label chip. */
+.prio-label-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  height: 19px;
+  padding: 0 var(--prio-space-3);
+  border-radius: var(--prio-radius-pill);
+  border: 1px solid var(--prio-border);
+  background: var(--prio-bg-surface);
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-medium);
+  color: var(--prio-text-secondary);
+  white-space: nowrap;
+}
+
+.prio-label-chip__swatch {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ---------------------------------------------------------------- avatar */
+.prio-avatar {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--prio-gradient-brand);
+  color: #fff;
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-semibold);
+  letter-spacing: 0;
+  overflow: hidden;
+  user-select: none;
+}
+
+.prio-avatar--xs {
+  width: 18px;
+  height: 18px;
+  font-size: 9px;
+}
+.prio-avatar--sm {
+  width: 22px;
+  height: 22px;
+}
+.prio-avatar--md {
+  width: 30px;
+  height: 30px;
+  font-size: var(--prio-text-xs);
+}
+.prio-avatar--lg {
+  width: 40px;
+  height: 40px;
+  font-size: var(--prio-text-base);
+}
+.prio-avatar--xl {
+  width: 64px;
+  height: 64px;
+  font-size: var(--prio-text-xl);
+}
+
+.prio-avatar--empty {
+  background: var(--prio-bg-subtle);
+  border: 1px dashed var(--prio-border-strong);
+  color: var(--prio-text-muted);
+}
+
+.prio-avatar-stack {
+  display: inline-flex;
+  align-items: center;
+}
+
+.prio-avatar-stack > * + * {
+  margin-left: -6px;
+}
+
+.prio-avatar-stack .prio-avatar {
+  box-shadow: 0 0 0 2px var(--prio-bg-surface);
+}
+
+/* ------------------------------------------------------------------ menu */
+.prio-menu {
+  position: absolute;
+  z-index: var(--prio-z-dropdown);
+  min-width: 200px;
+  max-height: 340px;
+  overflow-y: auto;
+  padding: var(--prio-space-2);
+  background: var(--prio-bg-surface-raised);
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-lg);
+  box-shadow: var(--prio-shadow-lg);
+  animation: prio-menu-in var(--prio-duration-fast) var(--prio-ease-out);
+}
+
+@keyframes prio-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.prio-menu__label {
+  padding: var(--prio-space-3) var(--prio-space-3) var(--prio-space-2);
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-semibold);
+  letter-spacing: var(--prio-tracking-caps);
+  text-transform: uppercase;
+  color: var(--prio-text-muted);
+}
+
+.prio-menu__item {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-3);
+  width: 100%;
+  padding: var(--prio-space-3) var(--prio-space-3);
+  border-radius: var(--prio-radius-sm);
+  font-size: var(--prio-text-sm);
+  color: var(--prio-text-primary);
+  text-align: left;
+  white-space: nowrap;
+  transition: background var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-menu__item:hover,
+.prio-menu__item[data-highlighted="true"] {
+  background: var(--prio-bg-hover);
+  text-decoration: none;
+  color: var(--prio-text-primary);
+}
+
+.prio-menu__item[aria-checked="true"] {
+  background: var(--prio-primary-50);
+  color: var(--prio-primary-700);
+}
+
+.prio-menu__item--danger {
+  color: var(--prio-red-600);
+}
+
+.prio-menu__item--danger:hover {
+  background: var(--prio-red-50);
+  color: var(--prio-red-700);
+}
+
+.prio-menu__item-check {
+  margin-left: auto;
+  color: var(--prio-primary-600);
+}
+
+.prio-menu__separator {
+  height: 1px;
+  margin: var(--prio-space-2) calc(var(--prio-space-2) * -1);
+  background: var(--prio-border-subtle);
+}
+
+/* ---------------------------------------------------------------- dialog */
+.prio-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--prio-z-modal);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: var(--prio-space-8) var(--prio-space-5);
+  overflow-y: auto;
+  background: rgba(11, 18, 32, 0.5);
+  backdrop-filter: blur(3px);
+  animation: prio-fade-in var(--prio-duration) var(--prio-ease);
+}
+
+@keyframes prio-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.prio-dialog {
+  position: relative;
+  width: 100%;
+  max-width: 560px;
+  background: var(--prio-bg-surface);
+  border-radius: var(--prio-radius-xl);
+  box-shadow: var(--prio-shadow-xl);
+  animation: prio-dialog-in var(--prio-duration) var(--prio-ease-out);
+}
+
+@keyframes prio-dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(-12px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.prio-dialog--lg {
+  max-width: 760px;
+}
+
+.prio-dialog--sm {
+  max-width: 420px;
+}
+
+.prio-dialog__header {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-4);
+  padding: var(--prio-space-5) var(--prio-space-6);
+  border-bottom: 1px solid var(--prio-border-subtle);
+}
+
+.prio-dialog__title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--prio-text-md);
+  font-weight: var(--prio-weight-semibold);
+}
+
+.prio-dialog__body {
+  padding: var(--prio-space-6);
+  max-height: calc(100vh - 260px);
+  overflow-y: auto;
+}
+
+.prio-dialog__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--prio-space-3);
+  padding: var(--prio-space-5) var(--prio-space-6);
+  border-top: 1px solid var(--prio-border-subtle);
+  background: var(--prio-neutral-25);
+  border-radius: 0 0 var(--prio-radius-xl) var(--prio-radius-xl);
+}
+
+.prio-dialog__footer-note {
+  margin-right: auto;
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-muted);
+}
+
+/* ----------------------------------------------------------------- table */
+.prio-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-lg);
+  background: var(--prio-bg-surface);
+}
+
+.prio-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--prio-text-sm);
+}
+
+.prio-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: var(--prio-space-3) var(--prio-space-4);
+  background: var(--prio-neutral-50);
+  border-bottom: 1px solid var(--prio-border);
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-semibold);
+  letter-spacing: var(--prio-tracking-caps);
+  text-transform: uppercase;
+  color: var(--prio-text-muted);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.prio-table tbody td {
+  padding: var(--prio-space-3) var(--prio-space-4);
+  border-bottom: 1px solid var(--prio-border-subtle);
+  vertical-align: middle;
+}
+
+.prio-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.prio-table tbody tr {
+  transition: background var(--prio-duration-fast) var(--prio-ease);
+}
+
+/* The secondary tint, not primary: "you are looking at this row", not "act on
+   this row" — a primary-coloured hover would read as a selected/active state
+   instead of a hover. */
+.prio-table tbody tr:hover {
+  background: var(--prio-secondary-50);
+}
+
+/* Admin drill-down: a table figure that is also a link into the filtered
+   issue list behind it — e.g. a member's open-issue count. */
+.prio-admin__drilldown {
+  color: var(--prio-primary-600);
+  font-weight: var(--prio-weight-semibold);
+  text-decoration: none;
+}
+
+.prio-admin__drilldown:hover {
+  text-decoration: underline;
+}
+
+.prio-table--compact tbody td {
+  padding: var(--prio-space-2) var(--prio-space-4);
+}
+
+.prio-table__sort {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+}
+
+.prio-table__sort:hover {
+  color: var(--prio-text-primary);
+}
+
+/* -------------------------------------------------------------- feedback */
+.prio-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--prio-space-3);
+  padding: var(--prio-space-10) var(--prio-space-6);
+  text-align: center;
+}
+
+.prio-empty__icon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  margin-bottom: var(--prio-space-2);
+  border-radius: var(--prio-radius-xl);
+  background: var(--prio-gradient-brand-soft);
+  color: var(--prio-primary-500);
+}
+
+.prio-empty__title {
+  font-size: var(--prio-text-md);
+  font-weight: var(--prio-weight-semibold);
+}
+
+.prio-empty__body {
+  max-width: 380px;
+  font-size: var(--prio-text-sm);
+  color: var(--prio-text-secondary);
+}
+
+.prio-empty__actions {
+  margin-top: var(--prio-space-3);
+  display: flex;
+  gap: var(--prio-space-3);
+}
+
+.prio-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--prio-space-3);
+  padding: var(--prio-space-4) var(--prio-space-5);
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-md);
+  background: var(--prio-bg-subtle);
+  font-size: var(--prio-text-sm);
+}
+
+.prio-alert__icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.prio-alert--danger {
+  background: var(--prio-red-50);
+  border-color: var(--prio-red-100);
+  color: var(--prio-red-700);
+}
+
+.prio-alert--success {
+  background: var(--prio-green-50);
+  border-color: var(--prio-green-100);
+  color: var(--prio-green-700);
+}
+
+.prio-alert--warning {
+  background: var(--prio-amber-50);
+  border-color: var(--prio-amber-100);
+  color: var(--prio-amber-700);
+}
+
+/* The secondary tint, not primary: an informational alert reads as quiet
+   context, and staying off the brand-primary colour is what keeps it from
+   looking like a call to action. */
+.prio-alert--info {
+  background: var(--prio-secondary-50);
+  border-color: var(--prio-secondary-100);
+  color: var(--prio-secondary-700);
+}
+
+/* ------------------------------------------------------------- skeletons */
+.prio-skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--prio-neutral-100) 25%,
+    var(--prio-neutral-200) 37%,
+    var(--prio-neutral-100) 63%
+  );
+  background-size: 400% 100%;
+  border-radius: var(--prio-radius-sm);
+  animation: prio-shimmer 1.35s ease-in-out infinite;
+}
+
+@keyframes prio-shimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prio-skeleton {
+    animation: none;
+  }
+}
+
+.prio-skeleton--text {
+  height: 11px;
+  margin: var(--prio-space-2) 0;
+}
+
+.prio-skeleton--title {
+  height: 18px;
+  width: 40%;
+}
+
+.prio-skeleton--block {
+  height: 84px;
+}
+
+.prio-skeleton--circle {
+  border-radius: 50%;
+}
+
+/* --------------------------------------------------------------- spinner */
+.prio-spinner {
+  display: inline-block;
+  width: 15px;
+  height: 15px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: prio-spin 0.65s linear infinite;
+  opacity: 0.85;
+}
+
+@keyframes prio-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ----------------------------------------------------------------- toast */
+.prio-toast-region {
+  position: fixed;
+  right: var(--prio-space-5);
+  bottom: var(--prio-space-5);
+  z-index: var(--prio-z-toast);
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-3);
+  width: min(360px, calc(100vw - var(--prio-space-8)));
+}
+
+.prio-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--prio-space-3);
+  padding: var(--prio-space-4) var(--prio-space-5);
+  background: var(--prio-neutral-900);
+  color: #fff;
+  border-radius: var(--prio-radius-lg);
+  box-shadow: var(--prio-shadow-lg);
+  font-size: var(--prio-text-sm);
+  animation: prio-toast-in var(--prio-duration) var(--prio-ease-out);
+}
+
+@keyframes prio-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.prio-toast[data-tone="success"] .prio-toast__icon {
+  color: #4ade80;
+}
+
+.prio-toast[data-tone="error"] .prio-toast__icon {
+  color: #fca5a5;
+}
+
+.prio-toast__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.prio-toast__close {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.prio-toast__close:hover {
+  color: #fff;
+}
+
+/* -------------------------------------------------------------- tooltip */
+.prio-tooltip {
+  position: absolute;
+  z-index: var(--prio-z-toast);
+  padding: var(--prio-space-2) var(--prio-space-3);
+  background: var(--prio-neutral-900);
+  color: #fff;
+  border-radius: var(--prio-radius-sm);
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-medium);
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: var(--prio-shadow-md);
+}
+
+/* ----------------------------------------------------------- meta rows */
+.prio-meta-row {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-4);
+  padding: var(--prio-space-3) 0;
+  font-size: var(--prio-text-sm);
+}
+
+.prio-meta-row__label {
+  flex-shrink: 0;
+  width: 108px;
+  font-size: var(--prio-text-xs);
+  font-weight: var(--prio-weight-medium);
+  color: var(--prio-text-muted);
+}
+
+.prio-meta-row__value {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---------------------------------------------------------------- stats */
+.prio-stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-2);
+  padding: var(--prio-space-5);
+  background: var(--prio-bg-surface);
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-lg);
+  box-shadow: var(--prio-shadow-xs);
+}
+
+.prio-stat__label {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  font-size: var(--prio-text-xs);
+  font-weight: var(--prio-weight-medium);
+  color: var(--prio-text-muted);
+}
+
+.prio-stat__value {
+  font-size: var(--prio-text-2xl);
+  font-weight: var(--prio-weight-semibold);
+  letter-spacing: var(--prio-tracking-tight);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.prio-stat__hint {
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-muted);
+}
+
+.prio-stat[data-tone="danger"] .prio-stat__value {
+  color: var(--prio-red-600);
+}
+
+.prio-stat[data-tone="warning"] .prio-stat__value {
+  color: var(--prio-amber-600);
+}
+
+.prio-stat[data-tone="success"] .prio-stat__value {
+  color: var(--prio-green-600);
+}
+
+.prio-stat[data-tone="brand"] .prio-stat__value {
+  color: var(--prio-primary-600);
+}
+
+/* ------------------------------------------------------------- segmented */
+.prio-segmented {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  background: var(--prio-bg-subtle);
+  border-radius: var(--prio-radius-md);
+}
+
+.prio-segmented__item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  height: 26px;
+  padding: 0 var(--prio-space-4);
+  border-radius: var(--prio-radius-sm);
+  font-size: var(--prio-text-xs);
+  font-weight: var(--prio-weight-medium);
+  color: var(--prio-text-secondary);
+  transition: all var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-segmented__item:hover {
+  color: var(--prio-text-primary);
+  text-decoration: none;
+}
+
+.prio-segmented__item[aria-pressed="true"],
+.prio-segmented__item[data-active="true"] {
+  background: var(--prio-bg-surface);
+  color: var(--prio-text-primary);
+  box-shadow: var(--prio-shadow-xs);
+}
+
+/* --------------------------------------------------------------- divider */
+.prio-divider {
+  height: 1px;
+  background: var(--prio-border);
+  border: 0;
+  margin: var(--prio-space-6) 0;
+}
+
+/* ------------------------------------------------------------- progress */
+.prio-progress {
+  height: 6px;
+  border-radius: var(--prio-radius-pill);
+  background: var(--prio-neutral-200);
+  overflow: hidden;
+}
+
+.prio-progress__bar {
+  height: 100%;
+  border-radius: var(--prio-radius-pill);
+  background: var(--prio-gradient-brand);
+  transition: width var(--prio-duration-slow) var(--prio-ease-out);
+}
+
+/* ----------------------------------------------------------- type picker */
+/* Segmented choice of Task / Bug / Story at the head of the Create dialog. */
+.prio-typepicker {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--prio-space-3);
+  margin: 0 0 var(--prio-space-6);
+  padding: 0;
+  border: 0;
+}
+
+.prio-typepicker__option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--prio-space-2);
+  padding: var(--prio-space-4);
+  text-align: left;
+  background: var(--prio-bg-surface);
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-lg);
+  transition:
+    border-color var(--prio-duration-fast) var(--prio-ease),
+    background var(--prio-duration-fast) var(--prio-ease),
+    box-shadow var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-typepicker__option:hover {
+  border-color: var(--prio-border-strong);
+  background: var(--prio-neutral-25);
+}
+
+.prio-typepicker__option[data-selected="true"] {
+  border-color: var(--prio-primary-500);
+  background: var(--prio-primary-50);
+  box-shadow: var(--prio-shadow-focus);
+}
+
+.prio-typepicker__label {
+  font-size: var(--prio-text-sm);
+  font-weight: var(--prio-weight-semibold);
+  color: var(--prio-text-primary);
+}
+
+.prio-typepicker__hint {
+  font-size: var(--prio-text-2xs);
+  line-height: var(--prio-leading-snug);
+  color: var(--prio-text-muted);
+}
+
+@media (max-width: 640px) {
+  .prio-typepicker {
+    grid-template-columns: 1fr;
+  }
+
+  .prio-typepicker__hint {
+    display: none;
+  }
+}
+
+/* --------------------------------------------------------- form section */
+.prio-formsection {
+  margin-top: var(--prio-space-7);
+  padding-top: var(--prio-space-6);
+  border-top: 1px solid var(--prio-border-subtle);
+}
+
+.prio-formsection__title {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-3);
+  margin-bottom: var(--prio-space-5);
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-semibold);
+  letter-spacing: var(--prio-tracking-caps);
+  text-transform: uppercase;
+  color: var(--prio-text-muted);
+}
+
+/* --------------------------------------------------------------- chipset */
+/* Multi-select chips (labels). */
+.prio-chipset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--prio-space-2);
+}
+
+.prio-chipset__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  height: 26px;
+  padding: 0 var(--prio-space-4);
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-pill);
+  background: var(--prio-bg-surface);
+  font-size: var(--prio-text-xs);
+  font-weight: var(--prio-weight-medium);
+  color: var(--prio-text-secondary);
+  transition: all var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-chipset__chip:hover {
+  border-color: var(--prio-border-strong);
+  color: var(--prio-text-primary);
+}
+
+.prio-chipset__chip[data-selected="true"] {
+  border-color: var(--prio-primary-400);
+  background: var(--prio-primary-50);
+  color: var(--prio-primary-700);
+}
+
+/* ---------------------------------------------------------- member picker */
+.prio-memberpicker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: var(--prio-space-2);
+  max-height: 260px;
+  overflow-y: auto;
+  padding: var(--prio-space-1);
+}
+
+.prio-memberpicker__item {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-3);
+  padding: var(--prio-space-3);
+  text-align: left;
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-md);
+  background: var(--prio-bg-surface);
+  transition: all var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-memberpicker__item:hover {
+  border-color: var(--prio-border-strong);
+  background: var(--prio-neutral-25);
+}
+
+.prio-memberpicker__item[data-selected="true"] {
+  border-color: var(--prio-primary-400);
+  background: var(--prio-primary-50);
+}
+
+.prio-memberpicker__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.prio-memberpicker__name {
+  font-size: var(--prio-text-sm);
+  font-weight: var(--prio-weight-medium);
+  color: var(--prio-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prio-memberpicker__meta {
+  font-size: var(--prio-text-2xs);
+  color: var(--prio-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------- project card */
+.prio-projectcard {
+  height: 100%;
+}
+
+.prio-projectcard__head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--prio-space-4);
+  margin-bottom: var(--prio-space-4);
+}
+
+.prio-projectcard__badge {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--prio-radius-md);
+  background: var(--prio-gradient-brand);
+  color: #fff;
+  font-size: var(--prio-text-sm);
+  font-weight: var(--prio-weight-bold);
+  letter-spacing: 0.02em;
+}
+
+.prio-projectcard__name {
+  font-size: var(--prio-text-md);
+  font-weight: var(--prio-weight-semibold);
+  line-height: 1.3;
+  margin-bottom: 2px;
+}
+
+.prio-projectcard__name a {
+  color: var(--prio-text-primary);
+}
+
+.prio-projectcard__name a:hover {
+  color: var(--prio-primary-600);
+  text-decoration: none;
+}
+
+.prio-projectcard__description {
+  margin-bottom: var(--prio-space-5);
+  min-height: 2.6em;
+  font-size: var(--prio-text-sm);
+  color: var(--prio-text-secondary);
+  line-height: var(--prio-leading-snug);
+}
+
+.prio-projectcard__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--prio-space-5);
+  margin-bottom: var(--prio-space-4);
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-secondary);
+}
+
+.prio-projectcard__stats span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+}
+
+.prio-projectcard__stats span[data-tone="danger"] {
+  color: var(--prio-red-600);
+  font-weight: var(--prio-weight-medium);
+}
+
+.prio-projectcard__progress {
+  margin-bottom: var(--prio-space-4);
+}
+
+.prio-projectcard__progress-label {
+  display: block;
+  margin-top: var(--prio-space-2);
+  font-size: var(--prio-text-2xs);
+  color: var(--prio-text-muted);
+}
+
+.prio-projectcard__members {
+  padding-top: var(--prio-space-4);
+  border-top: 1px solid var(--prio-border-subtle);
+}
+
+/* ------------------------------------------------------- deferred page */
+.prio-deferred {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--prio-space-5);
+  max-width: 640px;
+}
+
+.prio-deferred__icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--prio-radius-lg);
+  background: var(--prio-gradient-brand-soft);
+  color: var(--prio-primary-600);
+}
+
+.prio-deferred__title {
+  margin-bottom: var(--prio-space-2);
+  font-size: var(--prio-text-md);
+  font-weight: var(--prio-weight-semibold);
+}
+
+.prio-deferred__body {
+  margin: 0;
+  font-size: var(--prio-text-sm);
+  line-height: var(--prio-leading-normal);
+  color: var(--prio-text-secondary);
+}
+
+.prio-deferred__list {
+  margin: var(--prio-space-3) 0 0;
+  padding-left: var(--prio-space-6);
+  font-size: var(--prio-text-sm);
+  line-height: var(--prio-leading-relaxed);
+  color: var(--prio-text-secondary);
+}
+
+/* ------------------------------------------------------------- not found */
+.prio-notfound {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--prio-space-4);
+  min-height: 100vh;
+  padding: var(--prio-space-8);
+  text-align: center;
+  background: var(--prio-bg-app);
+}
+
+.prio-notfound__code {
+  margin-top: var(--prio-space-6);
+  font-size: 4rem;
+  font-weight: var(--prio-weight-bold);
+  letter-spacing: -0.04em;
+  line-height: 1;
+  background: var(--prio-gradient-brand);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.prio-notfound__title {
+  margin: 0;
+  font-size: var(--prio-text-xl);
+  font-weight: var(--prio-weight-semibold);
+}
+
+.prio-notfound__body {
+  max-width: 46ch;
+  font-size: var(--prio-text-sm);
+  color: var(--prio-text-secondary);
+}
+
+.prio-notfound__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--prio-space-3);
+  margin-top: var(--prio-space-3);
+}
+
+/* ------------------------------------------------------- split button */
+/*
+ * The global "+ Create" control: a primary action plus a menu caret that must
+ * read as ONE button.
+ *
+ * These rules live here, after `.prio-btn`, and are written as
+ * `.prio-create .prio-create__x` (specificity 0,2,0) on purpose. The earlier
+ * version sat in layout.css at plain `.prio-create__x` (0,1,0) — the same
+ * specificity as `.prio-btn` — so with layout.css imported first, every
+ * override it made (inner corner radii, caret padding, box-shadow) lost on
+ * source order and silently did nothing.
+ */
+.prio-create {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  border-radius: var(--prio-radius-md);
+  /* One gradient painted across the whole control, so the sweep continues
+     through the divider instead of restarting on the caret. */
+  background: var(--prio-gradient-brand);
+  box-shadow: var(--prio-shadow-sm);
+}
+
+/* The Menu component wraps its trigger; keep that wrapper out of the layout. */
+.prio-create > * {
+  display: flex;
+}
+
+/* Both halves are transparent and share the wrapper's single gradient. */
+.prio-create .prio-create__main,
+.prio-create .prio-create__caret {
+  background: transparent;
+  box-shadow: none;
+  border-color: transparent;
+  color: #fff;
+}
+
+.prio-create .prio-create__main {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  padding-left: var(--prio-space-4);
+  padding-right: var(--prio-space-4);
+}
+
+.prio-create .prio-create__caret {
+  position: relative;
+  width: 30px;
+  /* The caret is icon-only; the inherited 12px side padding would leave a
+     zero-width content box inside a 30px button. */
+  padding: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+/* Hover tints only the half under the pointer, so each action reads as
+   independently clickable while the control stays one shape. */
+.prio-create .prio-create__main:hover,
+.prio-create .prio-create__caret:hover {
+  background: rgba(255, 255, 255, 0.16);
+  filter: none;
+}
+
+.prio-create .prio-create__caret[aria-expanded="true"] {
+  background: rgba(0, 0, 0, 0.12);
+}
+
+/* Lift the focused half so its ring is not painted over by its sibling. */
+.prio-create .prio-create__main:focus-visible,
+.prio-create .prio-create__caret:focus-visible {
+  z-index: 1;
+  box-shadow: var(--prio-shadow-focus);
+}
+
+/* Hairline divider, inset from the top and bottom edges. */
+.prio-create .prio-create__caret::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 7px;
+  bottom: 7px;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.32);
+  pointer-events: none;
+}
+
+@media (max-width: 768px) {
+  /* Icon-only below tablet: the label is dropped and the action half becomes
+     square, so the control keeps its proportions rather than collapsing. */
+  .prio-create .prio-create__label {
+    display: none;
+  }
+
+  .prio-create .prio-create__main {
+    width: 34px;
+    padding: 0;
+    justify-content: center;
+  }
+}

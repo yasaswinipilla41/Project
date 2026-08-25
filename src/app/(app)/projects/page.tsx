@@ -1,0 +1,204 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { ProjectsHeaderActions } from "@/components/projects/ProjectsHeaderActions";
+import {
+  AvatarStack,
+  Card,
+  CardBody,
+  EmptyState,
+} from "@/components/ui/primitives";
+import { IconBug, IconEmptyBox, IconIssues, IconUsers } from "@/components/ui/Icon";
+import { projectScope } from "@/lib/authz";
+import { CLOSED_STATUSES, OPEN_STATUSES } from "@/lib/domain";
+import { percent } from "@/lib/format";
+import { prisma } from "@/lib/prisma";
+import { requireUser } from "@/lib/session";
+
+export const metadata: Metadata = { title: "Projects" };
+export const dynamic = "force-dynamic";
+
+/**
+ * Project directory (§19). Admins see every project and can create one;
+ * members see only the projects they belong to.
+ */
+export default async function ProjectsPage() {
+  const user = await requireUser();
+  const isAdmin = user.role === "ADMIN";
+
+  const [projects, users] = await Promise.all([
+    prisma.project.findMany({
+      where: { ...projectScope(user), isArchived: false },
+      orderBy: { name: "asc" },
+      select: {
+        id: true,
+        key: true,
+        name: true,
+        description: true,
+        members: {
+          take: 8,
+          orderBy: { createdAt: "asc" },
+          select: {
+            user: { select: { id: true, name: true, image: true } },
+          },
+        },
+        _count: { select: { members: true, issues: true } },
+      },
+    }),
+    isAdmin
+      ? prisma.user.findMany({
+          where: { isActive: true },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            image: true,
+            jobTitle: true,
+          },
+          orderBy: { name: "asc" },
+        })
+      : Promise.resolve([]),
+  ]);
+
+  // One grouped query rather than a count per project per status.
+  const stats = await prisma.issue.groupBy({
+    by: ["projectId", "type", "status"],
+    where: { projectId: { in: projects.map((p) => p.id) } },
+    _count: { _all: true },
+  });
+
+  const summary = new Map<
+    string,
+    { open: number; done: number; bugs: number; openBugs: number; total: number }
+  >();
+
+  for (const project of projects) {
+    summary.set(project.id, {
+      open: 0,
+      done: 0,
+      bugs: 0,
+      openBugs: 0,
+      total: 0,
+    });
+  }
+
+  for (const row of stats) {
+    const entry = summary.get(row.projectId);
+    if (!entry) continue;
+    const count = row._count._all;
+    entry.total += count;
+    if ((OPEN_STATUSES as readonly string[]).includes(row.status)) entry.open += count;
+    if ((CLOSED_STATUSES as readonly string[]).includes(row.status)) entry.done += count;
+    if (row.type === "BUG") {
+      entry.bugs += count;
+      if ((OPEN_STATUSES as readonly string[]).includes(row.status)) {
+        entry.openBugs += count;
+      }
+    }
+  }
+
+  return (
+    <>
+      <div className="prio-page-header">
+        <div className="prio-page-header__text">
+          <h1 className="prio-page-header__title">Projects</h1>
+          <p className="prio-page-header__subtitle">
+            {isAdmin
+              ? "Every project in the organization."
+              : "Projects you are a member of."}
+          </p>
+        </div>
+        {isAdmin ? (
+          <div className="prio-page-header__actions">
+            <ProjectsHeaderActions users={users} currentUserId={user.id} />
+          </div>
+        ) : null}
+      </div>
+
+      {projects.length === 0 ? (
+        <Card>
+          <EmptyState
+            icon={<IconEmptyBox />}
+            title="No projects yet"
+            body={
+              isAdmin
+                ? "Create your first project to start tracking work in Prio."
+                : "Ask an administrator to create your first project."
+            }
+          />
+        </Card>
+      ) : (
+        <div className="row g-4">
+          {projects.map((project) => {
+            const s = summary.get(project.id)!;
+            const progress = percent(s.done, s.total);
+
+            return (
+              <div key={project.id} className="col-12 col-lg-6 col-xxl-4">
+                <Card interactive className="prio-projectcard">
+                  <CardBody>
+                    <div className="prio-projectcard__head">
+                      <span className="prio-projectcard__badge" aria-hidden>
+                        {project.key.slice(0, 2)}
+                      </span>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <h2 className="prio-projectcard__name">
+                          <Link href={`/projects/${project.key.toLowerCase()}`}>
+                            {project.name}
+                          </Link>
+                        </h2>
+                        <span className="prio-key">{project.key}</span>
+                      </div>
+                    </div>
+
+                    <p className="prio-projectcard__description prio-clamp-2">
+                      {project.description ?? "No description yet."}
+                    </p>
+
+                    <div className="prio-projectcard__stats">
+                      <span title="Open issues">
+                        <IconIssues size={13} />
+                        {s.open} open
+                      </span>
+                      <span
+                        title="Open bugs"
+                        data-tone={s.openBugs > 0 ? "danger" : undefined}
+                      >
+                        <IconBug size={13} />
+                        {s.openBugs} bugs
+                      </span>
+                      <span title="Members">
+                        <IconUsers size={13} />
+                        {project._count.members}
+                      </span>
+                    </div>
+
+                    <div className="prio-projectcard__progress">
+                      <div className="prio-progress" aria-hidden>
+                        <div
+                          className="prio-progress__bar"
+                          style={{ width: `${progress}%` }}
+                        />
+                      </div>
+                      <span className="prio-projectcard__progress-label">
+                        {s.total === 0
+                          ? "No issues yet"
+                          : `${progress}% complete · ${s.done} of ${s.total}`}
+                      </span>
+                    </div>
+
+                    <div className="prio-projectcard__members">
+                      <AvatarStack
+                        people={project.members.map((m) => m.user)}
+                        max={5}
+                      />
+                    </div>
+                  </CardBody>
+                </Card>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
+}

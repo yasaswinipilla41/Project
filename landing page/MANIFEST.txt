@@ -1,0 +1,37 @@
+Prio landing page backup — manifest
+Taken: 2026-08-21T07:06:01Z
+
+BYTES        FILE
+987          ./public/manifest.webmanifest
+5851         ./public/apple-touch-icon.png
+2686         ./public/brand/README.md
+5880         ./public/brand/icon-192.png
+1189         ./public/brand/prio-mark-32.png
+2549         ./public/brand/prio-mark-64.png
+1595         ./public/brand/prio-mark.svg
+3674         ./public/favicon.ico
+1032         ./src/app/(marketing)/landing/page.tsx
+1130         ./src/app/(marketing)/layout.tsx
+4525         ./src/components/PrioLogo.tsx
+3845         ./src/components/marketing/Hero.tsx
+4144         ./src/components/marketing/HeroBackground.tsx
+5144         ./src/components/marketing/Navbar.tsx
+8921         ./src/components/marketing/ProductPreview.tsx
+7084         ./src/components/marketing/ThemeProvider.tsx
+2776         ./src/components/marketing/ThemeSwitcher.tsx
+2658         ./src/components/marketing/ui-atoms.tsx
+9581         ./src/lib/marketing-content.ts
+8014         ./src/styles/marketing/tokens.css
+26562        ./public/brand/icon-512.png
+11380        ./public/brand/prio-mark-192.png
+59994        ./public/brand/prio-mark-512.png
+15928        ./src/components/marketing/Closing.tsx
+10316        ./src/components/marketing/Sections.tsx
+11614        ./src/components/marketing/Showcase.tsx
+15245        ./src/components/marketing/primitives.tsx
+49881        ./src/styles/marketing/sections.css
+20737        ./src/styles/marketing/site.css
+15917        ./tests/e2e/landing.spec.ts
+
+Files: 30
+Total bytes: 320839
