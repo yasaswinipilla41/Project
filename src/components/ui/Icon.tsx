@@ -264,6 +264,15 @@ export const IconLink = (p: IconProps) => (
   </Svg>
 );
 
+/** Arrow into a tray — "save this to your device". */
+export const IconDownload = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M8 2.6v7.2" />
+    <path d="M5.2 7.4 8 10.2l2.8-2.8" />
+    <path d="M2.8 11.4v1a1.2 1.2 0 0 0 1.2 1.2h8a1.2 1.2 0 0 0 1.2-1.2v-1" />
+  </Svg>
+);
+
 export const IconExternal = (p: IconProps) => (
   <Svg {...p}>
     <path d="M12.6 9v3.2a1.2 1.2 0 0 1-1.2 1.2H3.8a1.2 1.2 0 0 1-1.2-1.2V4.6a1.2 1.2 0 0 1 1.2-1.2H7" />

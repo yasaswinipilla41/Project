@@ -109,12 +109,11 @@ describe("createIssue", () => {
   });
 
   /*
-   * Reproduction steps, expected result and actual result were once mandatory.
-   * They were removed from the creation form, so demanding them would reject
-   * every bug the UI can produce. This asserts the new contract explicitly
-   * rather than leaving the relaxation untested.
+   * Reproduction steps, expected result and actual result are gone from the
+   * create schema entirely, not merely optional — there is no field left to
+   * populate. This pins that down from the caller's side.
    */
-  it("no longer demands reproduction steps, expected or actual result", async () => {
+  it("no longer accepts reproduction steps, expected or actual result", async () => {
     await actAs("admin@symbiosystech.com");
     const project = await projectByKey("ENG");
 
@@ -147,7 +146,7 @@ describe("createIssue", () => {
     expect(row.actualResult).toBeNull();
   });
 
-  it("creates a bug with every bug-specific field and records activity", async () => {
+  it("creates a bug with every bug field still in use, and records activity", async () => {
     const reporter = await actAs("sneha.iyer@symbiosystech.com");
     const project = await projectByKey("ENG");
 
@@ -165,9 +164,6 @@ describe("createIssue", () => {
       priority: "URGENT",
       severity: "CRITICAL",
       assigneeId: assignee.id,
-      stepsToReproduce: "1. Open the board\n2. Drag a card twice quickly",
-      expectedResult: "The card settles in the target column.",
-      actualResult: "The card disappears until the page is reloaded.",
       environment: "Staging",
       browser: "Chrome 141",
       operatingSystem: "Windows 11",
@@ -202,9 +198,11 @@ describe("createIssue", () => {
     // Severity and priority are independent concepts and both persist.
     expect(bug.severity).toBe("CRITICAL");
     expect(bug.priority).toBe("URGENT");
-    expect(bug.stepsToReproduce).toContain("Drag a card twice");
-    expect(bug.expectedResult).toContain("settles");
-    expect(bug.actualResult).toContain("disappears");
+    // Retired fields: the create path no longer accepts them, so a bug
+    // recorded now stores null rather than keeping whatever was passed.
+    expect(bug.stepsToReproduce).toBeNull();
+    expect(bug.expectedResult).toBeNull();
+    expect(bug.actualResult).toBeNull();
     expect(bug.environment).toBe("Staging");
     expect(bug.browser).toBe("Chrome 141");
     expect(bug.operatingSystem).toBe("Windows 11");
@@ -290,9 +288,6 @@ describe("updateIssue", () => {
       status: "TODO",
       priority: "MEDIUM",
       severity: "MINOR",
-      stepsToReproduce: "1. Do the thing",
-      expectedResult: "It works",
-      actualResult: "It does not",
     });
 
     expect(result.ok).toBe(true);
@@ -346,9 +341,6 @@ describe("updateIssue", () => {
       description: "Severity and priority must not be derived from each other.",
       priority: "LOW",
       severity: "CRITICAL",
-      stepsToReproduce: "1. Inspect the fields",
-      expectedResult: "They are independent",
-      actualResult: "Checking",
     });
 
     expect(result.ok).toBe(true);

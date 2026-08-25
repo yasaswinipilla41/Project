@@ -4,6 +4,7 @@ import type {
   Priority,
   Role,
   Severity,
+  TestResult,
 } from "@prisma/client";
 
 /**
@@ -87,6 +88,39 @@ export const SEVERITIES = [
   "MINOR",
   "TRIVIAL",
 ] as const satisfies readonly Severity[];
+
+/* ------------------------------------------------------------ QA result */
+
+export const TEST_RESULTS = [
+  "NOT_TESTED",
+  "PASSED",
+  "FAILED",
+  "BLOCKED",
+] as const satisfies readonly TestResult[];
+
+export const TEST_RESULT_LABEL: Record<TestResult, string> = {
+  NOT_TESTED: "Not tested",
+  PASSED: "Passed",
+  FAILED: "Failed",
+  BLOCKED: "Blocked",
+};
+
+/** What each verdict means, for the control's own tooltip. */
+export const TEST_RESULT_DESCRIPTION: Record<TestResult, string> = {
+  NOT_TESTED: "Nobody has verified this yet.",
+  PASSED: "Verified working — the change does what it should.",
+  FAILED: "Verified broken — it needs another pass from the assignee.",
+  BLOCKED: "Could not be tested; something is in the way.",
+};
+
+/** The two verdicts that put the ball back in the assignee's court. */
+export function needsDeveloperAttention(result: TestResult): boolean {
+  return result === "FAILED" || result === "BLOCKED";
+}
+
+export function isTestResult(value: string): value is TestResult {
+  return (TEST_RESULTS as readonly string[]).includes(value);
+}
 
 export const SEVERITY_LABEL: Record<Severity, string> = {
   CRITICAL: "Critical",
@@ -194,6 +228,8 @@ export function humanizeEnumValue(field: string, value: string | null): string {
       return isSeverity(value) ? SEVERITY_LABEL[value] : value;
     case "type":
       return isIssueType(value) ? ISSUE_TYPE_LABEL[value] : value;
+    case "testResult":
+      return isTestResult(value) ? TEST_RESULT_LABEL[value] : value;
     default:
       return value;
   }
@@ -211,6 +247,13 @@ export const FIELD_LABEL: Record<string, string> = {
   parentId: "parent issue",
   type: "issue type",
   labels: "labels",
+  testResult: "test result",
+  /*
+   * Retired from the issue forms, but kept here on purpose: the activity log
+   * is append-only, so entries recorded while these fields were editable
+   * still name them. Dropping the labels would turn readable history into
+   * raw column names.
+   */
   stepsToReproduce: "steps to reproduce",
   expectedResult: "expected result",
   actualResult: "actual result",

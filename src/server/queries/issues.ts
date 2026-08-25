@@ -164,8 +164,13 @@ export function buildIssueWhere(
 }
 
 /**
- * Free-text matching across everything §34 asks for, including the bug
- * narrative. An exact issue key is matched directly so `ENG-1` resolves.
+ * Free-text matching across everything §34 asks for. An exact issue key is
+ * matched directly so `ENG-1` resolves, and a bare project key (`ENG`) is
+ * matched too so it returns that project's issues rather than nothing.
+ *
+ * The retired reproduction fields are deliberately absent: searching columns
+ * nobody can see or edit any more would surface matches a reader cannot then
+ * find on the page.
  */
 export function issueTextSearch(q: string): Prisma.IssueWhereInput {
   const insensitive = { contains: q, mode: "insensitive" as const };
@@ -176,9 +181,6 @@ export function issueTextSearch(q: string): Prisma.IssueWhereInput {
       { key: insensitive },
       { title: insensitive },
       { description: insensitive },
-      { stepsToReproduce: insensitive },
-      { expectedResult: insensitive },
-      { actualResult: insensitive },
       { environment: insensitive },
       { affectedModule: insensitive },
       { versionBuild: insensitive },
@@ -248,6 +250,35 @@ const LIST_SELECT = {
   parent: { select: { key: true } },
   _count: { select: { children: true, comments: true } },
 } satisfies Prisma.IssueSelect;
+
+/**
+ * Hard ceiling on a single export. Large enough for any real filtered view,
+ * small enough that one request cannot be turned into a whole-database dump.
+ */
+export const EXPORT_LIMIT = 5000;
+
+/**
+ * Every issue matching the current filters, for the spreadsheet export.
+ *
+ * Deliberately built on the same `buildIssueWhere` the on-screen list uses,
+ * so the export cannot widen what the caller is allowed to see: the project
+ * scope is applied inside that function, not layered on afterwards where it
+ * could be forgotten. The only difference from `listIssues` is that paging is
+ * replaced by a bounded `take` — you export the whole filtered set, not the
+ * page you happen to be looking at.
+ */
+export async function exportIssues(
+  user: CurrentUser,
+  filters: IssueFilters,
+): Promise<IssueListRow[]> {
+  const rows = await prisma.issue.findMany({
+    where: buildIssueWhere(user, filters),
+    select: LIST_SELECT,
+    orderBy: buildOrderBy(filters.sort ?? "updated", filters.dir ?? "desc"),
+    take: EXPORT_LIMIT,
+  });
+  return rows as unknown as IssueListRow[];
+}
 
 export interface IssueListResult {
   rows: IssueListRow[];

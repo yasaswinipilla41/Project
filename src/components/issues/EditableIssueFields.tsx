@@ -129,11 +129,12 @@ export function EditableText({
   mono,
 }: {
   issueId: string;
-  field:
-    | "description"
-    | "stepsToReproduce"
-    | "expectedResult"
-    | "actualResult";
+  /**
+   * Description is the only long-text field still editable in place. The bug
+   * reproduction fields that used to be here are retired — kept as a union
+   * rather than a bare string so adding another one stays a deliberate change.
+   */
+  field: "description";
   label: string;
   value: string | null;
   emptyText: string;

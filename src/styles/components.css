@@ -1191,6 +1191,31 @@ a.prio-key:hover {
   color: var(--prio-primary-600);
 }
 
+/* A stat that is also a link into the list it summarises. Matches the lift
+   `.prio-kpi` already uses on the dashboard, so the two read as the same
+   affordance rather than two different kinds of clickable tile. */
+a.prio-stat {
+  color: inherit;
+  text-decoration: none;
+  transition:
+    border-color var(--prio-duration-fast) var(--prio-ease),
+    transform var(--prio-duration-fast) var(--prio-ease),
+    box-shadow var(--prio-duration-fast) var(--prio-ease);
+}
+
+a.prio-stat:hover {
+  transform: translateY(-1px);
+  border-color: var(--prio-border-strong);
+  box-shadow: var(--prio-shadow-sm);
+  text-decoration: none;
+}
+
+a.prio-stat:focus-visible {
+  outline: none;
+  border-color: var(--prio-border-focus);
+  box-shadow: var(--prio-shadow-focus);
+}
+
 /* ------------------------------------------------------------- segmented */
 .prio-segmented {
   display: inline-flex;

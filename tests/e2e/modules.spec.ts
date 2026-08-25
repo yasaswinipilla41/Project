@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 import { prisma } from "@/lib/prisma";
 import { MEMBER_STATE, setViewport, watchForProblems } from "./support";
@@ -47,7 +48,7 @@ test.describe("Issue management", () => {
     expect(failedRequests).toEqual([]);
   });
 
-  test("searches issue text including bug reproduction fields", async ({ page }) => {
+  test("searches issue title and description text", async ({ page }) => {
     await page.goto("/issues");
 
     const filterSearch = page.locator(".prio-filters").getByRole("searchbox");
@@ -87,6 +88,90 @@ test.describe("Issue management", () => {
     await page.goto("/issues?pageSize=25");
     await expect(page.locator(".prio-pagination__summary")).toBeVisible();
     await expect(page.locator(".prio-pagination__page")).toContainText("Page 1");
+  });
+});
+
+test.describe("Issue sheet export", () => {
+  test("downloads an .xlsx of the filtered sheet", async ({ page }) => {
+    // A filtered view, so the export has to respect context rather than
+    // dumping everything.
+    await page.goto("/issues?type=BUG");
+
+    const shownTotal = Number(
+      (await page.locator(".prio-filters__total").innerText()).replace(/\D/g, ""),
+    );
+    expect(shownTotal).toBeGreaterThan(0);
+
+    const [download] = await Promise.all([
+      page.waitForEvent("download"),
+      page.getByRole("button", { name: "Export" }).click(),
+    ]);
+
+    expect(download.suggestedFilename()).toMatch(/^prio-issues-\d{4}-\d{2}-\d{2}\.xlsx$/);
+
+    const path = await download.path();
+    expect(path).toBeTruthy();
+
+    const bytes = await readFile(path!);
+    // A real .xlsx is a ZIP container — "PK" is its signature. This
+    // catches an HTML error page or JSON being saved under an .xlsx name.
+    expect(bytes.subarray(0, 4)).toEqual(Buffer.from([0x50, 0x4b, 0x03, 0x04]));
+    expect(bytes.byteLength).toBeGreaterThan(1000);
+
+    // The toast reports the same number of rows the filtered sheet claimed.
+    await expect(page.locator(".prio-toast").last()).toContainText(
+      `Exported ${shownTotal} issue`,
+    );
+  });
+
+  test("refuses to export for a signed-out visitor", async ({ browser }) => {
+    /*
+     * A fresh context with no session. Two independent guards stand in the
+     * way — `proxy.ts` bounces unauthenticated requests to sign-in, and the
+     * route itself re-resolves the caller and answers 401 — so this asserts
+     * the outcome that actually reaches a browser: a redirect to sign-in,
+     * never a spreadsheet. `maxRedirects: 0` is what makes the redirect
+     * itself observable rather than being followed to a 200 sign-in page.
+     */
+    const context = await browser.newContext({
+      storageState: { cookies: [], origins: [] },
+    });
+
+    const response = await context.request.get("/api/issues/export", {
+      maxRedirects: 0,
+    });
+
+    expect(response.status()).toBe(307);
+    expect(response.headers()["location"]).toContain("/sign-in");
+    expect(response.headers()["content-type"] ?? "").not.toContain(
+      "spreadsheetml",
+    );
+
+    await context.close();
+  });
+
+  test("cannot be widened to a project the member is not in", async ({
+    browser,
+  }) => {
+    const context = await browser.newContext({ storageState: MEMBER_STATE });
+
+    const all = await context.request.get("/api/issues/export");
+    expect(all.ok()).toBe(true);
+    const memberRows = Number(all.headers()["x-prio-export-rows"]);
+
+    // Ask explicitly for every project id in the database. The route rebuilds
+    // the scope from the session, so an out-of-scope id narrows to nothing
+    // rather than granting access to it.
+    const projects = await prisma.project.findMany({ select: { id: true } });
+    const query = projects.map((p) => `project=${p.id}`).join("&");
+    const forced = await context.request.get(`/api/issues/export?${query}`);
+    expect(forced.ok()).toBe(true);
+
+    expect(Number(forced.headers()["x-prio-export-rows"])).toBeLessThanOrEqual(
+      memberRows,
+    );
+
+    await context.close();
   });
 });
 
@@ -214,10 +299,48 @@ test.describe("Reports", () => {
     const listTotal = await page.locator(".prio-filters__total").innerText();
     expect(Number(listTotal.replace(/\D/g, ""))).toBe(reportedTotal);
   });
+
+  test("Total issues links through to the list it counts", async ({ page }) => {
+    await page.goto("/reports");
+
+    const card = page.locator("a.prio-stat").filter({ hasText: "Total issues" });
+    await expect(card).toBeVisible();
+
+    const claimed = Number(
+      await card.locator(".prio-stat__value").innerText(),
+    );
+
+    await card.click();
+    await expect(page).toHaveURL(/\/issues(\?|$)/);
+    await expect(page.getByRole("heading", { name: "Issues" })).toBeVisible();
+
+    // The destination shows exactly the set the figure counted — the report
+    // and the list apply the same project scope, so these cannot disagree.
+    const listTotal = await page.locator(".prio-filters__total").innerText();
+    expect(Number(listTotal.replace(/\D/g, ""))).toBe(claimed);
+  });
 });
 
 test.describe("Project settings", () => {
-  test("an admin can edit details, manage members and add a label", async ({
+  test("no longer offers a Members section, and memberships survive", async ({
+    page,
+  }) => {
+    const before = await prisma.projectMember.count();
+
+    await page.goto("/projects/int/settings");
+    await expect(
+      page.getByRole("heading", { name: "Project settings" }),
+    ).toBeVisible();
+
+    // Gone from the page…
+    await expect(page.getByRole("heading", { name: "Members" })).toHaveCount(0);
+    await expect(page.getByLabel("Add a member")).toHaveCount(0);
+
+    // …but this was a UI removal, not a data change.
+    expect(await prisma.projectMember.count()).toBe(before);
+  });
+
+  test("an admin can edit details and add a label", async ({
     page,
   }) => {
     await page.goto("/projects/int/settings");

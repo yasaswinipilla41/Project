@@ -21,6 +21,7 @@ import {
 import {
   createIssueSchema,
   fieldErrors,
+  reportBugSchema,
   updateIssueSchema,
   type FieldErrors,
 } from "@/server/schemas";
@@ -177,9 +178,6 @@ export async function createIssue(
 
           // Bug fields — null for tasks and stories.
           severity: input.type === "BUG" ? input.severity : null,
-          stepsToReproduce: input.type === "BUG" ? input.stepsToReproduce : null,
-          expectedResult: input.type === "BUG" ? input.expectedResult : null,
-          actualResult: input.type === "BUG" ? input.actualResult : null,
           environment: input.type === "BUG" ? input.environment : null,
           browser: input.type === "BUG" ? input.browser : null,
           operatingSystem: input.type === "BUG" ? input.operatingSystem : null,
@@ -296,9 +294,6 @@ export async function updateIssue(
         assigneeId: true,
         dueDate: true,
         parentId: true,
-        stepsToReproduce: true,
-        expectedResult: true,
-        actualResult: true,
         environment: true,
         browser: true,
         operatingSystem: true,
@@ -308,6 +303,30 @@ export async function updateIssue(
       },
     });
     if (!existing) throw new NotFoundError("This issue no longer exists.");
+
+    /*
+     * Reassignment is an administrative act once the work already belongs to
+     * somebody. Belonging to the project is enough to *work* on an issue —
+     * comment on it, move it through the workflow — but not to take another
+     * person's work off them or push work onto them.
+     *
+     * A member may still pick up unassigned work, and may hand back or pass on
+     * work that is currently theirs. Admins are unrestricted, as before.
+     *
+     * Checked here against `existing.assigneeId` read from the database, so a
+     * forged payload cannot claim the issue was already theirs.
+     */
+    if (
+      "assigneeId" in input &&
+      input.assigneeId !== undefined &&
+      user.role !== "ADMIN" &&
+      existing.assigneeId !== null &&
+      existing.assigneeId !== user.id
+    ) {
+      throw new AuthorizationError(
+        "Only an administrator can reassign work that belongs to someone else.",
+      );
+    }
 
     // Only fields actually present in the payload are considered.
     const tracked = [
@@ -319,9 +338,6 @@ export async function updateIssue(
       "assigneeId",
       "dueDate",
       "parentId",
-      "stepsToReproduce",
-      "expectedResult",
-      "actualResult",
       "environment",
       "browser",
       "operatingSystem",
@@ -471,6 +487,131 @@ export async function deleteIssue(
       ok: true,
       data: { key: existing.key, projectKey: existing.project.key },
     };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/* ----------------------------------------------------------- report bug */
+
+/**
+ * A tester filing a problem against work they were verifying.
+ *
+ * This is not a second issue system — it is `createIssue`'s machinery reached
+ * through a narrower door. The new row is an ordinary `Issue` of type BUG with
+ * an ordinary key, watchers, activity entry and notification; what this adds
+ * is that everything Prio already knows is filled in rather than asked for:
+ *
+ *   - the project, from the issue under test;
+ *   - the assignee, from whoever owns that work, so the fix lands with them;
+ *   - the reporter, from the caller;
+ *   - a `RELATES_TO` link both ways, through the same `IssueLink` table the
+ *     Related Issues panel uses — the inverse row is written here explicitly
+ *     because `createIssueLink` is a separate action with its own session.
+ *
+ * The four fields the tester does fill in reuse existing columns, so this
+ * needs no migration and keeps historical bugs shaped like new ones.
+ */
+export async function reportBug(
+  raw: unknown,
+): Promise<ActionResult<{ key: string; id: string }>> {
+  try {
+    const user = await requireUser();
+
+    const parsed = reportBugSchema.safeParse(raw);
+    if (!parsed.success) {
+      return {
+        ok: false,
+        error: "Please correct the highlighted fields.",
+        fieldErrors: fieldErrors(parsed.error),
+      };
+    }
+    const input = parsed.data;
+
+    // Access to the issue under test is what grants the right to file against
+    // it — checked before anything is read or written.
+    await assertIssueAccess(user, input.issueId);
+
+    const original = await prisma.issue.findUnique({
+      where: { id: input.issueId },
+      select: {
+        id: true,
+        key: true,
+        title: true,
+        projectId: true,
+        assigneeId: true,
+        project: { select: { key: true } },
+      },
+    });
+    if (!original) throw new NotFoundError("This issue no longer exists.");
+
+    const created = await prisma.$transaction(async (tx) => {
+      const { number, key } = await nextIssueNumber(tx, original.projectId);
+
+      const bug = await tx.issue.create({
+        data: {
+          key,
+          number,
+          projectId: original.projectId,
+          type: "BUG",
+          title: input.title,
+          description: input.description,
+          affectedModule: input.affectedModule,
+          expectedResult: input.expectedResult,
+          actualResult: input.actualResult,
+          severity: input.severity,
+          priority: input.priority,
+          status: "TODO",
+          reporterId: user.id,
+          // Back to whoever owns the work being tested; unassigned if nobody
+          // does, rather than guessing.
+          assigneeId: original.assigneeId,
+        },
+        select: { id: true, key: true },
+      });
+
+      await recordIssueCreated(tx, {
+        issueId: bug.id,
+        actorId: user.id,
+        isBug: true,
+      });
+
+      // Both directions, so the bug is visible from the feature and vice versa.
+      await tx.issueLink.createMany({
+        data: [
+          {
+            sourceId: bug.id,
+            targetId: original.id,
+            type: "RELATES_TO",
+            createdById: user.id,
+          },
+          {
+            sourceId: original.id,
+            targetId: bug.id,
+            type: "RELATES_TO",
+            createdById: user.id,
+          },
+        ],
+        skipDuplicates: true,
+      });
+
+      await addWatchers(tx, bug.id, [user.id, original.assigneeId]);
+
+      await notify(tx, {
+        issueId: bug.id,
+        actorId: user.id,
+        userIds: [original.assigneeId],
+        type: "ISSUE_ASSIGNED",
+        message: `reported ${bug.key} against your work on ${original.key}`,
+      });
+
+      return bug;
+    });
+
+    revalidateIssueSurfaces(original.project.key, created.key);
+    revalidateIssueSurfaces(original.project.key, original.key);
+
+    return { ok: true, data: { key: created.key, id: created.id } };
   } catch (error) {
     return failure(error);
   }
