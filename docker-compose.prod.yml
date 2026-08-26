@@ -67,7 +67,11 @@ services:
         condition: service_healthy
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER:-prio}:${POSTGRES_PASSWORD:-prio_dev_password}@postgres:5432/${POSTGRES_DB:-prio}?schema=public
+      # POSTGRES_PASSWORD_URLENC, not POSTGRES_PASSWORD: this is a URI, and a
+      # raw password containing : @ / ? # etc. corrupts it (e.g. Prisma's
+      # "invalid port number"). Set both if you run this outside Jenkins with
+      # a password containing those characters — see Jenkinsfile.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-prio}:${POSTGRES_PASSWORD_URLENC:-prio_dev_password}@postgres:5432/${POSTGRES_DB:-prio}?schema=public
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@symbiosystech.com}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-Prio@12345}
       SEED_DEFAULT_PASSWORD: ${SEED_DEFAULT_PASSWORD:-Prio@12345}
@@ -90,7 +94,11 @@ services:
       - prio-internal
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER:-prio}:${POSTGRES_PASSWORD:-prio_dev_password}@postgres:5432/${POSTGRES_DB:-prio}?schema=public
+      # POSTGRES_PASSWORD_URLENC, not POSTGRES_PASSWORD: this is a URI, and a
+      # raw password containing : @ / ? # etc. corrupts it (e.g. Prisma's
+      # "invalid port number"). Set both if you run this outside Jenkins with
+      # a password containing those characters — see Jenkinsfile.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-prio}:${POSTGRES_PASSWORD_URLENC:-prio_dev_password}@postgres:5432/${POSTGRES_DB:-prio}?schema=public
       REDIS_URL: redis://redis:6379
       AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET is required}
       BASE_URL: ${BASE_URL:-http://localhost:3000}

@@ -36,10 +36,26 @@ pipeline {
     stages {
 
         // ─────────────────────────────────────────────────────────────────────
+        // This host runs dozens of other containers that start/stop
+        // constantly, which can transiently break the Docker embedded
+        // resolver's DNS lookups (e.g. github.com). The git plugin's own
+        // retry already exhausts itself faster than that window closes, so
+        // wrap it in a slower retry here rather than fail the whole build.
+        // ─────────────────────────────────────────────────────────────────────
         stage('Checkout') {
             steps {
                 echo "Checking out ${env.BRANCH_NAME} (${env.GIT_COMMIT})..."
-                checkout scm
+                retry(3) {
+                    script {
+                        try {
+                            checkout scm
+                        } catch (err) {
+                            echo 'Checkout failed, likely a transient DNS blip — retrying in 15s...'
+                            sleep(time: 15, unit: 'SECONDS')
+                            throw err
+                        }
+                    }
+                }
             }
         }
 
@@ -109,9 +125,17 @@ pipeline {
                 ]) {
                     sh '''
                         set +x
+                        # DATABASE_URL embeds this password inside a postgresql:// URI
+                        # (docker-compose.prod.yml). A raw password containing a URL
+                        # delimiter (: @ / ? # etc.) corrupts that URI's parsing — Prisma
+                        # fails with "invalid port number" or similar. Percent-encode a
+                        # second copy for that use; POSTGRES_PASSWORD itself stays raw
+                        # since Postgres's own account creation is not a URL.
+                        S_POSTGRES_PASSWORD_URLENC=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "${S_POSTGRES_PASSWORD}")
                         {
                             echo "POSTGRES_USER=prio"
                             echo "POSTGRES_PASSWORD=${S_POSTGRES_PASSWORD}"
+                            echo "POSTGRES_PASSWORD_URLENC=${S_POSTGRES_PASSWORD_URLENC}"
                             echo "POSTGRES_DB=prio"
                             echo "AUTH_SECRET=${S_AUTH_SECRET}"
                             echo "BASE_URL=https://prio.symbiosystech.in"
