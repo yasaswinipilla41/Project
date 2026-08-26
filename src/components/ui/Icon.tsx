@@ -280,13 +280,6 @@ export const IconExternal = (p: IconProps) => (
   </Svg>
 );
 
-export const IconDownload = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M8 2.4v7.4M4.8 6.8 8 9.8l3.2-3" />
-    <path d="M2.6 11.4v1.2a1.6 1.6 0 0 0 1.6 1.6h7.6a1.6 1.6 0 0 0 1.6-1.6v-1.2" />
-  </Svg>
-);
-
 export const IconImage = (p: IconProps) => (
   <Svg {...p}>
     <rect x="2.4" y="2.9" width="11.2" height="10.2" rx="1.4" />

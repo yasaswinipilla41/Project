@@ -71,6 +71,17 @@ collide with anything already installed locally.
 Change `SEED_ADMIN_PASSWORD` / `SEED_DEFAULT_PASSWORD` in `.env` before seeding
 anything you intend to keep.
 
+### Production
+
+`docker-compose.prod.yml` is the same stack without the mailpit SMTP sink.
+`SMTP_HOST` / `SMTP_PORT` have no dev fallback there — point them at a real
+relay in `.env` first.
+
+```bash
+docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml run --rm migrate npx tsx prisma/seed.ts
+```
+
 ---
 
 ## Local development (without the app container)

@@ -252,6 +252,20 @@ const LIST_SELECT = {
 } satisfies Prisma.IssueSelect;
 
 /**
+ * `LIST_SELECT` plus the issue's own image attachments, for the Excel export
+ * only — the paginated `/issues` list never renders them, so it stays on
+ * `LIST_SELECT` to avoid the extra read on every page view.
+ */
+const EXPORT_SELECT = {
+  ...LIST_SELECT,
+  attachments: {
+    where: { commentId: null },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, filename: true, mimeType: true, storageKey: true },
+  },
+} satisfies Prisma.IssueSelect;
+
+/**
  * Hard ceiling on a single export. Large enough for any real filtered view,
  * small enough that one request cannot be turned into a whole-database dump.
  */
