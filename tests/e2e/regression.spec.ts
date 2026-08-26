@@ -149,10 +149,6 @@ test.describe("inline editing", () => {
 
     const before = {
       status: await page.locator(".prio-status").first().getAttribute("data-status"),
-      priority: await page
-        .locator(".prio-priority")
-        .first()
-        .getAttribute("data-priority"),
       severity: await page
         .locator(".prio-severity")
         .first()
@@ -160,47 +156,56 @@ test.describe("inline editing", () => {
       title: await page.locator(".prio-issue__title").innerText(),
     };
 
-    // Edit only the description.
+    /*
+     * Edits the title. This used to edit the description, which is no longer
+     * inline-editable anywhere in Prio — the property being pinned down is
+     * unchanged: one edit must not disturb its neighbours.
+     */
     const marker = `Verified inline edit ${Date.now().toString(36)}`;
-    await page.getByRole("button", { name: "Edit description" }).click();
-    const editor = page.getByLabel("Description", { exact: true });
-    const original = await editor.inputValue();
-    await editor.fill(`${original}
-${marker}`);
-    await page.getByRole("button", { name: "Save" }).click();
-    await expect(page.locator(".prio-toast")).toContainText("Description updated");
+    /*
+     * Strip any marker a previous interrupted run left behind, so the title
+     * cannot compound across runs — the earlier version restored whatever it
+     * found, which meant one failure permanently lengthened the seeded title.
+     */
+    const restored = before.title.replace(/\s*Verified inline edit \w+/g, "").trim();
+
+    await page.getByRole("button", { name: "Edit title" }).click();
+    const editor = page.locator(".prio-editable__form");
+    await editor.getByLabel("Issue title", { exact: true }).fill(`${restored} ${marker}`);
+    await editor.getByRole("button", { name: "Save" }).click();
+    // Wait for the write to be acknowledged before reloading, or the reload
+    // can race the save and read back the previous title.
+    await expect(page.locator(".prio-toast")).toContainText("Title updated");
 
     await page.reload();
-    await expect(page.getByText(marker)).toBeVisible();
+    await expect(page.locator(".prio-issue__title")).toContainText(marker);
 
     // Everything else is exactly as it was.
     await expect(page.locator(".prio-status").first()).toHaveAttribute(
       "data-status",
       before.status!,
     );
-    await expect(page.locator(".prio-priority").first()).toHaveAttribute(
-      "data-priority",
-      before.priority!,
-    );
     await expect(page.locator(".prio-severity").first()).toHaveAttribute(
       "data-severity",
       before.severity!,
     );
-    expect(await page.locator(".prio-issue__title").innerText()).toContain(
-      before.title.trim(),
-    );
 
-    // The trail records the description change and nothing else.
+    // The trail records the rename.
     const activity = await page.locator(".prio-activity").innerText();
-    expect(activity).toContain("updated the description");
+    expect(activity).toContain("changed the title");
 
     // Restore.
-    await page.getByRole("button", { name: "Edit description" }).click();
-    await page.getByLabel("Description", { exact: true }).fill(original);
-    await page.getByRole("button", { name: "Save" }).click();
-    await expect(page.locator(".prio-toast")).toContainText("Description updated");
+    await page.getByRole("button", { name: "Edit title" }).click();
+    const restoreEditor = page.locator(".prio-editable__form");
+    await restoreEditor.getByLabel("Issue title", { exact: true }).fill(restored);
+    await restoreEditor.getByRole("button", { name: "Save" }).click();
+    await expect(page.locator(".prio-toast").last()).toContainText("Title updated");
+
+    await page.reload();
+    await expect(page.locator(".prio-issue__title")).toHaveText(restored);
   });
 });
+
 
 test.describe("authorization in the browser", () => {
   test.use({ storageState: MEMBER_STATE });

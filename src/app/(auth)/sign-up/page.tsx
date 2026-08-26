@@ -40,8 +40,8 @@ export default async function SignUpPage() {
                 <IconBug />
               </span>
               <span>
-                Bug reports with reproduction steps, expected vs actual results
-                and severity — not just a coloured label.
+                Bug reports that record where the problem was found, its
+                environment and its severity — not just a coloured label.
               </span>
             </li>
             <li className="prio-auth__point">

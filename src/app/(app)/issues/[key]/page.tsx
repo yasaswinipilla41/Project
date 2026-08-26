@@ -13,7 +13,6 @@ import {
 } from "@/components/issues/IssueFieldControls";
 import {
   DueDateField,
-  EditableText,
   EditableTitle,
 } from "@/components/issues/EditableIssueFields";
 import { IssueDetailActions } from "@/components/issues/IssueDetailActions";
@@ -51,7 +50,7 @@ export const dynamic = "force-dynamic";
  * Issue detail — and, for `type = BUG`, the bug detail experience of §11.
  *
  * One route serves all three issue types. A bug additionally renders its
- * reproduction steps, expected vs actual results and environment block; a task
+ * environment block; a task
  * or story simply has nothing to show there, so those sections are omitted
  * rather than rendered empty.
  */
@@ -71,7 +70,6 @@ async function loadIssue(rawKey: string, user: CurrentUser) {
       key: true,
       type: true,
       title: true,
-      description: true,
       status: true,
       priority: true,
       severity: true,
@@ -79,8 +77,6 @@ async function loadIssue(rawKey: string, user: CurrentUser) {
       createdAt: true,
       updatedAt: true,
       completedAt: true,
-      expectedResult: true,
-      actualResult: true,
       testResult: true,
       testedAt: true,
       testedBy: { select: { name: true } },
@@ -304,54 +300,9 @@ export default async function IssueDetailPage({
             </CardBody>
           </Card>
 
-          <Card className="prio-issue__section">
-            <CardBody>
-              <h2 className="prio-issue__section-title">Description</h2>
-              <EditableText
-                issueId={issue.id}
-                field="description"
-                label="Description"
-                value={issue.description}
-                emptyText="No description was provided."
-              />
-            </CardBody>
-          </Card>
-
           {/* --------------------------------------------- bug specifics */}
           {isBug ? (
             <>
-              {/* Reported behaviour, shown only when the bug carries it — a
-                  bug filed through "Report a problem" always does, and the
-                  historical ones keep displaying what they captured. */}
-              {issue.expectedResult || issue.actualResult ? (
-                <div className="row g-4 prio-issue__section">
-                  <div className="col-12 col-md-6">
-                    <Card style={{ height: "100%" }}>
-                      <CardBody>
-                        <h2 className="prio-issue__section-title prio-issue__section-title--expected">
-                          Expected behaviour
-                        </h2>
-                        <p className="prio-prose">
-                          {issue.expectedResult ?? "Not recorded."}
-                        </p>
-                      </CardBody>
-                    </Card>
-                  </div>
-                  <div className="col-12 col-md-6">
-                    <Card style={{ height: "100%" }}>
-                      <CardBody>
-                        <h2 className="prio-issue__section-title prio-issue__section-title--actual">
-                          Actual behaviour
-                        </h2>
-                        <p className="prio-prose">
-                          {issue.actualResult ?? "Not recorded."}
-                        </p>
-                      </CardBody>
-                    </Card>
-                  </div>
-                </div>
-              ) : null}
-
               {issue.environment ||
               issue.browser ||
               issue.operatingSystem ||

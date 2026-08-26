@@ -159,30 +159,20 @@ const issueBase = z.object({
 });
 
 /**
- * A bug still has to say what is wrong, so a description remains mandatory for
- * BUG and optional for everything else.
+ * Issue creation.
  *
- * Reproduction steps, expected result and actual result are gone from this
- * schema entirely — not merely optional. There is no longer a field to read,
- * so no caller can set one, which is what retires them from the write path
- * rather than just from the form.
+ * `description` is still *accepted* — the column exists, every issue recorded
+ * before this change keeps its text, and the API would break existing callers
+ * if the key were rejected — but it is no longer *required* for a bug and no
+ * longer collected by the form. Demanding a field the UI cannot supply would
+ * reject every bug the dialog can produce.
  *
- * The `stepsToReproduce` / `expectedResult` / `actualResult` *columns* remain
- * in the database on purpose: every bug recorded before this change keeps
- * what it captured, and the activity trail that references those field names
- * still reads correctly. They are simply never written again.
+ * The same is true of `stepsToReproduce` / `expectedResult` / `actualResult`:
+ * their columns remain, holding what earlier bugs captured, and the activity
+ * trail that names those fields still reads correctly. They are simply never
+ * written from here.
  */
-export const createIssueSchema = issueBase.superRefine((value, ctx) => {
-  if (value.type !== "BUG") return;
-
-  if (!value.description) {
-    ctx.addIssue({
-      code: "custom",
-      path: ["description"],
-      message: "Describe the problem.",
-    });
-  }
-});
+export const createIssueSchema = issueBase;
 
 export type CreateIssueInput = z.infer<typeof createIssueSchema>;
 
@@ -220,20 +210,15 @@ export type UpdateIssueInput = z.infer<typeof updateIssueSchema>;
  * issue being tested, so the tester is never asked for something Prio already
  * knows.
  *
- * The four fields it *does* ask for map onto columns that already exist —
- * `description`, `affectedModule`, `expectedResult` and `actualResult`. Those
- * last three were retired from the general issue form, where they made every
- * task carry empty bug boxes; here they are exactly the right shape, and
- * reusing them keeps the nine historical bugs' data in the same columns as
- * anything reported from now on. No migration, and no second bug store.
+ * What it asks for is a summary and where the problem was seen; the detail,
+ * the evidence and the discussion all go on the bug itself through the
+ * existing comment and attachment systems. No migration, and no second bug
+ * store.
  */
 export const reportBugSchema = z.object({
   issueId: z.string().min(1),
   title: trimmed(200).min(5, "Summarise the problem in a few words."),
-  description: trimmed(20_000).min(10, "Describe what went wrong."),
   affectedModule: trimmed(120).min(2, "Say where you found it."),
-  expectedResult: trimmed(5_000).min(3, "Describe what should have happened."),
-  actualResult: trimmed(5_000).min(3, "Describe what actually happened."),
   severity: severitySchema.nullable().optional().default(null),
   priority: prioritySchema.default("MEDIUM"),
 });

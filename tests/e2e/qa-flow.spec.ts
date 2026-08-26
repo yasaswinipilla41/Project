@@ -126,18 +126,7 @@ test.describe("Developer → Submit → Tester → verdict", () => {
 
       const bugSummary = `Login button stops responding ${Date.now()}`;
       await dialog.getByLabel("Summary").fill(bugSummary);
-      await dialog
-        .getByLabel("Where you found it")
-        .fill("Login page");
-      await dialog
-        .getByLabel("What went wrong")
-        .fill("The button stops reacting after a rejected password.");
-      await dialog
-        .getByLabel("Expected behaviour")
-        .fill("The button stays clickable so a second attempt works.");
-      await dialog
-        .getByLabel("Actual behaviour")
-        .fill("The button is inert until the page is reloaded.");
+      await dialog.getByLabel("Where you found it").fill("Login page");
 
       await dialog.getByRole("button", { name: "Report problem" }).click();
 
@@ -146,8 +135,6 @@ test.describe("Developer → Submit → Tester → verdict", () => {
       await expect(
         qaPage.getByRole("heading", { name: bugSummary }),
       ).toBeVisible();
-      await expect(qaPage.getByText("Expected behaviour")).toBeVisible();
-      await expect(qaPage.getByText("Actual behaviour")).toBeVisible();
 
       const bugKey = (
         await qaPage.locator(".prio-issue__crumb-current .prio-key").innerText()
@@ -161,14 +148,10 @@ test.describe("Developer → Submit → Tester → verdict", () => {
           type: true,
           assigneeId: true,
           affectedModule: true,
-          expectedResult: true,
-          actualResult: true,
         },
       });
       expect(bug.type).toBe("BUG");
       expect(bug.affectedModule).toBe("Login page");
-      expect(bug.expectedResult).toContain("stays clickable");
-      expect(bug.actualResult).toContain("inert");
 
       const dev = await prisma.user.findUniqueOrThrow({
         where: { email: DEV_EMAIL },

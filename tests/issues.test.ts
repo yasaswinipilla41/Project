@@ -91,21 +91,31 @@ describe("createIssue", () => {
     expect(row.priority).toBe("MEDIUM");
   });
 
-  it("still requires a bug to describe the problem", async () => {
+  it("creates a bug from a title alone, now that description is not collected", async () => {
+    /*
+     * A description used to be mandatory for a BUG. The field has been removed
+     * from every form, so demanding one would reject every bug the UI can
+     * produce — this pins the relaxed contract rather than leaving it untested.
+     */
     await actAs("admin@symbiosystech.com");
     const project = await projectByKey("ENG");
 
     const result = await createIssue({
       projectId: project.id,
       type: "BUG",
-      title: "Incomplete bug report",
-      // no description
+      title: "Bug reported the way the form now submits it",
     });
 
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    created.push(result.data.id);
 
-    expect(Object.keys(result.fieldErrors ?? {})).toContain("description");
+    const row = await prisma.issue.findUniqueOrThrow({
+      where: { id: result.data.id },
+      select: { type: true, description: true },
+    });
+    expect(row.type).toBe("BUG");
+    expect(row.description).toBeNull();
   });
 
   /*

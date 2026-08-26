@@ -41,10 +41,7 @@ export function ReportBugDialog({
   const [errors, setErrors] = useState<FieldErrors>({});
 
   const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
   const [affectedModule, setAffectedModule] = useState("");
-  const [expectedResult, setExpectedResult] = useState("");
-  const [actualResult, setActualResult] = useState("");
   const [priority, setPriority] = useState<Priority>("MEDIUM");
   const [severity, setSeverity] = useState<Severity | "">("");
 
@@ -52,10 +49,7 @@ export function ReportBugDialog({
 
   function reset() {
     setTitle("");
-    setDescription("");
     setAffectedModule("");
-    setExpectedResult("");
-    setActualResult("");
     setPriority("MEDIUM");
     setSeverity("");
     setErrors({});
@@ -69,10 +63,7 @@ export function ReportBugDialog({
     const result = await reportBug({
       issueId,
       title,
-      description,
       affectedModule,
-      expectedResult,
-      actualResult,
       priority,
       severity: severity === "" ? null : severity,
     });
@@ -168,62 +159,6 @@ export function ReportBugDialog({
                 required
               />
             </Field>
-
-            <Field
-              id="bug-description"
-              label="What went wrong"
-              required
-              error={errors.description}
-            >
-              <textarea
-                id="bug-description"
-                className="prio-textarea"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                rows={4}
-                maxLength={20_000}
-                required
-              />
-            </Field>
-
-            <div className="row g-3">
-              <div className="col-12 col-md-6">
-                <Field
-                  id="bug-expected"
-                  label="Expected behaviour"
-                  required
-                  error={errors.expectedResult}
-                >
-                  <textarea
-                    id="bug-expected"
-                    className="prio-textarea"
-                    value={expectedResult}
-                    onChange={(e) => setExpectedResult(e.target.value)}
-                    rows={3}
-                    maxLength={5000}
-                    required
-                  />
-                </Field>
-              </div>
-              <div className="col-12 col-md-6">
-                <Field
-                  id="bug-actual"
-                  label="Actual behaviour"
-                  required
-                  error={errors.actualResult}
-                >
-                  <textarea
-                    id="bug-actual"
-                    className="prio-textarea"
-                    value={actualResult}
-                    onChange={(e) => setActualResult(e.target.value)}
-                    rows={3}
-                    maxLength={5000}
-                    required
-                  />
-                </Field>
-              </div>
-            </div>
 
             <div className="row g-3">
               <div className="col-12 col-md-6">

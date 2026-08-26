@@ -337,10 +337,7 @@ describe("reporting a bug against work under test", () => {
     const reported = await reportBug({
       issueId,
       title: "Login button stops responding after a failed attempt",
-      description: "The button no longer reacts once the password is rejected.",
       affectedModule: "Login page",
-      expectedResult: "The button stays clickable so a second attempt works.",
-      actualResult: "The button is inert until the page is reloaded.",
       priority: "HIGH",
       severity: "MAJOR",
     });
@@ -358,10 +355,7 @@ describe("reporting a bug against work under test", () => {
         projectId: true,
         reporterId: true,
         assigneeId: true,
-        description: true,
         affectedModule: true,
-        expectedResult: true,
-        actualResult: true,
       },
     });
 
@@ -372,10 +366,8 @@ describe("reporting a bug against work under test", () => {
     expect(bug.assigneeId).toBe(dev);
     expect(bug.status).toBe("TODO");
 
-    // ...and what only the tester knew was stored on the existing columns.
+    // ...and what only the tester knew was stored on the existing column.
     expect(bug.affectedModule).toBe("Login page");
-    expect(bug.expectedResult).toContain("stays clickable");
-    expect(bug.actualResult).toContain("inert");
     expect(bug.priority).toBe("HIGH");
     expect(bug.severity).toBe("MAJOR");
 
@@ -405,27 +397,19 @@ describe("reporting a bug against work under test", () => {
     expect(activity.map((a) => a.action)).toContain("bug.created");
   });
 
-  it("requires the four things only the tester can know", async () => {
+  it("requires a summary and where the problem was found", async () => {
     const issueId = await anIssue("QA report-bug validation fixture");
 
     await actAs(TESTER);
     const result = await reportBug({
       issueId,
-      title: "Too thin",
-      description: "",
+      title: "Thin",
       affectedModule: "",
-      expectedResult: "",
-      actualResult: "",
     });
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    for (const field of [
-      "description",
-      "affectedModule",
-      "expectedResult",
-      "actualResult",
-    ]) {
+    for (const field of ["title", "affectedModule"]) {
       expect(Object.keys(result.fieldErrors ?? {})).toContain(field);
     }
   });
@@ -450,10 +434,7 @@ describe("reporting a bug against work under test", () => {
       const result = await reportBug({
         issueId,
         title: "Should never be created",
-        description: "Filed by somebody with no access at all.",
         affectedModule: "Nowhere",
-        expectedResult: "Refused.",
-        actualResult: "Refused.",
       });
 
       expect(result.ok).toBe(false);
