@@ -61,6 +61,15 @@ interface NavEntry {
    * route, even though it sits under Projects' own `/projects/[key]` prefix.
    */
   excludeSuffix?: string;
+  /**
+   * Decides active state directly from the pathname instead of comparing
+   * against `href`. Flow Board needs this: with no projects to link to, its
+   * `href` falls back to `/projects` — identical to the Projects entry's own
+   * href — so a plain `pathname === href` check would light both up together
+   * on that page. This keeps Flow Board active only on an actual board route,
+   * regardless of what its href currently resolves to.
+   */
+  activeTest?: (pathname: string) => boolean;
 }
 
 export function Sidebar({
@@ -111,6 +120,7 @@ export function Sidebar({
       href: flowBoardHref(pathname, projects),
       label: "Flow Board",
       Icon: IconBoard,
+      activeTest: (p) => /^\/projects\/[^/]+\/board(\/|$)/.test(p),
     },
     {
       href: "/projects",
@@ -135,6 +145,7 @@ export function Sidebar({
   ];
 
   const isActive = (entry: NavEntry) => {
+    if (entry.activeTest) return entry.activeTest(pathname);
     if (!entry.prefix) return pathname === entry.href;
     const withinPrefix =
       pathname === entry.href || pathname.startsWith(`${entry.href}/`);
@@ -147,7 +158,12 @@ export function Sidebar({
 
   function renderProjectRow(project: SidebarProject) {
     const href = `/projects/${project.key.toLowerCase()}`;
-    const active = pathname.startsWith(href);
+    // Same rule as the top-level Projects nav item: the project's own
+    // Overview/Settings pages count as "on this project", but its Flow Board
+    // route belongs to the Flow Board nav item instead.
+    const active =
+      (pathname === href || pathname.startsWith(`${href}/`)) &&
+      !pathname.endsWith("/board");
     return (
       <div
         key={project.id}
