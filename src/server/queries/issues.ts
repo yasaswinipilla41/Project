@@ -335,6 +335,19 @@ export async function listIssues(
  */
 const EXPORT_ROW_LIMIT = 20_000;
 
+/**
+ * The export needs everything the list shows, plus each issue's attachments so
+ * the workbook can reference the evidence hanging off a row. Built from
+ * `LIST_SELECT` rather than restating it, so the two can never drift.
+ */
+const EXPORT_SELECT = {
+  ...LIST_SELECT,
+  attachments: {
+    select: { id: true, filename: true, mimeType: true, storageKey: true },
+    orderBy: { createdAt: "asc" },
+  },
+} satisfies Prisma.IssueSelect;
+
 export interface IssueExportRow extends IssueListRow {
   attachments: { id: string; filename: string; mimeType: string; storageKey: string }[];
 }

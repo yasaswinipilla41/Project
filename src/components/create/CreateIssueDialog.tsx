@@ -357,6 +357,9 @@ export function CreateIssueDialog({
           <FieldError errors={errors} field="title" />
         </div>
 
+        {/* ------------------------------------------------- screenshot */}
+        <ScreenshotAttachmentField value={screenshots} onChange={setScreenshots} />
+
         {/* --------------------------------------------------- metadata */}
         <section className="prio-formsection" aria-label="Details">
           <h3 className="prio-formsection__title">Details</h3>
