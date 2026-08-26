@@ -1,0 +1,344 @@
+/* ============================================================================
+   Prio — Flow Board
+   The project Kanban board: five status columns (Backlog is intentionally not
+   one of them — see FlowBoard.tsx), drag-and-drop between them backed by the
+   same `updateIssue` action the issue detail page uses. Styled to match the
+   approved Flow Board reference design as closely as the rest of Prio's
+   design-token system allows.
+   ========================================================================= */
+
+/* Small "Projects / Website" trail above a page title, used wherever a page
+   sits a level below a project rather than at the top of a section. */
+.prio-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  margin-bottom: var(--prio-space-2);
+  font-size: var(--prio-text-sm);
+  color: var(--prio-text-muted);
+}
+
+.prio-breadcrumb a:hover {
+  color: var(--prio-text-primary);
+  text-decoration: underline;
+}
+
+/* Starred state of the Flow Board's favourite toggle — filled and coloured,
+   matching the amber used for priority accents elsewhere in Prio. */
+.prio-board__favorite[data-favorite] {
+  color: var(--prio-amber-500);
+  border-color: var(--prio-amber-500);
+}
+
+/* ----------------------------------------------------------------- board */
+.prio-board {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* ------------------------------------------------------------- toolbar */
+.prio-board__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--prio-space-4);
+  padding-bottom: var(--prio-space-5);
+  margin-bottom: var(--prio-space-5);
+  border-bottom: 1px solid var(--prio-border-subtle);
+}
+
+.prio-board__toolbar-left {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--prio-space-4);
+}
+
+.prio-board__search {
+  width: 200px;
+}
+
+.prio-board__divider {
+  width: 1px;
+  height: 24px;
+  background: var(--prio-border);
+}
+
+.prio-board__filters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--prio-space-3);
+}
+
+.prio-board__assignee-trigger {
+  gap: var(--prio-space-2);
+}
+
+.prio-board__toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-4);
+  flex-shrink: 0;
+}
+
+/* A toolbar dropdown highlights exactly like the Search Bar's own
+   active/focus treatment (`.prio-input:focus` in components.css) — open right
+   now, or carrying a selection that survives the dropdown closing. Both
+   tokens are theme-aware already, so this needs nothing extra for dark mode. */
+.prio-board__toolbar .prio-btn--secondary[aria-expanded="true"],
+.prio-board__toolbar .prio-btn--secondary[data-active="true"] {
+  border-color: var(--prio-primary-500);
+  box-shadow: var(--prio-shadow-focus);
+}
+
+.prio-board__groupby {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-3);
+  font-size: var(--prio-text-sm);
+  color: var(--prio-text-muted);
+}
+
+/* --------------------------------------------------------------- columns */
+.prio-board__columns {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--prio-space-4);
+  overflow-x: auto;
+  padding: var(--prio-space-2) var(--prio-space-2) var(--prio-space-4);
+  margin: calc(var(--prio-space-2) * -1);
+  background: var(--prio-bg-app);
+  border-radius: var(--prio-radius-lg);
+}
+
+.prio-board__column {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: 280px;
+  border-radius: var(--prio-radius-lg);
+  background: var(--prio-bg-subtle);
+  border: 1px solid var(--prio-border-subtle);
+  transition: background var(--prio-duration-fast) var(--prio-ease);
+}
+
+/* Every column carries a colour-coded top border identifying its status. */
+.prio-board__column[data-status="TODO"] {
+  border-top: 3px solid #94a3b8;
+}
+.prio-board__column[data-status="IN_PROGRESS"] {
+  border-top: 3px solid #f59e0b;
+}
+.prio-board__column[data-status="IN_REVIEW"] {
+  border-top: 3px solid #3b82f6;
+}
+.prio-board__column[data-status="DONE"] {
+  border-top: 3px solid #10b981;
+}
+.prio-board__column[data-status="CANCELLED"] {
+  border-top: 3px solid #ef4444;
+}
+
+.prio-board__column[data-drop-active="true"] {
+  background: var(--prio-primary-50);
+}
+
+.prio-board__column-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--prio-space-4) var(--prio-space-4) var(--prio-space-2);
+}
+
+.prio-board__column-title {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  font-size: var(--prio-text-xs);
+  font-weight: var(--prio-weight-semibold);
+  letter-spacing: var(--prio-tracking-wide);
+  text-transform: uppercase;
+  color: var(--prio-text-secondary);
+}
+
+.prio-board__column-check {
+  color: var(--prio-status-done-dot);
+}
+
+.prio-board__column-count {
+  padding: 1px var(--prio-space-2);
+  border-radius: var(--prio-radius-pill);
+  background: var(--prio-neutral-200);
+  color: var(--prio-text-secondary);
+  font-size: var(--prio-text-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.prio-board__column-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-2);
+  flex: 1;
+  min-height: 80px;
+  max-height: calc(100vh - 360px);
+  overflow-y: auto;
+  padding: var(--prio-space-2) var(--prio-space-3) var(--prio-space-4);
+}
+
+.prio-board__column-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 80px;
+  margin: var(--prio-space-1);
+  border: 2px dashed var(--prio-border);
+  border-radius: var(--prio-radius-md);
+  color: var(--prio-text-disabled);
+  font-size: var(--prio-text-xs);
+  text-align: center;
+  padding: var(--prio-space-4);
+}
+
+.prio-board__column-footer {
+  padding: 0 var(--prio-space-2) var(--prio-space-2);
+}
+
+.prio-board__add-issue {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  width: 100%;
+  padding: var(--prio-space-3) var(--prio-space-3);
+  border: none;
+  border-radius: var(--prio-radius-md);
+  background: none;
+  color: var(--prio-text-secondary);
+  font-size: var(--prio-text-sm);
+  font-family: inherit;
+  cursor: pointer;
+  transition: background var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-board__add-issue:hover {
+  background: var(--prio-bg-active);
+}
+
+/* ------------------------------------------------------------------ card */
+.prio-board__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-2);
+  padding: var(--prio-space-3);
+  border-radius: var(--prio-radius-md);
+  background: var(--prio-bg-surface);
+  border: 1px solid var(--prio-border);
+  box-shadow: var(--prio-shadow-xs);
+  cursor: pointer;
+  transition:
+    box-shadow var(--prio-duration-fast) var(--prio-ease),
+    opacity var(--prio-duration-fast) var(--prio-ease),
+    border-color var(--prio-duration-fast) var(--prio-ease);
+}
+
+/* Same border colour as the Search Bar's own active state
+   (`.prio-input:focus` in components.css) — existing shadow and background
+   both stay put, and the border was already 1px at rest, so only its colour
+   moves on the existing transition; nothing shifts or resizes. */
+.prio-board__card:hover {
+  box-shadow: var(--prio-shadow-sm);
+  border-color: var(--prio-primary-500);
+}
+
+.prio-board__card:focus-visible {
+  outline: none;
+  box-shadow: var(--prio-shadow-focus);
+}
+
+.prio-board__card[data-dragging="true"] {
+  opacity: 0.5;
+  cursor: grabbing;
+}
+
+/* Cancelled cards read as abandoned — dimmed and struck through. Done cards
+   stay fully normal (matching the reference design): completing an issue
+   isn't the same as cancelling it, and only the latter reads as "never
+   mind". */
+.prio-board__card[data-cancelled="true"] {
+  background: var(--prio-bg-subtle);
+  opacity: 0.72;
+}
+
+.prio-board__card[data-cancelled="true"] .prio-board__card-title,
+.prio-board__card[data-cancelled="true"] .prio-key {
+  text-decoration: line-through;
+}
+
+.prio-board__card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--prio-space-2);
+}
+
+.prio-board__card-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--prio-text-sm);
+  line-height: var(--prio-leading-snug);
+  color: var(--prio-text-primary);
+}
+
+/* The per-card "..." menu stays faint until the card is hovered/focused, so
+   every column reads the same as before at rest — it's discoverable, not
+   decorative clutter on every card at once. */
+.prio-board__card-menu {
+  flex-shrink: 0;
+  margin: -2px -4px 0 0;
+  opacity: 0;
+  transition: opacity var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-board__card:hover .prio-board__card-menu,
+.prio-board__card:focus-within .prio-board__card-menu,
+.prio-board__card-menu:focus-within {
+  opacity: 1;
+}
+
+.prio-board__card-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--prio-space-2);
+}
+
+.prio-board__card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--prio-space-3);
+}
+
+.prio-board__card-key {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  min-width: 0;
+  color: var(--prio-text-secondary);
+}
+
+@media (max-width: 640px) {
+  .prio-board__toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .prio-board__toolbar-right {
+    justify-content: space-between;
+  }
+
+  .prio-board__search {
+    width: 100%;
+  }
+}

@@ -88,7 +88,7 @@ export function ProjectActions({ project, issueCount }: ProjectActionsProps) {
 
 /* ------------------------------------------------------------------- edit */
 
-function EditProjectDialog({
+export function EditProjectDialog({
   project,
   onClose,
 }: {
@@ -221,7 +221,7 @@ function EditProjectDialog({
 
 /* ----------------------------------------------------------------- delete */
 
-function DeleteProjectDialog({
+export function DeleteProjectDialog({
   project,
   issueCount,
   onClose,

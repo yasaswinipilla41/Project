@@ -80,6 +80,35 @@
   background: var(--prio-nav-border);
 }
 
+/* "Pinned" doubles as its own collapse toggle — same label look, reset to a
+   plain button since the browser's defaults don't match a <p>'s. */
+.prio-sidebar__section-label--toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-1);
+  width: 100%;
+  background: none;
+  border: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.prio-sidebar__section-label--toggle:hover {
+  color: var(--prio-nav-fg-strong);
+}
+
+.prio-sidebar__section-chevron {
+  flex-shrink: 0;
+  transition: transform var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-sidebar__empty {
+  padding: 0 var(--prio-space-3);
+  margin-bottom: var(--prio-space-2);
+  font-size: var(--prio-text-xs);
+  color: var(--prio-nav-fg-muted);
+}
+
 .prio-navitem {
   position: relative;
   display: flex;
@@ -191,6 +220,71 @@
 .prio-sidebar__collapse:hover {
   background: var(--prio-nav-bg-hover);
   color: var(--prio-nav-fg-strong);
+}
+
+/* A project's sidebar row wraps its link plus a favourite mark and a "more
+   actions" trigger — `.prio-navitem` still owns the row's padding, hover and
+   active-state background exactly as it does for every other nav item. */
+.prio-sidebar__project-row {
+  padding-right: var(--prio-space-2);
+}
+
+.prio-sidebar__project-link {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-4);
+  flex: 1;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+
+.prio-sidebar__project-fav {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  color: var(--prio-amber-500);
+}
+
+.prio-sidebar__project-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-1);
+  flex-shrink: 0;
+}
+
+/* Both triggers stay invisible until the row is hovered or one of them has
+   keyboard focus — kept out of the way at rest, same as the card-level menu
+   on the Flow Board, so the list reads clean by default. */
+.prio-sidebar__project-menu-trigger {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--prio-radius-sm);
+  color: var(--prio-nav-fg-muted);
+  opacity: 0;
+  transition:
+    background var(--prio-duration-fast) var(--prio-ease),
+    color var(--prio-duration-fast) var(--prio-ease),
+    opacity var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-sidebar__project-row:hover .prio-sidebar__project-menu-trigger,
+.prio-sidebar__project-menu-trigger:focus-visible,
+.prio-sidebar__project-menu-trigger[aria-expanded="true"] {
+  opacity: 1;
+}
+
+.prio-sidebar__project-menu-trigger:hover,
+.prio-sidebar__project-menu-trigger[aria-expanded="true"] {
+  background: var(--prio-nav-bg-hover);
+  color: var(--prio-nav-fg-strong);
+}
+
+.prio-sidebar[data-collapsed="true"] .prio-sidebar__project-row {
+  padding-right: 0;
 }
 
 /* Project shortcut swatch. */

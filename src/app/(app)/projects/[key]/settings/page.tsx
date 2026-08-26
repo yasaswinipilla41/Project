@@ -29,6 +29,7 @@ export default async function ProjectSettingsPage({
       name: true,
       description: true,
       isDefaultProject: true,
+      isArchived: true,
       members: {
         orderBy: { createdAt: "asc" },
         select: {
@@ -95,6 +96,7 @@ export default async function ProjectSettingsPage({
           name: project.name,
           description: project.description,
           isDefaultProject: project.isDefaultProject,
+          isArchived: project.isArchived,
         }}
         members={project.members.map((m) => m.user)}
         candidates={candidates}

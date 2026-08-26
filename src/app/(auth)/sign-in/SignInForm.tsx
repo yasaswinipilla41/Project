@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { signIn } from "@/lib/auth-client";
@@ -66,7 +65,6 @@ export function SignInForm({
   /** Prefilled after registering, so a new account is not retyping its own address. */
   initialEmail?: string;
 }) {
-  const router = useRouter();
   const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -89,8 +87,15 @@ export function SignInForm({
       return;
     }
 
-    router.push(next);
-    router.refresh();
+    /*
+     * A client-side transition (`router.push`) never triggers the browser's
+     * "Save password?" prompt — Chromium and Firefox only offer it after a
+     * real form submission is followed by an actual page navigation. A hard
+     * navigation here is what makes that prompt appear, and it also means the
+     * next page starts from a clean server-rendered state that already knows
+     * about the new session, rather than a client-only refresh of the old one.
+     */
+    window.location.href = next;
   }
 
   return (

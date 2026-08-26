@@ -15,6 +15,7 @@ import {
   createProjectSchema,
   deleteProjectSchema,
   fieldErrors,
+  projectIdSchema,
   projectMemberSchema,
   updateProjectSchema,
   type FieldErrors,
@@ -97,6 +98,183 @@ export async function createProject(
     revalidatePath("/");
 
     return { ok: true, data: project };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/**
+ * Duplicate a project's structure — name, description and labels — onto a
+ * fresh, empty project the caller now owns. Membership carries over too, so
+ * the same team keeps working without being re-invited by hand.
+ *
+ * Deliberately does not copy issues: a "board" here means the structure
+ * issues get filed into, not its history, and duplicating hundreds of issues
+ * (with fresh keys, reset activity, no comments) would produce something that
+ * only looks like a history and misleads anyone reading it later.
+ *
+ * Gated the same way `createProject` is — creating a project, in whatever
+ * form, is an administrator action.
+ */
+export async function duplicateProject(
+  raw: unknown,
+): Promise<ProjectActionResult<{ id: string; key: string }>> {
+  try {
+    const user = await requireUser();
+    assertAdmin(user);
+
+    const parsed = projectIdSchema.safeParse(raw);
+    if (!parsed.success) {
+      return { ok: false, error: "Choose a project to duplicate." };
+    }
+
+    const source = await prisma.project.findUnique({
+      where: { id: parsed.data.projectId },
+      select: {
+        name: true,
+        description: true,
+        members: { select: { userId: true } },
+        labels: { select: { name: true, color: true } },
+      },
+    });
+    if (!source) {
+      return { ok: false, error: "This project no longer exists." };
+    }
+
+    const key = await deriveCopyKey(source.name, parsed.data.projectId);
+    const memberIds = new Set([user.id, ...source.members.map((m) => m.userId)]);
+
+    const project = await prisma.project.create({
+      data: {
+        name: `${source.name} (Copy)`,
+        key,
+        description: source.description,
+        createdById: user.id,
+        members: {
+          createMany: { data: [...memberIds].map((userId) => ({ userId })) },
+        },
+        labels: {
+          createMany: { data: source.labels.map((l) => ({ name: l.name, color: l.color })) },
+        },
+      },
+      select: { id: true, key: true },
+    });
+
+    revalidatePath("/projects");
+    revalidatePath("/");
+
+    return { ok: true, data: project };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/**
+ * A project key is at most 10 letters/digits (`projectKeySchema`), so the
+ * source name is boiled down to its letters, truncated to leave room for a
+ * numbered suffix, and probed until a free key is found.
+ */
+async function deriveCopyKey(sourceName: string, excludeProjectId: string): Promise<string> {
+  const letters = sourceName.replace(/[^A-Za-z0-9]/g, "").toUpperCase() || "PROJECT";
+
+  for (let n = 1; n <= 50; n++) {
+    const suffix = n === 1 ? "COPY" : `CP${n}`;
+    const candidate = (letters.slice(0, Math.max(1, 10 - suffix.length)) + suffix).slice(0, 10);
+
+    const clash = await prisma.project.findUnique({
+      where: { key: candidate },
+      select: { id: true },
+    });
+    if (!clash || clash.id === excludeProjectId) return candidate;
+  }
+
+  throw new Error("Could not derive a free project key after 50 attempts.");
+}
+
+/**
+ * Toggle whether the caller has starred this project's Flow Board.
+ *
+ * Kept independent of `assertProjectManage` — favoriting is a personal
+ * bookmark, not a change to the project, so anyone who can *see* the board
+ * (`assertProjectAccess`) may star it, including an admin who is not a member.
+ */
+export async function toggleProjectFavorite(
+  raw: unknown,
+): Promise<ProjectActionResult<{ isFavorite: boolean }>> {
+  try {
+    const user = await requireUser();
+
+    const parsed = projectIdSchema.safeParse(raw);
+    if (!parsed.success) {
+      return { ok: false, error: "Choose a project to favorite." };
+    }
+
+    await assertProjectAccess(user, parsed.data.projectId);
+
+    const existing = await prisma.projectFavorite.findUnique({
+      where: {
+        projectId_userId: { projectId: parsed.data.projectId, userId: user.id },
+      },
+      select: { projectId: true },
+    });
+
+    if (existing) {
+      await prisma.projectFavorite.delete({
+        where: {
+          projectId_userId: { projectId: parsed.data.projectId, userId: user.id },
+        },
+      });
+      return { ok: true, data: { isFavorite: false } };
+    }
+
+    await prisma.projectFavorite.create({
+      data: { projectId: parsed.data.projectId, userId: user.id },
+    });
+    return { ok: true, data: { isFavorite: true } };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/**
+ * Toggle whether the caller has pinned this project to the top of their
+ * sidebar. Same access rule as favoriting — anyone who can see the project
+ * may pin it — and a separate table from `ProjectFavorite` because the two
+ * are independent states, not two names for the same fact.
+ */
+export async function toggleProjectPin(
+  raw: unknown,
+): Promise<ProjectActionResult<{ isPinned: boolean }>> {
+  try {
+    const user = await requireUser();
+
+    const parsed = projectIdSchema.safeParse(raw);
+    if (!parsed.success) {
+      return { ok: false, error: "Choose a project to pin." };
+    }
+
+    await assertProjectAccess(user, parsed.data.projectId);
+
+    const existing = await prisma.projectPin.findUnique({
+      where: {
+        projectId_userId: { projectId: parsed.data.projectId, userId: user.id },
+      },
+      select: { projectId: true },
+    });
+
+    if (existing) {
+      await prisma.projectPin.delete({
+        where: {
+          projectId_userId: { projectId: parsed.data.projectId, userId: user.id },
+        },
+      });
+      return { ok: true, data: { isPinned: false } };
+    }
+
+    await prisma.projectPin.create({
+      data: { projectId: parsed.data.projectId, userId: user.id },
+    });
+    return { ok: true, data: { isPinned: true } };
   } catch (error) {
     return failure(error);
   }

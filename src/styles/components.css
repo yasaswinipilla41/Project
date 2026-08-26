@@ -1443,6 +1443,13 @@ a.prio-key:hover {
   letter-spacing: 0.02em;
 }
 
+.prio-projectcard__fav {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  color: var(--prio-amber-500);
+}
+
 .prio-projectcard__name {
   font-size: var(--prio-text-md);
   font-weight: var(--prio-weight-semibold);

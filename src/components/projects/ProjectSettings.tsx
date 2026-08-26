@@ -58,6 +58,7 @@ export function ProjectSettings({
     name: string;
     description: string | null;
     isDefaultProject: boolean;
+    isArchived: boolean;
   };
   members: SettingsMember[];
   candidates: SettingsMember[];
@@ -71,6 +72,7 @@ export function ProjectSettings({
   const [isDefaultProject, setIsDefaultProject] = useState(
     project.isDefaultProject,
   );
+  const [isArchived, setIsArchived] = useState(project.isArchived);
   const [savingDetails, setSavingDetails] = useState(false);
   const [detailErrors, setDetailErrors] = useState<FieldErrors>({});
 
@@ -91,6 +93,7 @@ export function ProjectSettings({
       name,
       description,
       isDefaultProject,
+      isArchived,
     });
 
     setSavingDetails(false);
@@ -236,6 +239,22 @@ export function ProjectSettings({
                   {isDefaultProject
                     ? "Default project: ON — everyone who creates their own Prio account joins this project automatically."
                     : "Default project: OFF — new self-registered accounts do not join this project automatically."}
+                </span>
+              </div>
+
+              <div className="prio-field">
+                <label className="prio-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={isArchived}
+                    onChange={(e) => setIsArchived(e.target.checked)}
+                  />
+                  Archived
+                </label>
+                <span className="prio-hint">
+                  {isArchived
+                    ? "This project is archived — hidden from the project list, board switcher and sidebar for everyone. Uncheck and save to restore it."
+                    : "Archiving hides this project everywhere in Prio without deleting anything. It can always be restored here."}
                 </span>
               </div>
 

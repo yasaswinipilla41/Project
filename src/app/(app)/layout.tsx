@@ -21,7 +21,7 @@ export default async function AppLayout({
 
   const isAdmin = user.role === "ADMIN";
 
-  const [projects, unreadNotifications, pendingNewUserAlerts] =
+  const [projectRows, unreadNotifications, pendingNewUserAlerts, pins, favorites, recents] =
     await Promise.all([
       prisma.project.findMany({
         where: { ...projectScope(user), isArchived: false },
@@ -41,7 +41,45 @@ export default async function AppLayout({
             take: 5,
           })
         : Promise.resolve([]),
+      prisma.projectPin.findMany({
+        where: { userId: user.id },
+        select: { projectId: true },
+      }),
+      prisma.projectFavorite.findMany({
+        where: { userId: user.id },
+        select: { projectId: true },
+      }),
+      prisma.projectRecent.findMany({
+        where: { userId: user.id },
+        select: { projectId: true, lastVisitedAt: true },
+      }),
     ]);
+
+  const pinnedIds = new Set(pins.map((p) => p.projectId));
+  const favoriteIds = new Set(favorites.map((f) => f.projectId));
+  const lastVisitedAt = new Map(
+    recents.map((r) => [r.projectId, r.lastVisitedAt.getTime()]),
+  );
+
+  /*
+   * Pinned projects stay easily reachable at the top of the sidebar list —
+   * the whole point of pinning something. Within each group (pinned, then
+   * everything else — the sidebar's "Recents"), most-recently-opened sorts
+   * first; a project this user has never opened sorts after every one they
+   * have, falling back to the query's own alphabetical order so nothing
+   * before a first visit is ever unreachable or reordered at random.
+   */
+  const projects = [...projectRows]
+    .sort((a, b) => {
+      const pinDiff = Number(pinnedIds.has(b.id)) - Number(pinnedIds.has(a.id));
+      if (pinDiff !== 0) return pinDiff;
+      return (lastVisitedAt.get(b.id) ?? 0) - (lastVisitedAt.get(a.id) ?? 0);
+    })
+    .map((project) => ({
+      ...project,
+      isPinned: pinnedIds.has(project.id),
+      isFavorite: favoriteIds.has(project.id),
+    }));
 
   return (
     <AppShell

@@ -1,0 +1,40 @@
+/* ============================================================================
+   Prio — Activity feed
+   Reuses the `.prio-activity` timeline rows already defined in issue.css;
+   this only adds the day grouping and the project/issue meta line specific
+   to the standalone feed.
+   ========================================================================= */
+
+.prio-activityfeed__group + .prio-activityfeed__group {
+  margin-top: var(--prio-space-7);
+}
+
+.prio-activityfeed__group-title {
+  margin-bottom: var(--prio-space-2);
+  font-size: var(--prio-text-xs);
+  font-weight: var(--prio-weight-semibold);
+  letter-spacing: var(--prio-tracking-wide);
+  text-transform: uppercase;
+  color: var(--prio-text-muted);
+}
+
+.prio-activityfeed__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-muted);
+}
+
+.prio-activityfeed__project:hover {
+  color: var(--prio-text-primary);
+  text-decoration: underline;
+}
+
+@media (max-width: 640px) {
+  .prio-activity__body {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--prio-space-1);
+  }
+}

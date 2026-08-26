@@ -16,6 +16,7 @@ import {
   StatusPill,
 } from "@/components/ui/Indicators";
 import {
+  IconBoard,
   IconBug,
   IconEmptyBox,
   IconIssues,
@@ -23,6 +24,10 @@ import {
   IconUsers,
 } from "@/components/ui/Icon";
 import { canManageProject, projectScope } from "@/lib/authz";
+import {
+  AssignmentActivityList,
+  type AssignmentActivityEntry,
+} from "@/components/projects/AssignmentActivity";
 import { ProjectActions } from "@/components/projects/ProjectActions";
 import {
   CLOSED_STATUSES,
@@ -33,6 +38,7 @@ import {
 } from "@/lib/domain";
 import { formatRelative, percent } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { recordProjectVisit } from "@/lib/recents";
 import { requireUser, type CurrentUser } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -109,7 +115,9 @@ export default async function ProjectOverviewPage({
   const project = await loadProject(key, user);
   if (!project) notFound();
 
-  const [byStatus, byPriority, bySeverity, recentIssues, recentBugs] =
+  recordProjectVisit(user.id, project.id);
+
+  const [byStatus, byPriority, bySeverity, recentIssues, recentBugs, assignmentEntries] =
     await Promise.all([
       prisma.issue.groupBy({
         by: ["status"],
@@ -153,7 +161,59 @@ export default async function ProjectOverviewPage({
           createdAt: true,
         },
       }),
+      // Assignment history (§31's existing activity trail, filtered to
+      // `assigneeId` changes) — reassignments included, since each is its own
+      // row already; "not null" excludes pure unassignments, which have no
+      // one to name in "assigned ... to ...".
+      prisma.activityLogEntry.findMany({
+        where: {
+          field: "assigneeId",
+          newValue: { not: null },
+          issue: { projectId: project.id },
+        },
+        select: {
+          id: true,
+          newValue: true,
+          createdAt: true,
+          actor: { select: { name: true, image: true } },
+          issue: { select: { key: true, title: true, type: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 8,
+      }),
     ]);
+
+  // `newValue` on an assigneeId change is the raw new assignee's user id, not
+  // a name — resolved here rather than denormalized onto the activity row.
+  const assigneeIds = [
+    ...new Set(
+      assignmentEntries
+        .map((entry) => entry.newValue)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  const assigneeUsers =
+    assigneeIds.length > 0
+      ? await prisma.user.findMany({
+          where: { id: { in: assigneeIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+  const assigneeNameById = new Map(assigneeUsers.map((u) => [u.id, u.name]));
+
+  const assignmentActivity: AssignmentActivityEntry[] = assignmentEntries.map(
+    (entry) => ({
+      id: entry.id,
+      createdAt: entry.createdAt,
+      actorName: entry.actor.name,
+      actorImage: entry.actor.image,
+      issueKey: entry.issue.key,
+      issueTitle: entry.issue.title,
+      issueType: entry.issue.type,
+      assigneeName:
+        (entry.newValue && assigneeNameById.get(entry.newValue)) || "someone",
+    }),
+  );
 
   const statusCount = (status: string) =>
     byStatus.find((r) => r.status === status)?._count._all ?? 0;
@@ -189,6 +249,13 @@ export default async function ProjectOverviewPage({
         </div>
 
         <div className="prio-page-header__actions">
+          <Link
+            href={`/projects/${project.key.toLowerCase()}/board`}
+            className="prio-btn prio-btn--secondary"
+          >
+            <IconBoard />
+            Board
+          </Link>
           <Link
             href={`/issues?project=${project.id}`}
             className="prio-btn prio-btn--secondary"
@@ -402,6 +469,14 @@ export default async function ProjectOverviewPage({
                   ))}
                 </div>
               )}
+            </CardBody>
+          </Card>
+
+          {/* --------------------------------------------- assignment activity */}
+          <Card className="prio-issue__section">
+            <CardBody>
+              <h2 className="prio-issue__section-title">Assignment activity</h2>
+              <AssignmentActivityList entries={assignmentActivity} />
             </CardBody>
           </Card>
         </div>

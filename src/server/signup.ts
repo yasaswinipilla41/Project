@@ -2,6 +2,7 @@
 
 import { hashPassword } from "@better-auth/utils/password";
 import { createLocalAccountIssuer } from "@better-auth/core/db";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { fieldErrors, type FieldErrors } from "@/server/schemas";
@@ -38,6 +39,26 @@ const CREDENTIAL_ISSUER = createLocalAccountIssuer("credential");
 export type SignUpResult =
   | { ok: true }
   | { ok: false; error: string; fieldErrors?: FieldErrors };
+
+/**
+ * Distinguishes "the database is unreachable" from every other unexpected
+ * failure. Prisma's driver adapters surface a connection refusal as a
+ * `PrismaClientKnownRequestError` carrying the underlying driver's error code
+ * (`ECONNREFUSED`, `ETIMEDOUT`, ...) rather than one of Prisma's own `P____`
+ * codes, and a failure to even establish the connection pool surfaces as
+ * `PrismaClientInitializationError`. Either way the person filling in the
+ * form did nothing wrong, so they get a message that says so instead of the
+ * fully generic fallback.
+ */
+function isDatabaseUnavailable(error: unknown): boolean {
+  if (error instanceof Prisma.PrismaClientInitializationError) return true;
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    return ["ECONNREFUSED", "ETIMEDOUT", "ENOTFOUND", "ECONNRESET"].includes(
+      error.code,
+    );
+  }
+  return false;
+}
 
 const signUpSchema = z
   .object({
@@ -152,6 +173,14 @@ export async function signUp(raw: unknown): Promise<SignUpResult> {
         ok: false,
         error: "An account with that email already exists.",
         fieldErrors: { email: "Already in use." },
+      };
+    }
+
+    if (isDatabaseUnavailable(error)) {
+      console.error("[prio] sign-up failed: database unreachable:", error);
+      return {
+        ok: false,
+        error: "Unable to create your account right now. Please try again.",
       };
     }
 

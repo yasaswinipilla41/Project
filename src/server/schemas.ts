@@ -129,6 +129,10 @@ export const projectMemberSchema = z.object({
   userId: z.string().min(1),
 });
 
+export const projectIdSchema = z.object({
+  projectId: z.string().min(1),
+});
+
 export const createLabelSchema = z.object({
   projectId: z.string().min(1),
   name: trimmed(40).min(1, "Give the label a name."),
