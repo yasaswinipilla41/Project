@@ -131,7 +131,14 @@ pipeline {
                         # fails with "invalid port number" or similar. Percent-encode a
                         # second copy for that use; POSTGRES_PASSWORD itself stays raw
                         # since Postgres's own account creation is not a URL.
-                        S_POSTGRES_PASSWORD_URLENC=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "${S_POSTGRES_PASSWORD}")
+                        #
+                        # curl --data-urlencode does form-encoding, which turns a literal
+                        # space into "+" rather than "%20" — and a URI parser (unlike a
+                        # form decoder) does NOT read "+" back as space. curl always
+                        # escapes a literal "+" in the input to "%2b", though, so any
+                        # bare "+" left in its output is unambiguously a space; the sed
+                        # swaps those to "%20" so a space in the password round-trips.
+                        S_POSTGRES_PASSWORD_URLENC=$(curl -s -o /dev/null -w '%{url_effective}' -G --data-urlencode "v=${S_POSTGRES_PASSWORD}" "http://x/" | sed 's/^.*v=//; s/+/%20/g')
                         {
                             echo "POSTGRES_USER=prio"
                             echo "POSTGRES_PASSWORD=${S_POSTGRES_PASSWORD}"
