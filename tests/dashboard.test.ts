@@ -523,7 +523,25 @@ describe("loadDashboard — new assignment highlight", () => {
     expect(marked.ok).toBe(true);
 
     const afterRead = await loadDashboard(member);
+
+    /*
+     * Reading the notification drops the "new" flag. The issue then takes its
+     * ordinary place in the priority-ordered preview, which for a busy member
+     * may be past the cut-off — so the assertion is that it is no longer
+     * *flagged*, not that it is still on screen. It is still assigned either
+     * way, which is checked directly rather than inferred from the preview.
+     */
+    expect(
+      afterRead.assigned.filter((i) => i.isNewAssignment).map((i) => i.id),
+    ).not.toContain(result.data.id);
+
     const foundAfter = afterRead.assigned.find((i) => i.id === result.data.id);
-    expect(foundAfter?.isNewAssignment).toBe(false);
+    if (foundAfter) expect(foundAfter.isNewAssignment).toBe(false);
+
+    const stillAssigned = await prisma.issue.findUniqueOrThrow({
+      where: { id: result.data.id },
+      select: { assigneeId: true },
+    });
+    expect(stillAssigned.assigneeId).toBe(member.id);
   });
 });

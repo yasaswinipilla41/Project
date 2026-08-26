@@ -2,32 +2,24 @@
 
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
-import { Avatar, Button, Card, CardBody } from "@/components/ui/primitives";
+import { Button, Card, CardBody } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/Toast";
-import { IconPlus, IconTrash } from "@/components/ui/Icon";
-import {
-  addProjectMember,
-  createLabel,
-  removeProjectMember,
-  updateProject,
-} from "@/server/projects";
+import { IconPlus } from "@/components/ui/Icon";
+import { createLabel, updateProject } from "@/server/projects";
 import type { FieldErrors } from "@/server/schemas";
 
 /**
- * Project settings (§36): details, members and labels.
+ * Project settings (§36): details and labels.
+ *
+ * Membership is managed from the Admin Portal, not here — this page no
+ * longer carries a Members section. The underlying `ProjectMember` rows, and
+ * the `addProjectMember`/`removeProjectMember` actions behind them, are
+ * deliberately left untouched: this was a UI removal, not a data change.
  *
  * Every control here calls the existing server action, which re-checks that the
  * caller is an admin. Hiding the UI from members is a convenience, not the
  * boundary.
  */
-
-export interface SettingsMember {
-  id: string;
-  name: string;
-  email: string;
-  image: string | null;
-  jobTitle: string | null;
-}
 
 export interface SettingsLabel {
   id: string;
@@ -48,8 +40,6 @@ const LABEL_COLOURS = [
 
 export function ProjectSettings({
   project,
-  members,
-  candidates,
   labels,
 }: {
   project: {
@@ -60,8 +50,6 @@ export function ProjectSettings({
     isDefaultProject: boolean;
     isArchived: boolean;
   };
-  members: SettingsMember[];
-  candidates: SettingsMember[];
   labels: SettingsLabel[];
 }) {
   const router = useRouter();
@@ -75,9 +63,6 @@ export function ProjectSettings({
   const [isArchived, setIsArchived] = useState(project.isArchived);
   const [savingDetails, setSavingDetails] = useState(false);
   const [detailErrors, setDetailErrors] = useState<FieldErrors>({});
-
-  const [memberToAdd, setMemberToAdd] = useState("");
-  const [busyMember, setBusyMember] = useState<string | null>(null);
 
   const [labelName, setLabelName] = useState("");
   const [labelColor, setLabelColor] = useState(LABEL_COLOURS[0]!);
@@ -105,41 +90,6 @@ export function ProjectSettings({
     }
 
     toast("Project details saved");
-    router.refresh();
-  }
-
-  async function addMember(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!memberToAdd) return;
-
-    setBusyMember(memberToAdd);
-    const result = await addProjectMember({
-      projectId: project.id,
-      userId: memberToAdd,
-    });
-    setBusyMember(null);
-
-    if (!result.ok) {
-      toast(result.error, "error");
-      return;
-    }
-
-    setMemberToAdd("");
-    toast("Member added");
-    router.refresh();
-  }
-
-  async function removeMember(userId: string, memberName: string) {
-    setBusyMember(userId);
-    const result = await removeProjectMember({ projectId: project.id, userId });
-    setBusyMember(null);
-
-    if (!result.ok) {
-      toast(result.error, "error");
-      return;
-    }
-
-    toast(`${memberName} removed from ${project.key}`);
     router.refresh();
   }
 
@@ -262,79 +212,6 @@ export function ProjectSettings({
                 Save details
               </Button>
             </form>
-          </CardBody>
-        </Card>
-      </div>
-
-      {/* ------------------------------------------------------- members */}
-      <div className="col-12 col-xl-6">
-        <Card style={{ height: "100%" }}>
-          <CardBody>
-            <h2 className="prio-issue__section-title">
-              Members
-              <span className="prio-text-muted">{members.length}</span>
-            </h2>
-
-            {candidates.length > 0 ? (
-              <form onSubmit={addMember} className="prio-settings__addrow">
-                <label className="prio-visually-hidden" htmlFor="settings-add-member">
-                  Add a member
-                </label>
-                <select
-                  id="settings-add-member"
-                  className="prio-select"
-                  value={memberToAdd}
-                  onChange={(e) => setMemberToAdd(e.target.value)}
-                >
-                  <option value="">Add someone to this project…</option>
-                  {candidates.map((person) => (
-                    <option key={person.id} value={person.id}>
-                      {person.name} — {person.jobTitle ?? person.email}
-                    </option>
-                  ))}
-                </select>
-                <Button
-                  type="submit"
-                  variant="secondary"
-                  disabled={!memberToAdd || busyMember !== null}
-                >
-                  <IconPlus size={13} />
-                  Add
-                </Button>
-              </form>
-            ) : (
-              <p className="prio-hint">
-                Everyone in the organization is already a member.
-              </p>
-            )}
-
-            <div className="prio-settings__list">
-              {members.map((member) => (
-                <div key={member.id} className="prio-memberrow">
-                  <Avatar name={member.name} image={member.image} size="md" />
-                  <span className="prio-memberpicker__text">
-                    <span className="prio-memberpicker__name">{member.name}</span>
-                    <span className="prio-memberpicker__meta">
-                      {member.jobTitle ?? member.email}
-                    </span>
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => removeMember(member.id, member.name)}
-                    disabled={busyMember === member.id}
-                    aria-label={`Remove ${member.name} from ${project.key}`}
-                  >
-                    <IconTrash size={13} />
-                  </Button>
-                </div>
-              ))}
-            </div>
-
-            <p className="prio-hint" style={{ marginTop: "var(--prio-space-4)" }}>
-              Removing someone revokes their access. Work already assigned to
-              them stays assigned, so nothing is silently lost.
-            </p>
           </CardBody>
         </Card>
       </div>

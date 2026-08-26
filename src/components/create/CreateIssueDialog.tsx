@@ -24,17 +24,13 @@ import { createIssue } from "@/server/issues";
 import type { FieldErrors } from "@/server/schemas";
 
 /**
- * The global Create dialog.
+ * The create dialog.
  *
- * One dialog serves Task, Bug and Story. Choosing Bug adds severity and makes
- * the description required — the same rule the server enforces, so the two can
- * never disagree.
- *
- * The long-form reproduction write-up that used to live here (steps, expected
- * result, actual result, environment) has been removed from creation. The
- * columns remain in the database and existing bugs still display whatever they
- * recorded; new bugs simply start with a description and gain detail through
- * comments and attachments instead of a wall of required fields.
+ * Deliberately short: a title, a type, and the metadata that decides where the
+ * work lands. The long-form fields a bug used to demand up front — description,
+ * reproduction steps, expected and actual result — are no longer collected
+ * here. Their columns still exist and still hold what earlier issues recorded;
+ * detail now arrives through comments and attachments on the issue itself.
  */
 
 interface OptionProject {
@@ -90,7 +86,6 @@ function FieldError({
 
 const EMPTY_FORM = {
   title: "",
-  description: "",
   status: "BACKLOG" as IssueStatus,
   priority: "MEDIUM" as Priority,
   assigneeId: "",
@@ -191,7 +186,6 @@ export function CreateIssueDialog({
       projectId,
       type,
       title: form.title,
-      description: form.description,
       status: form.status,
       priority: form.priority,
       assigneeId: form.assigneeId,
@@ -341,28 +335,6 @@ export function CreateIssueDialog({
             aria-invalid={invalid("title")}
           />
           <FieldError errors={errors} field="title" />
-        </div>
-
-        {/* ------------------------------------------------- description */}
-        <div className="prio-field">
-          <label className="prio-label" htmlFor="create-description">
-            Description
-            {isBug ? <span className="prio-label__required">*</span> : null}
-          </label>
-          <textarea
-            id="create-description"
-            className="prio-textarea"
-            value={form.description}
-            onChange={(e) => set("description", e.target.value)}
-            placeholder={
-              isBug
-                ? "What is broken, and what is the impact?"
-                : "Add any detail that helps whoever picks this up."
-            }
-            rows={4}
-            aria-invalid={invalid("description")}
-          />
-          <FieldError errors={errors} field="description" />
         </div>
 
         {/* --------------------------------------------------- metadata */}

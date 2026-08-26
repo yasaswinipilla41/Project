@@ -46,8 +46,21 @@ async function assignedCountAgreesWithList(page: Page): Promise<void> {
   await expect(page).toHaveURL(/assignee=/);
   await expect(page).toHaveURL(/resolution=open/);
 
+  /*
+   * The list paginates at 25 by default, so counting rows on page one only
+   * equals the badge while somebody has 25 items or fewer — it silently
+   * became a "has this person got a small queue?" assertion. The list's own
+   * total is the figure that is actually comparable to the badge, and the
+   * row count is then checked against whatever that page is allowed to show.
+   */
+  const summary = await page.locator(".prio-pagination__summary").first().innerText();
+  const listedTotal = Number(summary.split(" of ")[1]?.trim());
+  expect(listedTotal).toBe(claimed);
+
   const rows = page.locator(".prio-table tbody tr");
-  await expect.poll(async () => rows.count(), { timeout: 10_000 }).toBe(claimed);
+  await expect
+    .poll(async () => rows.count(), { timeout: 10_000 })
+    .toBe(Math.min(claimed, 25));
 }
 
 test.describe("Dashboard — signed in as an administrator", () => {

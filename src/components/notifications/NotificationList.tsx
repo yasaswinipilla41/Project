@@ -31,6 +31,7 @@ const TYPE_LABEL: Record<NotificationType, string> = {
   COMMENT_ADDED: "Comment",
   INVITED: "Invitation",
   USER_JOINED: "New member",
+  TEST_RESULT: "Test result",
 };
 
 export function NotificationList({

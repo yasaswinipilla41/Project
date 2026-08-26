@@ -155,9 +155,6 @@ const issueBase = z.object({
 
   // Bug-specific — always accepted, required only when type is BUG.
   severity: severitySchema.nullable().optional().default(null),
-  stepsToReproduce: optionalText(20_000),
-  expectedResult: optionalText(5_000),
-  actualResult: optionalText(5_000),
   environment: optionalText(120),
   browser: optionalText(120),
   operatingSystem: optionalText(120),
@@ -166,26 +163,20 @@ const issueBase = z.object({
 });
 
 /**
- * A bug still has to say what is wrong, so a description remains mandatory for
- * BUG and optional for everything else.
+ * Issue creation.
  *
- * Reproduction steps, expected result and actual result used to be required
- * here too. They are not any more: those fields were removed from the creation
- * form, and a rule the form cannot satisfy would reject every new bug. The
- * columns stay accepted — historical rows keep their values and any other
- * caller may still set them — they are simply no longer demanded.
+ * `description` is still *accepted* — the column exists, every issue recorded
+ * before this change keeps its text, and the API would break existing callers
+ * if the key were rejected — but it is no longer *required* for a bug and no
+ * longer collected by the form. Demanding a field the UI cannot supply would
+ * reject every bug the dialog can produce.
+ *
+ * The same is true of `stepsToReproduce` / `expectedResult` / `actualResult`:
+ * their columns remain, holding what earlier bugs captured, and the activity
+ * trail that names those fields still reads correctly. They are simply never
+ * written from here.
  */
-export const createIssueSchema = issueBase.superRefine((value, ctx) => {
-  if (value.type !== "BUG") return;
-
-  if (!value.description) {
-    ctx.addIssue({
-      code: "custom",
-      path: ["description"],
-      message: "Describe the problem.",
-    });
-  }
-});
+export const createIssueSchema = issueBase;
 
 export type CreateIssueInput = z.infer<typeof createIssueSchema>;
 
@@ -204,9 +195,6 @@ export const updateIssueSchema = z.object({
   assigneeId: patchId,
   dueDate: patchDate,
   parentId: patchId,
-  stepsToReproduce: patchText(20_000),
-  expectedResult: patchText(5_000),
-  actualResult: patchText(5_000),
   environment: patchText(120),
   browser: patchText(120),
   operatingSystem: patchText(120),
@@ -215,6 +203,33 @@ export const updateIssueSchema = z.object({
 });
 
 export type UpdateIssueInput = z.infer<typeof updateIssueSchema>;
+
+/* ------------------------------------------------------------ bug report */
+
+/**
+ * A tester reporting a problem against work they were verifying.
+ *
+ * Narrower than `createIssueSchema` on purpose: the project, the assignee, the
+ * reporter and the link back to the original issue are all derived from the
+ * issue being tested, so the tester is never asked for something Prio already
+ * knows.
+ *
+ * What it asks for is a summary and where the problem was seen; the detail,
+ * the evidence and the discussion all go on the bug itself through the
+ * existing comment and attachment systems. No migration, and no second bug
+ * store.
+ */
+export const reportBugSchema = z.object({
+  issueId: z.string().min(1),
+  title: trimmed(200).min(5, "Summarise the problem in a few words."),
+  affectedModule: trimmed(120).min(2, "Say where you found it."),
+  severity: severitySchema.nullable().optional().default(null),
+  priority: prioritySchema.default("MEDIUM"),
+});
+
+export type ReportBugInput = z.infer<typeof reportBugSchema>;
+
+
 
 /* ------------------------------------------------------------ form errors */
 

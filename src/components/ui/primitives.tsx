@@ -362,21 +362,41 @@ export function Stat({
   hint,
   icon,
   tone,
+  href,
 }: {
   label: string;
   value: ReactNode;
   hint?: ReactNode;
   icon?: ReactNode;
   tone?: "default" | "brand" | "danger" | "warning" | "success";
+  /** Makes the whole tile a link into the list the figure summarises. */
+  href?: string;
 }) {
-  return (
-    <div className="prio-stat" data-tone={tone ?? "default"}>
+  const body = (
+    <>
       <span className="prio-stat__label">
         {icon}
         {label}
       </span>
       <span className="prio-stat__value">{value}</span>
       {hint ? <span className="prio-stat__hint">{hint}</span> : null}
+    </>
+  );
+
+  // Same markup either way, so a linked tile is indistinguishable from a
+  // plain one apart from the affordance — `KpiCard` on the dashboard already
+  // works this way.
+  if (href) {
+    return (
+      <Link href={href} className="prio-stat" data-tone={tone ?? "default"}>
+        {body}
+      </Link>
+    );
+  }
+
+  return (
+    <div className="prio-stat" data-tone={tone ?? "default"}>
+      {body}
     </div>
   );
 }

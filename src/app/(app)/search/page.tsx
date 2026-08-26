@@ -153,7 +153,7 @@ export default async function SearchPage({
             title={query.length === 0 ? "Search Prio" : "Keep typing"}
             body={
               query.length === 0
-                ? "Search across issue keys, titles, descriptions, reproduction steps, environments, labels, people and projects."
+                ? "Search across issue keys, titles, descriptions, environments, labels, people and projects."
                 : "Enter at least two characters to search."
             }
           />

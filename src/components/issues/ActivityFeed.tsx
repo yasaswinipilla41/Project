@@ -83,7 +83,9 @@ function describe(entry: ActivityEntry, names: NameLookup): React.ReactNode {
     return humanizeEnumValue(field, value);
   };
 
-  // Long free-text fields are not diffed inline — the change is noted instead.
+  /* Long free-text fields are not diffed inline — the change is noted
+     instead. `stepsToReproduce` is no longer editable, but historical entries
+     for it still need to render this way rather than dumping a wall of text. */
   if (field === "description" || field === "stepsToReproduce") {
     return `updated the ${label}`;
   }
