@@ -362,21 +362,38 @@ export function Stat({
   hint,
   icon,
   tone,
+  href,
 }: {
   label: string;
   value: ReactNode;
   hint?: ReactNode;
   icon?: ReactNode;
   tone?: "default" | "brand" | "danger" | "warning" | "success";
+  /** Makes the whole card a link into the filtered list behind the number. */
+  href?: string;
 }) {
-  return (
-    <div className="prio-stat" data-tone={tone ?? "default"}>
+  const inner = (
+    <>
       <span className="prio-stat__label">
         {icon}
         {label}
       </span>
       <span className="prio-stat__value">{value}</span>
       {hint ? <span className="prio-stat__hint">{hint}</span> : null}
+    </>
+  );
+
+  if (href) {
+    return (
+      <Link href={href} className="prio-stat" data-tone={tone ?? "default"}>
+        {inner}
+      </Link>
+    );
+  }
+
+  return (
+    <div className="prio-stat" data-tone={tone ?? "default"}>
+      {inner}
     </div>
   );
 }

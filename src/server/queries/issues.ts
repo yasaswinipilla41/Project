@@ -249,6 +249,20 @@ const LIST_SELECT = {
   _count: { select: { children: true, comments: true } },
 } satisfies Prisma.IssueSelect;
 
+/**
+ * `LIST_SELECT` plus the issue's own image attachments, for the Excel export
+ * only — the paginated `/issues` list never renders them, so it stays on
+ * `LIST_SELECT` to avoid the extra read on every page view.
+ */
+const EXPORT_SELECT = {
+  ...LIST_SELECT,
+  attachments: {
+    where: { commentId: null },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, filename: true, mimeType: true, storageKey: true },
+  },
+} satisfies Prisma.IssueSelect;
+
 export interface IssueListResult {
   rows: IssueListRow[];
   total: number;
@@ -292,6 +306,34 @@ export async function listIssues(
     pageSize,
     pageCount,
   };
+}
+
+/**
+ * Every issue matching `filters`, unpaginated, for the Excel export (§ Export
+ * Issues to Excel). Scoped by the same `issueScope` as every other read path —
+ * an export never contains a row the caller could not otherwise see.
+ *
+ * Capped well above any realistic organization's issue count so a runaway
+ * request cannot exhaust memory generating the workbook.
+ */
+const EXPORT_ROW_LIMIT = 20_000;
+
+export interface IssueExportRow extends IssueListRow {
+  attachments: { id: string; filename: string; mimeType: string; storageKey: string }[];
+}
+
+export async function listIssuesForExport(
+  user: CurrentUser,
+  filters: IssueFilters,
+): Promise<IssueExportRow[]> {
+  const where = buildIssueWhere(user, filters);
+  const rows = await prisma.issue.findMany({
+    where,
+    select: EXPORT_SELECT,
+    orderBy: buildOrderBy(filters.sort ?? "updated", filters.dir ?? "desc"),
+    take: EXPORT_ROW_LIMIT,
+  });
+  return rows as unknown as IssueExportRow[];
 }
 
 /** Counts grouped by status for the filter bar's summary chips. */
