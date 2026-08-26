@@ -112,6 +112,9 @@ model User {
   notifications      Notification[]     @relation("NotificationRecipient")
   actorNotifications Notification[]     @relation("NotificationActor")
   watching           IssueWatcher[]
+  favoriteProjects   ProjectFavorite[]
+  pinnedProjects     ProjectPin[]
+  recentProjects     ProjectRecent[]
   sentInvitations    Invitation[]       @relation("InvitationInvitedBy")
   createdSheetShares IssueSheetShare[]  @relation("IssueSheetShareCreatedBy")
   sheetShareGrants   IssueSheetShareMember[] @relation("IssueSheetShareMemberUser")
@@ -214,6 +217,9 @@ model Project {
   issues      Issue[]
   labels      Label[]
   attachments Attachment[]
+  favoritedBy ProjectFavorite[]
+  pinnedBy    ProjectPin[]
+  recentlyVisitedBy ProjectRecent[]
 
   @@index([isArchived])
   @@map("project")
@@ -230,6 +236,53 @@ model ProjectMember {
   @@unique([projectId, userId])
   @@index([userId])
   @@map("project_member")
+}
+
+/// A user's Flow Board star. Kept separate from `ProjectMember` rather than a
+/// boolean on it — an ADMIN can favorite (and access) a project they were
+/// never added to as a member, so favoriting cannot depend on a membership
+/// row existing.
+model ProjectFavorite {
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([projectId, userId])
+  @@index([userId])
+  @@map("project_favorite")
+}
+
+/// A user's sidebar pin — kept to the top of their project list. Same shape
+/// as `ProjectFavorite` and deliberately a separate table rather than a second
+/// boolean on it: pinning and favoriting are independent, separately toggled
+/// states in the product, not two views of one fact.
+model ProjectPin {
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([projectId, userId])
+  @@index([userId])
+  @@map("project_pin")
+}
+
+/// When a user last opened a project — backs the sidebar's "Recents" section.
+/// One row per (project, user), upserted on visit rather than an append-only
+/// log: the sidebar only ever needs "when most recently", never a history.
+model ProjectRecent {
+  projectId     String
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastVisitedAt DateTime @default(now())
+
+  @@id([projectId, userId])
+  @@index([userId, lastVisitedAt])
+  @@map("project_recent")
 }
 
 model Label {

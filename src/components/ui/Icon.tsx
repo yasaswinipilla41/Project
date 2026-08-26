@@ -257,6 +257,28 @@ export const IconTrash = (p: IconProps) => (
   </Svg>
 );
 
+export const IconCopy = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="5.6" y="5.6" width="7" height="7" rx="1" />
+    <path d="M3.4 10.4V4.4a1 1 0 0 1 1-1h6" />
+  </Svg>
+);
+
+export const IconArchive = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="2.4" y="2.8" width="11.2" height="2.8" rx="0.8" />
+    <path d="M3.2 5.6v6.6a1 1 0 0 0 1 1h7.6a1 1 0 0 0 1-1V5.6" />
+    <path d="M6.4 8.4h3.2" />
+  </Svg>
+);
+
+export const IconPin = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M6.6 2.8h2.8l.4 3.6 2 1.8v1.4H4.2V8.2l2-1.8.4-3.6Z" />
+    <path d="M8 9.6V13.6" />
+  </Svg>
+);
+
 export const IconLink = (p: IconProps) => (
   <Svg {...p}>
     <path d="M6.8 9.2a2.6 2.6 0 0 0 3.7 0l2-2a2.6 2.6 0 1 0-3.7-3.7l-.9.9" />
@@ -401,6 +423,12 @@ export const IconSuccess = (p: IconProps) => (
   <Svg {...p}>
     <circle cx="8" cy="8" r="5.6" />
     <path d="m5.6 8.2 1.7 1.7 3.3-3.7" />
+  </Svg>
+);
+
+export const IconStar = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M8 2.4 9.8 6.2l4.1.6-3 3 .7 4.1L8 11.9l-3.6 1.9.7-4.1-3-3 4.1-.6L8 2.4Z" />
   </Svg>
 );
 

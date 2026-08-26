@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { Alert, Button } from "@/components/ui/primitives";
 import { IconEye, IconEyeOff, IconSuccess, IconWarning } from "@/components/ui/Icon";
@@ -17,8 +16,6 @@ import type { FieldErrors } from "@/server/schemas";
  * than making them retype it right after choosing it.
  */
 export function SignUpForm() {
-  const router = useRouter();
-
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -77,9 +74,18 @@ export function SignUpForm() {
           variant="brand"
           size="lg"
           block
-          onClick={() =>
-            router.push(`/sign-in?email=${encodeURIComponent(email.trim())}`)
-          }
+          onClick={() => {
+            /*
+             * A real navigation, not `router.push` — Chrome only credits a
+             * newly typed email to its per-site autofill history after the
+             * form that carried it is followed by an actual page load, the
+             * same reasoning as the sign-in redirect (see SignInForm).
+             * Without it, an address entered on this exact form would never
+             * show up as a suggestion back on `/sign-in`.
+             */
+            // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+            window.location.href = `/sign-in?email=${encodeURIComponent(email.trim())}`;
+          }}
         >
           Go to Sign In
         </Button>

@@ -29,6 +29,21 @@ export default async function ProjectSettingsPage({
       name: true,
       description: true,
       isDefaultProject: true,
+      isArchived: true,
+      members: {
+        orderBy: { createdAt: "asc" },
+        select: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              image: true,
+              jobTitle: true,
+            },
+          },
+        },
+      },
       labels: {
         orderBy: { name: "asc" },
         select: {
@@ -73,6 +88,7 @@ export default async function ProjectSettingsPage({
           name: project.name,
           description: project.description,
           isDefaultProject: project.isDefaultProject,
+          isArchived: project.isArchived,
         }}
         labels={project.labels.map((l) => ({
           id: l.id,

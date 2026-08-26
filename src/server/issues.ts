@@ -622,4 +622,5 @@ function revalidateIssueSurfaces(projectKey: string, issueKey: string): void {
   revalidatePath("/my-work");
   revalidatePath(`/issues/${issueKey.toLowerCase()}`);
   revalidatePath(`/projects/${projectKey.toLowerCase()}`);
+  revalidatePath(`/projects/${projectKey.toLowerCase()}/board`);
 }

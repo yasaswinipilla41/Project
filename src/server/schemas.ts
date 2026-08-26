@@ -138,6 +138,11 @@ export const removeShareMemberSchema = z.object({
   memberId: z.string().min(1),
 });
 
+/** Just a project id — used by favorite/pin/recent toggles and duplicate. */
+export const projectIdSchema = z.object({
+  projectId: z.string().min(1),
+});
+
 export const createLabelSchema = z.object({
   projectId: z.string().min(1),
   name: trimmed(40).min(1, "Give the label a name."),

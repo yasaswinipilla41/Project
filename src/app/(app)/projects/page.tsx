@@ -7,7 +7,7 @@ import {
   CardBody,
   EmptyState,
 } from "@/components/ui/primitives";
-import { IconBug, IconEmptyBox, IconIssues, IconUsers } from "@/components/ui/Icon";
+import { IconBug, IconEmptyBox, IconIssues, IconStar, IconUsers } from "@/components/ui/Icon";
 import { projectScope } from "@/lib/authz";
 import { CLOSED_STATUSES, OPEN_STATUSES } from "@/lib/domain";
 import { percent } from "@/lib/format";
@@ -60,11 +60,19 @@ export default async function ProjectsPage() {
   ]);
 
   // One grouped query rather than a count per project per status.
-  const stats = await prisma.issue.groupBy({
-    by: ["projectId", "type", "status"],
-    where: { projectId: { in: projects.map((p) => p.id) } },
-    _count: { _all: true },
-  });
+  const [stats, favorites] = await Promise.all([
+    prisma.issue.groupBy({
+      by: ["projectId", "type", "status"],
+      where: { projectId: { in: projects.map((p) => p.id) } },
+      _count: { _all: true },
+    }),
+    prisma.projectFavorite.findMany({
+      where: { userId: user.id, projectId: { in: projects.map((p) => p.id) } },
+      select: { projectId: true },
+    }),
+  ]);
+
+  const favoriteIds = new Set(favorites.map((f) => f.projectId));
 
   const summary = new Map<
     string,
@@ -148,6 +156,15 @@ export default async function ProjectsPage() {
                         </h2>
                         <span className="prio-key">{project.key}</span>
                       </div>
+                      {favoriteIds.has(project.id) ? (
+                        <span
+                          className="prio-projectcard__fav"
+                          title="Favorited"
+                          aria-label="Favorited"
+                        >
+                          <IconStar size={14} fill="currentColor" />
+                        </span>
+                      ) : null}
                     </div>
 
                     <p className="prio-projectcard__description prio-clamp-2">
