@@ -1,8 +1,20 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { assertIssueAccess } from "@/lib/authz";
+import { assertIssueAccess, assertProjectAccess } from "@/lib/authz";
 import { getCurrentUser } from "@/lib/session";
 import { storage } from "@/server/storage";
+
+/** An attachment belongs to exactly one issue or one project — never both. */
+async function assertAttachmentAccess(
+  user: NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>,
+  attachment: { issueId: string | null; projectId: string | null },
+): Promise<void> {
+  if (attachment.issueId) {
+    await assertIssueAccess(user, attachment.issueId);
+    return;
+  }
+  await assertProjectAccess(user, attachment.projectId!);
+}
 
 /**
  * Serving and removing one attachment.
@@ -43,6 +55,7 @@ export async function GET(
     select: {
       id: true,
       issueId: true,
+      projectId: true,
       filename: true,
       mimeType: true,
       byteSize: true,
@@ -55,7 +68,7 @@ export async function GET(
   }
 
   try {
-    await assertIssueAccess(user, attachment.issueId);
+    await assertAttachmentAccess(user, attachment);
   } catch {
     return NextResponse.json({ error: "Not found." }, { status: 404 });
   }
@@ -117,6 +130,7 @@ export async function DELETE(
     select: {
       id: true,
       issueId: true,
+      projectId: true,
       uploadedById: true,
       storageKey: true,
       issue: { select: { key: true } },
@@ -128,7 +142,7 @@ export async function DELETE(
   }
 
   try {
-    await assertIssueAccess(user, attachment.issueId);
+    await assertAttachmentAccess(user, attachment);
   } catch {
     return NextResponse.json({ error: "Not found." }, { status: 404 });
   }

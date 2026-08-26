@@ -1151,6 +1151,25 @@ a.prio-key:hover {
   border: 1px solid var(--prio-border);
   border-radius: var(--prio-radius-lg);
   box-shadow: var(--prio-shadow-xs);
+  color: inherit;
+  text-decoration: none;
+  transition:
+    border-color var(--prio-duration-fast) var(--prio-ease),
+    transform var(--prio-duration-fast) var(--prio-ease),
+    box-shadow var(--prio-duration-fast) var(--prio-ease);
+}
+
+a.prio-stat:hover {
+  transform: translateY(-2px);
+  border-color: var(--prio-border-strong);
+  box-shadow: var(--prio-shadow-md);
+  text-decoration: none;
+}
+
+a.prio-stat:focus-visible {
+  outline: none;
+  border-color: var(--prio-border-focus);
+  box-shadow: var(--prio-shadow-focus);
 }
 
 .prio-stat__label {
@@ -1440,6 +1459,93 @@ a.prio-stat:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------ share */
+.prio-share__members {
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-2);
+  max-height: 200px;
+  overflow-y: auto;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.prio-share__member {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-3);
+  padding: var(--prio-space-2) var(--prio-space-3);
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-md);
+  background: var(--prio-bg-surface);
+}
+
+.prio-share__member-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.prio-share__member-name {
+  font-size: var(--prio-text-sm);
+  font-weight: var(--prio-weight-medium);
+  color: var(--prio-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prio-share__permission {
+  flex-shrink: 0;
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-medium);
+  color: var(--prio-text-muted);
+  padding: 2px var(--prio-space-2);
+  border-radius: var(--prio-radius-full);
+  background: var(--prio-neutral-100);
+}
+
+.prio-share__results {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: var(--prio-space-2);
+  padding: var(--prio-space-1);
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-md);
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.prio-share__result {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-3);
+  padding: var(--prio-space-2);
+  text-align: left;
+  border-radius: var(--prio-radius-sm);
+  background: none;
+}
+
+.prio-share__result:hover {
+  background: var(--prio-neutral-25);
+}
+
+.prio-share__result[data-selected="true"] {
+  background: var(--prio-primary-50);
+  outline: 1px solid var(--prio-primary-400);
+}
+
+.prio-share__grant {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--prio-space-3);
+  margin-top: var(--prio-space-3);
 }
 
 /* ---------------------------------------------------------- project card */

@@ -4,6 +4,8 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useState, useTransition, type FormEvent } from "react";
 import { Button } from "@/components/ui/primitives";
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/Menu";
+import { useToast } from "@/components/ui/Toast";
+import { ShareSheetDialog } from "@/components/issues/ShareSheetDialog";
 import {
   IssueTypeIcon,
   PriorityIndicator,
@@ -13,8 +15,10 @@ import {
 import {
   IconChevronDown,
   IconClose,
+  IconDownload,
   IconFilter,
   IconSearch,
+  IconShare,
 } from "@/components/ui/Icon";
 import {
   ISSUE_STATUSES,
@@ -47,6 +51,16 @@ export interface IssueFiltersProps {
   showSeverityFilter?: boolean;
   currentUserId: string;
   total: number;
+  /** Shows the Export Excel button — only the main /issues surface opts in. */
+  enableExport?: boolean;
+  /**
+   * Shows the Share button — only the main /issues surface opts in, and even
+   * then only for an administrator. Sharing manages who else in the
+   * organization can see the sheet, which is the same bar this app sets for
+   * managing project membership.
+   */
+  enableShare?: boolean;
+  isAdmin?: boolean;
 }
 
 /**
@@ -82,9 +96,6 @@ function FilterMenu({
           {...props}
         >
           {label}
-          {selected.length > 0 ? (
-            <span className="prio-filterchip__count">{selected.length}</span>
-          ) : null}
           <IconChevronDown size={12} />
         </button>
       )}
@@ -112,12 +123,18 @@ export function IssueFilters({
   showSeverityFilter = true,
   currentUserId,
   total,
+  enableExport = false,
+  enableShare = false,
+  isAdmin = false,
 }: IssueFiltersProps) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
   const [pending, startTransition] = useTransition();
   const [query, setQuery] = useState(params.get("q") ?? "");
+  const { toast } = useToast();
+  const [exporting, setExporting] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
 
   const values = useCallback(
     (key: string): string[] => params.getAll(key),
@@ -137,15 +154,16 @@ export function IssueFilters({
     [params, pathname, router],
   );
 
+  /**
+   * Single-select: picking an option replaces whatever was selected in that
+   * dropdown. Picking the currently-selected option clears it.
+   */
   const toggle = useCallback(
     (key: string, value: string) => {
       apply((next) => {
-        const current = next.getAll(key);
+        const wasSelected = next.getAll(key).includes(value);
         next.delete(key);
-        const updated = current.includes(value)
-          ? current.filter((v) => v !== value)
-          : [...current, value];
-        for (const v of updated) next.append(key, v);
+        if (!wasSelected) next.append(key, value);
       });
     },
     [apply],
@@ -177,6 +195,59 @@ export function IssueFilters({
     startTransition(() => router.push(pathname, { scroll: false }));
     setQuery("");
   };
+
+  /**
+   * Downloads the current filtered/searched view as a genuine, fully
+   * editable .xlsx workbook. The query string sent is exactly what is in the
+   * address bar, so the export always matches what's on screen.
+   */
+  async function handleExport() {
+    if (exporting) return;
+    setExporting(true);
+
+    try {
+      const qs = params.toString();
+      const response = await fetch(
+        `/api/issues/export${qs ? `?${qs}` : ""}`,
+      );
+
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new Error(
+          body?.error ?? "Export failed. Please try again.",
+        );
+      }
+
+      const blob = await response.blob();
+      const disposition = response.headers.get("Content-Disposition") ?? "";
+      const match = /filename="([^"]+)"/.exec(disposition);
+      const filename = match?.[1] ?? "Prio-Issues-Export.xlsx";
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+
+      toast(
+        <>
+          Exported <strong>{filename}</strong>.
+        </>,
+      );
+    } catch (error) {
+      toast(
+        error instanceof Error
+          ? error.message
+          : "Export failed. Please try again.",
+        "error",
+      );
+    } finally {
+      setExporting(false);
+    }
+  }
 
   return (
     <div className="prio-filters" data-pending={pending}>
@@ -382,10 +453,39 @@ export function IssueFilters({
           </Button>
         ) : null}
 
-        <span className="prio-filters__total">
-          {pending ? "Loading…" : `${total} ${total === 1 ? "result" : "results"}`}
-        </span>
+        <div className="prio-filters__trailing">
+          <span className="prio-filters__total">
+            {pending ? "Loading…" : `${total} ${total === 1 ? "result" : "results"}`}
+          </span>
+
+          {enableExport ? (
+            <Button
+              variant="brand"
+              size="sm"
+              onClick={handleExport}
+              loading={exporting}
+            >
+              <IconDownload size={13} />
+              {exporting ? "Exporting…" : "Export Excel"}
+            </Button>
+          ) : null}
+
+          {enableShare && isAdmin ? (
+            <Button
+              variant="brand"
+              size="sm"
+              onClick={() => setShareOpen(true)}
+            >
+              <IconShare size={13} />
+              Share
+            </Button>
+          ) : null}
+        </div>
       </div>
+
+      {enableShare && isAdmin ? (
+        <ShareSheetDialog open={shareOpen} onClose={() => setShareOpen(false)} />
+      ) : null}
     </div>
   );
 }

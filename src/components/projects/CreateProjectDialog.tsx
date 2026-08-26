@@ -6,6 +6,8 @@ import { Dialog } from "@/components/ui/Dialog";
 import { Alert, Avatar, Button } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/Toast";
 import { IconWarning } from "@/components/ui/Icon";
+import { ScreenshotAttachmentField } from "@/components/attachments/ScreenshotAttachmentField";
+import { uploadStagedAttachment } from "@/lib/uploadAttachment";
 import { createProject } from "@/server/projects";
 import type { FieldErrors } from "@/server/schemas";
 
@@ -41,6 +43,7 @@ export function CreateProjectDialog({
   const [keyTouched, setKeyTouched] = useState(false);
   const [description, setDescription] = useState("");
   const [memberIds, setMemberIds] = useState<string[]>([]);
+  const [screenshots, setScreenshots] = useState<Blob[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
@@ -69,14 +72,28 @@ export function CreateProjectDialog({
       memberIds,
     });
 
-    setSubmitting(false);
-
     if (!result.ok) {
+      setSubmitting(false);
       setFormError(result.error);
       setErrors(result.fieldErrors ?? {});
       return;
     }
 
+    for (const screenshot of screenshots) {
+      try {
+        await uploadStagedAttachment({ projectId: result.data.id }, screenshot);
+      } catch (uploadError) {
+        toast(
+          uploadError instanceof Error
+            ? uploadError.message
+            : "A screenshot could not be attached.",
+          "error",
+        );
+      }
+    }
+
+    setSubmitting(false);
+    setScreenshots([]);
     onClose();
     toast(
       <>
@@ -193,6 +210,8 @@ export function CreateProjectDialog({
             maxLength={2000}
           />
         </div>
+
+        <ScreenshotAttachmentField value={screenshots} onChange={setScreenshots} />
 
         {selectable.length > 0 ? (
           <div className="prio-field">

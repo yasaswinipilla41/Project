@@ -280,6 +280,30 @@ export const IconExternal = (p: IconProps) => (
   </Svg>
 );
 
+export const IconDownload = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M8 2.4v7.4M4.8 6.8 8 9.8l3.2-3" />
+    <path d="M2.6 11.4v1.2a1.6 1.6 0 0 0 1.6 1.6h7.6a1.6 1.6 0 0 0 1.6-1.6v-1.2" />
+  </Svg>
+);
+
+export const IconImage = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="2.4" y="2.9" width="11.2" height="10.2" rx="1.4" />
+    <circle cx="5.6" cy="6.1" r="1.1" />
+    <path d="m3 12.4 3.4-3.6 2.4 2.4 2-2.2L13.6 12" />
+  </Svg>
+);
+
+export const IconShare = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="12.2" cy="3.8" r="1.6" />
+    <circle cx="3.8" cy="8" r="1.6" />
+    <circle cx="12.2" cy="12.2" r="1.6" />
+    <path d="M5.3 7.1 10.7 4.3M5.3 8.9l5.4 2.8" />
+  </Svg>
+);
+
 /* -------------------------------------------------------------- metadata */
 
 export const IconCalendar = (p: IconProps) => (

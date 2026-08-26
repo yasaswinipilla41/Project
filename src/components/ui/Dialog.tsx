@@ -34,6 +34,26 @@ export interface DialogProps {
 const FOCUSABLE =
   'a[href],button:not([disabled]),textarea:not([disabled]),input:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])';
 
+/**
+ * Every currently-open `Dialog`, most recently opened last. A handful of
+ * surfaces open one dialog from inside another (the screenshot editor from
+ * inside Create) — without this, pressing Escape would be seen by *both*
+ * dialogs' document-level listeners and close the outer one instead of the
+ * one the user is actually looking at. Only the top of this stack acts on a
+ * given Escape press; every other open dialog defers to it.
+ */
+const openDialogs: symbol[] = [];
+
+/**
+ * Lets a focused descendant (a floating text input, say) handle Escape
+ * itself instead of the dialog closing under it — set
+ * `data-local-escape="true"` on the element while it wants this.
+ */
+function activeElementOwnsEscape(): boolean {
+  const active = document.activeElement;
+  return active instanceof HTMLElement && active.dataset.localEscape === "true";
+}
+
 export function Dialog({
   open,
   onClose,
@@ -48,11 +68,23 @@ export function Dialog({
   const descId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const openerRef = useRef<HTMLElement | null>(null);
+  const dialogIdRef = useRef<symbol | null>(null);
+  dialogIdRef.current ??= Symbol("dialog");
 
   const requestClose = useCallback(() => {
     if (busy) return;
     onClose();
   }, [busy, onClose]);
+
+  useEffect(() => {
+    if (!open) return;
+    const id = dialogIdRef.current!;
+    openDialogs.push(id);
+    return () => {
+      const index = openDialogs.indexOf(id);
+      if (index !== -1) openDialogs.splice(index, 1);
+    };
+  }, [open]);
 
   /*
    * Remember who opened the dialog and return focus there when it goes away.
@@ -89,6 +121,11 @@ export function Dialog({
 
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
+        // Not the topmost dialog — whichever is on top handles this Escape.
+        if (openDialogs[openDialogs.length - 1] !== dialogIdRef.current) return;
+        // A focused descendant wants to handle its own Escape first (e.g. a
+        // floating text input cancelling itself) rather than the dialog closing.
+        if (activeElementOwnsEscape()) return;
         event.stopPropagation();
         requestClose();
         return;

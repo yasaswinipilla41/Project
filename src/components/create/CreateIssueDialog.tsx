@@ -7,6 +7,8 @@ import { Alert, Button } from "@/components/ui/primitives";
 import { IssueTypeIcon } from "@/components/ui/Indicators";
 import { useToast } from "@/components/ui/Toast";
 import { IconWarning } from "@/components/ui/Icon";
+import { ScreenshotAttachmentField } from "@/components/attachments/ScreenshotAttachmentField";
+import { uploadStagedAttachment } from "@/lib/uploadAttachment";
 import {
   ISSUE_TYPES,
   ISSUE_TYPE_DESCRIPTION,
@@ -107,6 +109,7 @@ export function CreateIssueDialog({
   const [projectId, setProjectId] = useState(defaultProjectId ?? "");
   const [form, setForm] = useState(EMPTY_FORM);
   const [labelIds, setLabelIds] = useState<string[]>([]);
+  const [screenshots, setScreenshots] = useState<Blob[]>([]);
 
   const [projects, setProjects] = useState<OptionProject[]>([]);
   const [members, setMembers] = useState<OptionMember[]>([]);
@@ -195,14 +198,31 @@ export function CreateIssueDialog({
       severity: isBug ? form.severity : null,
     });
 
-    setSubmitting(false);
-
     if (!result.ok) {
+      setSubmitting(false);
       setFormError(result.error);
       setErrors(result.fieldErrors ?? {});
       return;
     }
 
+    // The issue exists now, so the staged screenshots have somewhere to
+    // point. A failed attach never blocks navigation — the issue is real
+    // either way, and its own Attachments panel can retry the upload.
+    for (const screenshot of screenshots) {
+      try {
+        await uploadStagedAttachment({ issueId: result.data.id }, screenshot);
+      } catch (uploadError) {
+        toast(
+          uploadError instanceof Error
+            ? uploadError.message
+            : "A screenshot could not be attached.",
+          "error",
+        );
+      }
+    }
+
+    setSubmitting(false);
+    setScreenshots([]);
     onClose();
     toast(
       <>

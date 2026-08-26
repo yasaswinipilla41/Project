@@ -325,6 +325,34 @@ export async function listIssues(
   };
 }
 
+/**
+ * Every issue matching `filters`, unpaginated, for the Excel export (§ Export
+ * Issues to Excel). Scoped by the same `issueScope` as every other read path —
+ * an export never contains a row the caller could not otherwise see.
+ *
+ * Capped well above any realistic organization's issue count so a runaway
+ * request cannot exhaust memory generating the workbook.
+ */
+const EXPORT_ROW_LIMIT = 20_000;
+
+export interface IssueExportRow extends IssueListRow {
+  attachments: { id: string; filename: string; mimeType: string; storageKey: string }[];
+}
+
+export async function listIssuesForExport(
+  user: CurrentUser,
+  filters: IssueFilters,
+): Promise<IssueExportRow[]> {
+  const where = buildIssueWhere(user, filters);
+  const rows = await prisma.issue.findMany({
+    where,
+    select: EXPORT_SELECT,
+    orderBy: buildOrderBy(filters.sort ?? "updated", filters.dir ?? "desc"),
+    take: EXPORT_ROW_LIMIT,
+  });
+  return rows as unknown as IssueExportRow[];
+}
+
 /** Counts grouped by status for the filter bar's summary chips. */
 export async function countByStatus(
   user: CurrentUser,

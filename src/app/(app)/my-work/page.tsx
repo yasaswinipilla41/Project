@@ -198,7 +198,13 @@ export default async function MyWorkPage() {
 
       <div className="row g-3" style={{ marginBottom: "var(--prio-space-6)" }}>
         <div className="col-6 col-xl-3">
-          <Stat label="Open" value={assigned.length} tone="brand" hint="Assigned to me" />
+          <Stat
+            label="Open"
+            value={assigned.length}
+            tone="brand"
+            hint="Assigned to me"
+            href={`/issues?assignee=${user.id}&resolution=open`}
+          />
         </div>
         <div className="col-6 col-xl-3">
           <Stat
@@ -207,6 +213,7 @@ export default async function MyWorkPage() {
             icon={<IconBug size={13} />}
             tone={bugCount > 0 ? "danger" : "default"}
             hint="Open, assigned to me"
+            href={`/issues?assignee=${user.id}&resolution=open&type=BUG`}
           />
         </div>
         <div className="col-6 col-xl-3">
@@ -216,6 +223,7 @@ export default async function MyWorkPage() {
             icon={<IconWarning size={13} />}
             tone={overdueCount > 0 ? "danger" : "default"}
             hint="Past their due date"
+            href={`/issues?assignee=${user.id}&resolution=open&overdue=1`}
           />
         </div>
         <div className="col-6 col-xl-3">
@@ -225,6 +233,7 @@ export default async function MyWorkPage() {
             icon={<IconCalendar size={13} />}
             tone={dueSoonCount > 0 ? "warning" : "default"}
             hint={`${resolvedCount} completed all time`}
+            href={`/issues?assignee=${user.id}&resolution=open&sort=due&dir=asc`}
           />
         </div>
       </div>
