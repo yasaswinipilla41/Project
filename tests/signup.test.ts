@@ -383,10 +383,18 @@ describe("default project auto-join", () => {
     await prisma.project.delete({ where: { id: archivedDefault.id } });
   });
 
-  it("joins no project at all when nothing is marked default", async () => {
-    // Deliberately creates no fixture project — the seed's own projects are
-    // real data and must not have been silently flipped to default by
-    // anything under test, which this also incidentally guards.
+  it("joins exactly the active default projects, and nothing else", async () => {
+    /*
+     * Asserted against the set of default projects as they actually are at
+     * this moment, rather than against a hard-coded zero: the seed marks none,
+     * so this normally proves "no defaults means no memberships", but it stays
+     * correct — and stops flaking — if any other fixture is mid-flight.
+     */
+    const defaults = await prisma.project.findMany({
+      where: { isDefaultProject: true, isArchived: false },
+      select: { id: true },
+    });
+
     const account = freshAccount();
     await signUp(account);
 
@@ -396,10 +404,14 @@ describe("default project auto-join", () => {
     });
     createdUserIds.push(user.id);
 
-    const membershipCount = await prisma.projectMember.count({
+    const memberships = await prisma.projectMember.findMany({
       where: { userId: user.id },
+      select: { projectId: true },
     });
-    expect(membershipCount).toBe(0);
+
+    expect(memberships.map((m) => m.projectId).sort()).toEqual(
+      defaults.map((d) => d.id).sort(),
+    );
   });
 
   it("leaves existing users and their memberships completely alone", async () => {

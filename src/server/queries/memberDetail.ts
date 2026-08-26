@@ -117,7 +117,19 @@ export async function loadMemberDetail(
             OR: [{ assigneeId: null }, { assigneeId: { not: memberId } }],
           },
           select: ISSUE_CARD_SELECT,
-          orderBy: { updatedAt: "desc" },
+          /*
+           * Unassigned work first, deliberately.
+           *
+           * Ordering purely by recency let fifty recently-touched issues that
+           * already belong to somebody push every unassigned one out of the
+           * capped list — so the picker could offer nothing that was actually
+           * free to hand out, which is the main thing an admin opens it to do.
+           */
+          orderBy: [
+            { assigneeId: { sort: "asc", nulls: "first" } },
+            { priority: "asc" },
+            { updatedAt: "desc" },
+          ],
           take: 50,
         }),
     prisma.activityLogEntry.findMany({

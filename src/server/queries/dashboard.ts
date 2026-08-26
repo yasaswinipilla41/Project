@@ -199,6 +199,9 @@ function windows() {
   };
 }
 
+/** How many assigned issues the dashboard previews before "View all". */
+const ASSIGNED_PREVIEW = 8;
+
 const ISSUE_SELECT = {
   id: true,
   key: true,
@@ -307,7 +310,7 @@ export async function loadDashboard(user: CurrentUser): Promise<DashboardData> {
         { dueDate: { sort: "asc", nulls: "last" } },
         { updatedAt: "desc" },
       ],
-      take: 8,
+      take: ASSIGNED_PREVIEW,
     }),
     prisma.issue.findMany({
       where: {
@@ -468,17 +471,77 @@ export async function loadDashboard(user: CurrentUser): Promise<DashboardData> {
     ? await Promise.all([loadOrgStats(), loadNewUsers()])
     : [null, null];
 
-  const newAssignmentIds = new Set(newAssignmentRows.map((r) => r.issueId));
+  // `Notification.issueId` is nullable (not every kind of notification has an
+  // issue), so the nulls are dropped before this becomes an id lookup.
+  const newAssignmentIds = new Set(
+    newAssignmentRows
+      .map((r) => r.issueId)
+      .filter((id): id is string => id !== null),
+  );
+
+  /*
+   * "My assigned tasks" is capped and sorted by priority, so somebody already
+   * carrying a full page of urgent work would never see a newly assigned
+   * MEDIUM or LOW one — it was assigned, saved and scoped correctly, it simply
+   * sorted off the end. That is the whole of the "new assignments don't show
+   * up" complaint; nothing about it was a caching problem.
+   *
+   * The ones that fell off are fetched by *recency*, deliberately not by
+   * priority: sorting these by priority too would reproduce the very bug this
+   * exists to fix, just one level down. They then lead the list, because an
+   * assignment the person has not yet acknowledged is the thing they are
+   * least likely to know about, whatever its priority.
+   */
+  const shownIds = new Set(assignedIssues.map((i) => i.id));
+  const missedIds = [...newAssignmentIds].filter((id) => !shownIds.has(id));
+
+  const missed = await prisma.issue.findMany({
+    // An empty `in` matches nothing, so the no-missed case costs one trivial
+    // query rather than needing a branch that widens the selected row type.
+    where: { ...mine, status: open, id: { in: missedIds } },
+    select: ISSUE_SELECT,
+    orderBy: { updatedAt: "desc" },
+    take: ASSIGNED_PREVIEW,
+  });
+
+  /*
+   * Merge, then rank — rather than concatenating, which would let a run of
+   * unacknowledged items push every high-priority one off the end.
+   *
+   * New assignments lead, most recent first. Everything else keeps the
+   * priority order the query already applied. Still a preview of at most
+   * `ASSIGNED_PREVIEW`; the count beside the heading and "View all assigned"
+   * remain the full picture.
+   */
+  const byId = new Map<string, (typeof assignedIssues)[number]>();
+  for (const issue of [...assignedIssues, ...missed]) byId.set(issue.id, issue);
+
+  const priorityRank = new Map(assignedIssues.map((i, index) => [i.id, index]));
+
+  const assigned = [...byId.values()]
+    .sort((a, b) => {
+      const aNew = newAssignmentIds.has(a.id);
+      const bNew = newAssignmentIds.has(b.id);
+      if (aNew !== bNew) return aNew ? -1 : 1;
+      if (aNew && bNew) return b.updatedAt.getTime() - a.updatedAt.getTime();
+      return (
+        (priorityRank.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
+        (priorityRank.get(b.id) ?? Number.MAX_SAFE_INTEGER)
+      );
+    })
+    .slice(0, ASSIGNED_PREVIEW)
+    .map(withProgress)
+    .map((issue) => ({
+      ...issue,
+      isNewAssignment: newAssignmentIds.has(issue.id),
+    }));
 
   return {
     scope: { projectIds, isAdmin },
     kpi: counts.kpi,
     myWork: counts.myWork,
     due: counts.due,
-    assigned: assignedIssues.map(withProgress).map((issue) => ({
-      ...issue,
-      isNewAssignment: newAssignmentIds.has(issue.id),
-    })),
+    assigned,
     important: importantIssues.map(withProgress),
     projects,
     teamMembers,

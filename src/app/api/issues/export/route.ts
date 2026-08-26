@@ -1,225 +1,156 @@
 import ExcelJS from "exceljs";
 import { NextResponse } from "next/server";
+import writeXlsxFile, { type Cell, type Row } from "write-excel-file/node";
+import { getCurrentUser } from "@/lib/session";
 import {
   ISSUE_TYPE_LABEL,
   PRIORITY_LABEL,
   SEVERITY_LABEL,
   STATUS_LABEL,
 } from "@/lib/domain";
-import { getCurrentUser } from "@/lib/session";
-import { listIssuesForExport } from "@/server/queries/issues";
+import { exportIssues, EXPORT_LIMIT } from "@/server/queries/issues";
 import { parseIssueParams, type SearchParams } from "@/server/queries/params";
-import { storage } from "@/server/storage";
+import type { IssueListRow } from "@/server/queries/issues";
 
 /**
- * Excel export of the issue list (§ Export Issues to Excel).
+ * Issue sheet → Excel.
  *
- * A route handler, not a server action: the response body is a binary
- * workbook the browser must download, which a server action cannot return.
- * The same `parseIssueParams` / `buildIssueWhere` the /issues page itself uses
- * turn the query string into rows, so an export always matches whatever the
- * caller was looking at — active filters included, and always scoped to what
- * they are authorized to see.
+ * A route handler rather than a server action, because the browser needs a
+ * real response with `Content-Disposition` to save a file; a server action
+ * can only return data for JavaScript to deal with.
  *
- * The workbook is never protected or locked: no `worksheet.protect()` call
- * exists anywhere in this file, which is what keeps it a normal, fully
- * editable .xlsx once downloaded.
+ * Two things make this safe to expose:
+ *
+ *   1. **The caller is resolved server-side.** Nothing about identity comes
+ *      from the request body or query string.
+ *   2. **The rows come from `exportIssues`, which builds its `where` with the
+ *      same `buildIssueWhere` the on-screen list uses** — project scope
+ *      included. The query string can only ever *narrow* the result, never
+ *      widen it, so asking for a project you cannot see returns nothing
+ *      rather than someone else's issues.
  */
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const BRAND_PRIMARY = "FF0593C3";
-const HEADER_TEXT = "FFFFFFFF";
-
-const COLUMNS: {
+interface Column {
   header: string;
-  key: string;
   width: number;
-}[] = [
-  { header: "Key", key: "key", width: 12 },
-  { header: "Project", key: "project", width: 22 },
-  { header: "Type", key: "type", width: 10 },
-  { header: "Title", key: "title", width: 48 },
-  { header: "Status", key: "status", width: 14 },
-  { header: "Priority", key: "priority", width: 12 },
-  { header: "Severity", key: "severity", width: 12 },
-  { header: "Assignee", key: "assignee", width: 22 },
-  { header: "Reporter", key: "reporter", width: 22 },
-  { header: "Labels", key: "labels", width: 26 },
-  { header: "Due Date", key: "dueDate", width: 14 },
-  { header: "Created At", key: "createdAt", width: 18 },
-  { header: "Updated At", key: "updatedAt", width: 18 },
-  { header: "Attachments", key: "attachments", width: 20 },
-];
-
-/** Formats `ExcelJS.Image` accepts for an embedded picture. */
-const IMAGE_EXTENSION: Record<string, "png" | "jpeg" | "gif"> = {
-  "image/png": "png",
-  "image/jpeg": "jpeg",
-  "image/gif": "gif",
-};
-
-/**
- * Ceiling on how many issues get an embedded thumbnail. Each one is read off
- * disk and inflated into the workbook in memory, so an unbounded export could
- * turn a few thousand rows into a very slow — or very large — download.
- * Rows beyond the cap still get a text fallback naming their attachment.
- */
-const MAX_EMBEDDED_IMAGES = 300;
-const THUMB_PX = 72;
-/** Excel row height is in points (~0.75px each) — tall enough for THUMB_PX. */
-const ROW_HEIGHT_WITH_THUMB = 56;
-
-async function readAttachmentBuffer(storageKey: string): Promise<Buffer> {
-  const stream = await storage().read(storageKey);
-  const chunks: Uint8Array[] = [];
-  for await (const chunk of stream as unknown as AsyncIterable<Uint8Array>) {
-    chunks.push(chunk);
-  }
-  return Buffer.concat(chunks);
+  value: (row: IssueListRow) => string | number | Date | null;
+  format?: string;
 }
 
-function searchParamsFromUrl(url: string): SearchParams {
-  const sp = new URL(url).searchParams;
-  const params: SearchParams = {};
-  for (const key of new Set(sp.keys())) {
-    const all = sp.getAll(key);
-    params[key] = all.length > 1 ? all : all[0];
-  }
-  return params;
+/** Only fields the Issue model actually carries — nothing derived or invented. */
+const COLUMNS: Column[] = [
+  { header: "Key", width: 14, value: (r) => r.key },
+  { header: "Title", width: 60, value: (r) => r.title },
+  { header: "Type", width: 12, value: (r) => ISSUE_TYPE_LABEL[r.type] },
+  { header: "Project", width: 22, value: (r) => r.project.name },
+  { header: "Project key", width: 14, value: (r) => r.project.key },
+  { header: "Status", width: 16, value: (r) => STATUS_LABEL[r.status] },
+  { header: "Priority", width: 12, value: (r) => PRIORITY_LABEL[r.priority] },
+  {
+    header: "Severity",
+    width: 12,
+    value: (r) => (r.severity ? SEVERITY_LABEL[r.severity] : ""),
+  },
+  { header: "Assignee", width: 22, value: (r) => r.assignee?.name ?? "" },
+  { header: "Reporter", width: 22, value: (r) => r.reporter.name },
+  {
+    header: "Labels",
+    width: 28,
+    value: (r) => r.labels.map((l) => l.label.name).join(", "),
+  },
+  { header: "Parent", width: 14, value: (r) => r.parent?.key ?? "" },
+  { header: "Sub-issues", width: 12, value: (r) => r._count.children },
+  { header: "Comments", width: 12, value: (r) => r._count.comments },
+  {
+    header: "Due date",
+    width: 14,
+    value: (r) => r.dueDate,
+    format: "yyyy-mm-dd",
+  },
+  {
+    header: "Created",
+    width: 18,
+    value: (r) => r.createdAt,
+    format: "yyyy-mm-dd hh:mm",
+  },
+  {
+    header: "Updated",
+    width: 18,
+    value: (r) => r.updatedAt,
+    format: "yyyy-mm-dd hh:mm",
+  },
+  { header: "Issue ID", width: 28, value: (r) => r.id },
+];
+
+/** `yyyy-mm-dd`, for the filename — never the user's locale. */
+function stamp(date: Date): string {
+  return date.toISOString().slice(0, 10);
 }
 
 export async function GET(request: Request) {
   const user = await getCurrentUser();
   if (!user) {
-    return NextResponse.json({ error: "Not signed in." }, { status: 401 });
+    return Response.json({ error: "Not signed in." }, { status: 401 });
   }
 
-  let rows: Awaited<ReturnType<typeof listIssuesForExport>>;
+  const url = new URL(request.url);
+  const params: SearchParams = {};
+  for (const key of new Set(url.searchParams.keys())) {
+    const values = url.searchParams.getAll(key);
+    params[key] = values.length > 1 ? values : values[0];
+  }
+
   try {
-    const filters = parseIssueParams(searchParamsFromUrl(request.url));
-    rows = await listIssuesForExport(user, filters);
+    const rows = await exportIssues(user, parseIssueParams(params));
+
+    const header: Row = COLUMNS.map((column) => ({
+      value: column.header,
+      fontWeight: "bold",
+    }));
+
+    const body: Row[] = rows.map((row) =>
+      COLUMNS.map((column): Cell => {
+        const value = column.value(row);
+        // A typed cell, so Excel sorts and filters dates and counts as dates
+        // and numbers rather than as text that merely looks like them.
+        if (value instanceof Date) {
+          return { type: Date, value, format: column.format };
+        }
+        if (typeof value === "number") {
+          return { type: Number, value };
+        }
+        return { type: String, value: value ?? "" };
+      }),
+    );
+
+    const file = writeXlsxFile([header, ...body], {
+      columns: COLUMNS.map((column) => ({ width: column.width })),
+      sheet: "Issues",
+    });
+    const buffer = await file.toBuffer();
+
+    const filename = `prio-issues-${stamp(new Date())}.xlsx`;
+
+    return new Response(new Uint8Array(buffer), {
+      headers: {
+        "Content-Type":
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "Content-Disposition": `attachment; filename="${filename}"`,
+        // The sheet reflects a moment in a live list; never let a proxy or the
+        // browser hand back yesterday's export.
+        "Cache-Control": "no-store",
+        "X-Prio-Export-Rows": String(rows.length),
+        "X-Prio-Export-Limit": String(EXPORT_LIMIT),
+      },
+    });
   } catch (error) {
     console.error("[prio] issue export failed:", error);
-    return NextResponse.json(
-      { error: "Could not generate the export. Please try again." },
+    return Response.json(
+      { error: "Could not generate the export." },
       { status: 500 },
     );
   }
-
-  const workbook = new ExcelJS.Workbook();
-  workbook.creator = "Prio";
-  workbook.created = new Date();
-
-  const sheet = workbook.addWorksheet("Issues", {
-    views: [{ state: "frozen", ySplit: 1 }],
-  });
-
-  sheet.columns = COLUMNS;
-
-  // 0-based column index for image anchors — the "Attachments" column is
-  // always last in COLUMNS.
-  const attachmentColIndex = COLUMNS.length - 1;
-  let embeddedCount = 0;
-
-  for (const row of rows) {
-    let image: (typeof row.attachments)[number] | undefined;
-    let extension: "png" | "jpeg" | "gif" | undefined;
-    for (const attachment of row.attachments) {
-      const ext = IMAGE_EXTENSION[attachment.mimeType];
-      if (ext) {
-        image = attachment;
-        extension = ext;
-        break;
-      }
-    }
-    const extraCount = image ? row.attachments.length - 1 : row.attachments.length;
-
-    const addedRow = sheet.addRow({
-      key: row.key,
-      project: `${row.project.key} — ${row.project.name}`,
-      type: ISSUE_TYPE_LABEL[row.type],
-      title: row.title,
-      status: STATUS_LABEL[row.status],
-      priority: PRIORITY_LABEL[row.priority],
-      severity: row.severity ? SEVERITY_LABEL[row.severity] : "",
-      assignee: row.assignee?.name ?? "Unassigned",
-      reporter: row.reporter.name,
-      labels: row.labels.map((l) => l.label.name).join(", "),
-      dueDate: row.dueDate,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-      attachments: extraCount > 0 ? `+${extraCount} more` : "",
-    });
-
-    if (!image || !extension) continue;
-
-    if (embeddedCount >= MAX_EMBEDDED_IMAGES) {
-      // Past the cap: name the file instead of embedding it, rather than
-      // silently dropping it from the export.
-      addedRow.getCell("attachments").value = image.filename;
-      continue;
-    }
-
-    try {
-      const buffer = await readAttachmentBuffer(image.storageKey);
-      // exceljs vendors its own `@types/node`, so its `Buffer` type is a
-      // structurally-identical but nominally distinct type from this
-      // project's — a real Buffer at runtime, just not one TS will accept
-      // without a cast.
-      const imageId = workbook.addImage({ buffer, extension } as unknown as ExcelJS.Image);
-      sheet.addImage(imageId, {
-        tl: { col: attachmentColIndex, row: addedRow.number - 1 },
-        ext: { width: THUMB_PX, height: THUMB_PX },
-        editAs: "oneCell",
-      });
-      addedRow.height = ROW_HEIGHT_WITH_THUMB;
-      embeddedCount++;
-    } catch (error) {
-      console.error("[prio] could not embed attachment thumbnail:", error);
-      addedRow.getCell("attachments").value = image.filename;
-    }
-  }
-
-  const headerRow = sheet.getRow(1);
-  headerRow.height = 20;
-  headerRow.eachCell((cell) => {
-    cell.font = { bold: true, color: { argb: HEADER_TEXT } };
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND_PRIMARY } };
-    cell.alignment = { vertical: "middle", horizontal: "left" };
-  });
-
-  const lastRow = rows.length + 1;
-  sheet.autoFilter = { from: "A1", to: `${sheet.getColumn(COLUMNS.length).letter}${lastRow}` };
-
-  const dateColumn = sheet.getColumn("dueDate");
-  dateColumn.numFmt = "yyyy-mm-dd";
-  const timestampFormat = "yyyy-mm-dd hh:mm";
-  sheet.getColumn("createdAt").numFmt = timestampFormat;
-  sheet.getColumn("updatedAt").numFmt = timestampFormat;
-
-  for (let i = 2; i <= lastRow; i++) {
-    sheet.getRow(i).eachCell((cell) => {
-      cell.alignment = { vertical: "middle", wrapText: false };
-    });
-  }
-
-  // Deliberately no `sheet.protect(...)` and no per-cell `.protection` lock —
-  // the downloaded workbook must open as a completely normal, editable sheet.
-
-  const raw = await workbook.xlsx.writeBuffer();
-  const body = new Uint8Array(raw);
-  const stamp = new Date().toISOString().slice(0, 10);
-  const filename = `Prio-Issues-Export-${stamp}.xlsx`;
-
-  return new NextResponse(body, {
-    headers: {
-      "Content-Type":
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": `attachment; filename="${filename}"`,
-      "Content-Length": String(body.byteLength),
-      "Cache-Control": "no-store",
-    },
-  });
 }

@@ -16,7 +16,11 @@ import {
   IconWarning,
 } from "@/components/ui/Icon";
 import { issueScope } from "@/lib/authz";
-import { CLOSED_STATUSES, OPEN_STATUSES } from "@/lib/domain";
+import {
+  CLOSED_STATUSES,
+  OPEN_STATUSES,
+  TEST_RESULT_LABEL,
+} from "@/lib/domain";
 import { formatDateCompact, isOverdue } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
@@ -49,8 +53,15 @@ export default async function MyWorkPage() {
     status: { in: [...OPEN_STATUSES] },
   };
 
-  const [assigned, reported, overdueCount, dueSoonCount, resolvedCount] =
-    await Promise.all([
+  const [
+    assigned,
+    reported,
+    overdueCount,
+    dueSoonCount,
+    resolvedCount,
+    waitingForTesting,
+    handedBack,
+  ] = await Promise.all([
       prisma.issue.findMany({
         where: assignedWhere,
         orderBy: [{ priority: "asc" }, { dueDate: { sort: "asc", nulls: "last" } }],
@@ -100,6 +111,60 @@ export default async function MyWorkPage() {
           ...scope,
           assigneeId: user.id,
           status: { in: [...CLOSED_STATUSES] },
+        },
+      }),
+
+      /*
+       * The two QA-shaped questions this page could not answer before.
+       *
+       * Both reuse `scope`, so they can only ever surface issues this person
+       * could already open — this is a different slice of the same authorized
+       * set, not a new source of data.
+       */
+
+      // Submitted by somebody else and not yet judged: the tester's queue.
+      // Excludes their own work, because nobody signs off their own.
+      prisma.issue.findMany({
+        where: {
+          ...scope,
+          status: "IN_REVIEW",
+          testResult: "NOT_TESTED",
+          NOT: { assigneeId: user.id },
+        },
+        orderBy: [{ priority: "asc" }, { updatedAt: "desc" }],
+        take: 10,
+        select: {
+          id: true,
+          key: true,
+          type: true,
+          title: true,
+          priority: true,
+          updatedAt: true,
+          project: { select: { name: true } },
+          assignee: { select: { name: true } },
+        },
+      }),
+
+      // Their own work that QA has handed back: the developer's queue.
+      prisma.issue.findMany({
+        where: {
+          ...scope,
+          assigneeId: user.id,
+          testResult: { in: ["FAILED", "BLOCKED"] },
+          status: { notIn: [...CLOSED_STATUSES] },
+        },
+        orderBy: [{ priority: "asc" }, { testedAt: "desc" }],
+        take: 10,
+        select: {
+          id: true,
+          key: true,
+          type: true,
+          title: true,
+          priority: true,
+          testResult: true,
+          testedAt: true,
+          project: { select: { name: true } },
+          testedBy: { select: { name: true } },
         },
       }),
     ]);
@@ -172,6 +237,96 @@ export default async function MyWorkPage() {
           />
         </div>
       </div>
+
+      {/* ------------------------------------------------ QA collaboration */}
+      {/* Shown only when there is something to act on, so the page stays a
+          to-do list rather than a wall of empty sections. */}
+      {handedBack.length > 0 || waitingForTesting.length > 0 ? (
+        <div className="row g-4" style={{ marginBottom: "var(--prio-space-4)" }}>
+          {handedBack.length > 0 ? (
+            <div className="col-12 col-xl-6">
+              <Card style={{ height: "100%" }}>
+                <CardBody>
+                  <h2 className="prio-issue__section-title">
+                    Testing sent this back
+                    <span className="prio-text-muted">{handedBack.length}</span>
+                  </h2>
+                  {handedBack.map((issue) => (
+                    <Link
+                      key={issue.id}
+                      href={`/issues/${issue.key.toLowerCase()}`}
+                      className="prio-worklink"
+                    >
+                      <IssueTypeIcon type={issue.type} size={17} />
+                      <span className="prio-worklink__body">
+                        <span className="prio-worklink__title prio-truncate">
+                          {issue.title}
+                        </span>
+                        <span className="prio-worklink__meta">
+                          <IssueKey issueKey={issue.key} />
+                          <span
+                            className="prio-testresult"
+                            data-result={issue.testResult}
+                          >
+                            {TEST_RESULT_LABEL[issue.testResult]}
+                          </span>
+                          {issue.testedBy ? (
+                            <span className="prio-text-muted">
+                              by {issue.testedBy.name}
+                            </span>
+                          ) : null}
+                        </span>
+                      </span>
+                      <PriorityIndicator priority={issue.priority} showLabel={false} />
+                    </Link>
+                  ))}
+                </CardBody>
+              </Card>
+            </div>
+          ) : null}
+
+          {waitingForTesting.length > 0 ? (
+            <div className="col-12 col-xl-6">
+              <Card style={{ height: "100%" }}>
+                <CardBody>
+                  <h2 className="prio-issue__section-title">
+                    Waiting for testing
+                    <span className="prio-text-muted">
+                      {waitingForTesting.length}
+                    </span>
+                  </h2>
+                  {waitingForTesting.map((issue) => (
+                    <Link
+                      key={issue.id}
+                      href={`/issues/${issue.key.toLowerCase()}`}
+                      className="prio-worklink"
+                    >
+                      <IssueTypeIcon type={issue.type} size={17} />
+                      <span className="prio-worklink__body">
+                        <span className="prio-worklink__title prio-truncate">
+                          {issue.title}
+                        </span>
+                        <span className="prio-worklink__meta">
+                          <IssueKey issueKey={issue.key} />
+                          <span className="prio-text-muted">
+                            {issue.project.name}
+                          </span>
+                          {issue.assignee ? (
+                            <span className="prio-text-muted">
+                              from {issue.assignee.name}
+                            </span>
+                          ) : null}
+                        </span>
+                      </span>
+                      <PriorityIndicator priority={issue.priority} showLabel={false} />
+                    </Link>
+                  ))}
+                </CardBody>
+              </Card>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       {assigned.length === 0 ? (
         <Card>

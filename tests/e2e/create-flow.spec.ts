@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { prisma } from "@/lib/prisma";
 import { watchForProblems } from "./support";
 
 /**
@@ -42,25 +43,39 @@ test.describe("Create flow", () => {
     await expect(dialog.getByRole("alert").first()).toBeVisible();
   });
 
-  test("a Bug still has to describe the problem", async ({ page }) => {
+  test("creates a Bug from a title alone, with no long-form fields to fill", async ({
+    page,
+  }) => {
+    /*
+     * A bug used to be rejected without a description, and the dialog carried
+     * reproduction/expected/actual boxes. All four fields have been removed
+     * from creation, so the only thing a bug now needs is a title — and no
+     * validation may demand something the form cannot supply.
+     */
+    const title = `Title-only bug ${stamp()}`;
     const dialog = await openCreate(page, "Bug");
 
-    // Fill only project + title, deliberately omitting the description.
+    for (const gone of [
+      "Description",
+      "Steps to reproduce",
+      "Expected result",
+      "Expected behaviour",
+      "Actual result",
+      "Actual behaviour",
+    ]) {
+      await expect(dialog.getByLabel(gone)).toHaveCount(0);
+    }
+
     await dialog.getByLabel("Project").selectOption({ label: "Engineering (ENG)" });
-    await dialog.getByLabel("Bug title").fill(`Incomplete ${stamp()}`);
+    await dialog.getByLabel("Bug title").fill(title);
     await dialog.getByRole("button", { name: /^create bug$/i }).click();
 
-    // The server rule surfaces on the field it belongs to.
-    await expect(dialog.getByText("Describe the problem.")).toBeVisible();
-    await expect(dialog).toBeVisible();
+    // It is created rather than refused, and lands on its own page.
+    await expect(page).toHaveURL(/\/issues\/eng-\d+$/);
+    await expect(page.locator("h1.prio-issue__title")).toHaveText(title);
 
-    /* The reproduction write-up is no longer demanded — those fields were
-       removed from creation, so a rule requiring them could never be met. */
-    await expect(
-      dialog.getByText("List the steps needed to reproduce this."),
-    ).toHaveCount(0);
-    await expect(dialog.getByText("State what should happen.")).toHaveCount(0);
-    await expect(dialog.getByText("State what actually happens.")).toHaveCount(0);
+    // This test now creates a real row, so it removes it again.
+    await prisma.issue.deleteMany({ where: { title } });
   });
 
   test("cancel closes the dialog and creates nothing", async ({ page }) => {
@@ -85,9 +100,6 @@ test.describe("Create flow", () => {
 
     await dialog.getByLabel("Project").selectOption({ label: "Engineering (ENG)" });
     await dialog.getByLabel("Title").fill(title);
-    await dialog
-      .getByLabel("Description")
-      .fill("Created by the Playwright create-flow suite.");
     await dialog.getByLabel("Status").selectOption("TODO");
     await dialog.getByLabel("Priority").selectOption("HIGH");
 
@@ -166,9 +178,6 @@ test.describe("Create flow", () => {
 
     await dialog.getByLabel("Project").selectOption({ label: "Engineering (ENG)" });
     await dialog.getByLabel("Bug title").fill(title);
-    await dialog
-      .getByLabel("Description")
-      .fill("Session cookie is dropped after the tab is idle overnight.");
     await dialog.getByLabel("Severity").selectOption("CRITICAL");
     await dialog.getByLabel("Status").selectOption("TODO");
     await dialog.getByLabel("Priority").selectOption("URGENT");
@@ -198,26 +207,43 @@ test.describe("Create flow", () => {
     expect(failedRequests).toEqual([]);
   });
 
-  test("a bug recorded before the change still shows everything it captured", async ({
+  test("a bug recorded before the change keeps its data, but no longer displays the retired fields", async ({
     page,
   }) => {
     /*
-     * Removing the fields from creation must not erase history. ENG-1 was
-     * reported when reproduction steps were mandatory; its write-up has to keep
-     * rendering exactly as it did.
+     * Retiring the fields is a change to the *experience*, not a data
+     * deletion. ENG-1 was reported when reproduction steps were mandatory, so
+     * it is the row that proves both halves at once: the columns still hold
+     * what was captured, while the page that used to render them no longer
+     * does.
      */
+    const stored = await prisma.issue.findUniqueOrThrow({
+      where: { key: "ENG-1" },
+      select: {
+        stepsToReproduce: true,
+        expectedResult: true,
+        actualResult: true,
+      },
+    });
+
+    // The history is still there, untouched.
+    expect(stored.stepsToReproduce).toBeTruthy();
+    expect(stored.expectedResult).toBeTruthy();
+    expect(stored.actualResult).toBeTruthy();
+
     await page.goto("/issues/eng-1");
 
-    await expect(
-      page.getByRole("heading", { name: "Steps to reproduce" }),
-    ).toBeVisible();
-    await expect(page.getByText("Sign in to Prio")).toBeVisible();
-    await expect(
-      page.getByRole("heading", { name: "Expected result" }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("heading", { name: "Actual result" }),
-    ).toBeVisible();
+    // ...and the issue still renders, minus those three sections. The page's
+    // heading is the issue title; the key sits beside it in the breadcrumb.
+    await expect(page.locator("h1.prio-issue__title")).toBeVisible();
+    await expect(page.locator(".prio-key", { hasText: "ENG-1" }).first()).toBeVisible();
+    for (const heading of [
+      "Steps to reproduce",
+      "Expected result",
+      "Actual result",
+    ]) {
+      await expect(page.getByRole("heading", { name: heading })).toHaveCount(0);
+    }
   });
 
   test("switching type in the dialog adds and removes severity only", async ({

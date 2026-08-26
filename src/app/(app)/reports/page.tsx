@@ -219,11 +219,16 @@ export default async function ReportsPage() {
       {/* ------------------------------------------------------ headline */}
       <div className="row g-3" style={{ marginBottom: "var(--prio-space-6)" }}>
         <div className="col-6 col-xl-3">
+          {/* The figure counts every issue across the projects this person
+              can see, which is exactly what an unfiltered /issues renders —
+              the list applies the same `issueScope`, so the destination
+              cannot show more than the number claimed here. */}
           <Stat
             label="Total issues"
             value={total}
             icon={<IconIssues size={13} />}
             hint={`${done} done · ${cancelled} cancelled`}
+            href="/issues"
           />
         </div>
         <div className="col-6 col-xl-3">

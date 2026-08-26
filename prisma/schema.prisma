@@ -48,6 +48,14 @@ enum Severity {
   TRIVIAL
 }
 
+/// Outcome of the most recent QA pass over an issue.
+enum TestResult {
+  NOT_TESTED
+  PASSED
+  FAILED
+  BLOCKED
+}
+
 enum NotificationType {
   ISSUE_ASSIGNED
   MENTIONED
@@ -55,6 +63,7 @@ enum NotificationType {
   COMMENT_ADDED
   INVITED
   USER_JOINED
+  TEST_RESULT
 }
 
 enum InvitationStatus {
@@ -95,6 +104,7 @@ model User {
   uploads            Attachment[]       @relation("AttachmentUploadedBy")
   createdIssueLinks  IssueLink[]        @relation("IssueLinkCreatedBy")
   assignedIssues     Issue[]            @relation("IssueAssignee")
+  testedIssues       Issue[]            @relation("IssueTestedBy")
   reportedIssues     Issue[]            @relation("IssueReporter")
   comments           Comment[]
   mentions           CommentMention[]
@@ -276,6 +286,12 @@ model Issue {
   versionBuild     String?
   affectedModule   String?
 
+  // --- QA verdict (the latest one; the full history lives in activity) ---
+  testResult TestResult @default(NOT_TESTED)
+  testedById String?
+  testedBy   User?      @relation("IssueTestedBy", fields: [testedById], references: [id], onDelete: SetNull)
+  testedAt   DateTime?
+
   completedAt DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
@@ -303,6 +319,7 @@ model Issue {
   @@index([dueDate])
   @@index([parentId])
   @@index([updatedAt])
+  @@index([testResult])
   @@index([projectId, status, sortIndex])
   @@map("issue")
 }

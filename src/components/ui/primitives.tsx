@@ -369,10 +369,10 @@ export function Stat({
   hint?: ReactNode;
   icon?: ReactNode;
   tone?: "default" | "brand" | "danger" | "warning" | "success";
-  /** Makes the whole card a link into the filtered list behind the number. */
+  /** Makes the whole tile a link into the list the figure summarises. */
   href?: string;
 }) {
-  const inner = (
+  const body = (
     <>
       <span className="prio-stat__label">
         {icon}
@@ -383,17 +383,20 @@ export function Stat({
     </>
   );
 
+  // Same markup either way, so a linked tile is indistinguishable from a
+  // plain one apart from the affordance — `KpiCard` on the dashboard already
+  // works this way.
   if (href) {
     return (
       <Link href={href} className="prio-stat" data-tone={tone ?? "default"}>
-        {inner}
+        {body}
       </Link>
     );
   }
 
   return (
     <div className="prio-stat" data-tone={tone ?? "default"}>
-      {inner}
+      {body}
     </div>
   );
 }

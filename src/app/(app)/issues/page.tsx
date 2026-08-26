@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { ExportIssuesButton } from "@/components/issues/ExportIssuesButton";
 import { IssueFilters } from "@/components/issues/IssueFilters";
 import { IssueTable } from "@/components/issues/IssueTable";
 import { filterOptions, listIssues } from "@/server/queries/issues";
@@ -34,6 +35,11 @@ export default async function IssuesPage({
           <p className="prio-page-header__subtitle">
             Tasks, stories and bugs across every project you can see.
           </p>
+        </div>
+        <div className="prio-page-header__actions">
+          {/* Exports the filtered set, not just this page — disabled when
+              there is nothing to put in the file. */}
+          <ExportIssuesButton disabled={result.total === 0} />
         </div>
       </div>
 

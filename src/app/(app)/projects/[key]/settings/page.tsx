@@ -29,20 +29,6 @@ export default async function ProjectSettingsPage({
       name: true,
       description: true,
       isDefaultProject: true,
-      members: {
-        orderBy: { createdAt: "asc" },
-        select: {
-          user: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-              image: true,
-              jobTitle: true,
-            },
-          },
-        },
-      },
       labels: {
         orderBy: { name: "asc" },
         select: {
@@ -56,14 +42,6 @@ export default async function ProjectSettingsPage({
   });
 
   if (!project) notFound();
-
-  const memberIds = project.members.map((m) => m.user.id);
-
-  const candidates = await prisma.user.findMany({
-    where: { isActive: true, id: { notIn: memberIds } },
-    select: { id: true, name: true, email: true, image: true, jobTitle: true },
-    orderBy: { name: "asc" },
-  });
 
   return (
     <>
@@ -83,7 +61,7 @@ export default async function ProjectSettingsPage({
             Project settings
           </h1>
           <p className="prio-page-header__subtitle">
-            Details, membership and labels for {project.name}.
+            Details and labels for {project.name}.
           </p>
         </div>
       </div>
@@ -96,8 +74,6 @@ export default async function ProjectSettingsPage({
           description: project.description,
           isDefaultProject: project.isDefaultProject,
         }}
-        members={project.members.map((m) => m.user)}
-        candidates={candidates}
         labels={project.labels.map((l) => ({
           id: l.id,
           name: l.name,

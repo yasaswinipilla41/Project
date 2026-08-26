@@ -13,10 +13,12 @@ import {
 } from "@/components/issues/IssueFieldControls";
 import {
   DueDateField,
-  EditableText,
   EditableTitle,
 } from "@/components/issues/EditableIssueFields";
 import { IssueDetailActions } from "@/components/issues/IssueDetailActions";
+import { SubmitWorkButton } from "@/components/issues/SubmitWorkButton";
+import { TestResultPanel } from "@/components/issues/TestResultPanel";
+import { ReportBugDialog } from "@/components/issues/ReportBugDialog";
 import {
   Avatar,
   Card,
@@ -48,7 +50,7 @@ export const dynamic = "force-dynamic";
  * Issue detail — and, for `type = BUG`, the bug detail experience of §11.
  *
  * One route serves all three issue types. A bug additionally renders its
- * reproduction steps, expected vs actual results and environment block; a task
+ * environment block; a task
  * or story simply has nothing to show there, so those sections are omitted
  * rather than rendered empty.
  */
@@ -68,7 +70,6 @@ async function loadIssue(rawKey: string, user: CurrentUser) {
       key: true,
       type: true,
       title: true,
-      description: true,
       status: true,
       priority: true,
       severity: true,
@@ -76,9 +77,9 @@ async function loadIssue(rawKey: string, user: CurrentUser) {
       createdAt: true,
       updatedAt: true,
       completedAt: true,
-      stepsToReproduce: true,
-      expectedResult: true,
-      actualResult: true,
+      testResult: true,
+      testedAt: true,
+      testedBy: { select: { name: true } },
       environment: true,
       browser: true,
       operatingSystem: true,
@@ -234,13 +235,30 @@ export default async function IssueDetailPage({
             </span>
           </nav>
 
-          <IssueDetailActions
-            issueId={issue.id}
-            issueKey={issue.key}
-            reporterId={issue.reporter.id}
-            currentUserId={user.id}
-            isAdmin={user.role === "ADMIN"}
-          />
+          <div className="prio-issue__headactions">
+            <ReportBugDialog
+              issueId={issue.id}
+              issueKey={issue.key}
+              assigneeId={issue.assignee?.id ?? null}
+              currentUserId={user.id}
+            />
+
+            <SubmitWorkButton
+              issueId={issue.id}
+              issueKey={issue.key}
+              status={issue.status}
+              assigneeId={issue.assignee?.id ?? null}
+              currentUserId={user.id}
+            />
+
+            <IssueDetailActions
+              issueId={issue.id}
+              issueKey={issue.key}
+              reporterId={issue.reporter.id}
+              currentUserId={user.id}
+              isAdmin={user.role === "ADMIN"}
+            />
+          </div>
         </div>
 
         <EditableTitle issueId={issue.id} title={issue.title} />
@@ -266,15 +284,18 @@ export default async function IssueDetailPage({
       <div className="row g-4">
         {/* --------------------------------------------------- main column */}
         <div className="col-12 col-xl-8">
+          {/* ------------------------------------------- development + QA */}
           <Card className="prio-issue__section">
             <CardBody>
-              <h2 className="prio-issue__section-title">Description</h2>
-              <EditableText
+              <h2 className="prio-issue__section-title">Testing</h2>
+              <TestResultPanel
                 issueId={issue.id}
-                field="description"
-                label="Description"
-                value={issue.description}
-                emptyText="No description was provided."
+                status={issue.status}
+                testResult={issue.testResult}
+                testedBy={issue.testedBy}
+                testedAt={issue.testedAt}
+                assigneeId={issue.assignee?.id ?? null}
+                currentUserId={user.id}
               />
             </CardBody>
           </Card>
@@ -282,66 +303,15 @@ export default async function IssueDetailPage({
           {/* --------------------------------------------- bug specifics */}
           {isBug ? (
             <>
-              <Card className="prio-issue__section">
-                <CardBody>
-                  <h2 className="prio-issue__section-title">
-                    Steps to reproduce
-                  </h2>
-                  <EditableText
-                    issueId={issue.id}
-                    field="stepsToReproduce"
-                    label="Steps to reproduce"
-                    value={issue.stepsToReproduce}
-                    emptyText="Not recorded."
-                    mono
-                  />
-                </CardBody>
-              </Card>
-
-              <div className="row g-4 prio-issue__section">
-                <div className="col-12 col-md-6">
-                  <Card style={{ height: "100%" }}>
-                    <CardBody>
-                      <h2 className="prio-issue__section-title prio-issue__section-title--expected">
-                        Expected result
-                      </h2>
-                      <EditableText
-                        issueId={issue.id}
-                        field="expectedResult"
-                        label="Expected result"
-                        value={issue.expectedResult}
-                        emptyText="Not recorded."
-                        rows={4}
-                      />
-                    </CardBody>
-                  </Card>
-                </div>
-                <div className="col-12 col-md-6">
-                  <Card style={{ height: "100%" }}>
-                    <CardBody>
-                      <h2 className="prio-issue__section-title prio-issue__section-title--actual">
-                        Actual result
-                      </h2>
-                      <EditableText
-                        issueId={issue.id}
-                        field="actualResult"
-                        label="Actual result"
-                        value={issue.actualResult}
-                        emptyText="Not recorded."
-                        rows={4}
-                      />
-                    </CardBody>
-                  </Card>
-                </div>
-              </div>
-
               {issue.environment ||
               issue.browser ||
               issue.operatingSystem ||
               issue.versionBuild ? (
                 <Card className="prio-issue__section">
                   <CardBody>
-                    <h2 className="prio-issue__section-title">Environment</h2>
+                    <h2 className="prio-issue__section-title prio-issue__section-title--environment">
+                      Environment
+                    </h2>
                     <dl className="prio-envgrid">
                       {issue.environment ? (
                         <div>

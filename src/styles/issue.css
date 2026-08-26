@@ -12,6 +12,17 @@
   justify-content: space-between;
   gap: var(--prio-space-4);
   margin-bottom: var(--prio-space-4);
+  /* The action group grew from one button to three; without wrapping it
+     pushes the page sideways on a phone. */
+  flex-wrap: wrap;
+}
+
+.prio-issue__headactions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--prio-space-2);
+  margin-left: auto;
 }
 
 .prio-issue__crumbs {
@@ -67,13 +78,31 @@
   color: var(--prio-text-muted);
 }
 
-/* Expected vs actual are colour-coded so the contrast is instant. */
+/*
+ * Environment is the one section on a bug that reviewers scan for first, so
+ * it carries the brand colour plus a soft tint rather than the muted grey the
+ * other section titles use. Both tokens are theme-aware — `--prio-primary-600`
+ * is a dark purple on light and a light purple on dark, against a
+ * correspondingly inverted `--prio-primary-50` — so the pairing stays legible
+ * in either theme without a second rule.
+ */
+/* Expected vs actual are colour-coded so the contrast is instant. Reinstated
+   for bugs filed through "Report a problem", which always carry both — and so
+   the bugs recorded before these fields were retired display them again. */
 .prio-issue__section-title--expected {
   color: var(--prio-green-700);
 }
 
 .prio-issue__section-title--actual {
   color: var(--prio-red-600);
+}
+
+.prio-issue__section-title--environment {
+  align-self: flex-start;
+  padding: var(--prio-space-1) var(--prio-space-3);
+  border-radius: var(--prio-radius-sm);
+  background: var(--prio-primary-50);
+  color: var(--prio-primary-600);
 }
 
 .prio-issue__section-note {
@@ -453,4 +482,70 @@
   display: flex;
   align-items: center;
   gap: var(--prio-space-2);
+}
+
+/* ------------------------------------------------------- testing / QA panel */
+
+.prio-qa {
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-4);
+}
+
+.prio-qa__facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--prio-space-3) var(--prio-space-5);
+  margin: 0;
+}
+
+.prio-qa__fact dt {
+  margin-bottom: 2px;
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-semibold);
+  letter-spacing: var(--prio-tracking-caps);
+  text-transform: uppercase;
+  color: var(--prio-text-muted);
+}
+
+.prio-qa__fact dd {
+  margin: 0;
+  font-size: var(--prio-text-sm);
+  color: var(--prio-text-primary);
+}
+
+.prio-qa__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--prio-space-2);
+}
+
+/* The verdict itself. Semantic colours, not brand ones: green/red/amber mean
+   the same thing here as everywhere else in Prio, and every token below is
+   theme-aware so the pill stays legible in dark mode. */
+.prio-testresult {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--prio-space-3);
+  border-radius: var(--prio-radius-pill);
+  background: var(--prio-bg-subtle);
+  color: var(--prio-text-secondary);
+  font-size: var(--prio-text-xs);
+  font-weight: var(--prio-weight-semibold);
+  white-space: nowrap;
+}
+
+.prio-testresult[data-result="PASSED"] {
+  background: var(--prio-green-50);
+  color: var(--prio-green-700);
+}
+
+.prio-testresult[data-result="FAILED"] {
+  background: var(--prio-red-50);
+  color: var(--prio-red-700);
+}
+
+.prio-testresult[data-result="BLOCKED"] {
+  background: var(--prio-amber-50);
+  color: var(--prio-amber-700);
 }
