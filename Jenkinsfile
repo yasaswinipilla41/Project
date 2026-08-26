@@ -65,9 +65,22 @@ pipeline {
         }
 
         // ─────────────────────────────────────────────────────────────────────
+        // `docker compose build` still has to interpolate the whole file,
+        // including `app`'s required AUTH_SECRET/SMTP_HOST/SMTP_PORT — and
+        // `.env` doesn't exist yet on non-main branches (Generate Deploy Env
+        // below is main-only). These placeholders satisfy that interpolation
+        // only; nothing at build time actually reads them. Same reasoning as
+        // the Dockerfile's own placeholder DATABASE_URL for `prisma generate`
+        // / `next build`. On main, Deploy rebuilds again with the real .env.
+        // ─────────────────────────────────────────────────────────────────────
         stage('Build Images') {
             steps {
-                sh 'docker compose build'
+                sh '''
+                    AUTH_SECRET=build-placeholder \
+                    SMTP_HOST=build-placeholder \
+                    SMTP_PORT=25 \
+                    docker compose build
+                '''
             }
         }
 
