@@ -217,6 +217,9 @@ model Project {
   issues      Issue[]
   labels      Label[]
   attachments Attachment[]
+  favoritedBy ProjectFavorite[]
+  pinnedBy    ProjectPin[]
+  recentlyVisitedBy ProjectRecent[]
 
   @@index([isArchived])
   @@map("project")
