@@ -1,0 +1,145 @@
+name: prio
+
+# Production stack: same services as docker-compose.yml, minus the mailpit
+# SMTP sink. Point SMTP_* at a real relay via .env — there is no dev fallback
+# here, so SMTP_HOST/SMTP_PORT are required.
+#
+# Every service sits on the internal `prio-internal` network and talks to
+# the others by service name. Only `app` publishes a host port — postgres
+# and redis have none, so they are unreachable from the host or the public
+# internet, only from other containers on this network. The network is a
+# plain bridge, not Compose's `internal: true`, because `app` still needs
+# outbound access to the real SMTP relay.
+#
+# Usage: docker compose -f docker-compose.prod.yml up -d --build
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: prio-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-prio}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-prio_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-prio}
+    networks:
+      - prio-internal
+    volumes:
+      - prio-postgres-data:/var/lib/postgresql/data
+      - ./scripts/backup:/scripts:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-prio} -d ${POSTGRES_DB:-prio}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: prio-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    networks:
+      - prio-internal
+    volumes:
+      - prio-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # One-shot: applies pending migrations, then exits. `app` will not start until
+  # this has completed successfully, so no request is ever served against a
+  # schema that has not been migrated (§43).
+  # Seeding uses the same image:
+  #   docker compose -f docker-compose.prod.yml run --rm migrate npx tsx prisma/seed.ts
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: migrator
+    container_name: prio-migrate
+    restart: "no"
+    networks:
+      - prio-internal
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      # POSTGRES_PASSWORD_URLENC, not POSTGRES_PASSWORD: this is a URI, and a
+      # raw password containing : @ / ? # etc. corrupts it (e.g. Prisma's
+      # "invalid port number"). Set both if you run this outside Jenkins with
+      # a password containing those characters — see Jenkinsfile.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-prio}:${POSTGRES_PASSWORD_URLENC:-prio_dev_password}@postgres:5432/${POSTGRES_DB:-prio}?schema=public
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@symbiosystech.com}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-Prio@12345}
+      SEED_DEFAULT_PASSWORD: ${SEED_DEFAULT_PASSWORD:-Prio@12345}
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    container_name: prio-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - prio-internal
+    environment:
+      NODE_ENV: production
+      # POSTGRES_PASSWORD_URLENC, not POSTGRES_PASSWORD: this is a URI, and a
+      # raw password containing : @ / ? # etc. corrupts it (e.g. Prisma's
+      # "invalid port number"). Set both if you run this outside Jenkins with
+      # a password containing those characters — see Jenkinsfile.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-prio}:${POSTGRES_PASSWORD_URLENC:-prio_dev_password}@postgres:5432/${POSTGRES_DB:-prio}?schema=public
+      REDIS_URL: redis://redis:6379
+      AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET is required}
+      BASE_URL: ${BASE_URL:-http://localhost:3000}
+      SMTP_HOST: ${SMTP_HOST:?SMTP_HOST is required — point at a real relay, mailpit is not part of this stack}
+      SMTP_PORT: ${SMTP_PORT:?SMTP_PORT is required}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-Prio <no-reply@prio.local>}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@symbiosystech.com}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-Prio@12345}
+      SEED_DEFAULT_PASSWORD: ${SEED_DEFAULT_PASSWORD:-Prio@12345}
+      # Attachment bytes live on the volume below, never in the database.
+      PRIO_STORAGE_DIR: /app/storage
+    volumes:
+      - prio-storage:/app/storage
+    # Bound to the docker0 gateway, not 0.0.0.0: reachable from other
+    # containers (the host's Nginx Proxy Manager) and from the host itself,
+    # never directly from the public internet. Matches every other app on
+    # this host — NPM is the one public entry point, on 80/443.
+    ports:
+      - "172.17.0.1:9169:3000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+networks:
+  prio-internal:
+    driver: bridge
+
+volumes:
+  prio-postgres-data:
+  prio-redis-data:
+  # Uploaded files. Kept out of the image so a rebuild never discards them.
+  prio-storage:
