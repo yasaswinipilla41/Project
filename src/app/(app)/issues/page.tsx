@@ -49,6 +49,9 @@ export default async function IssuesPage({
         labels={options.labels}
         currentUserId={user.id}
         total={result.total}
+        enableExport
+        enableShare
+        isAdmin={user.role === "ADMIN"}
       />
 
       <IssueTable

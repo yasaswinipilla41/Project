@@ -29,6 +29,7 @@ import {
   type AssignmentActivityEntry,
 } from "@/components/projects/AssignmentActivity";
 import { ProjectActions } from "@/components/projects/ProjectActions";
+import { ProjectAttachments } from "@/components/projects/ProjectAttachments";
 import {
   CLOSED_STATUSES,
   ISSUE_STATUSES,
@@ -74,6 +75,17 @@ async function loadProject(rawKey: string, user: CurrentUser) {
         },
       },
       labels: { select: { id: true, name: true, color: true } },
+      attachments: {
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          filename: true,
+          mimeType: true,
+          byteSize: true,
+          createdAt: true,
+          uploadedBy: { select: { id: true, name: true, image: true } },
+        },
+      },
     },
   });
 }
@@ -544,6 +556,17 @@ export default async function ProjectOverviewPage({
                   </div>
                 ))}
               </div>
+            </CardBody>
+          </Card>
+
+          <Card className="prio-issue__section">
+            <CardBody>
+              <ProjectAttachments
+                projectId={project.id}
+                attachments={project.attachments}
+                currentUserId={user.id}
+                isAdmin={user.role === "ADMIN"}
+              />
             </CardBody>
           </Card>
 

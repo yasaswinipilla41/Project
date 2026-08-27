@@ -1,14 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
-import { Avatar } from "@/components/ui/primitives";
+import { useCallback, useState } from "react";
 import { useToast } from "@/components/ui/Toast";
-import {
-  IconClose,
-  IconExternal,
-  IconTrash,
-} from "@/components/ui/Icon";
+import { IconExternal, IconTrash } from "@/components/ui/Icon";
 import { formatBytes, renderKindFor, shortTypeLabel } from "@/lib/attachments";
 import { formatRelative } from "@/lib/format";
 
@@ -44,7 +39,6 @@ export function AttachmentGrid({
 }) {
   const router = useRouter();
   const { toast } = useToast();
-  const [lightbox, setLightbox] = useState<AttachmentView | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
 
   const remove = useCallback(
@@ -70,158 +64,83 @@ export function AttachmentGrid({
   if (attachments.length === 0) return null;
 
   return (
-    <>
-      <ul className="prio-attachments" data-compact={compact || undefined}>
-        {attachments.map((attachment) => {
-          const url = `/api/attachments/${attachment.id}`;
-          const kind = renderKindFor(attachment.mimeType);
-          const canRemove = isAdmin || attachment.uploadedBy.id === currentUserId;
+    <ul className="prio-attachments" data-compact={compact || undefined}>
+      {attachments.map((attachment) => {
+        const url = `/api/attachments/${attachment.id}`;
+        const kind = renderKindFor(attachment.mimeType);
+        const canRemove = isAdmin || attachment.uploadedBy.id === currentUserId;
 
-          return (
-            <li
-              key={attachment.id}
-              className="prio-attachment"
-              data-kind={kind}
-              data-busy={removing === attachment.id || undefined}
-            >
-              {kind === "image" ? (
-                <button
-                  type="button"
-                  className="prio-attachment__preview"
-                  onClick={() => setLightbox(attachment)}
-                  aria-label={`Open ${attachment.filename}`}
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={url} alt={attachment.filename} loading="lazy" />
-                </button>
-              ) : kind === "video" ? (
-                <video
-                  className="prio-attachment__video"
-                  src={url}
-                  controls
-                  preload="metadata"
-                  playsInline
-                />
-              ) : (
-                <a
-                  className="prio-attachment__doc"
-                  href={url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <span className="prio-attachment__ext" aria-hidden>
-                    {shortTypeLabel(attachment.mimeType)}
-                  </span>
-                  <IconExternal size={13} />
-                </a>
-              )}
-
-              <div className="prio-attachment__meta">
-                <a
-                  className="prio-attachment__name prio-truncate"
-                  href={url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title={attachment.filename}
-                >
-                  {attachment.filename}
-                </a>
-                <span className="prio-attachment__sub">
-                  {formatBytes(attachment.byteSize)} ·{" "}
-                  {attachment.uploadedBy.name} ·{" "}
-                  {formatRelative(attachment.createdAt)}
+        return (
+          <li
+            key={attachment.id}
+            className="prio-attachment"
+            data-kind={kind}
+            data-busy={removing === attachment.id || undefined}
+          >
+            {kind === "image" ? (
+              <a
+                className="prio-attachment__preview"
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={`Open ${attachment.filename} in a new tab`}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={url} alt={attachment.filename} loading="lazy" />
+              </a>
+            ) : kind === "video" ? (
+              <video
+                className="prio-attachment__video"
+                src={url}
+                controls
+                preload="metadata"
+                playsInline
+              />
+            ) : (
+              <a
+                className="prio-attachment__doc"
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <span className="prio-attachment__ext" aria-hidden>
+                  {shortTypeLabel(attachment.mimeType)}
                 </span>
-              </div>
+                <IconExternal size={13} />
+              </a>
+            )}
 
-              {canRemove ? (
-                <button
-                  type="button"
-                  className="prio-attachment__remove"
-                  aria-label={`Remove ${attachment.filename}`}
-                  disabled={removing === attachment.id}
-                  onClick={() => void remove(attachment)}
-                >
-                  <IconTrash size={13} />
-                </button>
-              ) : null}
-            </li>
-          );
-        })}
-      </ul>
+            <div className="prio-attachment__meta">
+              <a
+                className="prio-attachment__name prio-truncate"
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={attachment.filename}
+              >
+                {attachment.filename}
+              </a>
+              <span className="prio-attachment__sub">
+                {formatBytes(attachment.byteSize)} ·{" "}
+                {attachment.uploadedBy.name} ·{" "}
+                {formatRelative(attachment.createdAt)}
+              </span>
+            </div>
 
-      {lightbox ? (
-        <Lightbox attachment={lightbox} onClose={() => setLightbox(null)} />
-      ) : null}
-    </>
-  );
-}
-
-/**
- * Full-size image view.
- *
- * Escape closes it and focus is trapped to the close button while it is open,
- * so it behaves like the rest of Prio's dialogs without pulling in the full
- * dialog machinery for what is really just a picture.
- */
-function Lightbox({
-  attachment,
-  onClose,
-}: {
-  attachment: AttachmentView;
-  onClose: () => void;
-}) {
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = previous;
-    };
-  }, [onClose]);
-
-  return (
-    <div
-      className="prio-lightbox"
-      role="dialog"
-      aria-modal="true"
-      aria-label={attachment.filename}
-      onClick={onClose}
-    >
-      <button
-        type="button"
-        className="prio-lightbox__close"
-        aria-label="Close"
-        autoFocus
-        onClick={onClose}
-      >
-        <IconClose size={16} />
-      </button>
-
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        className="prio-lightbox__image"
-        src={`/api/attachments/${attachment.id}`}
-        alt={attachment.filename}
-        onClick={(event) => event.stopPropagation()}
-      />
-
-      <div className="prio-lightbox__caption">
-        <Avatar
-          name={attachment.uploadedBy.name}
-          image={attachment.uploadedBy.image}
-          size="xs"
-        />
-        <span>{attachment.filename}</span>
-        <span className="prio-lightbox__size">
-          {formatBytes(attachment.byteSize)}
-        </span>
-      </div>
-    </div>
+            {canRemove ? (
+              <button
+                type="button"
+                className="prio-attachment__remove"
+                aria-label={`Remove ${attachment.filename}`}
+                disabled={removing === attachment.id}
+                onClick={() => void remove(attachment)}
+              >
+                <IconTrash size={13} />
+              </button>
+            ) : null}
+          </li>
+        );
+      })}
+    </ul>
   );
 }

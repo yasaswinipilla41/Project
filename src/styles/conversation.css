@@ -717,73 +717,6 @@
   color: var(--prio-red-600);
 }
 
-/* ------------------------------------------------------------ lightbox */
-
-.prio-lightbox {
-  position: fixed;
-  inset: 0;
-  z-index: var(--prio-z-modal);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--prio-space-4);
-  padding: var(--prio-space-6);
-  background: rgba(6, 10, 18, 0.88);
-  backdrop-filter: blur(4px);
-  animation: prio-lightbox-in var(--prio-duration) var(--prio-ease-out);
-}
-
-@keyframes prio-lightbox-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-.prio-lightbox__image {
-  max-width: min(100%, 1200px);
-  max-height: 78vh;
-  border-radius: var(--prio-radius-md);
-  box-shadow: var(--prio-shadow-xl);
-  cursor: default;
-}
-
-.prio-lightbox__close {
-  position: absolute;
-  top: var(--prio-space-5);
-  right: var(--prio-space-5);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 38px;
-  height: 38px;
-  border: 1px solid rgba(255, 255, 255, 0.24);
-  border-radius: var(--prio-radius-md);
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
-  cursor: pointer;
-}
-
-.prio-lightbox__close:hover {
-  background: rgba(255, 255, 255, 0.2);
-}
-
-.prio-lightbox__caption {
-  display: flex;
-  align-items: center;
-  gap: var(--prio-space-3);
-  color: rgba(255, 255, 255, 0.86);
-  font-size: var(--prio-text-sm);
-}
-
-.prio-lightbox__size {
-  color: rgba(255, 255, 255, 0.56);
-  font-variant-numeric: tabular-nums;
-}
-
 /* ------------------------------------------------------- related issues */
 
 .prio-related__head {
@@ -925,20 +858,11 @@
     grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   }
 
-  .prio-lightbox {
-    padding: var(--prio-space-4);
-  }
-
   .prio-mentions {
     max-width: none;
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .prio-lightbox {
-    animation: none;
-  }
-}
 
 /* Older activity is collapsed by default so the composer stays within reach.
    The control is a full-width line rather than a small link — it is a section

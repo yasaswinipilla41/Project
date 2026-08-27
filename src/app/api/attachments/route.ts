@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { assertIssueAccess } from "@/lib/authz";
+import { assertIssueAccess, assertProjectAccess } from "@/lib/authz";
 import { getCurrentUser } from "@/lib/session";
 import { storage } from "@/server/storage";
 import {
@@ -54,23 +54,26 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Malformed upload." }, { status: 400 });
   }
 
-  const issueId = String(form.get("issueId") ?? "");
+  const issueId = String(form.get("issueId") ?? "") || null;
+  const projectId = String(form.get("projectId") ?? "") || null;
   const file = form.get("file");
 
-  if (!issueId || !(file instanceof File)) {
+  // Exactly one target — never both, never neither.
+  if (Boolean(issueId) === Boolean(projectId) || !(file instanceof File)) {
     return NextResponse.json(
-      { error: "An issue and a file are required." },
+      { error: "An issue or a project, and a file, are required." },
       { status: 400 },
     );
   }
 
   try {
-    await assertIssueAccess(user, issueId);
+    if (issueId) await assertIssueAccess(user, issueId);
+    else await assertProjectAccess(user, projectId!);
   } catch {
-    // Same answer whether the issue is missing or merely out of reach, so the
-    // endpoint cannot be used to discover which issue ids exist.
+    // Same answer whether the target is missing or merely out of reach, so
+    // the endpoint cannot be used to discover which ids exist.
     return NextResponse.json(
-      { error: "That issue is not available." },
+      { error: "That destination is not available." },
       { status: 404 },
     );
   }
@@ -119,6 +122,7 @@ export async function POST(request: Request) {
   const attachment = await prisma.attachment.create({
     data: {
       issueId,
+      projectId,
       uploadedById: user.id,
       filename,
       storageKey: stored.key,

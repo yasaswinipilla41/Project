@@ -97,3 +97,17 @@ export function watchForProblems(page: Page) {
 
   return { consoleErrors, failedRequests };
 }
+
+/**
+ * Waits for a real paint frame in the page.
+ *
+ * A canvas that just became interactive (a `hidden` attribute just cleared,
+ * a tool switch just committed) can have a brief window before its layout
+ * has actually settled — a real user's mouse always takes at least this long
+ * to travel to it, but a script's very next synthetic pointer event can land
+ * inside that window. Await this before measuring a bounding box or starting
+ * a drag on anything that just changed.
+ */
+export async function waitForNextFrame(page: Page): Promise<void> {
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+}

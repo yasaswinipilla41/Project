@@ -77,8 +77,14 @@
   gap: var(--prio-space-2);
 }
 
-.prio-filters__total {
+.prio-filters__trailing {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-3);
   margin-left: auto;
+}
+
+.prio-filters__total {
   font-size: var(--prio-text-xs);
   color: var(--prio-text-muted);
   white-space: nowrap;
@@ -237,9 +243,13 @@
     display: none;
   }
 
-  .prio-filters__total {
+  .prio-filters__trailing {
     margin-left: 0;
     width: 100%;
+  }
+
+  .prio-filters__total {
+    margin-left: auto;
   }
 }
 

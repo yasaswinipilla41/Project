@@ -129,8 +129,13 @@ export const projectMemberSchema = z.object({
   userId: z.string().min(1),
 });
 
-export const projectIdSchema = z.object({
-  projectId: z.string().min(1),
+export const shareMemberSchema = z.object({
+  userId: z.string().min(1),
+  permission: z.enum(["VIEW"]).default("VIEW"),
+});
+
+export const removeShareMemberSchema = z.object({
+  memberId: z.string().min(1),
 });
 
 export const createLabelSchema = z.object({

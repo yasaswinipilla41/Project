@@ -1,0 +1,252 @@
+/*
+ * Screenshot editor — a small Snipping-Tool-like canvas markup surface.
+ * Scoped as a CSS Module: this UI is self-contained and never reused with a
+ * different look, so it does not need to join the shared `.prio-*` system.
+ */
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--prio-border);
+}
+
+.toolGroup {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 8px;
+  margin-right: 4px;
+  border-right: 1px solid var(--prio-border);
+}
+
+.toolGroup:last-child {
+  border-right: none;
+}
+
+.toolButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--prio-border-strong);
+  border-radius: var(--prio-radius-sm);
+  background: var(--prio-bg-surface);
+  color: var(--prio-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.toolButton:hover:not(:disabled) {
+  border-color: var(--prio-neutral-400);
+  color: var(--prio-text-primary);
+}
+
+.toolButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.toolButton[data-active="true"] {
+  border-color: var(--prio-primary-400);
+  background: var(--prio-primary-50);
+  color: var(--prio-primary-700);
+}
+
+.toolButton:focus-visible {
+  outline: 2px solid var(--prio-border-focus);
+  outline-offset: 1px;
+}
+
+.swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 2px solid var(--prio-bg-surface);
+  outline: 1px solid var(--prio-border-strong);
+  cursor: pointer;
+  padding: 0;
+}
+
+.swatch[data-active="true"] {
+  outline: 2px solid var(--prio-primary-500);
+  outline-offset: 1px;
+}
+
+.swatch:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.colorInput {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--prio-border-strong);
+  border-radius: var(--prio-radius-sm);
+  background: none;
+  cursor: pointer;
+}
+
+.colorInput:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.zoomLabel {
+  min-width: 42px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--prio-text-secondary);
+}
+
+.widthSelect {
+  height: 30px;
+  padding: 0 6px;
+  border: 1px solid var(--prio-border-strong);
+  border-radius: var(--prio-radius-sm);
+  background: var(--prio-bg-surface);
+  color: var(--prio-text-primary);
+  font-size: 12px;
+}
+
+.canvasWrap {
+  position: relative;
+  display: flex;
+  /* `safe center`, not plain `center`: once zoomed in past 100% the stack
+     overflows this box, and plain centering clips the start of the scroll
+     range in every major browser (a long-standing flex quirk) — `safe`
+     falls back to start-alignment for the overflowing axis so every part of
+     a zoomed-in image stays reachable by scrolling. */
+  align-items: safe center;
+  justify-content: safe center;
+  /* At the default 100% zoom, `canvasStack` below is sized to fit this box's
+     width exactly, so there is nothing to scroll — the dialog body itself
+     (`.prio-dialog__body`) is what scrolls if the page is tall. `auto` (not
+     `hidden`) still clips to this box's rounded corners the same way, but
+     also lets zooming in past 100% reveal a scrollbar here instead of
+     silently cutting the image off. */
+  overflow: auto;
+  background: repeating-conic-gradient(
+      var(--prio-neutral-100) 0% 25%,
+      var(--prio-bg-surface) 0% 50%
+    )
+    50% / 20px 20px;
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-md);
+}
+
+/*
+ * Sized in CSS, not JS: `width: 100%` lets it shrink to whatever the dialog
+ * allows, `max-width` stops it ever growing past the image's own resolution
+ * (no blurry upscaling of a small screenshot), and `aspect-ratio` keeps the
+ * two canvases — which fill this box at `width: 100%; height: 100%` — always
+ * proportional. The browser does the scaling; the canvases' internal pixel
+ * buffers stay at full resolution regardless of how small this renders.
+ */
+.canvasStack {
+  position: relative;
+  line-height: 0;
+  width: 100%;
+  /* `canvasWrap`'s flex layout shrinks a child back down to fit by default
+     (flex-shrink: 1) whenever its width exceeds the container — which is
+     exactly what zooming past 100% asks for, so it has to be exempted here
+     or every zoom-in would be silently cancelled back to 100%. */
+  flex-shrink: 0;
+}
+
+.loading {
+  padding: 60px 24px;
+  font-size: 13px;
+  color: var(--prio-text-muted);
+}
+
+.baseCanvas,
+.annotationCanvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.baseCanvas {
+  position: relative;
+}
+
+.annotationCanvas {
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.cropOverlay {
+  position: absolute;
+  border: 1.5px dashed #fff;
+  outline: 1000px solid rgb(0 0 0 / 0.45);
+  outline-offset: 0;
+  box-shadow: 0 0 0 1.5px rgb(0 0 0 / 0.6);
+  cursor: move;
+  touch-action: none;
+}
+
+.cropHandle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  margin: -6px;
+  border-radius: 999px;
+  background: #fff;
+  border: 1.5px solid var(--prio-primary-600);
+  touch-action: none;
+}
+
+/* `margin: -6px` on all four sides (above) centers each 12px handle on its
+   corner regardless of which offsets position it. */
+.cropHandle[data-corner="nw"] {
+  left: 0;
+  top: 0;
+  cursor: nwse-resize;
+}
+
+.cropHandle[data-corner="ne"] {
+  right: 0;
+  top: 0;
+  cursor: nesw-resize;
+}
+
+.cropHandle[data-corner="sw"] {
+  left: 0;
+  bottom: 0;
+  cursor: nesw-resize;
+}
+
+.cropHandle[data-corner="se"] {
+  right: 0;
+  bottom: 0;
+  cursor: nwse-resize;
+}
+
+.textInput {
+  position: absolute;
+  min-width: 120px;
+  padding: 2px 4px;
+  border: 1px dashed var(--prio-primary-500);
+  border-radius: 2px;
+  background: rgb(255 255 255 / 0.85);
+  font-family: system-ui, sans-serif;
+  line-height: 1.2;
+  resize: both;
+  outline: none;
+}
+
+.hint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--prio-text-muted);
+}
