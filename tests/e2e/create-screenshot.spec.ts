@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { prisma } from "@/lib/prisma";
 import { waitForNextFrame, watchForProblems } from "./support";
 
 /**
@@ -147,29 +148,41 @@ test.describe("Screenshot attachments in Create flows", () => {
     // so it is set explicitly here rather than left to the suggestion.
     const key = `SC${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
 
-    await page.goto("/projects");
-    await page.getByRole("button", { name: "New project" }).click();
-    const dialog = page.getByRole("dialog");
-    await expect(dialog).toBeVisible();
+    /*
+     * The project this creates is scaffolding, not a fixture — nothing else
+     * refers to it, and without this every run left another one behind. They
+     * accumulated on the Projects page until eighteen were showing. `finally`,
+     * because a run that fails part way through is exactly the run most likely
+     * to strand one.
+     */
+    try {
+      await page.goto("/projects");
+      await page.getByRole("button", { name: "New project" }).click();
+      const dialog = page.getByRole("dialog");
+      await expect(dialog).toBeVisible();
 
-    await dialog.getByLabel("Project name").fill(name);
-    await dialog.getByLabel("Project key").fill(key);
-    await attachScreenshot(page);
-    await expect(dialog.getByRole("button", { name: "Edit" })).toBeVisible();
+      await dialog.getByLabel("Project name").fill(name);
+      await dialog.getByLabel("Project key").fill(key);
+      await attachScreenshot(page);
+      await expect(dialog.getByRole("button", { name: "Edit" })).toBeVisible();
 
-    await dialog.getByRole("button", { name: "Create project" }).click();
-    await expect(dialog).toBeHidden();
-    await expect(page).toHaveURL(/\/projects\/[a-z0-9]+$/i);
-    await expect(page.getByRole("heading", { name })).toBeVisible();
+      await dialog.getByRole("button", { name: "Create project" }).click();
+      await expect(dialog).toBeHidden();
+      await expect(page).toHaveURL(/\/projects\/[a-z0-9]+$/i);
+      await expect(page.getByRole("heading", { name })).toBeVisible();
 
-    const attachment = page.locator(".prio-attachment").first();
-    await expect(attachment).toBeVisible();
-    await expect(attachment.locator("img")).toBeVisible();
+      const attachment = page.locator(".prio-attachment").first();
+      await expect(attachment).toBeVisible();
+      await expect(attachment.locator("img")).toBeVisible();
 
-    await page.reload();
-    await expect(page.locator(".prio-attachment img").first()).toBeVisible();
+      await page.reload();
+      await expect(page.locator(".prio-attachment img").first()).toBeVisible();
 
-    expect(consoleErrors).toEqual([]);
-    expect(failedRequests).toEqual([]);
+      expect(consoleErrors).toEqual([]);
+      expect(failedRequests).toEqual([]);
+    } finally {
+      // Cascades to the project's membership and the staged attachment.
+      await prisma.project.deleteMany({ where: { key } });
+    }
   });
 });
