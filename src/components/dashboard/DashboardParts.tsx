@@ -19,6 +19,7 @@ import {
 import {
   daysUntil,
   formatDateCompact,
+  barWidth,
   formatDateTime,
   formatRelative,
   humanizeActivity,
@@ -239,7 +240,7 @@ export function Distribution({
                     <span
                       className="prio-distribution__bar"
                       data-status={entry.tone}
-                      style={{ width: `${percent(entry.value, total)}%` }}
+                      style={{ width: barWidth(entry.value, total) }}
                     />
                   </span>
                   <span className="prio-distribution__value">{entry.value}</span>
@@ -276,7 +277,6 @@ export function StatusDistribution({
     <Distribution
       title="Issues by status"
       total={total}
-      hrefFor={(key) => `/issues?status=${key}`}
       entries={ISSUE_STATUSES.map((status) => ({
         key: status,
         label: <StatusPill status={status} />,
@@ -297,7 +297,6 @@ export function PriorityDistribution({
     <Distribution
       title="Open issues by priority"
       total={total}
-      hrefFor={(key) => `/issues?priority=${key}&resolution=open`}
       entries={PRIORITIES.map((priority) => ({
         key: priority,
         label: <PriorityIndicator priority={priority} />,
@@ -317,7 +316,6 @@ export function TypeDistribution({
     <Distribution
       title="Issues by type"
       total={total}
-      hrefFor={(key) => `/issues?type=${key}`}
       entries={(["TASK", "BUG", "STORY"] as const).map((type) => ({
         key: type,
         label: (
@@ -338,11 +336,7 @@ export function ProjectRow({ project }: { project: DashboardProject }) {
   const complete = percent(project.done, project.total);
 
   return (
-    <Link
-      href={`/projects/${project.key.toLowerCase()}`}
-      className="prio-projrow"
-      data-health={project.health}
-    >
+    <div className="prio-projrow" data-health={project.health}>
       <span className="prio-projrow__top">
         <span className="prio-project-chip" aria-hidden>
           {project.key.slice(0, 2)}
@@ -384,7 +378,7 @@ export function ProjectRow({ project }: { project: DashboardProject }) {
           <span data-tone="brand">{project.assignedToMe} assigned to me</span>
         ) : null}
       </span>
-    </Link>
+    </div>
   );
 }
 
@@ -411,9 +405,7 @@ export function ActivityList({ entries }: { entries: DashboardActivity[] }) {
             <span className="prio-activity__text">
               <strong>{entry.actor.name}</strong>{" "}
               {humanizeActivity(entry.action, entry.field)}{" "}
-              <Link href={`/issues/${entry.issue.key.toLowerCase()}`}>
-                {entry.issue.key}
-              </Link>
+              <span className="prio-key">{entry.issue.key}</span>
               {entry.field === "status" && entry.oldValue && entry.newValue ? (
                 <span className="prio-activity__change">
                   {STATUS_LABEL[entry.oldValue as never] ?? entry.oldValue}

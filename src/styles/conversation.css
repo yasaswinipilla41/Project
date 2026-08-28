@@ -717,6 +717,124 @@
   color: var(--prio-red-600);
 }
 
+/*
+ * "Annotate", on image attachments only. Shares Remove's shape and its
+ * hover-reveal so the corner reads as one set of controls rather than two
+ * competing ones. `data-shifted` moves it clear of Remove when both are
+ * shown; on someone else's file, where Remove is absent, it takes the corner
+ * itself rather than leaving a gap where a button used to be.
+ */
+.prio-attachment__annotate {
+  position: absolute;
+  top: var(--prio-space-2);
+  right: var(--prio-space-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: var(--prio-radius-sm);
+  background: var(--prio-bg-surface);
+  color: var(--prio-text-muted);
+  box-shadow: var(--prio-shadow-sm);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-attachment__annotate[data-shifted] {
+  right: calc(var(--prio-space-2) + 30px);
+}
+
+.prio-attachment:hover .prio-attachment__annotate,
+.prio-attachment__annotate:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .prio-attachment__annotate {
+    opacity: 1;
+  }
+}
+
+.prio-attachment__annotate:hover:not(:disabled) {
+  background: var(--prio-primary-50);
+  color: var(--prio-primary-700);
+}
+
+.prio-attachment__annotate:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+/* ------------------------------------------------------------ lightbox */
+
+.prio-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: var(--prio-z-modal);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--prio-space-4);
+  padding: var(--prio-space-6);
+  background: rgba(6, 10, 18, 0.88);
+  backdrop-filter: blur(4px);
+  animation: prio-lightbox-in var(--prio-duration) var(--prio-ease-out);
+}
+
+@keyframes prio-lightbox-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.prio-lightbox__image {
+  max-width: min(100%, 1200px);
+  max-height: 78vh;
+  border-radius: var(--prio-radius-md);
+  box-shadow: var(--prio-shadow-xl);
+  cursor: default;
+}
+
+.prio-lightbox__close {
+  position: absolute;
+  top: var(--prio-space-5);
+  right: var(--prio-space-5);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: var(--prio-radius-md);
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  cursor: pointer;
+}
+
+.prio-lightbox__close:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.prio-lightbox__caption {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-3);
+  color: rgba(255, 255, 255, 0.86);
+  font-size: var(--prio-text-sm);
+}
+
+.prio-lightbox__size {
+  color: rgba(255, 255, 255, 0.56);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ------------------------------------------------------- related issues */
 
 .prio-related__head {
@@ -858,8 +976,18 @@
     grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   }
 
+  .prio-lightbox {
+    padding: var(--prio-space-4);
+  }
+
   .prio-mentions {
     max-width: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prio-lightbox {
+    animation: none;
   }
 }
 

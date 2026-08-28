@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import type { IssueType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { issueScope } from "@/lib/authz";
 import type { CurrentUser } from "@/lib/session";
@@ -54,7 +55,7 @@ export interface IssueFilters {
   environment?: string;
   affectedModule?: string;
   /** Forces a single type, e.g. the /bugs surface. */
-  lockedType?: "TASK" | "BUG" | "STORY";
+  lockedType?: IssueType;
   sort?: SortField;
   dir?: SortDirection;
   page?: number;
@@ -64,7 +65,7 @@ export interface IssueFilters {
 export interface IssueListRow {
   id: string;
   key: string;
-  type: "TASK" | "BUG" | "STORY";
+  type: IssueType;
   title: string;
   status: (typeof OPEN_STATUSES)[number] | (typeof CLOSED_STATUSES)[number];
   priority: "URGENT" | "HIGH" | "MEDIUM" | "LOW" | "NONE";

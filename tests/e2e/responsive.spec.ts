@@ -106,7 +106,7 @@ test.describe("Navigation adapts rather than shrinking", () => {
     // Labels are hidden, but every item is still a link with a name for
     // assistive technology and a tooltip for everyone else. Scoped to the
     // sidebar itself: the topbar's "Projects" switcher shares the same name.
-    for (const name of ["Home", "Projects", "Issues", "Bugs"]) {
+    for (const name of ["Home", "Projects", "Issues", "Activity"]) {
       const item = sidebar.getByRole("link", { name, exact: true });
       await expect(item).toBeVisible();
       await expect(item).toHaveAttribute("title", name);

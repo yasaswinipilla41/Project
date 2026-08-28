@@ -22,6 +22,8 @@ enum IssueType {
   TASK
   BUG
   STORY
+  EPIC
+  FEATURE
 }
 
 enum IssueStatus {

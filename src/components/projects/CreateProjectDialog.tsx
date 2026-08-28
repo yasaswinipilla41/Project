@@ -6,8 +6,11 @@ import { Dialog } from "@/components/ui/Dialog";
 import { Alert, Avatar, Button } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/Toast";
 import { IconWarning } from "@/components/ui/Icon";
-import { ScreenshotAttachmentField } from "@/components/attachments/ScreenshotAttachmentField";
-import { uploadStagedAttachment } from "@/lib/uploadAttachment";
+import {
+  ScreenshotAttachmentField,
+  type StagedScreenshot,
+} from "@/components/attachments/ScreenshotAttachmentField";
+import { uploadStagedScreenshot } from "@/lib/uploadAttachment";
 import { createProject } from "@/server/projects";
 import type { FieldErrors } from "@/server/schemas";
 
@@ -43,7 +46,7 @@ export function CreateProjectDialog({
   const [keyTouched, setKeyTouched] = useState(false);
   const [description, setDescription] = useState("");
   const [memberIds, setMemberIds] = useState<string[]>([]);
-  const [screenshots, setScreenshots] = useState<Blob[]>([]);
+  const [screenshots, setScreenshots] = useState<StagedScreenshot[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
@@ -79,9 +82,9 @@ export function CreateProjectDialog({
       return;
     }
 
-    for (const screenshot of screenshots) {
+    for (const [index, screenshot] of screenshots.entries()) {
       try {
-        await uploadStagedAttachment({ projectId: result.data.id }, screenshot);
+        await uploadStagedScreenshot({ projectId: result.data.id }, screenshot, index);
       } catch (uploadError) {
         toast(
           uploadError instanceof Error

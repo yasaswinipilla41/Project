@@ -267,7 +267,6 @@ function CreateUserDialog({
   const { toast } = useToast();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [jobTitle, setJobTitle] = useState("");
   const [role, setRole] = useState<Role>("MEMBER");
   const [password, setPassword] = useState("");
   const [projectIds, setProjectIds] = useState<string[]>([]);
@@ -282,7 +281,6 @@ function CreateUserDialog({
     const result = await createUser({
       name,
       email,
-      jobTitle,
       role,
       password,
       projectIds,
@@ -365,19 +363,6 @@ function CreateUserDialog({
               {errors.email}
             </span>
           ) : null}
-        </div>
-
-        <div className="prio-field">
-          <label className="prio-label" htmlFor="user-title">
-            Job title
-          </label>
-          <input
-            id="user-title"
-            className="prio-input"
-            value={jobTitle}
-            onChange={(e) => setJobTitle(e.target.value)}
-            maxLength={80}
-          />
         </div>
 
         <div className="prio-field">

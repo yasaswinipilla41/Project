@@ -37,7 +37,7 @@ import {
   PRIORITIES,
   SEVERITIES,
 } from "@/lib/domain";
-import { formatRelative, percent } from "@/lib/format";
+import { barWidth, formatRelative } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { recordProjectVisit } from "@/lib/recents";
 import { requireUser, type CurrentUser } from "@/lib/session";
@@ -364,7 +364,7 @@ export default async function ProjectOverviewPage({
                           <span
                             className="prio-distribution__bar"
                             data-status={status}
-                            style={{ width: `${percent(count, total)}%` }}
+                            style={{ width: barWidth(count, total) }}
                           />
                         </span>
                         <span className="prio-distribution__value">{count}</span>

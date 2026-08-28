@@ -155,6 +155,7 @@ export function IssueAttachments({
           attachments={attachments}
           currentUserId={currentUserId}
           isAdmin={isAdmin}
+          annotateIssueId={issueId}
         />
       )}
 

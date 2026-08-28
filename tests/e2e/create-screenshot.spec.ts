@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { prisma } from "@/lib/prisma";
 import { waitForNextFrame, watchForProblems } from "./support";
 
@@ -15,10 +15,47 @@ import { waitForNextFrame, watchForProblems } from "./support";
 const PNG_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAFUlEQVR4nGP8z8DwnwEJMDEQCXAAADuIA/9LWl2XAAAAAElFTkSuQmCC";
 
-async function attachScreenshot(page: Page) {
-  // Exact match: a loose "Screenshot" substring also matches each attached
-  // thumbnail's "Open screenshot N in a new tab" link once one exists.
-  const input = page.getByLabel("Screenshots", { exact: true });
+/**
+ * The field carries a different label per form — "Files" on Create Issue,
+ * where it sits in the reference layout's Files row, and "Screenshots" on
+ * Create Project, which was not part of that change. Same component either
+ * way. Exact match, because a loose one would also catch each attached
+ * thumbnail's own link once one exists.
+ */
+/**
+ * The editor's canvas sizes itself from the decoded image — `width: 100%`
+ * plus an aspect-ratio, capped at the image's natural width — so its box is
+ * still settling for a frame or two after the editor reports ready. Measuring
+ * mid-settle yields coordinates that no longer describe the element, and a
+ * pointerdown landing outside it never starts a stroke. That is exactly how
+ * this test failed intermittently under full-suite load while passing on its
+ * own. Waiting for two consecutive identical boxes removes the race without
+ * loosening anything the test asserts.
+ */
+async function settledBox(page: Page, canvas: Locator) {
+  let previous = await canvas.boundingBox();
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    await waitForNextFrame(page);
+    const current = await canvas.boundingBox();
+    if (
+      previous &&
+      current &&
+      current.width > 0 &&
+      current.height > 0 &&
+      current.x === previous.x &&
+      current.y === previous.y &&
+      current.width === previous.width &&
+      current.height === previous.height
+    ) {
+      return current;
+    }
+    previous = current;
+  }
+  throw new Error("The canvas box never settled.");
+}
+
+async function attachScreenshot(page: Page, label = "Files") {
+  const input = page.getByLabel(label, { exact: true });
   await input.setInputFiles({
     name: "screenshot.png",
     mimeType: "image/png",
@@ -39,30 +76,36 @@ test.describe("Screenshot attachments in Create flows", () => {
     await expect(dialog).toBeVisible();
 
     await dialog.getByLabel("Project").selectOption({ label: "Engineering (ENG)" });
-    await dialog.getByLabel("Title").fill(title);
+    await dialog.getByLabel("Task title").fill(title);
 
     await attachScreenshot(page);
 
     // A preview with Edit/Remove replaces the empty dropzone.
-    await expect(dialog.getByRole("button", { name: "Edit" })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: /Annotate|Edit markup/ })).toBeVisible();
     await expect(dialog.getByRole("button", { name: "Remove" })).toBeVisible();
 
-    await dialog.getByRole("button", { name: "Edit" }).click();
+    await dialog.getByRole("button", { name: /Annotate|Edit markup/ }).click();
 
     const editor = page.getByRole("dialog", { name: "Edit screenshot" });
     await expect(editor).toBeVisible();
     // The image decodes asynchronously; drawing before it's ready is a no-op.
     await expect(editor.getByText("Loading image…")).toBeHidden();
+    /* That text also disappears when the image FAILS to load, which
+       leaves the editor not ready and every stroke a silent no-op.
+       The canvas is hidden until it really is ready, so this is the
+       signal that means "you can draw now". */
+    await expect(editor.locator("canvas").first()).toBeVisible();
     await waitForNextFrame(page);
 
     const annotationCanvas = editor.locator("canvas").nth(1);
-    const box = await annotationCanvas.boundingBox();
-    if (!box) throw new Error("Canvas has no bounding box.");
+    const box = await settledBox(page, annotationCanvas);
 
-    // Draw a freehand stroke with the default Pen tool.
-    await page.mouse.move(box.x + 2, box.y + 2);
+    // Draw a freehand stroke with the default Pen tool. Well inside the
+    // canvas rather than two pixels off its corner, so a sub-pixel layout
+    // difference cannot put the press outside the element.
+    await page.mouse.move(box.x + box.width * 0.1, box.y + box.height * 0.1);
     await page.mouse.down();
-    await page.mouse.move(box.x + box.width - 2, box.y + box.height - 2, {
+    await page.mouse.move(box.x + box.width * 0.9, box.y + box.height * 0.9, {
       steps: 5,
     });
     await page.mouse.up();
@@ -92,7 +135,7 @@ test.describe("Screenshot attachments in Create flows", () => {
     await expect(editor).toBeHidden();
 
     // Back on the Create form, the edited image is still staged.
-    await expect(dialog.getByRole("button", { name: "Edit" })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: /Annotate|Edit markup/ })).toBeVisible();
 
     await dialog.getByRole("button", { name: /^create task$/i }).click();
     await expect(dialog).toBeHidden();
@@ -125,17 +168,17 @@ test.describe("Screenshot attachments in Create flows", () => {
 
     // Adding again keeps the first and stages a second alongside it.
     await attachScreenshot(page);
-    await expect(dialog.getByRole("button", { name: "Edit" })).toHaveCount(2);
+    await expect(dialog.getByRole("button", { name: /Annotate|Edit markup/ })).toHaveCount(2);
     await expect(dialog.getByRole("button", { name: "Remove" })).toHaveCount(2);
 
     // Removing one leaves the other staged, not the empty dropzone.
     await dialog.getByRole("button", { name: "Remove" }).first().click();
-    await expect(dialog.getByRole("button", { name: "Edit" })).toHaveCount(1);
+    await expect(dialog.getByRole("button", { name: /Annotate|Edit markup/ })).toHaveCount(1);
 
     // Removing the last one returns to the empty dropzone.
     await dialog.getByRole("button", { name: "Remove" }).click();
     await expect(dialog.getByRole("button", { name: "Add screenshots" })).toBeVisible();
-    await expect(dialog.getByRole("button", { name: "Edit" })).toHaveCount(0);
+    await expect(dialog.getByRole("button", { name: /Annotate|Edit markup/ })).toHaveCount(0);
   });
 
   test("Create Project: attaches a screenshot that appears on the project page", async ({
@@ -150,10 +193,10 @@ test.describe("Screenshot attachments in Create flows", () => {
 
     /*
      * The project this creates is scaffolding, not a fixture — nothing else
-     * refers to it, and without this every run left another one behind. They
-     * accumulated on the Projects page until eighteen were showing. `finally`,
-     * because a run that fails part way through is exactly the run most likely
-     * to strand one.
+     * refers to it, and every run would otherwise leave another one behind.
+     * Eighteen had accumulated on the Projects page before this cleanup
+     * existed. `finally`, because a run that fails half way through is
+     * exactly the run most likely to leave a project standing.
      */
     try {
       await page.goto("/projects");
@@ -163,8 +206,10 @@ test.describe("Screenshot attachments in Create flows", () => {
 
       await dialog.getByLabel("Project name").fill(name);
       await dialog.getByLabel("Project key").fill(key);
-      await attachScreenshot(page);
-      await expect(dialog.getByRole("button", { name: "Edit" })).toBeVisible();
+      await attachScreenshot(page, "Screenshots");
+      await expect(
+        dialog.getByRole("button", { name: /Annotate|Edit markup/ }),
+      ).toBeVisible();
 
       await dialog.getByRole("button", { name: "Create project" }).click();
       await expect(dialog).toBeHidden();
@@ -181,7 +226,7 @@ test.describe("Screenshot attachments in Create flows", () => {
       expect(consoleErrors).toEqual([]);
       expect(failedRequests).toEqual([]);
     } finally {
-      // Cascades to the project's membership and the staged attachment.
+      // Cascades to the project's members, labels and the staged attachment.
       await prisma.project.deleteMany({ where: { key } });
     }
   });

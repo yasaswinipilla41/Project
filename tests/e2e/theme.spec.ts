@@ -349,3 +349,122 @@ test.describe("Search shortcut", () => {
     await expect(field).toHaveValue(/looks ok/);
   });
 });
+
+/**
+ * Proper sRGB relative luminance — WCAG 2.1, not the flat average used at the
+ * top of this file. That one answers "is this surface light or dark?", which
+ * is all the navigation tests need. A contrast *ratio* needs the real curve.
+ */
+function srgbLuminance(colour: string): number {
+  const [r = 0, g = 0, b = 0] = colour
+    .replace(/[^\d,.]/g, "")
+    .split(",")
+    .map(Number);
+  const channel = (v: number) => {
+    const s = v / 255;
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+}
+
+function contrast(a: string, b: string): number {
+  const hi = Math.max(srgbLuminance(a), srgbLuminance(b));
+  const lo = Math.min(srgbLuminance(a), srgbLuminance(b));
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+test.describe("The project-creation notification is readable in every theme", () => {
+  /*
+   * The defect: the toast painted a literal `#fff` on `--prio-neutral-900`,
+   * and the dark sheet flips that token to near-white. White on white — the
+   * one confirmation that a project had actually been created was invisible
+   * to anyone working in dark mode.
+   *
+   * These measure the ratio rather than "the colour changed", because the old
+   * build did not change the colour at all between themes, and a build that
+   * changed it to something equally unreadable would pass that weaker test.
+   */
+  for (const theme of ["light", "dark"] as const) {
+    test(`text, icon and close button all carry contrast in ${theme} mode`, async ({
+      page,
+    }) => {
+      const { consoleErrors } = watchForProblems(page);
+
+      const suffix = Math.random().toString(36).slice(2, 6).toUpperCase();
+      const name = `Toast ${theme} ${suffix}`;
+      const key = `TST${suffix}`;
+
+      await page.goto("/projects");
+      await setTheme(page, theme);
+
+      await page.getByRole("button", { name: /New project/i }).click();
+      const create = page.getByRole("dialog");
+      await create.getByLabel("Project name").fill(name);
+      await create.getByLabel(/Project key/).fill(key);
+      await create.getByRole("button", { name: /Create project/i }).click();
+
+      /* The toast outlives the dialog and the navigation that follows it,
+         which is exactly why it has to be legible wherever it lands. */
+      const toast = page.locator(".prio-toast").first();
+      await expect(toast).toBeVisible({ timeout: 15_000 });
+      await expect(toast).toContainText(key);
+
+      const measured = await toast.evaluate((el) => {
+        const read = (selector: string) => {
+          const child = el.querySelector(selector);
+          return child ? getComputedStyle(child).color : "";
+        };
+        const style = getComputedStyle(el);
+        return {
+          background: style.backgroundColor,
+          text: style.color,
+          borderWidth: style.borderTopWidth,
+          icon: read(".prio-toast__icon"),
+          close: read(".prio-toast__close"),
+          pageBackground: getComputedStyle(document.body).backgroundColor,
+        };
+      });
+
+      // The body text is the thing that vanished. Full AA for it.
+      expect(
+        contrast(measured.text, measured.background),
+        `toast text on its own background in ${theme} mode`,
+      ).toBeGreaterThanOrEqual(4.5);
+
+      // Icon and close button are graphics; AA asks 3:1 of those.
+      expect(
+        contrast(measured.icon, measured.background),
+        `success icon in ${theme} mode`,
+      ).toBeGreaterThanOrEqual(3);
+      expect(
+        contrast(measured.close, measured.background),
+        `close button in ${theme} mode`,
+      ).toBeGreaterThanOrEqual(3);
+
+      // And the panel separates from whatever page is behind it.
+      expect(
+        contrast(measured.background, measured.pageBackground),
+        `toast against the page behind it in ${theme} mode`,
+      ).toBeGreaterThanOrEqual(3);
+      expect(parseFloat(measured.borderWidth)).toBeGreaterThan(0);
+
+      // Unchanged behaviour: the close button still closes it.
+      await toast
+        .getByRole("button", { name: "Dismiss notification" })
+        .click();
+      await expect(toast).toBeHidden();
+
+      expect(consoleErrors).toEqual([]);
+
+      /* This project exists only to raise the notification, so it does not
+         outlive the test. */
+      await page.goto(`/projects/${key.toLowerCase()}`);
+      await page.getByRole("button", { name: "More project actions" }).click();
+      await page.getByRole("menuitem", { name: "Delete project" }).click();
+      const confirm = page.getByRole("dialog");
+      await confirm.getByLabel(/Type .* to confirm/).fill(name);
+      await confirm.getByRole("button", { name: "Delete project" }).click();
+      await expect(page).toHaveURL(/\/projects$/, { timeout: 20_000 });
+    });
+  }
+});

@@ -1,11 +1,8 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { UserAdmin } from "@/components/admin/UserAdmin";
-import { Card, CardBody, Stat } from "@/components/ui/primitives";
-import { Avatar } from "@/components/ui/primitives";
+import { Stat } from "@/components/ui/primitives";
 import { IconAdmin, IconBug, IconIssues, IconUsers } from "@/components/ui/Icon";
 import { CLOSED_STATUSES, OPEN_STATUSES } from "@/lib/domain";
-import { formatRelative, humanizeActivity } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/session";
 
@@ -31,7 +28,6 @@ export default async function AdminPage() {
     totalBugs,
     openBugs,
     overdue,
-    recentActivity,
   ] = await Promise.all([
     prisma.user.findMany({
       orderBy: [{ isActive: "desc" }, { name: "asc" }],
@@ -70,20 +66,6 @@ export default async function AdminPage() {
       where: {
         dueDate: { lt: new Date() },
         status: { notIn: [...CLOSED_STATUSES] },
-      },
-    }),
-    prisma.activityLogEntry.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 15,
-      select: {
-        id: true,
-        action: true,
-        field: true,
-        oldValue: true,
-        newValue: true,
-        createdAt: true,
-        actor: { select: { name: true, image: true } },
-        issue: { select: { key: true, title: true } },
       },
     }),
   ]);
@@ -173,100 +155,6 @@ export default async function AdminPage() {
         />
       </div>
 
-      <div className="row g-4">
-        <div className="col-12 col-xl-6">
-          <Card style={{ height: "100%" }}>
-            <CardBody>
-              <h2 className="prio-issue__section-title">Projects</h2>
-              <div className="prio-table-wrap prio-scroll">
-                <table className="prio-table prio-table--compact">
-                  <thead>
-                    <tr>
-                      <th scope="col">Project</th>
-                      <th scope="col">Key</th>
-                      <th scope="col">Members</th>
-                      <th scope="col">Issues</th>
-                      <th scope="col">
-                        <span className="prio-visually-hidden">Settings</span>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {projects.map((project) => (
-                      <tr key={project.id}>
-                        <td>
-                          <Link href={`/projects/${project.key.toLowerCase()}`}>
-                            {project.name}
-                          </Link>
-                        </td>
-                        <td>
-                          <span className="prio-key">{project.key}</span>
-                        </td>
-                        <td>{project._count.members}</td>
-                        <td>{project._count.issues}</td>
-                        <td>
-                          <Link
-                            href={`/projects/${project.key.toLowerCase()}/settings`}
-                            className="prio-btn prio-btn--secondary prio-btn--sm"
-                          >
-                            Settings
-                          </Link>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </CardBody>
-          </Card>
-        </div>
-
-        <div className="col-12 col-xl-6">
-          <Card style={{ height: "100%" }}>
-            <CardBody>
-              <h2 className="prio-issue__section-title">
-                Recent activity
-                <span className="prio-issue__section-note">
-                  Organization-wide audit trail
-                </span>
-              </h2>
-
-              {recentActivity.length === 0 ? (
-                <p className="prio-text-muted">No activity recorded yet.</p>
-              ) : (
-                <ol className="prio-activity">
-                  {recentActivity.map((entry) => (
-                    <li key={entry.id} className="prio-activity__item">
-                      <span className="prio-activity__rail" aria-hidden />
-                      <Avatar
-                        name={entry.actor.name}
-                        image={entry.actor.image}
-                        size="sm"
-                        className="prio-activity__avatar"
-                      />
-                      <div className="prio-activity__body">
-                        <span className="prio-activity__text">
-                          <strong>{entry.actor.name}</strong>{" "}
-                          {humanizeActivity(entry.action, entry.field)}{" "}
-                          <Link href={`/issues/${entry.issue.key.toLowerCase()}`}>
-                            {entry.issue.key}
-                          </Link>
-                        </span>
-                        <time
-                          className="prio-activity__time"
-                          dateTime={entry.createdAt.toISOString()}
-                        >
-                          {formatRelative(entry.createdAt)}
-                        </time>
-                      </div>
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </CardBody>
-          </Card>
-        </div>
-      </div>
     </>
   );
 }

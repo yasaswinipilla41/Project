@@ -66,7 +66,7 @@ export function SubmitWorkButton({
       size="sm"
       onClick={submit}
       loading={saving || pending}
-      title="Move this issue to In Review for someone to check"
+      title="Move this issue to Ready for QA for someone to check"
     >
       <IconCheck size={13} />
       Submit for review

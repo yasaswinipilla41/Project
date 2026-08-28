@@ -170,7 +170,7 @@ test.describe("+ Create split button", () => {
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
     await expect(
-      dialog.getByRole("heading", { name: "Create task" }),
+      dialog.getByRole("heading", { name: "Create Task" }),
     ).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
@@ -182,7 +182,7 @@ test.describe("+ Create split button", () => {
     ).toBeVisible();
     await page.getByRole("menuitem", { name: "Bug" }).click();
     await expect(
-      page.getByRole("dialog").getByRole("heading", { name: "Create bug" }),
+      page.getByRole("dialog").getByRole("heading", { name: "Create Bug" }),
     ).toBeVisible();
   });
 

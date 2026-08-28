@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import type { IssueType } from "@prisma/client";
 import { Card, CardBody, EmptyState } from "@/components/ui/primitives";
 import {
   IssueKey,
@@ -272,7 +273,7 @@ function IssueResult({
 }: {
   issue: {
     key: string;
-    type: "TASK" | "BUG" | "STORY";
+    type: IssueType;
     title: string;
     status: "BACKLOG" | "TODO" | "IN_PROGRESS" | "IN_REVIEW" | "DONE" | "CANCELLED";
     priority: "URGENT" | "HIGH" | "MEDIUM" | "LOW" | "NONE";

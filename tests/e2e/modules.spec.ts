@@ -102,9 +102,15 @@ test.describe("Issue sheet export", () => {
     );
     expect(shownTotal).toBeGreaterThan(0);
 
+    /* "Export Excel", by its full name. This used to say just "Export",
+       which — Playwright matches an accessible name by substring — also
+       matched the second Export button the page header carried at the time,
+       and a two-match locator is a strict-mode error rather than a click.
+       That header button has since been replaced by "Create Issue", so the
+       filter bar's is now the one and only way to export the sheet. */
     const [download] = await Promise.all([
       page.waitForEvent("download"),
-      page.getByRole("button", { name: "Export" }).click(),
+      page.getByRole("button", { name: "Export Excel" }).click(),
     ]);
 
     expect(download.suggestedFilename()).toMatch(/^prio-issues-\d{4}-\d{2}-\d{2}\.xlsx$/);
@@ -118,9 +124,11 @@ test.describe("Issue sheet export", () => {
     expect(bytes.subarray(0, 4)).toEqual(Buffer.from([0x50, 0x4b, 0x03, 0x04]));
     expect(bytes.byteLength).toBeGreaterThan(1000);
 
-    // The toast reports the same number of rows the filtered sheet claimed.
+    // The toast names the file that actually downloaded — tying the two
+    // together is what catches a confirmation that reports something other
+    // than the thing the browser just saved.
     await expect(page.locator(".prio-toast").last()).toContainText(
-      `Exported ${shownTotal} issue`,
+      download.suggestedFilename(),
     );
   });
 

@@ -19,9 +19,25 @@ import styles from "./ScreenshotAttachmentField.module.css";
  * be submitted.
  */
 
+/**
+ * One staged image, held as the pair it really is.
+ *
+ * Marking up a screenshot used to overwrite the blob that was chosen, which
+ * meant the evidence and the commentary on it were the same file and the
+ * unmarked view was gone for good. They are kept apart instead: the editor
+ * only ever writes `annotated`, and both are uploaded, so a reviewer can see
+ * what the tester circled *and* what was underneath the circle.
+ */
+export interface StagedScreenshot {
+  /** Exactly the bytes the tester chose. Never rewritten by the editor. */
+  original: Blob;
+  /** The marked-up copy, once they have drawn on one. */
+  annotated: Blob | null;
+}
+
 export interface ScreenshotAttachmentFieldProps {
-  value: Blob[];
-  onChange: (value: Blob[]) => void;
+  value: StagedScreenshot[];
+  onChange: (value: StagedScreenshot[]) => void;
   label?: string;
 }
 
@@ -38,7 +54,9 @@ export function ScreenshotAttachmentField({
 
   useEffect(() => {
     if (value.length === 0) return;
-    const urls = value.map((blob) => URL.createObjectURL(blob));
+    const urls = value.map((shot) =>
+      URL.createObjectURL(shot.annotated ?? shot.original),
+    );
     let cancelled = false;
     // Deferred a tick so the state write happens from a callback rather than
     // synchronously in the effect body.
@@ -90,7 +108,12 @@ export function ScreenshotAttachmentField({
       }
       accepted.push(file);
     }
-    if (accepted.length > 0) onChange([...value, ...accepted]);
+    if (accepted.length > 0) {
+      onChange([
+        ...value,
+        ...accepted.map((file) => ({ original: file, annotated: null })),
+      ]);
+    }
   }
 
   function handleDrop(event: DragEvent<HTMLDivElement>) {
@@ -142,14 +165,15 @@ export function ScreenshotAttachmentField({
           {value.length > 0 ? "Add more screenshots" : "Add screenshots"}
         </Button>
         <span className={styles.dropzoneHint}>
-          Drag images here, paste from your clipboard, or choose files. You
-          can draw on each one before submitting.
+          Drag images here, paste from your clipboard, or choose files.
+          Annotate any of them to point at the problem — the unmarked
+          original is kept and attached as well.
         </span>
       </div>
 
       {value.length > 0 ? (
         <div className={styles.grid}>
-          {value.map((blob, index) => (
+          {value.map((shot, index) => (
             <div className={styles.preview} key={index}>
               {previewUrls[index] ? (
                 <a
@@ -172,7 +196,7 @@ export function ScreenshotAttachmentField({
                   size="sm"
                   onClick={() => setEditorIndex(index)}
                 >
-                  Edit
+                  {shot.annotated ? "Edit markup" : "Annotate"}
                 </Button>
                 <Button
                   type="button"
@@ -194,10 +218,17 @@ export function ScreenshotAttachmentField({
       {editorIndex !== null && value[editorIndex] ? (
         <ScreenshotEditor
           open
-          source={value[editorIndex]}
+          /* Re-opening continues from the markup so far, not from a blank
+             original — otherwise a second visit would silently discard the
+             first round of annotation. */
+          source={value[editorIndex].annotated ?? value[editorIndex].original}
           onCancel={() => setEditorIndex(null)}
           onSave={(blob) => {
-            onChange(value.map((v, i) => (i === editorIndex ? blob : v)));
+            onChange(
+              value.map((shot, i) =>
+                i === editorIndex ? { ...shot, annotated: blob } : shot,
+              ),
+            );
             setEditorIndex(null);
           }}
         />

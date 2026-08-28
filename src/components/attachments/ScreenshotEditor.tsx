@@ -28,7 +28,9 @@ type Tool =
   | "rect"
   | "ellipse"
   | "arrow"
+  | "line"
   | "text"
+  | "blur"
   | "eraser"
   | "crop";
 
@@ -67,7 +69,9 @@ const DRAW_TOOLS: Exclude<Tool, "crop">[] = [
   "rect",
   "ellipse",
   "arrow",
+  "line",
   "text",
+  "blur",
   "eraser",
 ];
 
@@ -77,10 +81,26 @@ const TOOL_LABEL: Record<Tool, string> = {
   rect: "Rectangle",
   ellipse: "Oval",
   arrow: "Arrow",
+  line: "Line",
   text: "Text",
+  blur: "Blur",
   eraser: "Erase",
   crop: "Crop",
 };
+
+/**
+ * Tools drawn by dragging a shape out: snapshot the annotation layer on
+ * pointer-down, repaint that snapshot plus a fresh preview on every move, and
+ * commit to history on pointer-up. They differ only in what the preview
+ * draws, which is why they share one branch in each handler.
+ */
+const DRAG_SHAPE_TOOLS = new Set<Tool>([
+  "rect",
+  "ellipse",
+  "arrow",
+  "line",
+  "blur",
+]);
 
 const COLORS = [
   "#ef4444",
@@ -203,8 +223,49 @@ function drawShapePreview(
       end.y - headLength * Math.sin(angle + Math.PI / 6),
     );
     ctx.stroke();
+  } else if (tool === "line") {
+    ctx.beginPath();
+    ctx.moveTo(start.x, start.y);
+    ctx.lineTo(end.x, end.y);
+    ctx.stroke();
   }
 
+  ctx.restore();
+}
+
+/**
+ * Redaction. The blurred pixels are sampled from the photo layer and painted
+ * into the *annotation* layer, so the screenshot underneath is never altered
+ * — undo, or Clear all, brings the detail straight back exactly as it does
+ * for every other tool here.
+ *
+ * That also means this is emphasis, not a privacy guarantee: the unmarked
+ * original is deliberately kept and uploaded alongside the annotated copy
+ * (see `ScreenshotAttachmentField`), so anything blurred here is still
+ * legible in the original attachment.
+ */
+function drawBlurRegion(
+  ctx: CanvasRenderingContext2D,
+  base: HTMLCanvasElement | null,
+  start: Point,
+  end: Point,
+  width: number,
+): void {
+  if (!base) return;
+  const x = Math.min(start.x, end.x);
+  const y = Math.min(start.y, end.y);
+  const w = Math.abs(end.x - start.x);
+  const h = Math.abs(end.y - start.y);
+  if (w < 1 || h < 1) return;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, w, h);
+  ctx.clip();
+  // Sampling outside the clip is what keeps the edges of the patch soft
+  // rather than showing a hard, obviously-pasted rectangle.
+  ctx.filter = `blur(${Math.max(6, width * 2)}px)`;
+  ctx.drawImage(base, 0, 0);
   ctx.restore();
 }
 
@@ -501,6 +562,38 @@ export function ScreenshotEditor({
   }
 
   /**
+   * Clears the ink and nothing else. The photo lives on its own canvas, so
+   * "clear all annotations" is literally that — and it goes through history,
+   * so an accidental press is one Undo away.
+   */
+  function clearAnnotations() {
+    const annotation = annotationCanvasRef.current;
+    if (!annotation) return;
+    annotation
+      .getContext("2d")!
+      .clearRect(0, 0, annotation.width, annotation.height);
+    setCropRect(null);
+    pushHistory();
+  }
+
+  /**
+   * `zoomPercent` is a percentage of the frame's width, not of the image's
+   * own pixels, so fitting is a matter of finding the width at which neither
+   * axis overflows and expressing it in those terms.
+   */
+  function fitToScreen() {
+    const wrap = canvasWrapRef.current;
+    if (!wrap || !dims.width || !dims.height) return;
+    const frameWidth = wrap.clientWidth;
+    if (frameWidth <= 0) return;
+    const heightLimited = (wrap.clientHeight * dims.width) / dims.height;
+    const target = Math.min(frameWidth, heightLimited);
+    setZoomPercent(
+      clamp(Math.round((target / frameWidth) * 100), ZOOM_MIN, ZOOM_MAX),
+    );
+  }
+
+  /**
    * Client coordinates → the canvas's own pixel space, always measured off
    * the annotation canvas regardless of which element the pointer event
    * actually fired on (the canvas itself, or a crop handle sitting on top of
@@ -587,7 +680,7 @@ export function ScreenshotEditor({
       ctx.moveTo(point.x, point.y);
       ctx.lineTo(point.x + 0.01, point.y + 0.01);
       ctx.stroke();
-    } else if (tool === "rect" || tool === "ellipse" || tool === "arrow") {
+    } else if (DRAG_SHAPE_TOOLS.has(tool)) {
       const snap = document.createElement("canvas");
       snap.width = annotation.width;
       snap.height = annotation.height;
@@ -641,12 +734,22 @@ export function ScreenshotEditor({
 
     if (!startPointRef.current) return;
 
-    if (tool === "rect" || tool === "ellipse" || tool === "arrow") {
+    if (DRAG_SHAPE_TOOLS.has(tool)) {
       const ctx = annotation.getContext("2d")!;
       const snap = dragSnapshotRef.current;
       ctx.clearRect(0, 0, annotation.width, annotation.height);
       if (snap) ctx.drawImage(snap, 0, 0);
-      drawShapePreview(ctx, tool, startPointRef.current, point, color, strokeWidth);
+      if (tool === "blur") {
+        drawBlurRegion(
+          ctx,
+          baseCanvasRef.current,
+          startPointRef.current,
+          point,
+          strokeWidth,
+        );
+      } else {
+        drawShapePreview(ctx, tool, startPointRef.current, point, color, strokeWidth);
+      }
       return;
     }
 
@@ -990,6 +1093,14 @@ export function ScreenshotEditor({
           >
             Redo
           </button>
+          <button
+            type="button"
+            className={styles.toolButton}
+            onClick={clearAnnotations}
+            disabled={!ready}
+          >
+            Clear all
+          </button>
         </div>
 
         <div className={styles.toolGroup}>
@@ -1011,6 +1122,14 @@ export function ScreenshotEditor({
             aria-label="Zoom in"
           >
             +
+          </button>
+          <button
+            type="button"
+            className={styles.toolButton}
+            onClick={fitToScreen}
+            disabled={!ready}
+          >
+            Fit
           </button>
         </div>
       </div>
@@ -1099,7 +1218,9 @@ export function ScreenshotEditor({
           ? "Drag to select an area, then Apply crop."
           : tool === "text"
             ? "Click on the image to add text — Enter to place it, Escape to cancel."
-            : "Drag on the image to draw. Undo/redo step through your changes."}
+            : tool === "blur"
+              ? "Drag over anything you want to obscure. Stroke width sets how strong the blur is."
+              : "Drag on the image to draw. Undo/redo step through your changes."}
       </p>
     </Dialog>
   );

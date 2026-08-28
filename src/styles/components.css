@@ -548,6 +548,14 @@
   background: var(--prio-type-story-bg);
   color: var(--prio-type-story);
 }
+.prio-type[data-type="EPIC"] {
+  background: var(--prio-type-epic-bg);
+  color: var(--prio-type-epic);
+}
+.prio-type[data-type="FEATURE"] {
+  background: var(--prio-type-feature-bg);
+  color: var(--prio-type-feature);
+}
 
 /* Issue key. */
 .prio-key {
@@ -1064,8 +1072,9 @@ a.prio-key:hover {
   align-items: flex-start;
   gap: var(--prio-space-3);
   padding: var(--prio-space-4) var(--prio-space-5);
-  background: var(--prio-neutral-900);
-  color: #fff;
+  background: var(--prio-toast-bg);
+  color: var(--prio-toast-fg);
+  border: 1px solid var(--prio-toast-border);
   border-radius: var(--prio-radius-lg);
   box-shadow: var(--prio-shadow-lg);
   font-size: var(--prio-text-sm);
@@ -1084,11 +1093,11 @@ a.prio-key:hover {
 }
 
 .prio-toast[data-tone="success"] .prio-toast__icon {
-  color: #4ade80;
+  color: var(--prio-toast-success);
 }
 
 .prio-toast[data-tone="error"] .prio-toast__icon {
-  color: #fca5a5;
+  color: var(--prio-toast-danger);
 }
 
 .prio-toast__body {
@@ -1097,11 +1106,11 @@ a.prio-key:hover {
 }
 
 .prio-toast__close {
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--prio-toast-fg-muted);
 }
 
 .prio-toast__close:hover {
-  color: #fff;
+  color: var(--prio-toast-fg);
 }
 
 /* -------------------------------------------------------------- tooltip */
@@ -1293,63 +1302,179 @@ a.prio-stat:focus-visible {
   transition: width var(--prio-duration-slow) var(--prio-ease-out);
 }
 
-/* ----------------------------------------------------------- type picker */
-/* Segmented choice of Task / Bug / Story at the head of the Create dialog. */
-.prio-typepicker {
+/* ---------------------------------------------------- create type cards */
+/*
+ * The five-type selector at the head of the Create dialog, shown only when
+ * the top bar's control opened it. Named for `prio-create` because that is
+ * the flow it belongs to; it is a separate selector from `.prio-create`
+ * itself, so nothing here can reach the top bar's own button — or the Issues
+ * page header, which never renders these at all.
+ */
+.prio-create__type {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: var(--prio-space-3);
-  margin: 0 0 var(--prio-space-6);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--prio-space-2);
+  margin: 0 0 var(--prio-space-5);
   padding: 0;
   border: 0;
 }
 
-.prio-typepicker__option {
+.prio-create__type-card {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--prio-space-2);
-  padding: var(--prio-space-4);
+  gap: var(--prio-space-1);
+  padding: var(--prio-space-3);
   text-align: left;
   background: var(--prio-bg-surface);
   border: 1px solid var(--prio-border);
-  border-radius: var(--prio-radius-lg);
+  border-radius: var(--prio-radius-md);
+  cursor: pointer;
   transition:
     border-color var(--prio-duration-fast) var(--prio-ease),
-    background var(--prio-duration-fast) var(--prio-ease),
-    box-shadow var(--prio-duration-fast) var(--prio-ease);
+    background var(--prio-duration-fast) var(--prio-ease);
 }
 
-.prio-typepicker__option:hover {
+.prio-create__type-card:hover {
   border-color: var(--prio-border-strong);
-  background: var(--prio-neutral-25);
+  background: var(--prio-bg-subtle);
 }
 
-.prio-typepicker__option[data-selected="true"] {
+.prio-create__type-card[data-selected="true"] {
   border-color: var(--prio-primary-500);
   background: var(--prio-primary-50);
-  box-shadow: var(--prio-shadow-focus);
 }
 
-.prio-typepicker__label {
-  font-size: var(--prio-text-sm);
+.prio-create__type-card:focus-visible {
+  outline: 2px solid var(--prio-border-focus);
+  outline-offset: 1px;
+}
+
+.prio-create__type-label {
+  font-size: var(--prio-text-xs);
   font-weight: var(--prio-weight-semibold);
-  color: var(--prio-text-primary);
+  color: var(--prio-text-secondary);
 }
 
-.prio-typepicker__hint {
+.prio-create__type-card[data-selected="true"] .prio-create__type-label {
+  color: var(--prio-primary-700);
+}
+
+/* What the type is for, so the choice is informed rather than guessed. */
+.prio-create__type-hint {
   font-size: var(--prio-text-2xs);
   line-height: var(--prio-leading-snug);
   color: var(--prio-text-muted);
 }
 
+/* The hint is the first thing worth dropping when there is no room for it. */
+@media (max-width: 720px) {
+  .prio-create__type-hint {
+    display: none;
+  }
+}
+
+/* Five across is too tight on a phone; two rows read better than a squeeze. */
+@media (max-width: 560px) {
+  .prio-create__type {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* --------------------------------------------------------- create issue */
+/*
+ * The Create Issue form: a wide column of label/control rows, and a narrow
+ * sidebar for the fields that classify the issue rather than describe it.
+ *
+ * Labels sit beside their controls, not above, which is what gives the form
+ * its readable left edge — every label ends at the same x, so the eye runs
+ * down the names rather than zig-zagging between name and field.
+ */
+.prio-createissue {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 250px;
+  gap: var(--prio-space-6);
+  align-items: start;
+}
+
+.prio-createissue__main {
+  min-width: 0;
+}
+
+.prio-createissue__row {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  gap: var(--prio-space-3);
+  align-items: start;
+  margin-bottom: var(--prio-space-4);
+}
+
+/* `.prio-label` is a flex row, so the label is pushed to its own right edge
+   rather than text-aligned. The offset drops it onto the control's centre
+   line — labels are smaller than the inputs they name. */
+.prio-createissue__rowlabel {
+  justify-content: flex-end;
+  padding-top: 9px;
+  text-align: right;
+}
+
+.prio-createissue__rowfield {
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-2);
+  min-width: 0;
+}
+
+/*
+ * A project accumulates labels over time, and an unbounded chip list pushes
+ * everything below it — Due date, and Files with it — off the bottom of the
+ * form. Capping the list at a few rows keeps every field reachable however
+ * many labels a project has. Scoped to this form: the chip set is shared with
+ * the admin and member dialogs, which have no such problem.
+ */
+.prio-createissue__rowfield .prio-chipset {
+  max-height: 132px;
+  overflow-y: auto;
+}
+
+.prio-createissue__side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-4);
+  padding: var(--prio-space-4);
+  /* `--prio-border` is one step from `--prio-bg-subtle` on the neutral scale,
+     which on this fill is a line you have to look for. The stronger token is
+     what actually reads as an edge here. */
+  border: 1px solid var(--prio-border-strong);
+  border-radius: var(--prio-radius-lg);
+  background: var(--prio-bg-subtle);
+}
+
+/* The sidebar spaces its own children; the field's default gap would add to
+   that and open the column up unevenly. */
+.prio-createissue__side .prio-field {
+  margin-bottom: 0;
+}
+
+@media (max-width: 900px) {
+  .prio-createissue {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--prio-space-5);
+  }
+}
+
+/* Narrow enough that a 104px label column costs the control more room than
+   the alignment is worth: the label goes back above its field. */
 @media (max-width: 640px) {
-  .prio-typepicker {
-    grid-template-columns: 1fr;
+  .prio-createissue__row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--prio-space-2);
   }
 
-  .prio-typepicker__hint {
-    display: none;
+  .prio-createissue__rowlabel {
+    justify-content: flex-start;
+    padding-top: 0;
+    text-align: left;
   }
 }
 

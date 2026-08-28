@@ -1,6 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
 import { prisma } from "@/lib/prisma";
-import { MEMBER_STATE, setViewport, watchForProblems } from "./support";
+import {
+  MEMBER_STATE,
+  setViewport,
+  waitForNextFrame,
+  watchForProblems,
+} from "./support";
 
 /**
  * The home dashboard.
@@ -142,7 +147,16 @@ test.describe("Dashboard — signed in as an administrator", () => {
       expect(value).toBeLessThanOrEqual(100);
     }
 
+    /* The card is a summary, not a link: clicking it must leave you where you
+       are. It used to navigate to the project — that was removed deliberately,
+       so this now pins the opposite. The project is still reachable, just not
+       by clicking here, which the direct visit below keeps covered. */
+    const key = (await cards.first().locator(".prio-key").innerText()).trim();
     await cards.first().click();
+    await page.waitForTimeout(300);
+    await expect(page).toHaveURL(/localhost:3000\/$/);
+
+    await page.goto(`/projects/${key.toLowerCase()}`);
     await expect(page).toHaveURL(/\/projects\//);
   });
 
@@ -339,11 +353,20 @@ test.describe("Dashboard — signed in as an administrator", () => {
 
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
-    // It opens on Bug, because that is what the button said. The type picker
-    // is a pressed-button group, so the selection is `aria-pressed`.
-    await expect(
-      dialog.locator(".prio-typepicker__option", { hasText: "Bug" }),
-    ).toHaveAttribute("aria-pressed", "true");
+    /* It opens the one real Create form — same dialog, same fields, same
+       server action. This used to also assert that the Task/Bug/Story picker
+       had landed on Bug; that picker has been removed, so what is checked now
+       is that it is genuinely gone and that none of the three is offered
+       anywhere in the dialog. The type still travels with the request — it is
+       simply no longer something anybody chooses. */
+    await expect(dialog.getByLabel("Summary")).toBeVisible();
+    await expect(dialog.locator(".prio-typepicker")).toHaveCount(0);
+    for (const name of ["Task", "Bug", "Story"]) {
+      await expect(
+        dialog.getByRole("button", { name, exact: true }),
+        `${name} must not be selectable`,
+      ).toHaveCount(0);
+    }
 
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
@@ -596,6 +619,27 @@ test.describe("Dashboard — presentation", () => {
   test("actually repaints in dark mode", async ({ page }) => {
     await page.goto("/");
 
+    /* Both samples have to be measurable before either is taken: the cards
+       must be on the page, and every stylesheet must have arrived. Flipping
+       `data-theme` before the dark sheet has loaded reads light values back
+       off a page that is behaving perfectly well — which is exactly the
+       intermittent failure this test used to produce. Waiting on real
+       signals rather than a fixed delay keeps it strict: if the theme
+       genuinely fails to apply, the assertions below still catch it. */
+    await expect(page.locator(".prio-kpi").first()).toBeVisible();
+    await page.waitForLoadState("load");
+
+    /** Applies a theme and waits until it is observably in effect. */
+    const applyTheme = async (theme: "light" | "dark") => {
+      await page.evaluate(
+        (value) => document.documentElement.setAttribute("data-theme", value),
+        theme,
+      );
+      await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+      // One frame, so what we read is the recalculated custom properties.
+      await waitForNextFrame(page);
+    };
+
     /* Read the same set of colours in each theme. Comparing them to each other
        — rather than to hard-coded hexes — proves the theme is doing work
        without pinning the design to particular values. */
@@ -613,14 +657,10 @@ test.describe("Dashboard — presentation", () => {
         };
       });
 
-    await page.evaluate(() =>
-      document.documentElement.setAttribute("data-theme", "light"),
-    );
+    await applyTheme("light");
     const light = await sample();
 
-    await page.evaluate(() =>
-      document.documentElement.setAttribute("data-theme", "dark"),
-    );
+    await applyTheme("dark");
     const dark = await sample();
 
     // Every one of these must change: a theme that only flips the background

@@ -160,6 +160,28 @@
   --prio-chrome-text-strong: #ffffff;
   --prio-chrome-text-muted: #7f8ca6;
 
+  /* ------------------------------------------------------------ toast */
+  /*
+   * The toast is an *inverted* surface: a dark panel on the light theme, a
+   * light panel on the dark one. `--prio-neutral-900` and `--prio-neutral-0`
+   * already flip that way between the two sheets, so the background and the
+   * text ride them directly and need no dark-side override.
+   *
+   * The accent hues cannot do the same. The signal scales are tuned for
+   * content sitting on the *page*, so they flip in the same direction the
+   * page does — which is the wrong direction for anything sitting on an
+   * inverted surface. Dark-theme `--prio-green-700` is a pale mint: correct
+   * on a dark page, invisible on this near-white panel. So the two icon
+   * colours are stated per sheet, each chosen against the toast's own ground
+   * rather than against the page behind it.
+   */
+  --prio-toast-bg: var(--prio-neutral-900);
+  --prio-toast-fg: var(--prio-neutral-0);
+  --prio-toast-fg-muted: var(--prio-neutral-400);
+  --prio-toast-border: rgba(255, 255, 255, 0.12);
+  --prio-toast-success: #4ade80;
+  --prio-toast-danger: #fca5a5;
+
   /* --------------------------------------------------------- gradient */
   --prio-gradient-brand: linear-gradient(135deg, var(--prio-primary-500) 0%, var(--prio-accent-500) 100%);
   --prio-gradient-brand-soft: linear-gradient(135deg, var(--prio-primary-50) 0%, var(--prio-accent-50) 100%);
@@ -323,6 +345,12 @@
   --prio-type-bug-bg: var(--prio-red-50);
   --prio-type-story: var(--prio-green-600);
   --prio-type-story-bg: var(--prio-green-50);
+  /* Both reference scales that already flip per theme, so the dark sheet
+     needs no counterpart. */
+  --prio-type-epic: var(--prio-accent-600);
+  --prio-type-epic-bg: var(--prio-accent-50);
+  --prio-type-feature: var(--prio-amber-600);
+  --prio-type-feature-bg: var(--prio-amber-50);
 }
 
 @media (prefers-reduced-motion: reduce) {

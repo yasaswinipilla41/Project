@@ -5,7 +5,13 @@ import {
   SEVERITY_LABEL,
   STATUS_LABEL,
 } from "@/lib/domain";
-import { IconBug, IconStory, IconTask } from "@/components/ui/Icon";
+import {
+  IconBug,
+  IconParent,
+  IconStar,
+  IconStory,
+  IconTask,
+} from "@/components/ui/Icon";
 
 /**
  * Status, priority, severity and issue-type indicators.
@@ -132,7 +138,16 @@ export function IssueTypeIcon({
   size?: number;
   className?: string;
 }) {
-  const Glyph = type === "BUG" ? IconBug : type === "STORY" ? IconStory : IconTask;
+  const Glyph =
+    type === "BUG"
+      ? IconBug
+      : type === "STORY"
+        ? IconStory
+        : type === "EPIC"
+          ? IconParent
+          : type === "FEATURE"
+            ? IconStar
+            : IconTask;
 
   return (
     <span

@@ -237,6 +237,7 @@ export function Topbar({
             open
             onClose={() => setCreateOpen(false)}
             defaultType={createType}
+            showTypeSelector
           />
         ) : null}
 

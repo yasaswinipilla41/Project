@@ -43,27 +43,28 @@ test.describe("Create flow", () => {
     await expect(dialog.getByRole("alert").first()).toBeVisible();
   });
 
-  test("creates a Bug from a title alone, with no long-form fields to fill", async ({
+  test("creates a Bug from a title alone, though it now offers more", async ({
     page,
   }) => {
     /*
-     * A bug used to be rejected without a description, and the dialog carried
-     * reproduction/expected/actual boxes. All four fields have been removed
-     * from creation, so the only thing a bug now needs is a title — and no
-     * validation may demand something the form cannot supply.
+     * A bug used to be *rejected* without a description. The reproduction,
+     * expected and actual prompts have since come back — but as prompts, not
+     * demands: the Bug form asks a tester the questions a tester should be
+     * asked, and none of them block creation. That distinction is the whole
+     * point of this test, so it checks both halves: the fields are there, and
+     * a title on its own is still enough.
      */
     const title = `Title-only bug ${stamp()}`;
     const dialog = await openCreate(page, "Bug");
 
-    for (const gone of [
-      "Description",
+    for (const offered of [
       "Steps to reproduce",
-      "Expected result",
       "Expected behaviour",
-      "Actual result",
       "Actual behaviour",
     ]) {
-      await expect(dialog.getByLabel(gone)).toHaveCount(0);
+      const field = dialog.getByLabel(offered);
+      await expect(field).toHaveCount(1);
+      await expect(field).not.toHaveAttribute("required", /.*/);
     }
 
     await dialog.getByLabel("Project").selectOption({ label: "Engineering (ENG)" });
@@ -83,7 +84,7 @@ test.describe("Create flow", () => {
     const dialog = await openCreate(page, "Task");
 
     await dialog.getByLabel("Project").selectOption({ label: "Engineering (ENG)" });
-    await dialog.getByLabel("Title").fill(title);
+    await dialog.getByLabel("Task title").fill(title);
     await dialog.getByRole("button", { name: "Cancel" }).click();
 
     await expect(dialog).toBeHidden();
@@ -99,7 +100,7 @@ test.describe("Create flow", () => {
     const dialog = await openCreate(page, "Task");
 
     await dialog.getByLabel("Project").selectOption({ label: "Engineering (ENG)" });
-    await dialog.getByLabel("Title").fill(title);
+    await dialog.getByLabel("Task title").fill(title);
     await dialog.getByLabel("Status").selectOption("TODO");
     await dialog.getByLabel("Priority").selectOption("HIGH");
 
@@ -144,7 +145,7 @@ test.describe("Create flow", () => {
     expect(failedRequests).toEqual([]);
   });
 
-  test("creates a real Bug — with no reproduction write-up to fill in", async ({
+  test("creates a real Bug, offering the tester prompts but demanding none", async ({
     page,
   }) => {
     const { consoleErrors, failedRequests } = watchForProblems(page);
@@ -152,20 +153,33 @@ test.describe("Create flow", () => {
     const dialog = await openCreate(page, "Bug");
 
     /*
-     * The long-form "Bug details" section — steps to reproduce, expected
-     * result, actual result and the environment fields — was removed from
-     * creation. Nothing of it may remain: not the heading, not the inputs, and
-     * not an empty container where it used to sit.
+     * The Bug form asks a tester what a tester should be asked — reproduction,
+     * expected and actual behaviour, and the environment it happened in. What
+     * did *not* come back is the old "Bug details" panel and its long tail of
+     * browser/OS/build/module inputs, which asked for far more than anyone
+     * filled in. Both halves are pinned here: what the form offers now, and
+     * what deliberately stays gone.
      */
+    for (const offered of [
+      "Steps to reproduce",
+      "Expected behaviour",
+      "Actual behaviour",
+      "Environment",
+    ]) {
+      await expect(dialog.getByLabel(offered)).toHaveCount(1);
+    }
+
     await expect(dialog.getByText("Bug details")).toHaveCount(0);
-    await expect(dialog.getByLabel("Steps to reproduce")).toHaveCount(0);
-    await expect(dialog.getByLabel("Expected result")).toHaveCount(0);
-    await expect(dialog.getByLabel("Actual result")).toHaveCount(0);
-    await expect(dialog.getByLabel("Environment")).toHaveCount(0);
-    await expect(dialog.getByLabel("Browser")).toHaveCount(0);
-    await expect(dialog.getByLabel("Operating system")).toHaveCount(0);
-    await expect(dialog.getByLabel("Version / build")).toHaveCount(0);
-    await expect(dialog.getByLabel("Affected module")).toHaveCount(0);
+    for (const gone of [
+      "Expected result",
+      "Actual result",
+      "Browser",
+      "Operating system",
+      "Version / build",
+      "Affected module",
+    ]) {
+      await expect(dialog.getByLabel(gone)).toHaveCount(0);
+    }
 
     const sections = dialog.locator(".prio-formsection");
     for (let i = 0; i < (await sections.count()); i += 1) {
@@ -246,21 +260,22 @@ test.describe("Create flow", () => {
     }
   });
 
-  test("switching type in the dialog adds and removes severity only", async ({
-    page,
-  }) => {
-    const dialog = await openCreate(page, "Task");
+  test("severity belongs to bugs, and starts unset", async ({ page }) => {
+    /* Severity is the impact of a defect, so the Create flow asks for it only
+       where it means something. A Task is not asked; a Bug is, and still
+       defaults to unset so an untouched bug stores no severity. */
+    const taskDialog = await openCreate(page, "Task");
+    await expect(taskDialog.getByLabel("Severity")).toHaveCount(0);
+    await expect(taskDialog.getByLabel("Steps to reproduce")).toHaveCount(0);
+    await page.keyboard.press("Escape");
 
-    // Severity belongs to bugs; a task has none.
-    await expect(dialog.getByLabel("Severity")).toHaveCount(0);
-    await expect(dialog.getByLabel("Steps to reproduce")).toHaveCount(0);
+    const bugDialog = await openCreate(page, "Bug");
+    const severity = bugDialog.getByLabel("Severity");
+    await expect(severity).toBeVisible();
+    await expect(severity).toHaveValue("");
 
-    await dialog.getByRole("button", { name: /^Bug/ }).click();
-    await expect(dialog.getByLabel("Severity")).toBeVisible();
-    // …and still no reproduction write-up.
-    await expect(dialog.getByLabel("Steps to reproduce")).toHaveCount(0);
-
-    await dialog.getByRole("button", { name: /^Story/ }).click();
-    await expect(dialog.getByLabel("Severity")).toHaveCount(0);
+    // Choosing one is possible, and sticks.
+    await severity.selectOption("MAJOR");
+    await expect(severity).toHaveValue("MAJOR");
   });
 });

@@ -26,7 +26,7 @@ import {
   PRIORITIES,
   SEVERITIES,
 } from "@/lib/domain";
-import { formatRelative, percent } from "@/lib/format";
+import { barWidth, formatRelative, percent } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 
@@ -309,7 +309,7 @@ export default async function ReportsPage() {
                         <span
                           className="prio-distribution__bar"
                           data-status={status}
-                          style={{ width: `${percent(count, total)}%` }}
+                          style={{ width: barWidth(count, total) }}
                         />
                       </span>
                       <span className="prio-distribution__value">{count}</span>
@@ -337,7 +337,7 @@ export default async function ReportsPage() {
                       <span className="prio-distribution__track" aria-hidden>
                         <span
                           className="prio-distribution__bar"
-                          style={{ width: `${percent(count, total)}%` }}
+                          style={{ width: barWidth(count, total) }}
                         />
                       </span>
                       <span className="prio-distribution__value">{count}</span>
@@ -373,7 +373,7 @@ export default async function ReportsPage() {
                         <span className="prio-distribution__track" aria-hidden>
                           <span
                             className="prio-distribution__bar"
-                            style={{ width: `${percent(count, bugTotal)}%` }}
+                            style={{ width: barWidth(count, bugTotal) }}
                           />
                         </span>
                         <span className="prio-distribution__value">{count}</span>
@@ -421,7 +421,7 @@ export default async function ReportsPage() {
                         <span className="prio-distribution__track" aria-hidden>
                           <span
                             className="prio-distribution__bar"
-                            style={{ width: `${percent(count, maxAssignee)}%` }}
+                            style={{ width: barWidth(count, maxAssignee) }}
                           />
                         </span>
                         <span className="prio-distribution__value">{count}</span>
@@ -514,7 +514,7 @@ export default async function ReportsPage() {
                           <span
                             className="prio-distribution__bar"
                             style={{
-                              width: `${percent(row._count._all, max)}%`,
+                              width: barWidth(row._count._all, max),
                             }}
                           />
                         </span>

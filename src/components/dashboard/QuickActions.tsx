@@ -21,7 +21,7 @@ export function QuickActions({ role }: { role: Role }) {
     <div className="prio-dash__actions">
       <Button variant="primary" onClick={() => setCreateType("TASK")}>
         <IconPlus size={14} />
-        New task
+        Create issue
       </Button>
 
       <Button variant="secondary" onClick={() => setCreateType("BUG")}>

@@ -48,16 +48,21 @@ async function openEditorWithImage(page: Page): Promise<Locator> {
   await expect(dialog).toBeVisible();
 
   const image = await makeTestImage(page);
-  await dialog.getByLabel("Screenshot").setInputFiles({
+  await dialog.getByLabel("Files", { exact: true }).setInputFiles({
     name: "screenshot.png",
     mimeType: "image/png",
     buffer: image,
   });
-  await dialog.getByRole("button", { name: "Edit" }).click();
+  await dialog.getByRole("button", { name: /Annotate|Edit markup/ }).click();
 
   const editor = page.getByRole("dialog", { name: "Edit screenshot" });
   await expect(editor).toBeVisible();
   await expect(editor.getByText("Loading image…")).toBeHidden();
+  /* That text also disappears when the image FAILS to load, which
+     leaves the editor not ready and every stroke a silent no-op.
+     The canvas is hidden until it really is ready, so this is the
+     signal that means "you can draw now". */
+  await expect(editor.locator("canvas").first()).toBeVisible();
   await waitForNextFrame(page);
   return editor;
 }
@@ -491,16 +496,21 @@ test.describe("Screenshot editor — every tool", () => {
     await expect(dialog).toBeVisible();
 
     const original = await makeTestImage(page, 40, 40);
-    await dialog.getByLabel("Screenshot").setInputFiles({
+    await dialog.getByLabel("Files", { exact: true }).setInputFiles({
       name: "original.png",
       mimeType: "image/png",
       buffer: original,
     });
-    await dialog.getByRole("button", { name: "Edit" }).click();
+    await dialog.getByRole("button", { name: /Annotate|Edit markup/ }).click();
 
     const editor = page.getByRole("dialog", { name: "Edit screenshot" });
     await expect(editor).toBeVisible();
     await expect(editor.getByText("Loading image…")).toBeHidden();
+    /* That text also disappears when the image FAILS to load, which
+       leaves the editor not ready and every stroke a silent no-op.
+       The canvas is hidden until it really is ready, so this is the
+       signal that means "you can draw now". */
+    await expect(editor.locator("canvas").first()).toBeVisible();
     await waitForNextFrame(page);
 
     await dragOnCanvas(page, editor, { xFrac: 0.3, yFrac: 0.3 }, { xFrac: 0.7, yFrac: 0.7 });
@@ -510,10 +520,15 @@ test.describe("Screenshot editor — every tool", () => {
     await expect(editor).toBeHidden();
 
     // Re-opening the editor loads the still-original, un-annotated image.
-    await dialog.getByRole("button", { name: "Edit" }).click();
+    await dialog.getByRole("button", { name: /Annotate|Edit markup/ }).click();
     const reopened = page.getByRole("dialog", { name: "Edit screenshot" });
     await expect(reopened).toBeVisible();
     await expect(reopened.getByText("Loading image…")).toBeHidden();
+    /* That text also disappears when the image FAILS to load, which
+       leaves the editor not ready and every stroke a silent no-op.
+       The canvas is hidden until it really is ready, so this is the
+       signal that means "you can draw now". */
+    await expect(reopened.locator("canvas").first()).toBeVisible();
     const pixel = await samplePixel(reopened, ANNOTATION, 0.5, 0.5);
     expect(pixel.a).toBe(0);
   });
@@ -535,5 +550,258 @@ test.describe("Screenshot editor — every tool", () => {
     await expect(preview).toBeVisible();
     const src = await preview.getAttribute("src");
     expect(src).toMatch(/^blob:/);
+  });
+});
+
+/**
+ * The tools added for the Testing Team's create-issue flow.
+ *
+ * They ride the same raster architecture as everything above — ink on the
+ * annotation layer, photo untouched on the base layer, every operation
+ * committed to the same undo history — so each test below checks both halves:
+ * that the tool did what it says, and that it did it *without* rewriting the
+ * screenshot underneath.
+ */
+
+/**
+ * A striped image, unlike the flat fill the tests above use. Blur is
+ * invisible on a flat colour — averaging one colour with itself returns that
+ * colour — so proving it works needs high-frequency detail to destroy.
+ */
+async function makeStripedImage(
+  page: Page,
+  width = 1200,
+  height = 800,
+): Promise<Buffer> {
+  const base64 = await page.evaluate(
+    ({ width, height }) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d")!;
+      for (let x = 0; x < width; x += 8) {
+        ctx.fillStyle = (x / 8) % 2 === 0 ? "#000000" : "#ffffff";
+        ctx.fillRect(x, 0, 8, height);
+      }
+      return new Promise<string>((resolve) => {
+        canvas.toBlob((blob) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve((reader.result as string).split(",")[1]!);
+          reader.readAsDataURL(blob!);
+        }, "image/png");
+      });
+    },
+    { width, height },
+  );
+  return Buffer.from(base64, "base64");
+}
+
+async function openEditorWith(page: Page, image: Buffer): Promise<Locator> {
+  await page.goto("/");
+  await page.locator(".prio-create__main").click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel("Files", { exact: true }).setInputFiles({
+    name: "screenshot.png",
+    mimeType: "image/png",
+    buffer: image,
+  });
+  await dialog.getByRole("button", { name: /Annotate|Edit markup/ }).click();
+  const editor = page.getByRole("dialog", { name: "Edit screenshot" });
+  await expect(editor).toBeVisible();
+  await expect(editor.getByText("Loading image…")).toBeHidden();
+  /* That text also disappears when the image FAILS to load, which
+     leaves the editor not ready and every stroke a silent no-op.
+     The canvas is hidden until it really is ready, so this is the
+     signal that means "you can draw now". */
+  await expect(editor.locator("canvas").first()).toBeVisible();
+  await waitForNextFrame(page);
+  return editor;
+}
+
+/** Luminance spread across a box, in fractions of the canvas's own size. */
+async function variance(
+  editor: Locator,
+  canvasIndex: number,
+  box: { x: number; y: number; w: number; h: number },
+): Promise<number> {
+  return editor
+    .locator("canvas")
+    .nth(canvasIndex)
+    .evaluate((el: HTMLCanvasElement, b) => {
+      const ctx = el.getContext("2d")!;
+      const x = Math.round(el.width * b.x);
+      const y = Math.round(el.height * b.y);
+      const w = Math.round(el.width * b.w);
+      const h = Math.round(el.height * b.h);
+      const data = ctx.getImageData(x, y, w, h).data;
+
+      const values: number[] = [];
+      for (let i = 0; i < data.length; i += 4) {
+        // Transparent pixels carry no colour information worth measuring.
+        if (data[i + 3]! < 8) continue;
+        values.push(
+          0.2126 * data[i]! + 0.7152 * data[i + 1]! + 0.0722 * data[i + 2]!,
+        );
+      }
+      if (values.length === 0) return 0;
+      const mean = values.reduce((a, v) => a + v, 0) / values.length;
+      return values.reduce((a, v) => a + (v - mean) ** 2, 0) / values.length;
+    }, box);
+}
+
+const BASE = 0;
+
+test.describe("Screenshot editor — tools added for the Testing Team", () => {
+  test("Line: draws a straight stroke and is undoable", async ({ page }) => {
+    const editor = await openEditorWithImage(page);
+
+    await editor.getByRole("button", { name: "Line", exact: true }).click();
+    await dragOnCanvas(
+      page,
+      editor,
+      { xFrac: 0.2, yFrac: 0.5 },
+      { xFrac: 0.8, yFrac: 0.5 },
+    );
+
+    // Painted along the path…
+    const midpoint = await samplePixel(editor, ANNOTATION, 0.5, 0.5);
+    expect(midpoint.a, "the line should paint at its midpoint").toBeGreaterThan(
+      200,
+    );
+
+    // …and nowhere near it, which is what makes it a line and not a smear.
+    const away = await samplePixel(editor, ANNOTATION, 0.5, 0.15);
+    expect(away.a, "the line should not paint far off its path").toBeLessThan(
+      40,
+    );
+
+    await editor.getByRole("button", { name: "Undo" }).click();
+    await waitForNextFrame(page);
+    const undone = await samplePixel(editor, ANNOTATION, 0.5, 0.5);
+    expect(undone.a).toBeLessThan(40);
+  });
+
+  test("Blur: destroys detail in the dragged area and leaves the photo intact", async ({
+    page,
+  }) => {
+    const editor = await openEditorWith(page, await makeStripedImage(page));
+    const region = { x: 0.3, y: 0.3, w: 0.3, h: 0.3 };
+
+    const baseBefore = await variance(editor, BASE, region);
+    expect(
+      baseBefore,
+      "the striped fixture should start with detail",
+    ).toBeGreaterThan(1000);
+
+    await editor.getByRole("button", { name: "Blur", exact: true }).click();
+    await dragOnCanvas(
+      page,
+      editor,
+      { xFrac: 0.3, yFrac: 0.3 },
+      { xFrac: 0.6, yFrac: 0.6 },
+    );
+    await waitForNextFrame(page);
+
+    // The patch that landed is far flatter than the stripes it covers.
+    const blurred = await variance(editor, ANNOTATION, {
+      x: 0.35,
+      y: 0.35,
+      w: 0.2,
+      h: 0.2,
+    });
+    expect(blurred, "the blurred patch should be much flatter").toBeLessThan(
+      baseBefore / 4,
+    );
+
+    // The photo layer is untouched — blur is ink, like every other tool here.
+    const baseAfter = await variance(editor, BASE, region);
+    expect(baseAfter).toBeCloseTo(baseBefore, 0);
+
+    // And it steps back like anything else.
+    await editor.getByRole("button", { name: "Undo" }).click();
+    await waitForNextFrame(page);
+    const cleared = await samplePixel(editor, ANNOTATION, 0.45, 0.45);
+    expect(cleared.a).toBeLessThan(40);
+  });
+
+  test("Clear all: removes every annotation, keeps the photo, and undoes", async ({
+    page,
+  }) => {
+    const editor = await openEditorWithImage(page);
+
+    await editor.getByRole("button", { name: "Rectangle" }).click();
+    await dragOnCanvas(
+      page,
+      editor,
+      { xFrac: 0.2, yFrac: 0.2 },
+      { xFrac: 0.5, yFrac: 0.5 },
+    );
+    await editor.getByRole("button", { name: "Draw" }).click();
+    await dragOnCanvas(
+      page,
+      editor,
+      { xFrac: 0.6, yFrac: 0.6 },
+      { xFrac: 0.8, yFrac: 0.8 },
+    );
+
+    expect((await samplePixel(editor, ANNOTATION, 0.2, 0.2)).a).toBeGreaterThan(
+      200,
+    );
+    expect((await samplePixel(editor, ANNOTATION, 0.7, 0.7)).a).toBeGreaterThan(
+      200,
+    );
+
+    await editor.getByRole("button", { name: "Clear all" }).click();
+    await waitForNextFrame(page);
+
+    // Both annotations gone…
+    expect((await samplePixel(editor, ANNOTATION, 0.2, 0.2)).a).toBeLessThan(40);
+    expect((await samplePixel(editor, ANNOTATION, 0.7, 0.7)).a).toBeLessThan(40);
+
+    // …and the screenshot itself is still there. This is the assertion that
+    // separates "clear the annotations" from "clear the canvas".
+    const photo = await samplePixel(editor, BASE, 0.5, 0.5);
+    expect(photo.a, "the photo must survive Clear all").toBeGreaterThan(200);
+
+    await editor.getByRole("button", { name: "Undo" }).click();
+    await waitForNextFrame(page);
+    expect(
+      (await samplePixel(editor, ANNOTATION, 0.7, 0.7)).a,
+      "Clear all should be undoable",
+    ).toBeGreaterThan(200);
+  });
+
+  test("Fit: brings a zoomed-in image back inside the frame", async ({
+    page,
+  }) => {
+    const editor = await openEditorWithImage(page);
+    const zoomLabel = editor.locator("span").filter({ hasText: /^\d+%$/ });
+
+    for (let i = 0; i < 4; i++) {
+      await editor.getByRole("button", { name: "Zoom in" }).click();
+    }
+    await waitForNextFrame(page);
+    expect(
+      Number((await zoomLabel.innerText()).replace("%", "")),
+    ).toBeGreaterThan(100);
+
+    // Zoomed past the frame, the stage overflows it.
+    const frame = editor.locator("[class*='canvasWrap']");
+    const overflowing = await frame.evaluate(
+      (el) => el.scrollWidth > el.clientWidth + 1,
+    );
+    expect(overflowing, "zooming in should overflow the frame").toBe(true);
+
+    await editor.getByRole("button", { name: "Fit" }).click();
+    await waitForNextFrame(page);
+
+    expect(
+      Number((await zoomLabel.innerText()).replace("%", "")),
+    ).toBeLessThanOrEqual(100);
+    const fits = await frame.evaluate(
+      (el) => el.scrollWidth <= el.clientWidth + 1,
+    );
+    expect(fits, "Fit should bring the image back inside the frame").toBe(true);
   });
 });

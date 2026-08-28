@@ -1,9 +1,12 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { Avatar } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/Toast";
-import { IconExternal, IconTrash } from "@/components/ui/Icon";
+import { IconClose, IconEdit, IconExternal, IconTrash } from "@/components/ui/Icon";
+import { ScreenshotEditor } from "@/components/attachments/ScreenshotEditor";
+import { annotatedName } from "@/lib/uploadAttachment";
 import { formatBytes, renderKindFor, shortTypeLabel } from "@/lib/attachments";
 import { formatRelative } from "@/lib/format";
 
@@ -31,15 +34,28 @@ export function AttachmentGrid({
   currentUserId,
   isAdmin,
   compact = false,
+  annotateIssueId,
 }: {
   attachments: AttachmentView[];
   currentUserId: string;
   isAdmin: boolean;
   compact?: boolean;
+  /**
+   * Enables "Annotate" on image attachments, saving the marked-up copy to
+   * this issue. Opt-in per surface: only the issue's own Attachments panel
+   * passes it, so comment and project grids are untouched.
+   */
+  annotateIssueId?: string;
 }) {
   const router = useRouter();
   const { toast } = useToast();
   const [removing, setRemoving] = useState<string | null>(null);
+  const [preparing, setPreparing] = useState<string | null>(null);
+  const [annotating, setAnnotating] = useState<{
+    attachment: AttachmentView;
+    blob: Blob;
+  } | null>(null);
+  const [lightbox, setLightbox] = useState<AttachmentView | null>(null);
 
   const remove = useCallback(
     async (attachment: AttachmentView) => {
@@ -61,9 +77,70 @@ export function AttachmentGrid({
     [router, toast],
   );
 
+  /*
+   * Reopening an attachment is a fetch and nothing more: the bytes come back
+   * through the same authorized route that renders the thumbnail, and go
+   * into the same editor the Create form uses. Nothing here knows how images
+   * are stored.
+   */
+  const openAnnotator = useCallback(
+    async (attachment: AttachmentView) => {
+      setPreparing(attachment.id);
+      try {
+        const response = await fetch(`/api/attachments/${attachment.id}`);
+        if (!response.ok) throw new Error("That image could not be opened.");
+        setAnnotating({ attachment, blob: await response.blob() });
+      } catch (error) {
+        toast(
+          <>
+            {error instanceof Error
+              ? error.message
+              : "That image could not be opened."}
+          </>,
+        );
+      } finally {
+        setPreparing(null);
+      }
+    },
+    [toast],
+  );
+
+  /*
+   * Saved as a new attachment rather than over the old one. The original
+   * stays exactly where it was — the same rule the Create form follows, and
+   * the reason this needs no new storage or delete path.
+   */
+  const saveAnnotation = useCallback(
+    async (blob: Blob) => {
+      if (!annotating || !annotateIssueId) return;
+      const source = annotating.attachment;
+      setAnnotating(null);
+
+      const form = new FormData();
+      form.append("issueId", annotateIssueId);
+      form.append("file", blob, annotatedName(source.filename));
+
+      const response = await fetch("/api/attachments", {
+        method: "POST",
+        body: form,
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        toast(<>{payload.error ?? "The annotated copy could not be saved."}</>);
+        return;
+      }
+
+      toast(<>Saved annotated copy of {source.filename}</>);
+      router.refresh();
+    },
+    [annotating, annotateIssueId, router, toast],
+  );
+
   if (attachments.length === 0) return null;
 
   return (
+    <>
     <ul className="prio-attachments" data-compact={compact || undefined}>
       {attachments.map((attachment) => {
         const url = `/api/attachments/${attachment.id}`;
@@ -78,16 +155,15 @@ export function AttachmentGrid({
             data-busy={removing === attachment.id || undefined}
           >
             {kind === "image" ? (
-              <a
+              <button
+                type="button"
                 className="prio-attachment__preview"
-                href={url}
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label={`Open ${attachment.filename} in a new tab`}
+                onClick={() => setLightbox(attachment)}
+                aria-label={`Open ${attachment.filename}`}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={url} alt={attachment.filename} loading="lazy" />
-              </a>
+              </button>
             ) : kind === "video" ? (
               <video
                 className="prio-attachment__video"
@@ -127,6 +203,19 @@ export function AttachmentGrid({
               </span>
             </div>
 
+            {annotateIssueId && kind === "image" ? (
+              <button
+                type="button"
+                className="prio-attachment__annotate"
+                data-shifted={canRemove || undefined}
+                aria-label={`Annotate ${attachment.filename}`}
+                disabled={preparing === attachment.id}
+                onClick={() => void openAnnotator(attachment)}
+              >
+                <IconEdit size={13} />
+              </button>
+            ) : null}
+
             {canRemove ? (
               <button
                 type="button"
@@ -142,5 +231,89 @@ export function AttachmentGrid({
         );
       })}
     </ul>
+
+    {lightbox ? (
+      <Lightbox attachment={lightbox} onClose={() => setLightbox(null)} />
+    ) : null}
+
+    {annotating ? (
+      <ScreenshotEditor
+        open
+        source={annotating.blob}
+        onCancel={() => setAnnotating(null)}
+        onSave={(blob) => void saveAnnotation(blob)}
+      />
+    ) : null}
+    </>
+  );
+}
+
+/**
+ * Full-size image view.
+ *
+ * Escape closes it and focus is trapped to the close button while it is open,
+ * so it behaves like the rest of Prio's dialogs without pulling in the full
+ * dialog machinery for what is really just a picture.
+ */
+function Lightbox({
+  attachment,
+  onClose,
+}: {
+  attachment: AttachmentView;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = previous;
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      className="prio-lightbox"
+      role="dialog"
+      aria-modal="true"
+      aria-label={attachment.filename}
+      onClick={onClose}
+    >
+      <button
+        type="button"
+        className="prio-lightbox__close"
+        aria-label="Close"
+        autoFocus
+        onClick={onClose}
+      >
+        <IconClose size={16} />
+      </button>
+
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        className="prio-lightbox__image"
+        src={`/api/attachments/${attachment.id}`}
+        alt={attachment.filename}
+        onClick={(event) => event.stopPropagation()}
+      />
+
+      <div className="prio-lightbox__caption">
+        <Avatar
+          name={attachment.uploadedBy.name}
+          image={attachment.uploadedBy.image}
+          size="xs"
+        />
+        <span>{attachment.filename}</span>
+        <span className="prio-lightbox__size">
+          {formatBytes(attachment.byteSize)}
+        </span>
+      </div>
+    </div>
   );
 }

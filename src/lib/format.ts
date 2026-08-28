@@ -133,6 +133,20 @@ export function percent(part: number, total: number): number {
   return Math.round((part / total) * 100);
 }
 
+/**
+ * Width for a distribution bar.
+ *
+ * `percent` rounds, so a real but small share — one issue in four hundred —
+ * comes back as 0 and draws nothing at all. A bar of no width beside a count
+ * that says "1" reads as "none", which is the one thing the number next to it
+ * proves is false. Any non-zero count therefore keeps at least a sliver; a
+ * genuine zero still draws nothing.
+ */
+export function barWidth(part: number, total: number): string {
+  if (part <= 0 || total <= 0) return "0%";
+  return `max(2px, ${percent(part, total)}%)`;
+}
+
 /** Date input value (yyyy-mm-dd) in local time, for <input type="date">. */
 export function toDateInputValue(
   value: Date | string | null | undefined,

@@ -152,6 +152,13 @@
   --prio-chrome-text-strong: #ffffff;
   --prio-chrome-text-muted: #7f8ca6;
 
+  /* Toast — the panel inverts to near-white here, so the hairline and the
+     icon hues invert with it: a dark edge, and the deep green and red that
+     read on a light ground. Background and text follow the neutral flip. */
+  --prio-toast-border: rgba(19, 28, 43, 0.14);
+  --prio-toast-success: #0b6c4a;
+  --prio-toast-danger: #a82227;
+
   /* --------------------------------------------------------- gradients */
   --prio-gradient-brand-soft: linear-gradient(
     135deg,
@@ -301,6 +308,13 @@
     --prio-chrome-text: #c8d3e5;
     --prio-chrome-text-strong: #ffffff;
     --prio-chrome-text-muted: #7f8ca6;
+
+    /* Toast — the panel inverts to near-white here, so the hairline and the
+       icon hues invert with it: a dark edge, and the deep green and red that
+       read on a light ground. Background and text follow the neutral flip. */
+    --prio-toast-border: rgba(19, 28, 43, 0.14);
+    --prio-toast-success: #0b6c4a;
+    --prio-toast-danger: #a82227;
 
     --prio-gradient-brand-soft: linear-gradient(
       135deg,

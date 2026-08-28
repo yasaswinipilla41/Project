@@ -9,8 +9,8 @@ import { useToast } from "@/components/ui/Toast";
 import {
   IconAdmin,
   IconBell,
+  IconActivity,
   IconBoard,
-  IconBug,
   IconChevronDown,
   IconChevronLeft,
   IconChevronRight,
@@ -130,8 +130,9 @@ export function Sidebar({
       excludeSuffix: "/board",
     },
     { href: "/issues", label: "Issues", Icon: IconIssues, prefix: true },
-    { href: "/bugs", label: "Bugs", Icon: IconBug, prefix: true },
     { href: "/my-work", label: "My Work", Icon: IconMyWork, prefix: true },
+    // §19 — the audit trail already lives at /activity; it simply had no way in.
+    { href: "/activity", label: "Activity", Icon: IconActivity, prefix: true },
     {
       href: "/notifications",
       label: "Notifications",

@@ -28,7 +28,7 @@ export const STATUS_LABEL: Record<IssueStatus, string> = {
   BACKLOG: "Backlog",
   TODO: "Todo",
   IN_PROGRESS: "In Progress",
-  IN_REVIEW: "In Review",
+  IN_REVIEW: "Ready for QA",
   DONE: "Done",
   CANCELLED: "Cancelled",
 };
@@ -151,21 +151,33 @@ export const SEVERITY_DESCRIPTION: Record<Severity, string> = {
 // -------------------------------------------------------------- issue type
 
 export const ISSUE_TYPES = [
+  "EPIC",
+  "FEATURE",
+  "STORY",
   "TASK",
   "BUG",
-  "STORY",
 ] as const satisfies readonly IssueType[];
 
 export const ISSUE_TYPE_LABEL: Record<IssueType, string> = {
+  EPIC: "Epic",
+  FEATURE: "Feature",
+  STORY: "Story",
   TASK: "Task",
   BUG: "Bug",
-  STORY: "Story",
 };
 
+/*
+ * Epic and Feature are flat types for now: they classify work, they do not
+ * nest it. Prio still allows exactly one level of sub-issues, and that model
+ * is deliberately untouched — an Epic cannot yet contain Features the way a
+ * hierarchy would. The wording below says only what is true today.
+ */
 export const ISSUE_TYPE_DESCRIPTION: Record<IssueType, string> = {
+  EPIC: "A large body of work that groups related delivery.",
+  FEATURE: "A distinct piece of functionality being delivered.",
+  STORY: "A user-facing capability described from the user's perspective.",
   TASK: "A unit of work to be completed.",
   BUG: "A defect with reproduction steps and expected vs actual behaviour.",
-  STORY: "A user-facing capability described from the user's perspective.",
 };
 
 export function isBug(type: IssueType): boolean {
