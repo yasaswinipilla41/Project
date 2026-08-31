@@ -1,0 +1,35 @@
+{
+  "//": [
+    "Editor-only project for the landing-page backup.",
+    "",
+    "These files are an inert archive (see RESTORE.md): the application never",
+    "imports them, and the root tsconfig.json excludes this folder on purpose,",
+    "so `tsc --noEmit` and the build are unaffected by anything here.",
+    "",
+    "Without a tsconfig of their own the editor still opens them, falls back to",
+    "an inferred project with no path mapping, and reports every `@/...` import",
+    "as unresolved — which in turn makes every callback parameter over an",
+    "imported constant an implicit `any`. That is noise about a resolved",
+    "question, not a defect in the archive.",
+    "",
+    "The two mappings below describe where these files resolve once restored,",
+    "which is the layout their imports are written against:",
+    "  @/components/brand/* -> the live app's own brand components. RESTORE.md",
+    "    is explicit that the PrioLogo copy kept here is for reference and must",
+    "    not be restored over the app's, so the editor is pointed at the app's.",
+    "  @/*                  -> this folder's own src, matching the `cp` steps",
+    "    in RESTORE.md that place these files under the application's src.",
+    "",
+    "No archived file is modified by this: MANIFEST.sha256 still verifies."
+  ],
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "paths": {
+      "@/components/brand/*": ["../src/components/brand/*"],
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts"],
+  "exclude": ["node_modules"]
+}
