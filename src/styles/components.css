@@ -451,6 +451,13 @@
 .prio-status[data-status="IN_REVIEW"] .prio-status__dot {
   background: var(--prio-status-review-dot);
 }
+.prio-status[data-status="IN_QA"] {
+  background: var(--prio-status-qa-bg);
+  color: var(--prio-status-qa-fg);
+}
+.prio-status[data-status="IN_QA"] .prio-status__dot {
+  background: var(--prio-status-qa-dot);
+}
 .prio-status[data-status="DONE"] {
   background: var(--prio-status-done-bg);
   color: var(--prio-status-done-fg);
@@ -895,6 +902,13 @@ a.prio-key:hover {
   padding: var(--prio-space-2) var(--prio-space-4);
 }
 
+/*
+ * A column heading that happens to sort. It is an anchor so sorting survives
+ * without JavaScript, but it must not read as one: the global `a:hover` rule
+ * underlines every link, which in a table of issue links made the headings
+ * look like one more row of them. Underline is refused here and the hover
+ * affordance is a heading's own — the text firms up, nothing more.
+ */
 .prio-table__sort {
   display: inline-flex;
   align-items: center;
@@ -903,10 +917,14 @@ a.prio-key:hover {
   font: inherit;
   letter-spacing: inherit;
   text-transform: inherit;
+  text-decoration: none;
+  cursor: pointer;
 }
 
-.prio-table__sort:hover {
+.prio-table__sort:hover,
+.prio-table__sort:focus-visible {
   color: var(--prio-text-primary);
+  text-decoration: none;
 }
 
 /* -------------------------------------------------------------- feedback */
@@ -1948,4 +1966,201 @@ a.prio-stat:focus-visible {
     padding: 0;
     justify-content: center;
   }
+}
+
+.prio-projectmembers__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--prio-space-3);
+  margin-bottom: var(--prio-space-3);
+}
+
+.prio-projectmembers__head .prio-issue__section-title {
+  margin-bottom: 0;
+}
+
+.prio-backlink {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: var(--prio-space-2);
+  font-size: var(--prio-text-xs);
+  font-weight: var(--prio-weight-medium);
+  color: var(--prio-text-muted);
+}
+
+.prio-backlink:hover {
+  color: var(--prio-text-primary);
+  text-decoration: none;
+}
+
+/* ------------------------------------------------------------ project nav */
+
+.prio-projectnav {
+  display: flex;
+  gap: var(--prio-space-1);
+  margin-bottom: var(--prio-space-5);
+  overflow-x: auto;
+  border-bottom: 1px solid var(--prio-border);
+}
+
+.prio-projectnav__tab {
+  flex-shrink: 0;
+  padding: var(--prio-space-2) var(--prio-space-3);
+  font-size: var(--prio-text-sm);
+  font-weight: var(--prio-weight-medium);
+  color: var(--prio-text-muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.prio-projectnav__tab:hover {
+  color: var(--prio-text-primary);
+  text-decoration: none;
+}
+
+.prio-projectnav__tab[data-active] {
+  color: var(--prio-primary-700);
+  border-bottom-color: var(--prio-primary-600);
+}
+
+/* -------------------------------------------------------------- calendar */
+
+.prio-calendar__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--prio-space-3);
+  margin-bottom: var(--prio-space-4);
+}
+
+.prio-calendar__month {
+  margin: 0;
+  font-size: var(--prio-text-md);
+  font-weight: var(--prio-weight-semibold);
+}
+
+.prio-calendar {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--prio-border);
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-md);
+  overflow: hidden;
+}
+
+.prio-calendar__weekday {
+  padding: var(--prio-space-2);
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-semibold);
+  letter-spacing: var(--prio-tracking-caps);
+  text-transform: uppercase;
+  color: var(--prio-text-muted);
+  background: var(--prio-bg-subtle);
+  text-align: center;
+}
+
+.prio-calendar__cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-height: 96px;
+  padding: var(--prio-space-2);
+  background: var(--prio-bg-surface);
+}
+
+.prio-calendar__cell[data-empty] {
+  background: var(--prio-bg-subtle);
+}
+
+.prio-calendar__cell[data-today] {
+  box-shadow: inset 0 0 0 2px var(--prio-primary-600);
+}
+
+.prio-calendar__day {
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-semibold);
+  color: var(--prio-text-muted);
+}
+
+.prio-calendar__issue {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 2px 4px;
+  font-size: var(--prio-text-2xs);
+  color: var(--prio-text-primary);
+  background: var(--prio-bg-subtle);
+  border-radius: var(--prio-radius-sm);
+}
+
+.prio-calendar__issue:hover {
+  background: var(--prio-bg-hover);
+  text-decoration: none;
+}
+
+.prio-calendar__issue[data-done] {
+  opacity: 0.6;
+}
+
+/* ---------------------------------------------------- project access reqs */
+
+.prio-accessreq {
+  margin-top: var(--prio-space-4);
+  padding-top: var(--prio-space-3);
+  border-top: 1px solid var(--prio-border);
+}
+
+.prio-accessreq__title {
+  margin: 0 0 var(--prio-space-2);
+  font-size: var(--prio-text-xs);
+  font-weight: var(--prio-weight-semibold);
+  letter-spacing: var(--prio-tracking-caps);
+  text-transform: uppercase;
+  color: var(--prio-text-muted);
+}
+
+.prio-accessreq__row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--prio-space-3);
+  padding: var(--prio-space-2) 0;
+}
+
+.prio-accessreq__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.prio-accessreq__who {
+  font-size: var(--prio-text-sm);
+  font-weight: var(--prio-weight-semibold);
+  color: var(--prio-text-primary);
+}
+
+.prio-accessreq__meta,
+.prio-accessreq__note {
+  font-size: var(--prio-text-2xs);
+  color: var(--prio-text-muted);
+}
+
+.prio-accessreq__note {
+  font-style: italic;
+}
+
+.prio-accessreq__actions {
+  display: flex;
+  gap: var(--prio-space-2);
+  flex-shrink: 0;
+}
+
+.prio-memberrow[data-selected] {
+  background: var(--prio-bg-subtle);
+  border-radius: var(--prio-radius-md);
 }

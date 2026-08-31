@@ -768,6 +768,87 @@
   opacity: 0.6;
 }
 
+/* ---------------------------------------------------- comment actions */
+/*
+ * Reply, Like and Add reaction, sitting under a comment's body. Quiet by
+ * default — they are available on every comment, so they must not compete
+ * with the comment itself for attention.
+ */
+.prio-comment__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--prio-space-2);
+  margin-top: var(--prio-space-3);
+}
+
+.prio-comment__action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 var(--prio-space-2);
+  border: 1px solid transparent;
+  border-radius: var(--prio-radius-pill);
+  background: transparent;
+  color: var(--prio-text-muted);
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-medium);
+  cursor: pointer;
+}
+
+.prio-comment__action:hover {
+  background: var(--prio-bg-subtle);
+  color: var(--prio-text-primary);
+}
+
+/* Your own reaction, so you can tell at a glance which ones are yours. */
+.prio-comment__action[data-active] {
+  border-color: var(--prio-primary-400);
+  background: var(--prio-primary-50);
+  color: var(--prio-primary-700);
+}
+
+.prio-comment__action:focus-visible {
+  outline: 2px solid var(--prio-border-focus);
+  outline-offset: 1px;
+}
+
+.prio-comment__react {
+  position: relative;
+  display: inline-flex;
+}
+
+.prio-comment__react-menu {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  z-index: var(--prio-z-dropdown);
+  display: flex;
+  gap: 2px;
+  padding: 4px;
+  background: var(--prio-bg-surface-raised);
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-md);
+  box-shadow: var(--prio-shadow-lg);
+}
+
+.prio-comment__react-option {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--prio-radius-sm);
+  background: transparent;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.prio-comment__react-option:hover {
+  background: var(--prio-bg-subtle);
+}
+
 /* ------------------------------------------------------------ lightbox */
 
 .prio-lightbox {

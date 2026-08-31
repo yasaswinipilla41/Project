@@ -63,6 +63,9 @@
   --prio-amber-600: #f7b558;
   --prio-amber-700: #ffd79a;
 
+  --prio-teal-50: #082a27;
+  --prio-teal-500: #2fb3a4;
+  --prio-teal-700: #86ded3;
   --prio-green-50: #0d2620;
   --prio-green-100: #12352b;
   --prio-green-500: #2bbd88;
@@ -227,7 +230,10 @@
     --prio-amber-600: #f7b558;
     --prio-amber-700: #ffd79a;
 
-    --prio-green-50: #0d2620;
+    --prio-teal-50: #082a27;
+  --prio-teal-500: #2fb3a4;
+  --prio-teal-700: #86ded3;
+  --prio-green-50: #0d2620;
     --prio-green-100: #12352b;
     --prio-green-500: #2bbd88;
     --prio-green-600: #45ce9c;

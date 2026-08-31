@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { UserAdmin } from "@/components/admin/UserAdmin";
+import { TeamAdmin } from "@/components/admin/TeamAdmin";
 import { Stat } from "@/components/ui/primitives";
 import { IconAdmin, IconBug, IconIssues, IconUsers } from "@/components/ui/Icon";
 import { CLOSED_STATUSES, OPEN_STATUSES } from "@/lib/domain";
@@ -22,6 +23,7 @@ export default async function AdminPage() {
   const [
     users,
     projects,
+    teams,
     totalIssues,
     openIssues,
     completedIssues,
@@ -53,6 +55,29 @@ export default async function AdminPage() {
         createdAt: true,
         createdBy: { select: { name: true } },
         _count: { select: { members: true, issues: true } },
+      },
+    }),
+    prisma.team.findMany({
+      orderBy: { name: "asc" },
+      select: {
+        id: true,
+        slug: true,
+        name: true,
+        description: true,
+        members: {
+          orderBy: { createdAt: "asc" },
+          select: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                image: true,
+                jobTitle: true,
+              },
+            },
+          },
+        },
       },
     }),
     prisma.issue.count(),
@@ -134,6 +159,27 @@ export default async function AdminPage() {
             hint={`${openBugs} open · ${overdue} overdue overall`}
           />
         </div>
+      </div>
+
+      <div style={{ marginBottom: "var(--prio-space-6)" }}>
+        <TeamAdmin
+          teams={teams.map((team) => ({
+            id: team.id,
+            slug: team.slug,
+            name: team.name,
+            description: team.description,
+            members: team.members.map(({ user: member }) => member),
+          }))}
+          everyone={users
+            .filter((u) => u.isActive)
+            .map((u) => ({
+              id: u.id,
+              name: u.name,
+              email: u.email,
+              image: u.image,
+              jobTitle: u.jobTitle,
+            }))}
+        />
       </div>
 
       <div style={{ marginBottom: "var(--prio-space-6)" }}>

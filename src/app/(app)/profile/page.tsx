@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { ProfileForm } from "@/components/profile/ProfileForm";
-import { Avatar, Card, CardBody, Stat } from "@/components/ui/primitives";
+import { Avatar, Card, CardBody } from "@/components/ui/primitives";
 import { IconUser } from "@/components/ui/Icon";
-import { OPEN_STATUSES, ROLE_DESCRIPTION, ROLE_LABEL } from "@/lib/domain";
+import { ROLE_DESCRIPTION, ROLE_LABEL } from "@/lib/domain";
 import { formatDate } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
@@ -20,42 +19,19 @@ export const dynamic = "force-dynamic";
 export default async function ProfilePage() {
   const user = await requireUser();
 
-  const [profile, memberships, assignedOpen, reported, resolved] =
-    await Promise.all([
-      prisma.user.findUniqueOrThrow({
-        where: { id: user.id },
-        select: {
-          name: true,
-          email: true,
-          image: true,
-          jobTitle: true,
-          role: true,
-          isActive: true,
-          createdAt: true,
-          emailNotificationsEnabled: true,
-        },
-      }),
-      prisma.projectMember.findMany({
-        where: { userId: user.id },
-        select: {
-          createdAt: true,
-          project: {
-            select: {
-              id: true,
-              key: true,
-              name: true,
-              _count: { select: { issues: true } },
-            },
-          },
-        },
-        orderBy: { project: { name: "asc" } },
-      }),
-      prisma.issue.count({
-        where: { assigneeId: user.id, status: { in: [...OPEN_STATUSES] } },
-      }),
-      prisma.issue.count({ where: { reporterId: user.id } }),
-      prisma.issue.count({ where: { assigneeId: user.id, status: "DONE" } }),
-    ]);
+  const profile = await prisma.user.findUniqueOrThrow({
+    where: { id: user.id },
+    select: {
+      name: true,
+      email: true,
+      image: true,
+      jobTitle: true,
+      role: true,
+      isActive: true,
+      createdAt: true,
+      emailNotificationsEnabled: true,
+    },
+  });
 
   return (
     <>
@@ -118,32 +94,6 @@ export default async function ProfilePage() {
         </div>
 
         <div className="col-12 col-xl-8">
-          <div className="row g-3" style={{ marginBottom: "var(--prio-space-4)" }}>
-            <div className="col-4">
-              <Stat
-                label="Open work"
-                value={assignedOpen}
-                tone="brand"
-                hint="Assigned to me"
-              />
-            </div>
-            <div className="col-4">
-              <Stat
-                label="Completed"
-                value={resolved}
-                tone="success"
-                hint="Marked Done"
-              />
-            </div>
-            <div className="col-4">
-              <Stat
-                label="Reported"
-                value={reported}
-                hint="Issues and bugs I raised"
-              />
-            </div>
-          </div>
-
           <Card className="prio-issue__section">
             <CardBody>
               <h2 className="prio-issue__section-title">Profile settings</h2>
@@ -155,41 +105,6 @@ export default async function ProfilePage() {
             </CardBody>
           </Card>
 
-          <Card className="prio-issue__section">
-            <CardBody>
-              <h2 className="prio-issue__section-title">
-                My projects
-                <span className="prio-text-muted">{memberships.length}</span>
-              </h2>
-
-              {memberships.length === 0 ? (
-                <p className="prio-text-muted">
-                  You are not a member of any project yet. Ask an administrator
-                  for access.
-                </p>
-              ) : (
-                memberships.map(({ project, createdAt }) => (
-                  <Link
-                    key={project.id}
-                    href={`/projects/${project.key.toLowerCase()}`}
-                    className="prio-relatedrow"
-                  >
-                    <span className="prio-project-chip" aria-hidden>
-                      {project.key.slice(0, 2)}
-                    </span>
-                    <span className="prio-relatedrow__title">{project.name}</span>
-                    <span className="prio-key">{project.key}</span>
-                    <span className="prio-text-muted">
-                      {project._count.issues} issues
-                    </span>
-                    <span className="prio-text-muted prio-searchresults__project">
-                      joined {formatDate(createdAt)}
-                    </span>
-                  </Link>
-                ))
-              )}
-            </CardBody>
-          </Card>
         </div>
       </div>
     </>

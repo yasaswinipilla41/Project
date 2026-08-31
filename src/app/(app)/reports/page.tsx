@@ -284,7 +284,7 @@ export default async function ReportsPage() {
         </div>
         <div className="col-6 col-xl-3">
           <Stat
-            label="In review"
+            label="Ready for QA"
             value={statusCount("IN_REVIEW")}
             hint="Awaiting sign-off"
           />

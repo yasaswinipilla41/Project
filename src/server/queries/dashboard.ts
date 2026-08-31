@@ -94,6 +94,8 @@ export interface DashboardTeammate {
   isActive: boolean;
   /** Open issues assigned to them, within the projects the viewer can see. */
   openInScope: number;
+  /** The viewer themselves, so the list can say so rather than omit them. */
+  isYou: boolean;
 }
 
 /**
@@ -316,11 +318,33 @@ export async function loadDashboard(user: CurrentUser): Promise<DashboardData> {
       where: {
         ...scope,
         status: open,
+        /*
+         * "Needs attention" means someone has to do something, so every arm
+         * here is a real workflow state rather than a severity opinion:
+         * overdue, blocked or failed QA, and waiting on QA. `testResult`
+         * BLOCKED and FAILED are the values `TestResult` already carries —
+         * no new concept was invented to fill this section.
+         */
         OR: [
           { priority: { in: ["URGENT", "HIGH"] } },
           { severity: "CRITICAL" },
           { dueDate: { lt: w.now } },
+          { testResult: { in: ["BLOCKED", "FAILED"] } },
+          { status: "IN_REVIEW" },
         ],
+        /*
+         * An administrator is answering "what is stuck across the org", so
+         * theirs stays org-wide within their scope. For everyone else the
+         * question is "what is stuck for me" — a member cannot act on a
+         * teammate's overdue work, and listing it buries their own.
+         */
+        ...(isAdmin
+          ? {}
+          : {
+              AND: [
+                { OR: [{ assigneeId: user.id }, { reporterId: user.id }] },
+              ],
+            }),
       },
       select: ISSUE_SELECT,
       orderBy: [{ priority: "asc" }, { updatedAt: "desc" }],
@@ -458,14 +482,37 @@ export async function loadDashboard(user: CurrentUser): Promise<DashboardData> {
   const openInScopeById = new Map(
     openByAssigneeInScope.map((row) => [row.assigneeId as string, row._count._all]),
   );
-  const teamMembers: DashboardTeammate[] = teammateRows.map((person) => ({
-    id: person.id,
-    name: person.name,
-    image: person.image,
-    role: person.role,
-    isActive: person.isActive,
-    openInScope: openInScopeById.get(person.id) ?? 0,
-  }));
+  /*
+   * The viewer belongs on their own team. They are normally already in
+   * `teammateRows` through a membership row, but an administrator can reach a
+   * project without being a member of it — so they are added explicitly when
+   * missing rather than left looking absent from their own team.
+   */
+  const teamRows = teammateRows.some((person) => person.id === user.id)
+    ? teammateRows
+    : [
+        {
+          id: user.id,
+          name: user.name,
+          image: user.image,
+          role: user.role,
+          isActive: true,
+        },
+        ...teammateRows,
+      ];
+
+  const teamMembers: DashboardTeammate[] = teamRows
+    .map((person) => ({
+      id: person.id,
+      name: person.name,
+      image: person.image,
+      role: person.role,
+      isActive: person.isActive,
+      openInScope: openInScopeById.get(person.id) ?? 0,
+      isYou: person.id === user.id,
+    }))
+    // The viewer leads the list; everyone else keeps the query's name order.
+    .sort((a, b) => Number(b.isYou) - Number(a.isYou));
 
   const [org, newUsers] = isAdmin
     ? await Promise.all([loadOrgStats(), loadNewUsers()])

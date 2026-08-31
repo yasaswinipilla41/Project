@@ -21,7 +21,9 @@ export interface NotificationRow {
   readAt: Date | null;
   createdAt: Date;
   actor: { name: string; image: string | null } | null;
+  commentId: string | null;
   issue: { key: string; title: string; type: IssueType } | null;
+  project: { key: string; name: string } | null;
 }
 
 const TYPE_LABEL: Record<NotificationType, string> = {
@@ -32,6 +34,7 @@ const TYPE_LABEL: Record<NotificationType, string> = {
   INVITED: "Invitation",
   USER_JOINED: "New member",
   TEST_RESULT: "Test result",
+  PROJECT_ACCESS_REQUEST: "Access request",
 };
 
 export function NotificationList({
@@ -97,6 +100,18 @@ export function NotificationList({
       <ul className="prio-notifications">
         {notifications.map((n) => {
           const read = n.readAt !== null;
+          /* Whatever produced the notification is what it opens: an issue
+             (narrowed to a comment when there is one), or the project whose
+             access was asked about. Anything with neither — a deleted subject,
+             or an event that names no entity — stays plain text rather than
+             offering a link that leads nowhere. */
+          const target = n.issue
+            ? `/issues/${n.issue.key.toLowerCase()}${
+                n.commentId ? `#comment-${n.commentId}` : ""
+              }`
+            : n.project
+              ? `/projects/${n.project.key.toLowerCase()}`
+              : null;
           return (
             <li
               key={n.id}
@@ -113,15 +128,29 @@ export function NotificationList({
               />
 
               <div className="prio-notification__body">
-                <p className="prio-notification__text">
-                  <strong>{n.actor?.name ?? "Prio"}</strong> {n.message}
-                </p>
+                {/*
+                 * The whole message opens whatever produced it, not just the
+                 * issue chip below — a notification is a pointer at one thing,
+                 * so reading it and going to it should be the same gesture.
+                 * A comment notification lands on the comment itself rather
+                 * than the top of a long thread. When the subject has since
+                 * been deleted there is no target, and the text stays plain
+                 * rather than offering a link that would 404.
+                 */}
+                {target ? (
+                  <Link href={target} className="prio-notification__link">
+                    <p className="prio-notification__text">
+                      <strong>{n.actor?.name ?? "Prio"}</strong> {n.message}
+                    </p>
+                  </Link>
+                ) : (
+                  <p className="prio-notification__text">
+                    <strong>{n.actor?.name ?? "Prio"}</strong> {n.message}
+                  </p>
+                )}
 
-                {n.issue ? (
-                  <Link
-                    href={`/issues/${n.issue.key.toLowerCase()}`}
-                    className="prio-notification__issue"
-                  >
+                {n.issue && target ? (
+                  <Link href={target} className="prio-notification__issue">
                     <IssueTypeIcon type={n.issue.type} size={16} />
                     <IssueKey issueKey={n.issue.key} />
                     <span className="prio-truncate">{n.issue.title}</span>

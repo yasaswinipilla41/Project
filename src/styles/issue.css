@@ -367,6 +367,9 @@
 .prio-distribution__bar[data-status="IN_REVIEW"] {
   background: var(--prio-status-review-dot);
 }
+.prio-distribution__bar[data-status="IN_QA"] {
+  background: var(--prio-status-qa-dot);
+}
 .prio-distribution__bar[data-status="DONE"] {
   background: var(--prio-status-done-dot);
 }

@@ -9,6 +9,7 @@ import {
   AuthorizationError,
   NotFoundError,
 } from "@/lib/authz";
+import { DEFAULT_PROJECT_LABELS } from "@/lib/domain";
 import { requireUser } from "@/lib/session";
 import {
   createLabelSchema,
@@ -89,6 +90,11 @@ export async function createProject(
         createdById: user.id,
         members: {
           createMany: { data: memberIds.map((userId) => ({ userId })) },
+        },
+        // Every project starts with the same vocabulary; labels are
+        // project-scoped, so each gets its own rows.
+        labels: {
+          createMany: { data: DEFAULT_PROJECT_LABELS },
         },
       },
       select: { id: true, key: true },

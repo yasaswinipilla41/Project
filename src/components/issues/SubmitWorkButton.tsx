@@ -42,7 +42,12 @@ export function SubmitWorkButton({
 
   // Not their work, or already submitted / finished: nothing to offer.
   if (assigneeId !== currentUserId) return null;
-  if (status === "IN_REVIEW" || status === "DONE" || status === "CANCELLED") {
+  if (
+    status === "IN_REVIEW" ||
+    status === "IN_QA" ||
+    status === "DONE" ||
+    status === "CANCELLED"
+  ) {
     return null;
   }
 

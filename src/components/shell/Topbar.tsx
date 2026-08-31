@@ -137,7 +137,9 @@ export function Topbar({
     event.preventDefault();
     const q = query.trim();
     if (!q) return;
-    router.push(`/search?q=${encodeURIComponent(q)}`);
+    // Projects only. The Search page in the sidebar still searches
+    // everything; this entry point deliberately narrows it.
+    router.push(`/search?q=${encodeURIComponent(q)}&scope=projects`);
   }
 
   async function handleSignOut() {
@@ -173,10 +175,10 @@ export function Topbar({
             ref={searchInput}
             type="search"
             className="prio-input"
-            placeholder="Search issues, bugs and projects…"
+            placeholder="Search projects…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            aria-label="Search issues, bugs and projects"
+            aria-label="Search projects"
           />
           {/*
             * Decorative: the shortcut is announced through the field's own
@@ -288,6 +290,14 @@ export function Topbar({
               ? `Notifications, ${unreadNotifications} unread`
               : "Notifications"
           }
+          /* Icon-only controls say nothing on hover without this. `title` is
+             the tooltip the rest of Prio uses — the sidebar's collapsed
+             entries and the team row's count already rely on it. */
+          title={
+            unreadNotifications > 0
+              ? `Notifications — ${unreadNotifications} unread`
+              : "Notifications"
+          }
         >
           <IconBell />
           {unreadNotifications > 0 ? (
@@ -303,7 +313,8 @@ export function Topbar({
             <button
               type="button"
               className="prio-btn prio-btn--ghost prio-btn--icon prio-topbar__help-trigger"
-              aria-label="Help"
+              aria-label="About Prio"
+              title="About Prio"
               {...props}
             >
               <IconHelp />
@@ -336,6 +347,7 @@ export function Topbar({
               type="button"
               className="prio-btn prio-btn--ghost prio-topbar__account"
               aria-label="Account menu"
+              title="Account"
               {...props}
             >
               <Avatar name={user.name} image={user.image} size="md" />

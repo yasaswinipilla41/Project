@@ -18,7 +18,6 @@ import { ROLE_DESCRIPTION, ROLE_LABEL } from "@/lib/domain";
 import { formatRelative } from "@/lib/format";
 import {
   createUser,
-  resetUserPassword,
   setUserActive,
   setUserRole,
 } from "@/server/users";
@@ -56,7 +55,6 @@ export function UserAdmin({
   const router = useRouter();
   const { toast } = useToast();
   const [createOpen, setCreateOpen] = useState(false);
-  const [resetFor, setResetFor] = useState<AdminUserRow | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   async function changeRole(user: AdminUserRow, role: Role) {
@@ -199,10 +197,6 @@ export function UserAdmin({
                           Member
                         </MenuItem>
                         <MenuSeparator />
-                        <MenuItem onSelect={() => setResetFor(user)}>
-                          Reset password…
-                        </MenuItem>
-                        <MenuSeparator />
                         {user.isActive ? (
                           <MenuItem danger onSelect={() => changeActive(user, false)}>
                             Deactivate account
@@ -234,17 +228,6 @@ export function UserAdmin({
           onClose={() => setCreateOpen(false)}
           onCreated={() => {
             setCreateOpen(false);
-            router.refresh();
-          }}
-        />
-      ) : null}
-
-      {resetFor ? (
-        <ResetPasswordDialog
-          user={resetFor}
-          onClose={() => setResetFor(null)}
-          onDone={() => {
-            setResetFor(null);
             router.refresh();
           }}
         />
@@ -448,92 +431,6 @@ function CreateUserDialog({
             ) : null}
           </div>
         ) : null}
-      </form>
-    </Dialog>
-  );
-}
-
-/* ------------------------------------------------------ reset password */
-
-function ResetPasswordDialog({
-  user,
-  onClose,
-  onDone,
-}: {
-  user: AdminUserRow;
-  onClose: () => void;
-  onDone: () => void;
-}) {
-  const { toast } = useToast();
-  const [password, setPassword] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setSubmitting(true);
-    setError(null);
-
-    const result = await resetUserPassword({ userId: user.id, password });
-    setSubmitting(false);
-
-    if (!result.ok) {
-      setError(result.fieldErrors?.password ?? result.error);
-      return;
-    }
-
-    toast(`Password reset for ${user.name}. Their sessions were ended.`);
-    onDone();
-  }
-
-  return (
-    <Dialog
-      open
-      onClose={onClose}
-      size="sm"
-      busy={submitting}
-      title={`Reset password — ${user.name}`}
-      footer={
-        <>
-          <Button variant="ghost" onClick={onClose} disabled={submitting}>
-            Cancel
-          </Button>
-          <Button
-            variant="primary"
-            type="submit"
-            form="prio-reset-password"
-            loading={submitting}
-          >
-            Reset password
-          </Button>
-        </>
-      }
-    >
-      <form id="prio-reset-password" onSubmit={submit} noValidate>
-        <div className="prio-field">
-          <label className="prio-label" htmlFor="reset-password">
-            New password <span className="prio-label__required">*</span>
-          </label>
-          <input
-            id="reset-password"
-            type="text"
-            className="prio-input prio-mono"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            minLength={8}
-            autoComplete="off"
-            aria-invalid={error ? true : undefined}
-          />
-          {error ? (
-            <span className="prio-error" role="alert">
-              {error}
-            </span>
-          ) : null}
-          <span className="prio-hint">
-            Every existing session for this account will be ended.
-          </span>
-        </div>
       </form>
     </Dialog>
   );

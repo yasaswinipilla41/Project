@@ -560,7 +560,7 @@ export function WorkGrid({
       value: work.inProgress,
       href: `${mine}&status=IN_PROGRESS`,
     },
-    { label: "In review", value: work.review, href: `${mine}&status=IN_REVIEW` },
+    { label: "Ready for QA", value: work.review, href: `${mine}&status=IN_REVIEW` },
     { label: "Completed", value: work.completed, href: `${mine}&status=DONE` },
     {
       label: "Overdue",
@@ -635,6 +635,15 @@ export function WorkloadList({
  * clicking "Assignee: <name>" on the issue list already would — this is a
  * shortcut into data the viewer could already reach, not a new exposure.
  */
+/**
+ * The team roster.
+ *
+ * A row is not a link. It used to be one, pointing at the global issue list
+ * filtered by that person — which reads as a roster entry but navigates away
+ * from Home to a different page entirely. Opening a person now uses the member
+ * detail dialog that already exists for exactly this, so the context stays put
+ * and there is one way to look someone up rather than two.
+ */
 export function TeamMembers({
   members,
 }: {
@@ -645,12 +654,13 @@ export function TeamMembers({
     role: Role;
     isActive: boolean;
     openInScope: number;
+    isYou: boolean;
   }[];
 }) {
   if (members.length === 0) {
     return (
       <p className="prio-text-muted">
-        Nobody else shares a project with you yet.
+        Nobody shares a project with you yet.
       </p>
     );
   }
@@ -659,13 +669,15 @@ export function TeamMembers({
     <ul className="prio-team">
       {members.map((member) => (
         <li key={member.id}>
-          <Link
-            href={`/issues?assignee=${member.id}&resolution=open`}
-            className="prio-team__member"
-          >
+          <div className="prio-team__member">
             <Avatar name={member.name} image={member.image} size="md" />
             <span className="prio-team__info">
-              <span className="prio-team__name">{member.name}</span>
+              <span className="prio-team__name">
+                {member.name}
+                {member.isYou ? (
+                  <span className="prio-team__you"> (You)</span>
+                ) : null}
+              </span>
               <span className="prio-team__meta">
                 <RoleBadge role={member.role} />
                 {!member.isActive ? (
@@ -679,7 +691,11 @@ export function TeamMembers({
             >
               {member.openInScope}
             </span>
-          </Link>
+            <MemberDetailButton
+              memberId={member.id}
+              memberName={member.name}
+            />
+          </div>
         </li>
       ))}
     </ul>

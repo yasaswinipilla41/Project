@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   useMemo,
@@ -23,12 +24,9 @@ import { useToast } from "@/components/ui/Toast";
 import {
   IconCheck,
   IconChevronDown,
-  IconMore,
-  IconPlus,
   IconReports,
   IconSearch,
 } from "@/components/ui/Icon";
-import { CreateIssueDialog } from "@/components/create/CreateIssueDialog";
 import { IssueRowActions } from "@/components/issues/IssueRowActions";
 import { BOARD_STATUSES } from "@/lib/board";
 import { PRIORITIES, PRIORITY_LABEL, STATUS_LABEL } from "@/lib/domain";
@@ -92,8 +90,9 @@ const UNASSIGNED = "unassigned";
  * Grouping choices actually backed by real Prio data. "Project" and "Epic"
  * are deliberately absent: this board is already scoped to one project (every
  * issue on it shares the same `projectId`, so grouping by project would
- * produce a single group), and Epics are not part of Prio's data model — see
- * the disabled "Epic" filter button below, which documents the same gap.
+ * produce a single group), and while EPIC is now a real issue type, nothing
+ * links an issue to an epic — they are flat types, so there is no grouping to
+ * derive.
  */
 type GroupBy = "NONE" | "ASSIGNEE" | "PRIORITY" | "LABEL";
 
@@ -148,13 +147,13 @@ function ToolbarMenu({
       trigger={(props) => (
         <button
           type="button"
-          className="prio-btn prio-btn--secondary"
+          className="prio-filterchip"
           data-active={Boolean(count) || undefined}
           {...props}
         >
           {label}
-          {count ? ` (${count})` : ""}
-          <IconChevronDown size={16} />
+          {count ? <span className="prio-filterchip__count">{count}</span> : null}
+          <IconChevronDown size={12} />
         </button>
       )}
     >
@@ -190,10 +189,20 @@ export function FlowBoard({
   const [priorityFilter, setPriorityFilter] = useState<string[]>([]);
   const [labelFilter, setLabelFilter] = useState<string[]>([]);
   const [groupBy, setGroupBy] = useState<GroupBy>("NONE");
-  const [createOpen, setCreateOpen] = useState(false);
 
   const [dragIssueId, setDragIssueId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<IssueStatus | null>(null);
+  /* Ids ticked for a bulk move. Kept as a Set because every card asks "am I
+     in this?" on each render. */
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  function toggleSelected(issueId: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(issueId)) next.add(issueId);
+      return next;
+    });
+  }
 
   const baseIssues = useMemo(
     () => columns.flatMap((column) => column.issues),
@@ -304,14 +313,36 @@ export function FlowBoard({
     ];
   }, [groupBy, visible, members, labels]);
 
-  function move(issueId: string, status: IssueStatus) {
-    const issue = issues.find((i) => i.id === issueId);
-    if (!issue || issue.status === status) return;
+  /*
+   * Moving one card and moving a selection are the same code path — a single
+   * drag is just a move of one. Each issue is sent on its own request because
+   * `updateIssue` is what writes the activity entry and the notification for
+   * that issue; batching them into one call would collapse several distinct
+   * events into one and lose that history.
+   */
+  function move(issueIds: string[], status: IssueStatus) {
+    const moving = issueIds.filter((id) => {
+      const issue = issues.find((i) => i.id === id);
+      return issue && issue.status !== status;
+    });
+    if (moving.length === 0) return;
 
     startTransition(async () => {
-      moveIssue({ issueId, status });
-      const result = await updateIssue({ issueId, status });
-      if (!result.ok) toast(result.error, "error");
+      for (const issueId of moving) moveIssue({ issueId, status });
+
+      const results = await Promise.all(
+        moving.map((issueId) => updateIssue({ issueId, status })),
+      );
+      const errors = results.flatMap((r) => (r.ok ? [] : [r.error]));
+      if (errors.length > 0) {
+        toast(
+          errors.length === 1
+            ? errors[0]
+            : `${errors.length} issues could not be moved.`,
+          "error",
+        );
+      }
+      setSelected(new Set());
       router.refresh();
     });
   }
@@ -321,7 +352,13 @@ export function FlowBoard({
     setDropTarget(null);
     const issueId = event.dataTransfer.getData("text/plain") || dragIssueId;
     setDragIssueId(null);
-    if (issueId) move(issueId, status);
+    if (!issueId) return;
+
+    /* Dragging a card that is part of the selection moves the whole
+       selection; dragging one outside it moves only that card, which is what
+       makes an accidental tick harmless. */
+    const ids = selected.has(issueId) ? [...selected] : [issueId];
+    move(ids, status);
   }
 
   return (
@@ -384,7 +421,7 @@ export function FlowBoard({
               trigger={(props) => (
                 <button
                   type="button"
-                  className="prio-btn prio-btn--secondary prio-board__assignee-trigger"
+                  className="prio-filterchip prio-board__assignee-trigger"
                   data-active={assigneeFilter.length > 0 || undefined}
                   {...props}
                 >
@@ -392,7 +429,12 @@ export function FlowBoard({
                   {members.length > 0 ? (
                     <AvatarStack people={members} max={2} />
                   ) : null}
-                  <IconChevronDown size={16} />
+                  {assigneeFilter.length > 0 ? (
+                    <span className="prio-filterchip__count">
+                      {assigneeFilter.length}
+                    </span>
+                  ) : null}
+                  <IconChevronDown size={12} />
                 </button>
               )}
             >
@@ -417,16 +459,6 @@ export function FlowBoard({
                 </MenuItem>
               ))}
             </Menu>
-
-            <button
-              type="button"
-              className="prio-btn prio-btn--secondary"
-              disabled
-              title="Epics aren't part of Prio's data model yet"
-            >
-              Epic
-              <IconChevronDown size={16} />
-            </button>
 
             <ToolbarMenu label="Priority" count={priorityFilter.length}>
               {PRIORITIES.map((priority) => (
@@ -505,6 +537,24 @@ export function FlowBoard({
         </div>
       </div>
 
+      {/* Only present while something is ticked, so the board is unchanged
+          for anyone not moving things in bulk. */}
+      {selected.size > 0 ? (
+        <div className="prio-board__selection" role="status">
+          <span>
+            {selected.size} issue{selected.size === 1 ? "" : "s"} selected —
+            drag any one of them to move them together
+          </span>
+          <button
+            type="button"
+            className="prio-btn prio-btn--ghost prio-btn--sm"
+            onClick={() => setSelected(new Set())}
+          >
+            Clear selection
+          </button>
+        </div>
+      ) : null}
+
       <div className="prio-board__columns prio-scroll">
         {groups.map((group) => {
           const status = group.status;
@@ -543,26 +593,6 @@ export function FlowBoard({
                   <span className="prio-board__column-count">{group.issues.length}</span>
                 </h2>
 
-                {status === "TODO" ? (
-                  <button
-                    type="button"
-                    className="prio-btn prio-btn--ghost prio-btn--icon prio-btn--sm"
-                    aria-label="Add issue"
-                    onClick={() => setCreateOpen(true)}
-                  >
-                    <IconPlus size={16} />
-                  </button>
-                ) : null}
-
-                {status === "IN_PROGRESS" ? (
-                  <button
-                    type="button"
-                    className="prio-btn prio-btn--ghost prio-btn--icon prio-btn--sm"
-                    aria-label="Column options"
-                  >
-                    <IconMore size={16} />
-                  </button>
-                ) : null}
               </div>
 
               <div className="prio-board__column-body prio-scroll">
@@ -579,7 +609,14 @@ export function FlowBoard({
                       showStatus={status === null}
                       currentUserId={currentUserId}
                       isAdmin={isAdmin}
-                      dragging={dragIssueId === issue.id}
+                      dragging={
+                        dragIssueId === issue.id ||
+                        (dragIssueId !== null &&
+                          selected.has(issue.id) &&
+                          selected.has(dragIssueId))
+                      }
+                      selected={selected.has(issue.id)}
+                      onToggleSelected={() => toggleSelected(issue.id)}
                       onDragStart={(event) => {
                         setDragIssueId(issue.id);
                         event.dataTransfer.setData("text/plain", issue.id);
@@ -593,32 +630,10 @@ export function FlowBoard({
                   ))
                 )}
               </div>
-
-              {status === "TODO" ? (
-                <div className="prio-board__column-footer">
-                  <button
-                    type="button"
-                    className="prio-board__add-issue"
-                    onClick={() => setCreateOpen(true)}
-                  >
-                    <IconPlus size={16} />
-                    Add issue
-                  </button>
-                </div>
-              ) : null}
             </div>
           );
         })}
       </div>
-
-      {createOpen ? (
-        <CreateIssueDialog
-          open
-          onClose={() => setCreateOpen(false)}
-          defaultProjectId={project.id}
-          defaultType="TASK"
-        />
-      ) : null}
     </div>
   );
 }
@@ -630,6 +645,8 @@ function BoardCard({
   currentUserId,
   isAdmin,
   dragging,
+  selected,
+  onToggleSelected,
   onDragStart,
   onDragEnd,
 }: {
@@ -642,32 +659,52 @@ function BoardCard({
   currentUserId: string;
   isAdmin: boolean;
   dragging: boolean;
+  selected: boolean;
+  onToggleSelected: () => void;
   onDragStart: (event: DragEvent<HTMLDivElement>) => void;
   onDragEnd: () => void;
 }) {
-  const router = useRouter();
   const href = `/issues/${issue.key.toLowerCase()}`;
   const cancelled = issue.status === "CANCELLED";
 
+  /*
+   * The whole card used to be a link. On a board whose primary interaction is
+   * dragging that is the wrong default: a drag that ends near where it started
+   * still produces a click, so moving a card between columns could navigate
+   * away from the board instead. Opening an issue is now something you aim at
+   * — the key below, or "Open / edit" in the card's own menu — and the card
+   * surface is left to do the one job it exists for.
+   */
   return (
     <div
       className="prio-board__card"
-      role="link"
-      tabIndex={0}
       draggable={draggable}
       data-dragging={dragging || undefined}
+      data-selected={selected || undefined}
       data-cancelled={cancelled || undefined}
       onDragStart={draggable ? onDragStart : undefined}
       onDragEnd={draggable ? onDragEnd : undefined}
-      onClick={() => router.push(href)}
-      onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          router.push(href);
-        }
-      }}
     >
       <div className="prio-board__card-top">
+        {/* Ticking cards is how several move at once. `draggable={false}`
+            and the stopped propagation are the same guards the card menu
+            below uses: without them, reaching for the box starts a drag. */}
+        {draggable ? (
+          <label
+            className="prio-board__card-select"
+            draggable={false}
+            onClick={(event) => event.stopPropagation()}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <input
+              type="checkbox"
+              checked={selected}
+              onChange={onToggleSelected}
+              aria-label={`Select ${issue.key}`}
+            />
+          </label>
+        ) : null}
+
         <p className="prio-board__card-title">{issue.title}</p>
 
         {/*
@@ -705,10 +742,17 @@ function BoardCard({
       ) : null}
 
       <div className="prio-board__card-footer">
-        <span className="prio-board__card-key">
+        {/* `draggable={false}` stops a drag starting here from being taken
+            as a link drag, the same guard the card menu above uses. */}
+        <Link
+          href={href}
+          className="prio-board__card-key"
+          draggable={false}
+          onClick={(event) => event.stopPropagation()}
+        >
           <IssueTypeIcon type={issue.type} size={14} />
           <IssueKey issueKey={issue.key} />
-        </span>
+        </Link>
 
         {showStatus ? <StatusPill status={issue.status} /> : null}
 

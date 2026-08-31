@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { hashPassword } from "@better-auth/utils/password";
+import { hashPassword, verifyPassword } from "@better-auth/utils/password";
 import { createLocalAccountIssuer } from "@better-auth/core/db";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
@@ -320,6 +320,92 @@ export async function getMemberDetail(
       return { ok: false, error: "That member no longer exists." };
     }
     return { ok: true, data: detail };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/* ------------------------------------------------- change own password */
+
+const changePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1, "Enter your current password."),
+    newPassword: z.string().min(8, "Use at least 8 characters.").max(128),
+    confirmPassword: z.string(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.newPassword !== value.confirmPassword) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["confirmPassword"],
+        message: "Passwords do not match.",
+      });
+    }
+    if (value.newPassword === value.currentPassword) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["newPassword"],
+        message: "Choose a password you are not already using.",
+      });
+    }
+  });
+
+/**
+ * Lets someone change their own password.
+ *
+ * Deliberately not `resetUserPassword` with the caller's own id: that action
+ * is an administrator's override and asks for no current password, which is
+ * exactly the check a self-service change must not skip. Knowing the existing
+ * password is what makes this safe on a session someone left open.
+ *
+ * Same hashing as every other password this application writes, and neither
+ * the old nor the new one is returned, logged, or put in an error message.
+ */
+export async function changeOwnPassword(
+  raw: unknown,
+): Promise<UserActionResult> {
+  try {
+    const user = await requireUser();
+
+    const parsed = changePasswordSchema.safeParse(raw);
+    if (!parsed.success) {
+      return {
+        ok: false,
+        error: "Please correct the highlighted fields.",
+        fieldErrors: fieldErrors(parsed.error),
+      };
+    }
+
+    const account = await prisma.account.findFirst({
+      where: { userId: user.id, providerId: "credential" },
+      select: { id: true, password: true },
+    });
+
+    if (!account?.password) {
+      return {
+        ok: false,
+        error: "This account does not sign in with a password.",
+      };
+    }
+
+    const matches = await verifyPassword(
+      account.password,
+      parsed.data.currentPassword,
+    );
+    if (!matches) {
+      return {
+        ok: false,
+        error: "That current password is not correct.",
+        fieldErrors: { currentPassword: "Incorrect password." },
+      };
+    }
+
+    await prisma.account.update({
+      where: { id: account.id },
+      data: { password: await hashPassword(parsed.data.newPassword) },
+    });
+
+    return { ok: true, data: undefined };
   } catch (error) {
     return failure(error);
   }

@@ -534,20 +534,26 @@ test.describe("Profile", () => {
     ).toBeVisible();
     await expect(page.getByText("admin@symbiosystech.com")).toBeVisible();
 
-    const title = page.getByLabel("Job title");
-    const original = await title.inputValue();
+    /* The fields moved into an Edit dialog: the page now shows them read-only
+       so they cannot be changed by accident. The behaviour under test is the
+       same — change the job title, see it saved, put it back. */
+    await page.getByRole("button", { name: "Edit" }).click();
+    let dialog = page.getByRole("dialog");
+    const original = await dialog.getByLabel("Job title").inputValue();
 
-    await title.fill("Engineering Manager (verified)");
-    await page.getByRole("button", { name: "Save profile" }).click();
+    await dialog.getByLabel("Job title").fill("Engineering Manager (verified)");
+    await dialog.getByRole("button", { name: "Save" }).click();
     await expect(page.locator(".prio-toast")).toContainText("Profile updated");
 
     await page.reload();
-    await expect(page.getByLabel("Job title")).toHaveValue(
+    await expect(page.locator("main")).toContainText(
       "Engineering Manager (verified)",
     );
 
-    await page.getByLabel("Job title").fill(original);
-    await page.getByRole("button", { name: "Save profile" }).click();
+    await page.getByRole("button", { name: "Edit" }).click();
+    dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Job title").fill(original);
+    await dialog.getByRole("button", { name: "Save" }).click();
     await expect(page.locator(".prio-toast")).toContainText("Profile updated");
   });
 });

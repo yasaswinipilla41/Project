@@ -20,6 +20,7 @@ export const ISSUE_STATUSES = [
   "TODO",
   "IN_PROGRESS",
   "IN_REVIEW",
+  "IN_QA",
   "DONE",
   "CANCELLED",
 ] as const satisfies readonly IssueStatus[];
@@ -29,6 +30,7 @@ export const STATUS_LABEL: Record<IssueStatus, string> = {
   TODO: "Todo",
   IN_PROGRESS: "In Progress",
   IN_REVIEW: "Ready for QA",
+  IN_QA: "In QA",
   DONE: "Done",
   CANCELLED: "Cancelled",
 };
@@ -37,11 +39,14 @@ export const STATUS_LABEL: Record<IssueStatus, string> = {
 export const CLOSED_STATUSES = ["DONE", "CANCELLED"] as const satisfies
   readonly IssueStatus[];
 
+/* IN_QA is open work: it is being tested, which is not the same as finished.
+   Only DONE and CANCELLED close an issue. */
 export const OPEN_STATUSES = [
   "BACKLOG",
   "TODO",
   "IN_PROGRESS",
   "IN_REVIEW",
+  "IN_QA",
 ] as const satisfies readonly IssueStatus[];
 
 export function isClosedStatus(status: IssueStatus): boolean {
@@ -149,6 +154,31 @@ export const SEVERITY_DESCRIPTION: Record<Severity, string> = {
 };
 
 // -------------------------------------------------------------- issue type
+
+/**
+ * The labels every project starts with.
+ *
+ * Labels are project-scoped — `@@unique([projectId, name])` — so these are not
+ * a global vocabulary but a set created per project. Names are lower case
+ * because that is what the existing labels already use: adding "Backend"
+ * beside an existing "backend" would satisfy the unique constraint and leave
+ * the project holding both, which is the duplication this is meant to avoid.
+ */
+export const DEFAULT_PROJECT_LABELS: { name: string; color: string }[] = [
+  { name: "frontend", color: "#3B82F6" },
+  { name: "backend", color: "#3B82F6" },
+  { name: "qa", color: "#0D9488" },
+  { name: "auth", color: "#E5484D" },
+  { name: "api", color: "#8B5CF6" },
+  { name: "performance", color: "#F0961F" },
+  { name: "regression", color: "#0D9488" },
+  { name: "onboarding", color: "#14A06D" },
+  { name: "access", color: "#6B7C98" },
+  { name: "reporting", color: "#8B5CF6" },
+  { name: "content", color: "#8B5CF6" },
+  { name: "seo", color: "#14A06D" },
+  { name: "accessibility", color: "#F0961F" },
+];
 
 export const ISSUE_TYPES = [
   "EPIC",

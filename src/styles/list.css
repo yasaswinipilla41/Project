@@ -342,6 +342,16 @@
   font-weight: var(--prio-weight-semibold);
 }
 
+.prio-notification__link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
+.prio-notification__link:hover .prio-notification__text {
+  text-decoration: underline;
+}
+
 .prio-notification__issue {
   display: inline-flex;
   align-items: center;
@@ -512,4 +522,201 @@
 
 .prio-table tbody tr[data-mine="true"]:hover {
   background: var(--prio-secondary-50);
+}
+
+/* --------------------------------------------- My Work project work table */
+/*
+ * The same table shell the Issues list uses — `.prio-table` inside
+ * `.prio-table-wrap` — with two columns it does not have: an expand control
+ * and sub-issue progress. Widths are declared here rather than left to the
+ * browser so every column lines up down the whole table, which is the point
+ * of the layout.
+ */
+
+.prio-workpicker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--prio-space-2);
+}
+
+.prio-workpicker__option {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  max-width: 220px;
+  padding: var(--prio-space-2) var(--prio-space-3);
+  font-size: var(--prio-text-sm);
+  color: var(--prio-text-secondary);
+  background: var(--prio-bg-surface);
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-md);
+}
+
+.prio-workpicker__option:hover {
+  border-color: var(--prio-border-strong);
+  color: var(--prio-text-primary);
+  text-decoration: none;
+}
+
+.prio-workpicker__option[data-active] {
+  color: var(--prio-primary-700);
+  border-color: var(--prio-primary-600);
+  background: var(--prio-bg-subtle);
+}
+
+.prio-workpicker__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-semibold);
+  color: var(--prio-text-muted);
+  background: var(--prio-bg-subtle);
+  border-radius: var(--prio-radius-sm);
+}
+
+.prio-col-expand {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.prio-col-progress {
+  width: 132px;
+  white-space: nowrap;
+}
+
+.prio-worktable__expand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  color: var(--prio-text-muted);
+  background: none;
+  border: none;
+  border-radius: var(--prio-radius-sm);
+  cursor: pointer;
+}
+
+.prio-worktable__expand:hover {
+  color: var(--prio-text-primary);
+  background: var(--prio-bg-subtle);
+}
+
+.prio-worktable__item {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  min-width: 0;
+}
+
+.prio-worktable__key {
+  flex-shrink: 0;
+}
+
+.prio-worktable__title {
+  min-width: 0;
+  color: var(--prio-text-primary);
+}
+
+.prio-worktable__title:hover {
+  color: var(--prio-text-link);
+}
+
+.prio-worktable__person {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  min-width: 0;
+}
+
+.prio-worktable__progress {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+}
+
+.prio-worktable__progress .prio-progress {
+  display: block;
+  width: 72px;
+  flex-shrink: 0;
+}
+
+.prio-worktable__pct {
+  font-size: var(--prio-text-2xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--prio-text-muted);
+}
+
+/* The expanded panel is a second row spanning the data columns, so opening one
+   never shifts the columns above or below it. */
+.prio-worktable__detailrow > td {
+  padding-top: 0;
+}
+
+.prio-worktable__detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-3);
+  padding: var(--prio-space-3);
+  margin-bottom: var(--prio-space-2);
+  background: var(--prio-bg-subtle);
+  border-radius: var(--prio-radius-md);
+}
+
+.prio-worktable__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--prio-space-5);
+  margin: 0;
+}
+
+.prio-worktable__facts dt {
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-semibold);
+  letter-spacing: var(--prio-tracking-caps);
+  text-transform: uppercase;
+  color: var(--prio-text-muted);
+}
+
+.prio-worktable__facts dd {
+  margin: 2px 0 0;
+  font-size: var(--prio-text-sm);
+  color: var(--prio-text-primary);
+}
+
+.prio-worktable__labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--prio-space-2);
+}
+
+.prio-worktable__desc {
+  margin: 0;
+  font-size: var(--prio-text-sm);
+  line-height: var(--prio-leading-relaxed);
+  color: var(--prio-text-secondary);
+  white-space: pre-wrap;
+}
+
+.prio-worktable__empty {
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-lg);
+}
+
+/*
+ * Narrow screens. `.prio-col-progress` sits on both the header and its cells,
+ * so hiding it takes the whole column and the rest stay aligned — hiding a
+ * header without its cells would shift every row below it by one column.
+ * Everything else survives by scrolling inside `.prio-table-wrap`, which is
+ * the wrapper's own overflow: the page itself never gains a scrollbar.
+ */
+@media (max-width: 900px) {
+  .prio-worktable .prio-col-progress {
+    display: none;
+  }
 }

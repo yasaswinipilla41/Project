@@ -296,7 +296,7 @@ test.describe("Search shortcut", () => {
     await page.goto("/");
 
     const search = page.getByRole("searchbox", {
-      name: "Search issues, bugs and projects",
+      name: "Search projects",
     });
     await expect(search).not.toBeFocused();
 
@@ -324,7 +324,7 @@ test.describe("Search shortcut", () => {
     expect(Number(before)).toBeGreaterThan(0.5);
 
     await page
-      .getByRole("searchbox", { name: "Search issues, bugs and projects" })
+      .getByRole("searchbox", { name: "Search projects" })
       .focus();
 
     await expect

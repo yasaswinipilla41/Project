@@ -41,11 +41,6 @@ export function ProjectActions({ project, issueCount }: ProjectActionsProps) {
 
   return (
     <>
-      <Button variant="secondary" onClick={() => setEditing(true)}>
-        <IconEdit />
-        Edit project
-      </Button>
-
       <Menu
         align="end"
         width={220}

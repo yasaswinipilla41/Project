@@ -135,6 +135,9 @@
 .prio-board__column[data-status="IN_REVIEW"] {
   border-top: 3px solid #3b82f6;
 }
+.prio-board__column[data-status="IN_QA"] {
+  border-top: 3px solid #0d9488;
+}
 .prio-board__column[data-status="DONE"] {
   border-top: 3px solid #10b981;
 }
@@ -183,8 +186,26 @@
   gap: var(--prio-space-2);
   flex: 1;
   min-height: 80px;
-  max-height: calc(100vh - 360px);
+  /*
+   * How much sits above a column before its cards begin: the top bar, the
+   * page header, the board toolbar, the column's own heading and the page
+   * padding. That total grows as the header wraps on narrower screens, so a
+   * single constant leaves the page a little taller than the viewport at some
+   * widths — the allowance is stepped instead, measured at each width rather
+   * than guessed.
+   */
+  max-height: calc(100vh - 370px);
   overflow-y: auto;
+  /*
+   * The column already scrolls its own cards, but without containment its
+   * overflow still counted towards the document's scrollable height: a column
+   * holding ninety cards made the page itself 9,000px tall, so the window grew
+   * a scrollbar onto roughly eight thousand pixels of empty space below the
+   * board. `contain: paint` draws the boundary the overflow should already
+   * have respected — the column keeps scrolling exactly as before, and the
+   * page stops pretending it has more to show.
+   */
+  contain: paint;
   padding: var(--prio-space-2) var(--prio-space-3) var(--prio-space-4);
 }
 
@@ -328,6 +349,18 @@
   color: var(--prio-text-secondary);
 }
 
+@media (max-width: 1366px) {
+  .prio-board__column-body {
+    max-height: calc(100vh - 415px);
+  }
+}
+
+@media (max-width: 900px) {
+  .prio-board__column-body {
+    max-height: calc(100vh - 455px);
+  }
+}
+
 @media (max-width: 640px) {
   .prio-board__toolbar {
     flex-direction: column;
@@ -341,4 +374,38 @@
   .prio-board__search {
     width: 100%;
   }
+}
+
+/* ------------------------------------------------- multi-select bulk move */
+
+.prio-board__selection {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--prio-space-3);
+  margin-bottom: var(--prio-space-3);
+  padding: var(--prio-space-2) var(--prio-space-3);
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-secondary);
+  background: var(--prio-bg-subtle);
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-md);
+}
+
+.prio-board__card-select {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin-right: var(--prio-space-2);
+  cursor: pointer;
+}
+
+.prio-board__card-select input {
+  cursor: pointer;
+  accent-color: var(--prio-primary-600);
+}
+
+.prio-board__card[data-selected="true"] {
+  border-color: var(--prio-primary-600);
+  box-shadow: 0 0 0 1px var(--prio-primary-600) inset;
 }

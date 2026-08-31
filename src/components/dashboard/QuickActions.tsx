@@ -1,34 +1,26 @@
 "use client";
 
-import { useState } from "react";
-import type { IssueType, Role } from "@prisma/client";
-import { Button, ButtonLink } from "@/components/ui/primitives";
-import { IconBug, IconPlus, IconProjects, IconUsers } from "@/components/ui/Icon";
-import { CreateIssueDialog } from "@/components/create/CreateIssueDialog";
+import type { Role } from "@prisma/client";
+import { ButtonLink } from "@/components/ui/primitives";
+import { IconProjects, IconUsers } from "@/components/ui/Icon";
 
 /**
  * Dashboard quick actions.
  *
- * Gated by the account's real role: administrative shortcuts are only rendered
- * for ADMIN. That is presentation only — the server still authorizes every one
- * of these routes and actions on its own. Hiding a button is a courtesy, never
- * the control.
+ * Create issue and Report bug used to lead this row. They were removed from
+ * Home on purpose — creating work is not what someone comes to a dashboard to
+ * do, and both flows are still reachable everywhere they belong (the top bar's
+ * create control, the Issues page, Report bug on a project). Nothing about the
+ * underlying create actions or dialogs changed; this row simply stopped
+ * offering them.
+ *
+ * What remains is gated by the account's real role. That is presentation only
+ * — the server still authorizes every one of these routes on its own. Hiding a
+ * link is a courtesy, never the control.
  */
 export function QuickActions({ role }: { role: Role }) {
-  const [createType, setCreateType] = useState<IssueType | null>(null);
-
   return (
     <div className="prio-dash__actions">
-      <Button variant="primary" onClick={() => setCreateType("TASK")}>
-        <IconPlus size={14} />
-        Create issue
-      </Button>
-
-      <Button variant="secondary" onClick={() => setCreateType("BUG")}>
-        <IconBug size={14} />
-        Report bug
-      </Button>
-
       {role === "ADMIN" ? (
         <>
           <ButtonLink href="/projects" variant="ghost">
@@ -45,15 +37,6 @@ export function QuickActions({ role }: { role: Role }) {
           My work
         </ButtonLink>
       )}
-
-      {/* Mounted only while open, so every open starts from a clean form. */}
-      {createType ? (
-        <CreateIssueDialog
-          open
-          defaultType={createType}
-          onClose={() => setCreateType(null)}
-        />
-      ) : null}
     </div>
   );
 }

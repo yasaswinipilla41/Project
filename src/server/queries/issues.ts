@@ -175,11 +175,38 @@ export function buildIssueWhere(
  */
 export function issueTextSearch(q: string): Prisma.IssueWhereInput {
   const insensitive = { contains: q, mode: "insensitive" as const };
+  const upper = q.toUpperCase();
+
+  /*
+   * Issue keys are identifiers, so they are matched as identifiers.
+   *
+   * A substring match on the key is what made searching "1" return ENG-1,
+   * ENG-10, ENG-11 and ENG-100 alike, and "ENG-1" return every ENG-1x — the
+   * number is a suffix of longer numbers, so `contains` can never tell them
+   * apart. Each shape is therefore matched by what it actually is:
+   *
+   *   "ENG-1"  a whole key      -> that key, exactly
+   *   "1"      a whole number   -> issue 1 in any project the viewer can see
+   *   "ENG"    a project prefix -> every key beginning with it
+   *
+   * Text search over titles, descriptions, labels and people is untouched:
+   * those are prose, where a substring match is the right behaviour.
+   */
+  const wholeKey = /^[A-Za-z][A-Za-z0-9]*-\d+$/.test(q);
+  const wholeNumber = /^\d+$/.test(q);
+
+  const identifier: Prisma.IssueWhereInput[] = wholeKey
+    ? [{ key: { equals: upper } }]
+    : wholeNumber
+      ? [{ number: { equals: Number(q) } }]
+      : [
+          { key: { startsWith: upper } },
+          { project: { key: { equals: upper } } },
+        ];
 
   return {
     OR: [
-      { key: { equals: q.toUpperCase() } },
-      { key: insensitive },
+      ...identifier,
       { title: insensitive },
       { description: insensitive },
       { environment: insensitive },
@@ -189,7 +216,6 @@ export function issueTextSearch(q: string): Prisma.IssueWhereInput {
       { assignee: { name: insensitive } },
       { reporter: { name: insensitive } },
       { project: { name: insensitive } },
-      { project: { key: { equals: q.toUpperCase() } } },
     ],
   };
 }
@@ -417,4 +443,37 @@ export async function filterOptions(user: CurrentUser) {
   ]);
 
   return { projects, people, labels };
+}
+
+/**
+ * Sub-issue progress for a page of issues, in one query.
+ *
+ * The same measure the dashboard already uses — closed children over total
+ * children — rather than a second, differently-defined notion of "progress".
+ * An issue with no sub-issues has no progress: it is absent from the map, and
+ * callers show nothing rather than a misleading 0%.
+ */
+export async function loadIssueProgress(
+  issueIds: string[],
+): Promise<Map<string, { done: number; total: number }>> {
+  const progress = new Map<string, { done: number; total: number }>();
+  if (issueIds.length === 0) return progress;
+
+  const rows = await prisma.issue.groupBy({
+    by: ["parentId", "status"],
+    where: { parentId: { in: issueIds } },
+    _count: { _all: true },
+  });
+
+  for (const row of rows) {
+    if (!row.parentId) continue;
+    const entry = progress.get(row.parentId) ?? { done: 0, total: 0 };
+    entry.total += row._count._all;
+    if ((CLOSED_STATUSES as readonly string[]).includes(row.status)) {
+      entry.done += row._count._all;
+    }
+    progress.set(row.parentId, entry);
+  }
+
+  return progress;
 }

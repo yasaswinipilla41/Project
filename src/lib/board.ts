@@ -15,6 +15,7 @@ export const BOARD_STATUSES: IssueStatus[] = [
   "TODO",
   "IN_PROGRESS",
   "IN_REVIEW",
+  "IN_QA",
   "DONE",
   "CANCELLED",
 ];

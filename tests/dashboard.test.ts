@@ -192,11 +192,14 @@ describe("loadDashboard — team members", () => {
   it("never carries the admin-only aggregate fields a member must not receive", async () => {
     const memberData = await loadDashboard(await aMemberWithProjects());
 
-    // The team list is deliberately narrower than `org.workload` — a name,
-    // avatar, role, active flag and a single in-scope count, nothing more.
+    /* The team list is deliberately narrower than `org.workload` — a name,
+       avatar, role, active flag, a single in-scope count, and whether the row
+       is the viewer's own. `isYou` is derived from the viewer's own id, so it
+       tells them nothing about anyone else; the pin stays exact so anything
+       genuinely cross-user still fails here. */
     for (const teammate of memberData.teamMembers) {
       expect(Object.keys(teammate).sort()).toEqual(
-        ["id", "image", "isActive", "name", "openInScope", "role"].sort(),
+        ["id", "image", "isActive", "isYou", "name", "openInScope", "role"].sort(),
       );
     }
   });

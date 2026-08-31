@@ -9,6 +9,7 @@ import {
 } from "@prisma/client";
 import { hashPassword } from "@better-auth/utils/password";
 import { createLocalAccountIssuer } from "@better-auth/core/db";
+import { DEFAULT_PROJECT_LABELS } from "../src/lib/domain";
 
 /**
  * Development seed for Symbiosys Technologies.
@@ -550,7 +551,14 @@ async function main() {
 
     // --------------------------------------------------------- labels
     const labelIds = new Map<string, string>();
-    for (const label of LABELS[projectSeed.key] ?? []) {
+    /* Every project gets the shared vocabulary, plus whatever else this
+       particular project is seeded with. Upsert keys on [projectId, name], so
+       a name appearing in both lists is written once, not twice. */
+    const projectLabels = [
+      ...DEFAULT_PROJECT_LABELS,
+      ...(LABELS[projectSeed.key] ?? []),
+    ];
+    for (const label of projectLabels) {
       const row = await prisma.label.upsert({
         where: {
           projectId_name: { projectId: project.id, name: label.name },

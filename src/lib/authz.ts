@@ -154,3 +154,49 @@ export async function accessibleProjectIds(
   });
   return projects.map((p) => p.id);
 }
+
+/* ------------------------------------------------------------------ teams */
+
+/**
+ * Team membership.
+ *
+ * A team says what somebody does; `Role` says whether they may administer
+ * Prio; `ProjectMember` says which work they may see. The three are
+ * deliberately independent, so none of them is a back door into another:
+ *
+ *  - being an ADMIN does **not** make you a member of any team. An
+ *    administrator who has not been put in Testing is not on Testing, because
+ *    "can manage Prio" and "does the testing" are different claims and the
+ *    second is the one a testing view is about.
+ *  - being on a project does not put you in a team, and being in a team does
+ *    not grant access to any project. A team view still passes through the
+ *    ordinary project scope.
+ *  - nothing is implicit: a new account belongs to no team until somebody adds
+ *    it to one.
+ *
+ * Teams are rows, so adding "Development" or "Design" later is an insert
+ * rather than another branch here.
+ */
+
+/** Slug of the team that owns the testing surfaces. */
+export const TESTING_TEAM_SLUG = "testing";
+
+export async function isTeamMember(
+  user: CurrentUser,
+  slug: string,
+): Promise<boolean> {
+  const count = await prisma.teamMember.count({
+    where: { userId: user.id, team: { slug } },
+  });
+  return count > 0;
+}
+
+/** Throws unless the user is explicitly a member of the named team. */
+export async function assertTeamMember(
+  user: CurrentUser,
+  slug: string,
+): Promise<void> {
+  if (!(await isTeamMember(user, slug))) {
+    throw new AuthorizationError("This area is limited to the team that owns it.");
+  }
+}

@@ -30,7 +30,11 @@ enum IssueStatus {
   BACKLOG
   TODO
   IN_PROGRESS
+  /// Displayed as "Ready for QA" — handed over, not yet picked up.
   IN_REVIEW
+  /// Being tested right now. Declared after IN_REVIEW because enum order is
+  /// what `orderBy: { status }` sorts on.
+  IN_QA
   DONE
   CANCELLED
 }
@@ -66,6 +70,7 @@ enum NotificationType {
   INVITED
   USER_JOINED
   TEST_RESULT
+  PROJECT_ACCESS_REQUEST
 }
 
 enum InvitationStatus {
@@ -79,6 +84,12 @@ enum InvitationStatus {
 /// permission does not require a schema migration on top of a data one.
 enum SharePermission {
   VIEW
+}
+
+enum AccessRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 // ------------------------------------------------- better-auth + people
@@ -109,10 +120,15 @@ model User {
   testedIssues       Issue[]            @relation("IssueTestedBy")
   reportedIssues     Issue[]            @relation("IssueReporter")
   comments           Comment[]
+  commentReactions   CommentReaction[]
   mentions           CommentMention[]
   activityEntries    ActivityLogEntry[]
   notifications      Notification[]     @relation("NotificationRecipient")
   actorNotifications Notification[]     @relation("NotificationActor")
+  teamMemberships        TeamMember[]
+  accessRequestsMade     ProjectAccessRequest[] @relation("AccessRequester")
+  accessRequestsFor      ProjectAccessRequest[] @relation("AccessSubject")
+  accessRequestsDecided  ProjectAccessRequest[] @relation("AccessDecider")
   watching           IssueWatcher[]
   favoriteProjects   ProjectFavorite[]
   pinnedProjects     ProjectPin[]
@@ -222,9 +238,51 @@ model Project {
   favoritedBy ProjectFavorite[]
   pinnedBy    ProjectPin[]
   recentlyVisitedBy ProjectRecent[]
+  accessRequests    ProjectAccessRequest[]
+  notifications     Notification[]
 
   @@index([isArchived])
   @@map("project")
+}
+
+/// A named group of people — "Testing", and later "Development", "Design",
+/// whatever the organisation needs. Deliberately generic: a team is a row, not
+/// a code path, so adding one never means touching authorization again.
+///
+/// Kept entirely separate from `Role` and from `ProjectMember`. Role answers
+/// "may this person administer Prio", project membership answers "may they see
+/// this project's work", and a team answers "what do they do here". Conflating
+/// any two of them would mean granting one to grant another.
+model Team {
+  id          String  @id @default(cuid())
+  /// Stable identifier used in code, e.g. "testing". Never displayed.
+  slug        String  @unique
+  name        String  @unique
+  description String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members TeamMember[]
+
+  @@map("team")
+}
+
+/// Explicit membership. Nobody is ever a team member implicitly — not by role,
+/// not by project, not by having reported bugs. A new account joins no team
+/// until somebody puts them in one.
+model TeamMember {
+  id     String @id @default(cuid())
+  teamId String
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([teamId, userId])
+  @@index([userId])
+  @@map("team_member")
 }
 
 model ProjectMember {
@@ -420,11 +478,35 @@ model Comment {
   mentions      CommentMention[]
   notifications Notification[]
   attachments   Attachment[]
+  reactions     CommentReaction[]
 
   @@index([issueId, createdAt])
   @@index([authorId])
   @@index([parentId])
   @@map("comment")
+}
+
+/// One person's one reaction to one comment.
+///
+/// A "like" is not a separate concept here — it is this row carrying a thumbs
+/// up. One model rather than two means the count, the toggle and the "did I
+/// already react" check are written once, and the unique constraint below is
+/// what stops the same person reacting the same way twice.
+model CommentReaction {
+  id        String  @id @default(cuid())
+  commentId String
+  comment   Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// The reaction as the emoji shown. A like is stored as the thumbs-up emoji.
+  emoji String
+
+  createdAt DateTime @default(now())
+
+  @@unique([commentId, userId, emoji])
+  @@index([commentId])
+  @@map("comment_reaction")
 }
 
 model CommentMention {
@@ -568,6 +650,37 @@ model IssueSheetShareMember {
   @@map("issue_sheet_share_member")
 }
 
+/// Somebody with access to a project asking an administrator to grant it to
+/// somebody else. Prio's membership model is a single binary — you are on a
+/// project or you are not — and only an administrator may change it, so a
+/// member who wants to bring a colleague in has to ask. This is that ask,
+/// kept as a row so it survives the asking and can be answered later.
+model ProjectAccessRequest {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  /// The member who asked.
+  requesterId String
+  requester   User   @relation("AccessRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  /// The person who would gain access if this is approved.
+  subjectId String
+  subject   User   @relation("AccessSubject", fields: [subjectId], references: [id], onDelete: Cascade)
+
+  status  AccessRequestStatus @default(PENDING)
+  message String?
+
+  decidedById String?
+  decidedBy   User?     @relation("AccessDecider", fields: [decidedById], references: [id], onDelete: SetNull)
+  decidedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([projectId, status])
+  @@index([subjectId])
+  @@index([requesterId])
+  @@map("project_access_request")
+}
+
 model Notification {
   id        String           @id @default(cuid())
   userId    String
@@ -579,6 +692,11 @@ model Notification {
   issue     Issue?           @relation(fields: [issueId], references: [id], onDelete: Cascade)
   commentId String?
   comment   Comment?         @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  /// Set for notifications about a project rather than an issue — an access
+  /// request has no issue to hang off, and without this its notification
+  /// would have nowhere to open.
+  projectId String?
+  project   Project?         @relation(fields: [projectId], references: [id], onDelete: Cascade)
   message   String
   readAt    DateTime?
   createdAt DateTime         @default(now())

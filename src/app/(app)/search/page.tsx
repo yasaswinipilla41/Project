@@ -40,13 +40,21 @@ const ISSUE_KEY = /^([A-Za-z][A-Za-z0-9]*)-(\d+)$/;
 export default async function SearchPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; scope?: string }>;
 }) {
   const user = await requireUser();
-  const { q } = await searchParams;
+  const { q, scope } = await searchParams;
   const query = q?.trim() ?? "";
 
-  if (query.length > 0) {
+  /*
+   * The top bar searches projects and nothing else, so it arrives with
+   * `scope=projects`. The Search page in the sidebar carries no scope and
+   * keeps searching everything — one page, two entry points, and the narrower
+   * one does not take the broader one down with it.
+   */
+  const projectsOnly = scope === "projects";
+
+  if (query.length > 0 && !projectsOnly) {
     const keyMatch = ISSUE_KEY.exec(query);
     if (keyMatch) {
       // Only jump if the caller may actually see it; otherwise fall through to
@@ -126,9 +134,15 @@ export default async function SearchPage({
       ])
     : [[], [], []];
 
-  const bugs = issues.filter((i) => i.type === "BUG");
-  const others = issues.filter((i) => i.type !== "BUG");
-  const totalResults = issues.length + projects.length + people.length;
+  /* Scoped searches keep only what they asked for. The groups below render
+     nothing when their list is empty, so this is all the gating needed. */
+  const issueResults = projectsOnly ? [] : issues;
+  const peopleResults = projectsOnly ? [] : people;
+
+  const bugs = issueResults.filter((i) => i.type === "BUG");
+  const others = issueResults.filter((i) => i.type !== "BUG");
+  const totalResults =
+    issueResults.length + projects.length + peopleResults.length;
 
   return (
     <>
@@ -139,7 +153,10 @@ export default async function SearchPage({
             Search
           </h1>
           <p className="prio-page-header__subtitle">
-            Issues, bugs, projects and people. Enter an issue key such as{" "}
+            {projectsOnly
+              ? "Projects matching what you typed."
+              : "Issues, bugs, projects and people."}{" "}
+            {projectsOnly ? null : <>Enter an issue key such as{" "}</>}
             <span className="prio-key">ENG-1</span> to jump straight to it.
           </p>
         </div>
@@ -218,9 +235,9 @@ export default async function SearchPage({
             </ResultGroup>
           ) : null}
 
-          {people.length > 0 ? (
-            <ResultGroup icon={<IconUsers />} title="People" count={people.length}>
-              {people.map((person) => (
+          {peopleResults.length > 0 ? (
+            <ResultGroup icon={<IconUsers />} title="People" count={peopleResults.length}>
+              {peopleResults.map((person) => (
                 <Link
                   key={person.id}
                   href={`/issues?assignee=${person.id}`}
@@ -275,7 +292,14 @@ function IssueResult({
     key: string;
     type: IssueType;
     title: string;
-    status: "BACKLOG" | "TODO" | "IN_PROGRESS" | "IN_REVIEW" | "DONE" | "CANCELLED";
+    status:
+      | "BACKLOG"
+      | "TODO"
+      | "IN_PROGRESS"
+      | "IN_REVIEW"
+      | "IN_QA"
+      | "DONE"
+      | "CANCELLED";
     priority: "URGENT" | "HIGH" | "MEDIUM" | "LOW" | "NONE";
     severity: "CRITICAL" | "MAJOR" | "MINOR" | "TRIVIAL" | null;
     updatedAt: Date;

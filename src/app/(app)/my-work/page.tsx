@@ -15,7 +15,12 @@ import {
   IconMyWork,
   IconWarning,
 } from "@/components/ui/Icon";
-import { issueScope } from "@/lib/authz";
+import {
+  accessibleProjectIds,
+  isTeamMember,
+  issueScope,
+  TESTING_TEAM_SLUG,
+} from "@/lib/authz";
 import {
   CLOSED_STATUSES,
   OPEN_STATUSES,
@@ -24,6 +29,17 @@ import {
 import { formatDateCompact, isOverdue } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
+import {
+  listIssues,
+  loadIssueProgress,
+  SORT_FIELDS,
+  type SortField,
+} from "@/server/queries/issues";
+import {
+  ProjectWorkTable,
+  type WorkTableRow,
+} from "@/components/work/ProjectWorkTable";
+import { ProjectWorkPicker } from "@/components/work/ProjectWorkPicker";
 import type { IssueStatus } from "@prisma/client";
 
 export const metadata: Metadata = { title: "My Work" };
@@ -42,10 +58,85 @@ function dueWindow(): { now: Date; weekAhead: Date } {
   return { now, weekAhead: new Date(now.getTime() + 7 * 86_400_000) };
 }
 
-export default async function MyWorkPage() {
+export default async function MyWorkPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = await searchParams;
   const user = await requireUser();
   const scope = issueScope(user);
   const { now, weekAhead } = dueWindow();
+
+  /*
+   * The project work table belongs to the Testing team.
+   *
+   * The check is here, on the server, before anything is queried — not a
+   * hidden element in the markup. Somebody who is not on the team gets no
+   * table, no rows, and nothing extra in the payload, whatever they put in the
+   * URL. Being an administrator is deliberately not enough: administering Prio
+   * and being on the testing team are different claims.
+   */
+  const onTestingTeam = await isTeamMember(user, TESTING_TEAM_SLUG);
+
+  /* Project access is still the ordinary rule. Team membership decides whether
+     this view exists at all; it grants access to no project on its own, so the
+     picker only ever lists projects the person could already open. */
+  const workProjects = onTestingTeam
+    ? await prisma.project.findMany({
+        where: {
+          isArchived: false,
+          id: { in: await accessibleProjectIds(user) },
+        },
+        select: { id: true, key: true, name: true },
+        orderBy: { name: "asc" },
+      })
+    : [];
+
+  const one = (value: string | string[] | undefined): string | undefined =>
+    Array.isArray(value) ? value[0] : value;
+
+  const requestedProject = one(params.project);
+  const selectedProject =
+    workProjects.find((p) => p.id === requestedProject) ?? null;
+
+  const rawSort = one(params.sort);
+  const workSort: SortField = (SORT_FIELDS as readonly string[]).includes(
+    rawSort ?? "",
+  )
+    ? (rawSort as SortField)
+    : "updated";
+  const workDir = one(params.dir) === "asc" ? "asc" : "desc";
+
+  const workList = selectedProject
+    ? await listIssues(user, {
+        projectIds: [selectedProject.id],
+        sort: workSort,
+        dir: workDir,
+        pageSize: 100,
+      })
+    : null;
+
+  const workProgress = workList
+    ? await loadIssueProgress(workList.rows.map((r) => r.id))
+    : new Map<string, { done: number; total: number }>();
+
+  const workDescriptions = workList
+    ? new Map(
+        (
+          await prisma.issue.findMany({
+            where: { id: { in: workList.rows.map((r) => r.id) } },
+            select: { id: true, description: true },
+          })
+        ).map((row) => [row.id, row.description]),
+      )
+    : new Map<string, string | null>();
+
+  const workRows: WorkTableRow[] = (workList?.rows ?? []).map((row) => ({
+    ...row,
+    progress: workProgress.get(row.id) ?? null,
+    description: workDescriptions.get(row.id) ?? null,
+  }));
 
   const assignedWhere = {
     ...scope,
@@ -237,6 +328,49 @@ export default async function MyWorkPage() {
           />
         </div>
       </div>
+
+      {/* ------------------------------------------- project work table */}
+      {/* Rendered only for the team that owns it. A non-member's page does not
+          contain this markup at all — there is nothing here to reveal. */}
+      {onTestingTeam ? (
+        <Card style={{ marginBottom: "var(--prio-space-4)" }}>
+          <CardBody>
+            <div className="prio-projectmembers__head">
+              <h2 className="prio-issue__section-title">Project work</h2>
+              {selectedProject ? (
+                <span className="prio-text-muted">
+                  {workRows.length} item{workRows.length === 1 ? "" : "s"} in{" "}
+                  {selectedProject.name}
+                </span>
+              ) : null}
+            </div>
+
+            <ProjectWorkPicker
+              projects={workProjects}
+              selectedId={selectedProject?.id ?? null}
+              basePath="/my-work"
+            />
+
+            {selectedProject ? (
+              <div style={{ marginTop: "var(--prio-space-4)" }}>
+                <ProjectWorkTable
+                  rows={workRows}
+                  basePath="/my-work"
+                  searchParams={params}
+                  sort={workSort}
+                  dir={workDir}
+                  currentUserId={user.id}
+                  isAdmin={user.role === "ADMIN"}
+                />
+              </div>
+            ) : workProjects.length > 0 ? (
+              <p className="prio-text-muted" style={{ marginTop: "var(--prio-space-4)" }}>
+                Choose a project to see its work items.
+              </p>
+            ) : null}
+          </CardBody>
+        </Card>
+      ) : null}
 
       {/* ------------------------------------------------ QA collaboration */}
       {/* Shown only when there is something to act on, so the page stays a

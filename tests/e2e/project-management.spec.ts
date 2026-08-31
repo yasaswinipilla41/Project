@@ -28,11 +28,16 @@ test.describe("As an administrator", () => {
     await page.goto("/projects/eng");
     await expect(page.getByRole("heading", { name: /Engineering/ })).toBeVisible();
 
+    /* The page-level Edit button was removed; editing lives in the dropdown
+       beside Delete, so this checks the menu that now offers both. */
     await expect(
       page.getByRole("button", { name: "Edit project" }),
-    ).toBeVisible();
+    ).toHaveCount(0);
 
     await page.getByRole("button", { name: "More project actions" }).click();
+    await expect(
+      page.getByRole("menuitem", { name: "Edit project" }),
+    ).toBeVisible();
     await expect(
       page.getByRole("menuitem", { name: "Delete project" }),
     ).toBeVisible();
@@ -47,7 +52,8 @@ test.describe("As an administrator", () => {
 
     const marker = `edited ${Math.random().toString(36).slice(2, 8)}`;
 
-    await page.getByRole("button", { name: "Edit project" }).click();
+    await page.getByRole("button", { name: "More project actions" }).click();
+    await page.getByRole("menuitem", { name: "Edit project" }).click();
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
 

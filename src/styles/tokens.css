@@ -101,7 +101,9 @@
   --prio-green-500: #14a06d;
   --prio-green-600: #0f8b5f;
   --prio-green-700: #0b6c4a;
+  --prio-teal-50: #e6f5f3;
   --prio-teal-500: #0d9488;
+  --prio-teal-700: #0b6b62;
 
   /* --------------------------------------------------------- semantic */
   --prio-bg-app: var(--prio-neutral-50);
@@ -307,6 +309,10 @@
   --prio-status-review-fg: var(--prio-accent-700);
   --prio-status-review-bg: var(--prio-accent-50);
   --prio-status-review-dot: var(--prio-accent-500);
+
+  --prio-status-qa-fg: var(--prio-teal-700);
+  --prio-status-qa-bg: var(--prio-teal-50);
+  --prio-status-qa-dot: var(--prio-teal-500);
 
   --prio-status-done-fg: var(--prio-green-700);
   --prio-status-done-bg: var(--prio-green-50);

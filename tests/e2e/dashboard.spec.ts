@@ -114,10 +114,27 @@ test.describe("Dashboard — signed in as an administrator", () => {
     await expect(page.getByRole("heading", { name: "Issues" })).toBeVisible();
   });
 
-  test("the assigned-work count agrees with the issue list", async ({
+  /* Admin Home dropped the personal queues — an administrator's dashboard
+     answers "how is the organisation doing", and My assigned tasks / My work
+     competed with that. The data is untouched and still reachable from
+     Issues, which is what the second half of this checks. The same count is
+     still verified against the list in the Member suite below, where the
+     section lives on. */
+  test("does not carry the personal queues, which stay reachable", async ({
     page,
   }) => {
-    await assignedCountAgreesWithList(page);
+    await page.goto("/");
+
+    await expect(
+      page.getByRole("heading", { name: /My assigned tasks/ }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("heading", { name: /^My work$/ }),
+    ).toHaveCount(0);
+
+    // Removed from the page, not from the product.
+    await page.goto("/my-work");
+    await expect(page.locator("h1").first()).toBeVisible();
   });
 
   test("project cards report progress that matches their own page", async ({
@@ -343,13 +360,29 @@ test.describe("Dashboard — signed in as an administrator", () => {
     }
   });
 
+  /* Create issue and Report bug were removed from Home. What matters is that
+     removing the shortcut did not remove the flow, so this now reaches the
+     same dialog through the control that still offers it — the top bar's. */
   test("quick actions open the real create dialog", async ({ page }) => {
     await page.goto("/");
 
-    await page
-      .locator(".prio-dash__actions")
-      .getByRole("button", { name: "Report bug" })
-      .click();
+    await expect(
+      page.locator(".prio-dash__actions").getByRole("button", {
+        name: "Report bug",
+      }),
+    ).toHaveCount(0);
+    await expect(
+      page.locator(".prio-dash__actions").getByRole("button", {
+        name: "Create issue",
+      }),
+    ).toHaveCount(0);
+
+    /* Reached from the Issues page, which opens the same `CreateIssueDialog`
+       Home's button used to. Deliberately not the top bar's create control:
+       that one offers a type selector first, and everything below asserts the
+       plain form that has none. */
+    await page.goto("/issues");
+    await page.locator(".prio-create-issue").click();
 
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
@@ -465,10 +498,15 @@ test.describe("Dashboard — signed in as a member", () => {
       page.getByRole("heading", { name: "Organisation" }),
     ).toHaveCount(0);
 
-    // The card is a real shortcut: it opens that person's open work, exactly
-    // the way filtering the issue list by assignee already would.
-    await first.click();
-    await expect(page).toHaveURL(/\/issues\?assignee=.+&resolution=open/);
+    /* The row used to be a link to the global issue list filtered by that
+       person — a roster entry that navigated off Home entirely. Looking
+       someone up now opens the member detail dialog that already existed for
+       it, so the context stays put. */
+    const url = page.url();
+    await first.getByRole("button", { name: /^View details for / }).click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    expect(page.url(), "opening a person must not navigate away").toBe(url);
+    await page.keyboard.press("Escape");
   });
 
   test("an assigned card opens the issue it names", async ({ page }) => {

@@ -454,3 +454,83 @@ export async function deleteComment(
     return failure(error);
   }
 }
+
+/* ------------------------------------------------------------ reactions */
+
+const reactionSchema = z.object({
+  commentId: z.string().min(1),
+  /* Short enough that only an emoji fits — this is not a second comment box. */
+  emoji: z.string().min(1).max(8),
+});
+
+/**
+ * Adds or removes one person's reaction to one comment.
+ *
+ * A like is this action with a thumbs up, which is why there is no separate
+ * like action: the toggle, the count and the "have I already reacted" check
+ * would otherwise exist twice, and drift.
+ *
+ * Reacting requires the same access as reading the issue, and the comment is
+ * looked up first so a reaction cannot be attached to one that has been
+ * deleted. `@@unique([commentId, userId, emoji])` is what actually prevents a
+ * duplicate; this only decides which way to toggle.
+ */
+export async function toggleCommentReaction(
+  raw: unknown,
+): Promise<CommentResult<{ reacted: boolean }>> {
+  try {
+    const user = await requireUser();
+
+    const parsed = reactionSchema.safeParse(raw);
+    if (!parsed.success) {
+      return {
+        ok: false,
+        error: "That reaction could not be applied.",
+        fieldErrors: fieldErrors(parsed.error),
+      };
+    }
+
+    const comment = await prisma.comment.findUnique({
+      where: { id: parsed.data.commentId },
+      select: { id: true, issueId: true, issue: { select: { key: true } } },
+    });
+    if (!comment) {
+      return { ok: false, error: "That comment no longer exists." };
+    }
+
+    await assertIssueAccess(user, comment.issueId);
+
+    const key = {
+      commentId_userId_emoji: {
+        commentId: comment.id,
+        userId: user.id,
+        emoji: parsed.data.emoji,
+      },
+    };
+
+    const existing = await prisma.commentReaction.findUnique({
+      where: key,
+      select: { id: true },
+    });
+
+    if (existing) {
+      await prisma.commentReaction.delete({ where: { id: existing.id } });
+    } else {
+      await prisma.commentReaction.create({
+        data: {
+          commentId: comment.id,
+          userId: user.id,
+          emoji: parsed.data.emoji,
+        },
+      });
+    }
+
+    revalidatePath(`/issues/${comment.issue.key.toLowerCase()}`);
+    return { ok: true, data: { reacted: !existing } };
+  } catch (error) {
+    if (error instanceof AuthorizationError || error instanceof NotFoundError) {
+      return { ok: false, error: error.message };
+    }
+    throw error;
+  }
+}

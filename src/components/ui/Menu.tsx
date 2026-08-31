@@ -4,10 +4,12 @@ import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 
 /**
  * Accessible dropdown menu (§42).
@@ -17,8 +19,17 @@ import {
  * - Arrow keys / Home / End move between items, Enter and Space activate
  * - clicking outside or tabbing away closes
  *
- * Positioning is CSS-driven relative to the wrapper so no measuring library is
- * needed for the alignments Prio uses.
+ * The panel is portalled to `document.body` and positioned with `fixed`
+ * coordinates measured from the trigger. It used to be an absolutely
+ * positioned child, which meant any scroll container between it and the page
+ * clipped it — `.prio-table-wrap` sets `overflow-x: auto`, and a computed
+ * overflow on one axis forces a scrollport on both, so the People row menu was
+ * cut off at the table's edge. A portal is the fix for that; raising
+ * `z-index` cannot help, because clipping by an ancestor's overflow happens
+ * regardless of stacking order.
+ *
+ * Coordinates are recomputed on scroll and resize while open, and the panel
+ * flips above the trigger when there is not enough room below.
  */
 
 export type MenuAlign = "start" | "end";
@@ -54,6 +65,58 @@ export function Menu({
   const menuId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  /*
+   * Measured and written straight to the node before paint, so the panel never
+   * appears in one place and jumps to another. Deliberately imperative rather
+   * than React state: this runs on every scroll frame while the menu is open,
+   * and re-rendering the whole menu to move it two pixels would be wasteful.
+   * `fixed` coordinates are viewport-relative, which is why it has to re-run
+   * whenever anything underneath scrolls at all.
+   */
+  const place = useCallback(() => {
+    const trigger = triggerRef.current;
+    const menu = menuRef.current;
+    if (!trigger || !menu) return;
+
+    const anchor = trigger.getBoundingClientRect();
+    const panel = menu.getBoundingClientRect();
+    const margin = 8;
+    const below = window.innerHeight - anchor.bottom - offset - margin;
+    const above = anchor.top - offset - margin;
+
+    // Flip up only when below genuinely cannot hold it and above is roomier.
+    const flip = panel.height > below && above > below;
+    const maxHeight = Math.max(120, flip ? above : below);
+    const top = flip
+      ? Math.max(margin, anchor.top - offset - Math.min(panel.height, maxHeight))
+      : anchor.bottom + offset;
+
+    const rawLeft =
+      align === "end" ? anchor.right - panel.width : anchor.left;
+    const left = Math.min(
+      Math.max(margin, rawLeft),
+      Math.max(margin, window.innerWidth - panel.width - margin),
+    );
+
+    menu.style.top = `${top}px`;
+    menu.style.left = `${left}px`;
+    menu.style.maxHeight = `${maxHeight}px`;
+    menu.style.visibility = "visible";
+  }, [align, offset]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    place();
+
+    /* `true` captures scrolls on any ancestor, not just the page — the menu
+       is anchored to a trigger that may sit inside its own scrollport. */
+    window.addEventListener("scroll", place, true);
+    window.addEventListener("resize", place);
+    return () => {
+      window.removeEventListener("scroll", place, true);
+      window.removeEventListener("resize", place);
+    };
+  }, [open, place]);
 
   const close = useCallback(
     (returnFocus = true) => {
@@ -178,29 +241,38 @@ export function Menu({
         "aria-controls": menuId,
       })}
 
-      {open ? (
-        <div
-          id={menuId}
-          ref={menuRef}
-          role="menu"
-          aria-label={label}
-          className="prio-menu prio-scroll"
-          onKeyDown={onMenuKeyDown}
-          onClick={(event) => {
-            // Any activated item closes the menu unless it opts out.
-            const target = event.target as HTMLElement;
-            if (target.closest("[data-menu-keep-open]")) return;
-            if (target.closest('[role="menuitem"],[role="menuitemradio"]')) close(false);
-          }}
-          style={{
-            top: `calc(100% + ${offset}px)`,
-            ...(align === "end" ? { right: 0 } : { left: 0 }),
-            ...(width ? { width, minWidth: 0 } : null),
-          }}
-        >
-          {children}
-        </div>
-      ) : null}
+      {open && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              id={menuId}
+              ref={menuRef}
+              role="menu"
+              aria-label={label}
+              className="prio-menu prio-scroll"
+              onKeyDown={onMenuKeyDown}
+              onClick={(event) => {
+                // Any activated item closes the menu unless it opts out.
+                const target = event.target as HTMLElement;
+                if (target.closest("[data-menu-keep-open]")) return;
+                if (target.closest('[role="menuitem"],[role="menuitemradio"]'))
+                  close(false);
+              }}
+              /* Hidden until `place()` has measured it — it is laid out at
+                 its natural size first so the measurement is real, and only
+                 then revealed at the coordinates that measurement produced. */
+              style={{
+                position: "fixed",
+                top: 0,
+                left: 0,
+                visibility: "hidden",
+                ...(width ? { width, minWidth: 0 } : null),
+              }}
+            >
+              {children}
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }

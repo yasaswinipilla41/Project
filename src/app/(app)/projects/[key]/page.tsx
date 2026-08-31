@@ -30,6 +30,10 @@ import {
 } from "@/components/projects/AssignmentActivity";
 import { ProjectActions } from "@/components/projects/ProjectActions";
 import { ProjectAttachments } from "@/components/projects/ProjectAttachments";
+import { ProjectMembers } from "@/components/projects/ProjectMembers";
+import { ProjectAccess } from "@/components/projects/ProjectAccess";
+import { ProjectNav } from "@/components/projects/ProjectNav";
+import { BackLink } from "@/components/shell/BackLink";
 import {
   CLOSED_STATUSES,
   ISSUE_STATUSES,
@@ -230,6 +234,62 @@ export default async function ProjectOverviewPage({
   const statusCount = (status: string) =>
     byStatus.find((r) => r.status === status)?._count._all ?? 0;
 
+  /*
+   * Membership is an administrator's action — `addProjectMember` and
+   * `removeProjectMember` both assert it — so the candidate list is only
+   * fetched for one, and only for people not already on the project.
+   */
+  const canManageMembers = user.role === "ADMIN";
+  const memberIds = project.members.map(({ user: member }) => member.id);
+  const personSelect = {
+    id: true,
+    name: true,
+    email: true,
+    image: true,
+    jobTitle: true,
+  } as const;
+
+  const memberCandidates = canManageMembers
+    ? await prisma.user.findMany({
+        where: { isActive: true, id: { notIn: memberIds } },
+        select: personSelect,
+        orderBy: { name: "asc" },
+      })
+    : [];
+
+  /*
+   * Who a member may name in a share request: the colleagues they can already
+   * see, meaning people who share some project with them. Never the whole
+   * directory — Share must not become a way to enumerate the organisation.
+   */
+  const shareCandidates = canManageMembers
+    ? []
+    : await prisma.user.findMany({
+        where: {
+          isActive: true,
+          id: { notIn: [...memberIds, user.id] },
+          projectMemberships: {
+            some: { project: { members: { some: { userId: user.id } } } },
+          },
+        },
+        select: personSelect,
+        orderBy: { name: "asc" },
+      });
+
+  const pendingAccess = canManageMembers
+    ? await prisma.projectAccessRequest.findMany({
+        where: { projectId: project.id, status: "PENDING" },
+        orderBy: { createdAt: "asc" },
+        select: {
+          id: true,
+          createdAt: true,
+          message: true,
+          requester: { select: { name: true, image: true } },
+          subject: { select: { name: true, email: true, image: true } },
+        },
+      })
+    : [];
+
   const total = byStatus.reduce((sum, r) => sum + r._count._all, 0);
   const open = byStatus
     .filter((r) => (OPEN_STATUSES as readonly string[]).includes(r.status))
@@ -243,6 +303,7 @@ export default async function ProjectOverviewPage({
     <>
       <div className="prio-page-header">
         <div className="prio-page-header__text">
+          <BackLink href="/projects" label="All projects" />
           <div className="prio-projecthead">
             <span className="prio-projectcard__badge" aria-hidden>
               {project.key.slice(0, 2)}
@@ -311,6 +372,12 @@ export default async function ProjectOverviewPage({
           ) : null}
         </div>
       </div>
+
+      <ProjectNav
+        projectKey={project.key}
+        projectId={project.id}
+        active="summary"
+      />
 
       <div className="row g-3" style={{ marginBottom: "var(--prio-space-6)" }}>
         <div className="col-12 col-sm-6 col-xl-3">
@@ -538,24 +605,19 @@ export default async function ProjectOverviewPage({
 
           <Card className="prio-issue__section">
             <CardBody>
-              <h2 className="prio-issue__section-title">
-                Members · {project.members.length}
-              </h2>
-              <div>
-                {project.members.map(({ user: member }) => (
-                  <div key={member.id} className="prio-memberrow">
-                    <Avatar name={member.name} image={member.image} size="md" />
-                    <span className="prio-memberpicker__text">
-                      <span className="prio-memberpicker__name">
-                        {member.name}
-                      </span>
-                      <span className="prio-memberpicker__meta">
-                        {member.jobTitle ?? member.email}
-                      </span>
-                    </span>
-                  </div>
-                ))}
-              </div>
+              <ProjectMembers
+                projectId={project.id}
+                members={project.members.map(({ user: member }) => member)}
+                candidates={memberCandidates}
+                canManage={canManageMembers}
+              />
+              <ProjectAccess
+                projectId={project.id}
+                projectName={project.name}
+                isAdmin={canManageMembers}
+                candidates={shareCandidates}
+                pending={pendingAccess}
+              />
             </CardBody>
           </Card>
 

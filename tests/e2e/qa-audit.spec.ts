@@ -167,6 +167,13 @@ test.describe("Authorization probing", () => {
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
 
+    /* The projects arrive from /api/create-options after the dialog opens, and
+       until they do the select is disabled with only its placeholder in it.
+       Counting straight away therefore raced the request and saw 1 under
+       full-suite load. Waiting for the select to be enabled is the signal that
+       the options are really there; the assertion below is unchanged. */
+    await expect(dialog.getByLabel("Project")).toBeEnabled();
+
     const projectOptions = await dialog
       .getByLabel("Project")
       .locator("option")

@@ -155,15 +155,30 @@ export function IssueFilters({
   );
 
   /**
-   * Single-select: picking an option replaces whatever was selected in that
-   * dropdown. Picking the currently-selected option clears it.
+   * Multi-select: each dropdown accumulates. Picking an option adds it to
+   * whatever that dropdown already has; picking a selected one removes just
+   * that value and leaves its siblings alone.
+   *
+   * The menu already showed a checkmark per option and stayed open on click,
+   * and `parseIssueParams` already read these keys with `many()` — only this
+   * function disagreed, clearing the whole key before appending, so a second
+   * pick silently dropped the first.
+   *
+   * `resolution` and `overdue` deliberately do not come through here: open
+   * and closed are mutually exclusive, so they set and clear a single value
+   * of their own.
    */
   const toggle = useCallback(
     (key: string, value: string) => {
       apply((next) => {
-        const wasSelected = next.getAll(key).includes(value);
+        const current = next.getAll(key);
+        const remaining = current.filter((entry) => entry !== value);
+
         next.delete(key);
-        if (!wasSelected) next.append(key, value);
+        for (const entry of remaining) next.append(key, entry);
+
+        // Nothing was removed, so this value is new — add it.
+        if (remaining.length === current.length) next.append(key, value);
       });
     },
     [apply],

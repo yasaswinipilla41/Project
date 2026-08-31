@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { BoardHeaderActions } from "@/components/projects/BoardHeaderActions";
 import { FlowBoard } from "@/components/projects/FlowBoard";
+import { ProjectNav } from "@/components/projects/ProjectNav";
 import { canManageProject, projectScope } from "@/lib/authz";
 import { BOARD_STATUSES } from "@/lib/board";
 import { prisma } from "@/lib/prisma";
@@ -136,6 +137,12 @@ export default async function ProjectBoardPage({
           />
         </div>
       </div>
+
+      <ProjectNav
+        projectKey={project.key}
+        projectId={project.id}
+        active="board"
+      />
 
       <FlowBoard
         project={{ id: project.id, key: project.key, name: project.name }}

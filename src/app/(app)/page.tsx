@@ -208,6 +208,12 @@ export default async function HomePage() {
           </div>
 
           {/* ------------------------------------------ assigned to me */}
+          {/* Personal queues, deliberately not shown to an administrator: an
+              Admin Home answers "how is the organisation doing", and a
+              personal list here competes with that. The data is unchanged and
+              still reachable from Issues — this is what the page shows, not
+              what anyone is allowed to see. */}
+          {!isAdmin ? (
           <section>
             <SectionHead
               title="My assigned tasks"
@@ -232,6 +238,7 @@ export default async function HomePage() {
               </div>
             )}
           </section>
+          ) : null}
 
           {/* -------------------------------------------- team members */}
           {/* Visible to every signed-in person by default, Member and Admin
@@ -252,22 +259,24 @@ export default async function HomePage() {
 
           {/* -------------------------------------------- my work + qa */}
           <div className="row g-3">
-            <div className={data.qa ? "col-12 col-xl-7" : "col-12"}>
-              <Card style={{ height: "100%" }}>
-                <CardBody>
-                  <h2 className="prio-dash__section-title">My work</h2>
-                  <div style={{ marginTop: "var(--prio-space-4)" }}>
-                    <WorkGrid work={data.myWork} userId={user.id} />
-                  </div>
-                </CardBody>
-              </Card>
-            </div>
+            {!isAdmin ? (
+              <div className={data.qa ? "col-12 col-xl-7" : "col-12"}>
+                <Card style={{ height: "100%" }}>
+                  <CardBody>
+                    <h2 className="prio-dash__section-title">My work</h2>
+                    <div style={{ marginTop: "var(--prio-space-4)" }}>
+                      <WorkGrid work={data.myWork} userId={user.id} />
+                    </div>
+                  </CardBody>
+                </Card>
+              </div>
+            ) : null}
 
             {/* Bug-focused figures, shown when this person's own history says
                 they work that way. Derived from what they have done — Prio has
                 no QA role to invent. */}
             {data.qa ? (
-              <div className="col-12 col-xl-5">
+              <div className={isAdmin ? "col-12" : "col-12 col-xl-5"}>
                 <Card style={{ height: "100%" }}>
                   <CardBody>
                     <h2 className="prio-dash__section-title">
@@ -293,7 +302,7 @@ export default async function HomePage() {
                         <span className="prio-worktile__value">
                           {data.qa.awaitingVerification}
                         </span>
-                        <span className="prio-worktile__label">In review</span>
+                        <span className="prio-worktile__label">Ready for QA</span>
                       </Link>
                       <Link
                         href="/bugs?severity=CRITICAL&resolution=open"

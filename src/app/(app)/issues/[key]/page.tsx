@@ -115,10 +115,14 @@ async function loadIssue(rawKey: string, user: CurrentUser) {
           body: true,
           createdAt: true,
           editedAt: true,
+          parentId: true,
           author: { select: { id: true, name: true, image: true } },
           attachments: {
             orderBy: { createdAt: "asc" },
             select: ATTACHMENT_SELECT,
+          },
+          reactions: {
+            select: { emoji: true, userId: true },
           },
         },
       },
@@ -546,10 +550,12 @@ export default async function IssueDetailPage({
                 </span>
               </MetaRow>
 
+              {/* The persisted `completedAt`, never "now" — and its own row,
+                  so it can never be mistaken for the due date above it. */}
               {issue.completedAt ? (
-                <MetaRow label="Closed">
+                <MetaRow label="Completed date">
                   <span title={formatDateTime(issue.completedAt)}>
-                    {formatRelative(issue.completedAt)}
+                    {formatDate(issue.completedAt)}
                   </span>
                 </MetaRow>
               ) : null}

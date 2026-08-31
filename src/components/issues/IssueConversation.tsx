@@ -8,7 +8,7 @@ import { RichText } from "@/components/richtext/RichText";
 import { useToast } from "@/components/ui/Toast";
 import { IconEdit, IconMore, IconTrash } from "@/components/ui/Icon";
 import { formatDateTime, formatRelative } from "@/lib/format";
-import { createComment, deleteComment, updateComment } from "@/server/comments";
+import { toggleCommentReaction, createComment, deleteComment, updateComment } from "@/server/comments";
 import {
   ActivityFeedItem,
   type ActivityEntry,
@@ -37,8 +37,10 @@ export interface CommentView {
   body: string;
   createdAt: Date;
   editedAt: Date | null;
+  parentId: string | null;
   author: { id: string; name: string; image: string | null };
   attachments: AttachmentView[];
+  reactions: { emoji: string; userId: string }[];
 }
 
 export interface IssueConversationProps {
@@ -67,6 +69,8 @@ export function IssueConversation({
   const router = useRouter();
   const { toast } = useToast();
   const [editing, setEditing] = useState<string | null>(null);
+  const [replyingTo, setReplyingTo] = useState<string | null>(null);
+  const [reactingTo, setReactingTo] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
 
   /* One chronological stream. Sorted here rather than in SQL because the two
@@ -113,6 +117,12 @@ export function IssueConversation({
     );
   }, [timeline, showAll, hiddenCount]);
 
+  /* Newest first on screen. `timeline` and the collapse above both work in
+     chronological order — `slice(-RECENT)` means "the most recent" only while
+     the list runs oldest to newest — so the flip happens here, at the end,
+     rather than anywhere that would change what counts as recent. */
+  const ordered = useMemo(() => [...visible].reverse(), [visible]);
+
   async function post(body: string, attachmentIds: string[]) {
     const result = await createComment({ issueId, body, attachmentIds });
     if (!result.ok) return result.error;
@@ -120,6 +130,28 @@ export function IssueConversation({
     toast(<>Comment added to {issueKey}</>);
     router.refresh();
     return null;
+  }
+
+  /* A reply is an ordinary comment carrying a parent — the model has had
+     `parentId` all along, it simply had no way in from the interface. */
+  async function postReply(parentId: string, body: string, attachmentIds: string[]) {
+    const result = await createComment({ issueId, body, parentId, attachmentIds });
+    if (!result.ok) return result.error;
+
+    setReplyingTo(null);
+    toast(<>Reply added to {issueKey}</>);
+    router.refresh();
+    return null;
+  }
+
+  async function react(commentId: string, emoji: string) {
+    setReactingTo(null);
+    const result = await toggleCommentReaction({ commentId, emoji });
+    if (!result.ok) {
+      toast(<>{result.error}</>);
+      return;
+    }
+    router.refresh();
   }
 
   async function saveEdit(commentId: string, body: string) {
@@ -144,23 +176,13 @@ export function IssueConversation({
 
   return (
     <div className="prio-conversation">
-      {hiddenCount > 0 && !showAll ? (
-        <button
-          type="button"
-          className="prio-conversation__more"
-          onClick={() => setShowAll(true)}
-        >
-          Show {hiddenCount} earlier {hiddenCount === 1 ? "event" : "events"}
-        </button>
-      ) : null}
-
       {timeline.length === 0 ? (
         <p className="prio-text-muted" style={{ fontSize: "var(--prio-text-sm)" }}>
           Nothing has happened on this issue yet.
         </p>
       ) : (
         <ol className="prio-activity prio-conversation__timeline">
-          {visible.map((item) =>
+          {ordered.map((item) =>
             item.kind === "activity" ? (
               <ActivityFeedItem
                 key={`a-${item.entry.id}`}
@@ -168,7 +190,11 @@ export function IssueConversation({
                 names={names}
               />
             ) : (
-              <li key={`c-${item.comment.id}`} className="prio-comment">
+              <li
+                key={`c-${item.comment.id}`}
+                id={`comment-${item.comment.id}`}
+                className="prio-comment"
+              >
                 <span className="prio-activity__rail" aria-hidden />
                 <Avatar
                   name={item.comment.author.name}
@@ -267,6 +293,38 @@ export function IssueConversation({
                           compact
                         />
                       ) : null}
+
+                      <CommentActions
+                        comment={item.comment}
+                        currentUserId={currentUser.id}
+                        replying={replyingTo === item.comment.id}
+                        picking={reactingTo === item.comment.id}
+                        onReply={() =>
+                          setReplyingTo(
+                            replyingTo === item.comment.id ? null : item.comment.id,
+                          )
+                        }
+                        onPick={() =>
+                          setReactingTo(
+                            reactingTo === item.comment.id ? null : item.comment.id,
+                          )
+                        }
+                        onReact={(emoji) => react(item.comment.id, emoji)}
+                      />
+
+                      {replyingTo === item.comment.id ? (
+                        <CommentComposer
+                          issueId={issueId}
+                          author={currentUser}
+                          mentionable={mentionable}
+                          submitLabel="Reply"
+                          autoFocus
+                          onCancel={() => setReplyingTo(null)}
+                          onSubmit={(body, attachmentIds) =>
+                            postReply(item.comment.id, body, attachmentIds)
+                          }
+                        />
+                      ) : null}
                     </>
                   )}
                 </div>
@@ -275,6 +333,16 @@ export function IssueConversation({
           )}
         </ol>
       )}
+
+      {hiddenCount > 0 && !showAll ? (
+        <button
+          type="button"
+          className="prio-conversation__more"
+          onClick={() => setShowAll(true)}
+        >
+          Show {hiddenCount} earlier {hiddenCount === 1 ? "event" : "events"}
+        </button>
+      ) : null}
 
       {/* The composer, always visible directly under the timeline. */}
       <div className="prio-conversation__composer">
@@ -286,6 +354,112 @@ export function IssueConversation({
           onSubmit={post}
         />
       </div>
+    </div>
+  );
+}
+
+/** A like is a reaction; this is the one it uses. */
+const LIKE = "\u{1F44D}";
+
+/** A short, fixed set. A full emoji picker is a different feature. */
+const REACTIONS = ["\u{1F44D}", "\u{1F389}", "\u{1F440}", "\u2705", "\u2764\uFE0F"];
+
+/**
+ * Reply, Like and Add reaction, under each comment.
+ *
+ * Like is not stored differently from any other reaction — it is a thumbs up
+ * with its own button, because it is the one people reach for most and should
+ * not cost two clicks. Counts and "have I already reacted" come from the same
+ * rows either way, so the two can never disagree.
+ */
+function CommentActions({
+  comment,
+  currentUserId,
+  replying,
+  picking,
+  onReply,
+  onPick,
+  onReact,
+}: {
+  comment: CommentView;
+  currentUserId: string;
+  replying: boolean;
+  picking: boolean;
+  onReply: () => void;
+  onPick: () => void;
+  onReact: (emoji: string) => void;
+}) {
+  const counts = new Map<string, number>();
+  const mine = new Set<string>();
+  for (const reaction of comment.reactions) {
+    counts.set(reaction.emoji, (counts.get(reaction.emoji) ?? 0) + 1);
+    if (reaction.userId === currentUserId) mine.add(reaction.emoji);
+  }
+
+  const likes = counts.get(LIKE) ?? 0;
+  const others = [...counts.entries()].filter(([emoji]) => emoji !== LIKE);
+
+  return (
+    <div className="prio-comment__actions">
+      <button
+        type="button"
+        className="prio-comment__action"
+        data-active={replying || undefined}
+        onClick={onReply}
+      >
+        Reply
+      </button>
+
+      <button
+        type="button"
+        className="prio-comment__action"
+        data-active={mine.has(LIKE) || undefined}
+        aria-pressed={mine.has(LIKE)}
+        onClick={() => onReact(LIKE)}
+      >
+        {LIKE} Like{likes > 0 ? ` ${likes}` : ""}
+      </button>
+
+      {others.map(([emoji, count]) => (
+        <button
+          key={emoji}
+          type="button"
+          className="prio-comment__action"
+          data-active={mine.has(emoji) || undefined}
+          aria-pressed={mine.has(emoji)}
+          onClick={() => onReact(emoji)}
+        >
+          {emoji} {count}
+        </button>
+      ))}
+
+      <span className="prio-comment__react">
+        <button
+          type="button"
+          className="prio-comment__action"
+          aria-expanded={picking}
+          onClick={onPick}
+        >
+          Add reaction
+        </button>
+
+        {picking ? (
+          <span className="prio-comment__react-menu" role="menu">
+            {REACTIONS.map((emoji) => (
+              <button
+                key={emoji}
+                type="button"
+                role="menuitem"
+                className="prio-comment__react-option"
+                aria-label={`React with ${emoji}`}
+                onClick={() => onReact(emoji)}
+              >
+                {emoji}
+              </button>
+            ))}
+          </span>
+        ) : null}
+      </span>
     </div>
   );
 }

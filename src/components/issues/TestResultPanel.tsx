@@ -52,10 +52,12 @@ export function TestResultPanel({
     status === "DONE"
       ? "Completed"
       : status === "IN_REVIEW"
-        ? "Submitted for review"
-        : status === "CANCELLED"
-          ? "Cancelled"
-          : "In progress";
+        ? "Ready for QA"
+        : status === "IN_QA"
+          ? "In QA"
+          : status === "CANCELLED"
+            ? "Cancelled"
+            : "In progress";
 
   async function record(result: TestResult) {
     setSaving(result);

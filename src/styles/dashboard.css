@@ -796,17 +796,11 @@ a.prio-worktile:hover {
     box-shadow var(--prio-duration-fast) var(--prio-ease);
 }
 
+/* The row is a roster entry, not a link — it lifts no more, because a lift
+   promises a click that no longer happens. Opening a person is the button at
+   the end of the row. */
 .prio-team__member:hover {
-  transform: translateY(-1px);
   border-color: var(--prio-border-strong);
-  box-shadow: var(--prio-shadow-sm);
-  text-decoration: none;
-}
-
-.prio-team__member:focus-visible {
-  outline: none;
-  border-color: var(--prio-border-focus);
-  box-shadow: var(--prio-shadow-focus);
 }
 
 .prio-team__info {
@@ -830,6 +824,11 @@ a.prio-worktile:hover {
   display: flex;
   align-items: center;
   gap: var(--prio-space-2);
+}
+
+.prio-team__you {
+  font-weight: var(--prio-weight-regular);
+  color: var(--prio-text-muted);
 }
 
 .prio-team__inactive {

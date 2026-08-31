@@ -4,14 +4,42 @@
  * different look, so it does not need to join the shared `.prio-*` system.
  */
 
+/*
+ * The dialog body is the scroll container (`max-height` + `overflow-y`), so
+ * without this the tool bar scrolls away the moment the image is zoomed past
+ * the frame — leaving someone mid-annotation with no tools on screen. Sticky
+ * keeps it against the top of that scrollport.
+ */
 .toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   padding-bottom: 10px;
   margin-bottom: 10px;
+  background: var(--prio-bg-surface);
   border-bottom: 1px solid var(--prio-border);
+}
+
+/*
+ * The body's own top padding is inside its scrollport, so the canvas shows
+ * through that strip above the stuck bar. This covers it from outside the
+ * toolbar's box rather than by growing the box itself: a taller sticky box
+ * is displaced further down when it sticks, and the overhang lands on the
+ * canvas below — painting over the top of the image and, because this bar
+ * sits at `z-index: 3`, swallowing the presses meant to draw on it.
+ */
+.toolbar::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  height: var(--prio-space-6);
+  background: var(--prio-bg-surface);
 }
 
 .toolGroup {
