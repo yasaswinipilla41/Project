@@ -9,7 +9,6 @@ import { useToast } from "@/components/ui/Toast";
 import {
   IconAdmin,
   IconBell,
-  IconActivity,
   IconBoard,
   IconChevronDown,
   IconChevronLeft,
@@ -131,8 +130,6 @@ export function Sidebar({
     },
     { href: "/issues", label: "Issues", Icon: IconIssues, prefix: true },
     { href: "/my-work", label: "My Work", Icon: IconMyWork, prefix: true },
-    // §19 — the audit trail already lives at /activity; it simply had no way in.
-    { href: "/activity", label: "Activity", Icon: IconActivity, prefix: true },
     {
       href: "/notifications",
       label: "Notifications",
@@ -183,30 +180,33 @@ export function Sidebar({
           <span className="prio-navitem__label">{project.name}</span>
         </Link>
 
-        {!collapsed && project.isFavorite ? (
+        {/* The badge slot. Its class still reads `__project-fav` because it is
+            the same slot in the same place — only which icon sits in it has
+            changed. */}
+        {!collapsed && project.isPinned ? (
           <span
             className="prio-sidebar__project-fav"
-            title="Favorited"
-            aria-label="Favorited"
+            title="Pinned"
+            aria-label="Pinned"
           >
-            <IconStar size={12} fill="currentColor" />
+            <IconPin size={12} fill="currentColor" />
           </span>
         ) : null}
 
         {!collapsed ? (
           <div className="prio-sidebar__project-actions">
-            {/* Already pinned is exactly what the Pinned section itself
-               says — a persistent pin icon there would just repeat it.
-               Unpinning still works, from the "..." menu below. */}
-            {!project.isPinned ? (
+            {/* Already favourited needs no second star: the row would just be
+               repeating itself. Removing a favourite still works, from the
+               "..." menu below. */}
+            {!project.isFavorite ? (
               <button
                 type="button"
                 className="prio-sidebar__project-menu-trigger"
-                aria-label={`Pin ${project.name}`}
-                title="Pin"
-                onClick={() => handlePin(project)}
+                aria-label={`Favorite ${project.name}`}
+                title="Add to Favorites"
+                onClick={() => handleFavorite(project)}
               >
-                <IconPin size={13} fill="none" />
+                <IconStar size={13} fill="none" />
               </button>
             ) : null}
 
