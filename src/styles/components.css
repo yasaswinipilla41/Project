@@ -2091,7 +2091,6 @@ a.prio-stat:focus-visible {
   display: flex;
   gap: var(--prio-space-1);
   margin-bottom: var(--prio-space-5);
-  overflow-x: auto;
   box-shadow: inset 0 -1px 0 var(--prio-border);
 }
 
