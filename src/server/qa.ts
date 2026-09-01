@@ -81,9 +81,23 @@ export async function recordTestResult(
     });
     if (!issue) throw new NotFoundError("This issue no longer exists.");
 
-    if (user.role !== "ADMIN" && issue.assigneeId === user.id) {
+    /*
+     * Only the person who raised the issue records its verdict.
+     *
+     * `reporterId` is the creator: `createIssue` writes the caller's id into
+     * it, and the schema has no other field for one. So "the creator decides
+     * whether the fix is good" is expressible exactly, without inventing a
+     * column.
+     *
+     * Deliberately not an administrator's to override. Recording a verdict is
+     * a statement about whether the reported problem is actually fixed, and
+     * the only person who can say that is the one who reported it —
+     * administering Prio does not confer that knowledge. This replaces the
+     * previous rule, which let anybody but the assignee record a result.
+     */
+    if (issue.reporterId !== user.id) {
       throw new AuthorizationError(
-        "You cannot record a test result on work assigned to you. Ask someone else to verify it.",
+        "Only the person who raised this issue can record its test result.",
       );
     }
 

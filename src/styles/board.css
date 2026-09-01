@@ -409,3 +409,9 @@
   border-color: var(--prio-primary-600);
   box-shadow: 0 0 0 1px var(--prio-primary-600) inset;
 }
+
+/* A column that will not take the card currently being dragged. Dimmed rather
+   than hidden: it is still a real column with real work in it. */
+.prio-board__column[data-refuses="true"] {
+  opacity: 0.45;
+}

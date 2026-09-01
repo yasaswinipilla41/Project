@@ -21,6 +21,7 @@ import { uploadStagedScreenshot } from "@/lib/uploadAttachment";
 import {
   ISSUE_TYPES,
   ISSUE_TYPE_LABEL,
+  labelColourFor,
   ISSUE_STATUSES,
   PRIORITIES,
   PRIORITY_LABEL,
@@ -32,6 +33,8 @@ import {
 import type { IssueStatus, IssueType, Priority, Severity } from "@prisma/client";
 import { createIssue } from "@/server/issues";
 import { createComment } from "@/server/comments";
+import { createLabel } from "@/server/projects";
+import { LabelPicker } from "@/components/create/LabelPicker";
 import {
   ISSUE_TYPE_FORM,
   composeTypeDetail,
@@ -146,6 +149,12 @@ function FieldRow({
   );
 }
 
+/*
+ * `severity` is deliberately absent here and set from the type below.
+ * Severity describes a defect's impact, so it means something on a bug and
+ * nothing on a story — defaulting every issue to a severity would write an
+ * opinion onto records that have no use for one.
+ */
 const EMPTY_FORM = {
   title: "",
   status: "BACKLOG" as IssueStatus,
@@ -155,6 +164,10 @@ const EMPTY_FORM = {
   parentId: "",
   severity: "" as Severity | "",
 };
+
+/** New bugs open at Major; anything else opens with no severity at all. */
+const defaultSeverityFor = (type: IssueType): Severity | "" =>
+  type === "BUG" ? "MAJOR" : "";
 
 export function CreateIssueDialog({
   open,
@@ -174,7 +187,13 @@ export function CreateIssueDialog({
    */
   const [type, setType] = useState<IssueType>(defaultType);
   const [projectId, setProjectId] = useState(defaultProjectId ?? "");
-  const [form, setForm] = useState(EMPTY_FORM);
+  /* A project was supplied by whatever opened this, so it is context rather
+     than a choice. Global surfaces pass nothing and keep the picker. */
+  const lockedProject = defaultProjectId !== null;
+  const [form, setForm] = useState({
+    ...EMPTY_FORM,
+    severity: defaultSeverityFor(defaultType),
+  });
   const [labelIds, setLabelIds] = useState<string[]>([]);
   const [screenshots, setScreenshots] = useState<StagedScreenshot[]>([]);
   /* Answers to the type's long-form prompts, keyed by section. Kept apart
@@ -189,6 +208,15 @@ export function CreateIssueDialog({
   const [members, setMembers] = useState<OptionMember[]>([]);
   const [labels, setLabels] = useState<OptionLabel[]>([]);
   const [parents, setParents] = useState<OptionParent[]>([]);
+  /* Who is signed in, so "Assign to me" does not have to guess. It comes back
+     with the options rather than from a second request. */
+  const [viewerId, setViewerId] = useState<string | null>(null);
+  /* What has been typed into the parent picker. The list itself is fetched
+     from the server, so a project with thousands of issues never ships them
+     all to the browser. */
+  const [parentQuery, setParentQuery] = useState("");
+  /* Set while a label is being created, so the picker can show it. */
+  const [addingLabel, setAddingLabel] = useState(false);
 
   /**
    * The project whose options are currently loaded (`undefined` before the
@@ -235,6 +263,7 @@ export function CreateIssueDialog({
         setMembers(data.members ?? []);
         setLabels(data.labels ?? []);
         setParents(data.parents ?? []);
+        setViewerId(data.viewerId ?? null);
 
         // Preselect when the user only has one project to choose from.
         if (!projectId && data.projects?.length === 1) {
@@ -251,6 +280,91 @@ export function CreateIssueDialog({
 
     return () => controller.abort();
   }, [open, projectId]);
+
+  /*
+   * Parent search. Deliberately a second, narrower request to the same
+   * endpoint rather than filtering a preloaded list in the browser: the list
+   * is capped server-side, so filtering here would only ever search the
+   * twenty that happened to arrive. Debounced so typing does not produce a
+   * request per keystroke.
+   */
+  useEffect(() => {
+    if (!open || !projectId) return;
+    const query = parentQuery.trim();
+    if (query.length === 0) return;
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      fetch(
+        `/api/create-options?projectId=${encodeURIComponent(projectId)}&q=${encodeURIComponent(query)}`,
+        { signal: controller.signal },
+      )
+        .then((res) => (res.ok ? res.json() : Promise.reject(new Error("failed"))))
+        .then((data) => setParents(data.parents ?? []))
+        .catch(() => {
+          /* A failed or superseded search leaves the previous results up;
+             an empty picker would read as "nothing matches". */
+        });
+    }, 250);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [open, projectId, parentQuery]);
+
+  /**
+   * Add the typed label to this project and select it.
+   *
+   * A name that already exists — in any case — comes back as the existing
+   * label rather than a second one, so this both creates and picks. The chip
+   * list is updated from the response instead of being refetched, which keeps
+   * a half-filled form intact.
+   */
+  /**
+   * Add a label to this project and select it.
+   *
+   * The name is trimmed and matched without regard to case before anything is
+   * created — first against what is already loaded, then, by `createLabel`
+   * itself, against the database. Two people typing "regression" at the same
+   * moment therefore end up on the same label rather than on two, because the
+   * decision is the server's and not the browser's.
+   */
+  async function addLabel(rawName: string) {
+    const name = rawName.trim();
+    if (!name || !projectId) return;
+
+    const already = labels.find(
+      (label) => label.name.toLowerCase() === name.toLowerCase(),
+    );
+    if (already) {
+      setLabelIds((prev) =>
+        prev.includes(already.id) ? prev : [...prev, already.id],
+      );
+      return;
+    }
+
+    setAddingLabel(true);
+    const result = await createLabel({
+      projectId,
+      name,
+      color: labelColourFor(name),
+    });
+    setAddingLabel(false);
+
+    if (!result.ok) {
+      toast(result.error, "error");
+      return;
+    }
+
+    const label = result.data;
+    setLabels((prev) =>
+      prev.some((existing) => existing.id === label.id)
+        ? prev
+        : [...prev, label].sort((a, b) => a.name.localeCompare(b.name)),
+    );
+    setLabelIds((prev) => (prev.includes(label.id) ? prev : [...prev, label.id]));
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -346,10 +460,6 @@ export function CreateIssueDialog({
       }
       footer={
         <>
-          <span className="prio-dialog__footer-note">
-            Detail, steps and evidence go on the issue itself — as comments and
-            attachments — once it exists.
-          </span>
           <Button variant="ghost" onClick={onClose} disabled={submitting}>
             Cancel
           </Button>
@@ -386,7 +496,16 @@ export function CreateIssueDialog({
                 className="prio-create__type-card"
                 data-selected={type === option}
                 aria-pressed={type === option}
-                onClick={() => setType(option)}
+                onClick={() => {
+                  setType(option);
+                  /* Carry the new type's default across, unless a severity was
+                     chosen by hand — switching type should not discard that. */
+                  setForm((prev) =>
+                    prev.severity === defaultSeverityFor(type)
+                      ? { ...prev, severity: defaultSeverityFor(option) }
+                      : prev,
+                  );
+                }}
               >
                 <IssueTypeIcon type={option} size={18} />
                 <span className="prio-create__type-label">
@@ -404,10 +523,24 @@ export function CreateIssueDialog({
           {/* ------------------------------------------------ main column */}
           <div className="prio-createissue__main">
             <FieldRow label="Project" htmlFor="create-project" required>
+              {/*
+               * Opened from inside a project, the project is not a question —
+               * it is context, shown so it is unmistakable and locked so an
+               * issue cannot land in the wrong one by a stray click. Opened
+               * from a global surface, where no project is implied, the choice
+               * is still the person's to make.
+               *
+               * The value still posts with the form, and the server authorizes
+               * the project either way, so locking the control is a courtesy
+               * rather than the boundary.
+               */}
               <select
                 id="create-project"
                 className="prio-select"
                 value={projectId}
+                disabled={
+                  lockedProject || (loadingOptions && projects.length === 0)
+                }
                 onChange={(e) => {
                   setProjectId(e.target.value);
                   setLabelIds([]);
@@ -416,7 +549,6 @@ export function CreateIssueDialog({
                 }}
                 required
                 aria-invalid={invalid("projectId")}
-                disabled={loadingOptions && projects.length === 0}
               >
                 <option value="">
                   {loadingOptions && projects.length === 0
@@ -470,9 +602,6 @@ export function CreateIssueDialog({
                   placeholder="e.g. Chrome 151, Windows 11, Production"
                   maxLength={120}
                 />
-                <span className="prio-hint">
-                  Stored on the issue itself and shown in its Environment panel.
-                </span>
               </FieldRow>
             ) : null}
 
@@ -553,43 +682,82 @@ export function CreateIssueDialog({
                   </option>
                 ))}
               </select>
+              {/*
+               * Offered only when the signed-in person is actually a member of
+               * this project — the same list the select is built from. Someone
+               * who could not be chosen from the dropdown cannot be assigned by
+               * this shortcut either, and the server checks again regardless.
+               */}
+              {viewerId && members.some((m) => m.id === viewerId) ? (
+                <button
+                  type="button"
+                  className="prio-assignself"
+                  onClick={() => set("assigneeId", viewerId)}
+                  disabled={form.assigneeId === viewerId}
+                >
+                  {form.assigneeId === viewerId ? "Assigned to you" : "Assign to me"}
+                </button>
+              ) : null}
               <FieldError errors={errors} field="assigneeId" />
             </FieldRow>
 
-            {labels.length > 0 ? (
+            {projectId ? (
               <FieldRow label="Labels" labelledById="create-labels-label">
-                <div
-                  className="prio-chipset"
-                  role="group"
-                  aria-labelledby="create-labels-label"
-                >
-                  {labels.map((label) => {
-                    const selected = labelIds.includes(label.id);
-                    return (
-                      <button
-                        key={label.id}
-                        type="button"
-                        className="prio-chipset__chip"
-                        data-selected={selected}
-                        aria-pressed={selected}
-                        onClick={() =>
-                          setLabelIds((prev) =>
-                            selected
-                              ? prev.filter((id) => id !== label.id)
-                              : [...prev, label.id],
-                          )
-                        }
-                      >
-                        <span
-                          className="prio-label-chip__swatch"
-                          style={{ background: label.color }}
-                          aria-hidden
-                        />
-                        {label.name}
-                      </button>
-                    );
-                  })}
-                </div>
+                {/*
+                 * Selected labels only.
+                 *
+                 * Every label the project owns used to be rendered as a chip
+                 * to toggle, which put a wall of vocabulary in front of a
+                 * form whose job is to file one issue. What is on an issue is
+                 * a short list; what a project could use is a search.
+                 */}
+                {labelIds.length > 0 ? (
+                  <div
+                    className="prio-chipset"
+                    role="group"
+                    aria-labelledby="create-labels-label"
+                  >
+                    {labelIds.map((id) => {
+                      const label = labels.find((l) => l.id === id);
+                      if (!label) return null;
+                      return (
+                        <button
+                          key={label.id}
+                          type="button"
+                          className="prio-chipset__chip"
+                          data-selected
+                          aria-label={`Remove ${label.name}`}
+                          onClick={() =>
+                            setLabelIds((prev) =>
+                              prev.filter((x) => x !== label.id),
+                            )
+                          }
+                        >
+                          <span
+                            className="prio-label-chip__swatch"
+                            style={{ background: label.color }}
+                            aria-hidden
+                          />
+                          {label.name}
+                          <span aria-hidden>&times;</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+
+                <LabelPicker
+                  labels={labels}
+                  selectedIds={labelIds}
+                  disabled={!projectId || addingLabel}
+                  busy={addingLabel}
+                  onSelect={(id) =>
+                    setLabelIds((prev) =>
+                      prev.includes(id) ? prev : [...prev, id],
+                    )
+                  }
+                  onCreate={addLabel}
+                />
               </FieldRow>
             ) : null}
 
@@ -611,7 +779,7 @@ export function CreateIssueDialog({
              * The component itself is untouched — this is only where it sits.
              */}
             <ScreenshotAttachmentField
-              label="Files"
+              label="Attachments"
               value={screenshots}
               onChange={setScreenshots}
             />
@@ -676,25 +844,48 @@ export function CreateIssueDialog({
               <label className="prio-label" htmlFor="create-parent">
                 Parent issue
               </label>
-              <select
+              {/*
+               * A search box with a datalist rather than a plain select: the
+               * server returns at most twenty candidates, so the browser never
+               * holds a project's whole issue list, and typing narrows against
+               * the database instead of against whatever happened to arrive.
+               * `list` keeps it a native control — no bespoke popup to trap
+               * focus or fight a screen reader.
+               */}
+              <input
                 id="create-parent"
-                className="prio-select"
-                value={form.parentId}
-                onChange={(e) => set("parentId", e.target.value)}
+                className="prio-input"
+                list="create-parent-options"
+                value={parentQuery}
+                placeholder="Search by key or title"
                 disabled={!projectId}
                 aria-invalid={invalid("parentId")}
-              >
-                <option value="">None</option>
+                onChange={(event) => {
+                  const text = event.target.value;
+                  setParentQuery(text);
+                  /* The datalist gives back the option's value, so an exact
+                     hit selects; anything else clears, which is what makes
+                     half-typed text mean "no parent" rather than the last
+                     thing that matched. */
+                  const hit = parents.find(
+                    (parent) => `${parent.key} — ${parent.title}` === text,
+                  );
+                  set("parentId", hit ? hit.id : "");
+                }}
+              />
+              <datalist id="create-parent-options">
                 {parents.map((parent) => (
-                  <option key={parent.id} value={parent.id}>
-                    {parent.key} — {parent.title}
-                  </option>
+                  <option
+                    key={parent.id}
+                    value={`${parent.key} — ${parent.title}`}
+                  />
                 ))}
-              </select>
+              </datalist>
               <FieldError errors={errors} field="parentId" />
               <span className="prio-hint">
-                Files this issue under an existing one. Further links can be
-                added from the issue itself once it exists.
+                {form.parentId
+                  ? "This issue will be filed under the selected parent."
+                  : "Optional. Search an existing issue by key or title to file this one under it."}
               </span>
             </div>
           </aside>

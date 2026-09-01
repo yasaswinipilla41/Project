@@ -30,7 +30,7 @@ export function TestResultPanel({
   testResult,
   testedBy,
   testedAt,
-  assigneeId,
+  reporterId,
   currentUserId,
 }: {
   issueId: string;
@@ -38,7 +38,7 @@ export function TestResultPanel({
   testResult: TestResult;
   testedBy: { name: string } | null;
   testedAt: Date | null;
-  assigneeId: string | null;
+  reporterId: string;
   currentUserId: string;
 }) {
   const router = useRouter();
@@ -46,7 +46,9 @@ export function TestResultPanel({
   const [saving, setSaving] = useState<TestResult | null>(null);
   const [pending, startTransition] = useTransition();
 
-  const isAssignee = assigneeId === currentUserId;
+  /* The verdict belongs to whoever raised the issue — the same rule the
+     server enforces, so the controls never offer a call it would refuse. */
+  const isReporter = reporterId === currentUserId;
 
   const development =
     status === "DONE"
@@ -102,11 +104,11 @@ export function TestResultPanel({
         ) : null}
       </div>
 
-      {isAssignee ? (
+      {!isReporter ? (
         <p className="prio-hint">
-          This is your work, so somebody else records the test result. Use
-          <strong> Submit for review</strong> when it is ready, and add a
-          comment if the tester needs context.
+          The person who raised this issue records the test result. Use
+          <strong> Submit for review</strong> when your work is ready, and add
+          a comment if they need context.
         </p>
       ) : (
         <div className="prio-qa__actions" role="group" aria-label="Test result">

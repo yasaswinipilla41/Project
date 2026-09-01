@@ -193,3 +193,33 @@ export function humanizeActivity(
 
   return labels[field] ?? `updated the ${field} of`;
 }
+
+/**
+ * The day boundaries the due-date buckets are cut on.
+ *
+ * One definition, because "due this week" is asked in two places that must
+ * agree: the dashboard counts the issues, and the issue list has to show
+ * exactly those issues when the count is clicked. A second calculation, even a
+ * correct-looking one, is how a figure and the list behind it drift apart.
+ *
+ * `thisWeek` deliberately starts at the end of today rather than at the start
+ * of the week: anything already past its date is overdue, and overdue is its
+ * own bucket. So the two never overlap and nothing is counted twice.
+ */
+export function dueWindow(now: Date = new Date()): {
+  now: Date;
+  startOfToday: Date;
+  endOfToday: Date;
+  endOfWeek: Date;
+} {
+  const startOfToday = new Date(now);
+  startOfToday.setHours(0, 0, 0, 0);
+
+  const endOfToday = new Date(startOfToday);
+  endOfToday.setDate(endOfToday.getDate() + 1);
+
+  const endOfWeek = new Date(startOfToday);
+  endOfWeek.setDate(endOfWeek.getDate() + 7);
+
+  return { now, startOfToday, endOfToday, endOfWeek };
+}

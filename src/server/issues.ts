@@ -1,8 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import type { Prisma } from "@prisma/client";
+import type { IssueStatus, IssueType, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { listIssues } from "@/server/queries/issues";
 import {
   assertIssueAccess,
   assertProjectAccess,
@@ -10,7 +11,12 @@ import {
   NotFoundError,
 } from "@/lib/authz";
 import { requireUser } from "@/lib/session";
-import { ISSUE_TYPE_LABEL, isClosedStatus } from "@/lib/domain";
+import {
+  canTransition,
+  ISSUE_TYPE_LABEL,
+  isClosedStatus,
+  STATUS_LABEL,
+} from "@/lib/domain";
 import {
   addWatchers,
   notify,
@@ -381,7 +387,31 @@ export async function updateIssue(
 
     const statusChange = changes.find((c) => c.field === "status");
     if (statusChange) {
-      const nextStatus = statusChange.newValue;
+      const nextStatus = statusChange.newValue as IssueStatus;
+
+      /*
+       * The workflow, enforced where it cannot be avoided.
+       *
+       * Every status change in Prio arrives here — the issue page's menu, the
+       * board's drag and drop, the submit-for-review button — so this one
+       * check covers all of them, including a request that never went near the
+       * interface. The interface offers only valid destinations; this is what
+       * makes that an accuracy rather than a security measure.
+       *
+       * Deliberately after the authorization checks above, so a caller who may
+       * not touch this issue is told that, rather than being handed a hint
+       * about which transitions exist.
+       */
+      if (!canTransition(existing.status, nextStatus)) {
+        return {
+          ok: false,
+          error: `${STATUS_LABEL[existing.status]} cannot move straight to ${STATUS_LABEL[nextStatus]}.`,
+          fieldErrors: {
+            status: `Not a valid move from ${STATUS_LABEL[existing.status]}.`,
+          },
+        };
+      }
+
       data.completedAt =
         nextStatus === "DONE" || nextStatus === "CANCELLED" ? new Date() : null;
     }
@@ -623,4 +653,35 @@ function revalidateIssueSurfaces(projectKey: string, issueKey: string): void {
   revalidatePath(`/issues/${issueKey.toLowerCase()}`);
   revalidatePath(`/projects/${projectKey.toLowerCase()}`);
   revalidatePath(`/projects/${projectKey.toLowerCase()}/board`);
+}
+
+/**
+ * Issues matching a fragment typed after `#` in a comment.
+ *
+ * Deliberately a thin wrapper over `listIssues` rather than a query of its
+ * own: that is where issue search already lives, and `buildIssueWhere` inside
+ * it applies the caller's project scope. So this cannot surface an issue the
+ * person could not already find on the Issues page, and an issue key matches
+ * as a key here for the same reason it does there.
+ */
+export async function searchIssuesForReference(
+  query: string,
+): Promise<{ id: string; key: string; title: string; type: IssueType }[]> {
+  const trimmed = query.trim();
+  if (trimmed.length === 0) return [];
+
+  const user = await requireUser();
+  const result = await listIssues(user, {
+    q: trimmed,
+    sort: "updated",
+    dir: "desc",
+    pageSize: 6,
+  });
+
+  return result.rows.map((row) => ({
+    id: row.id,
+    key: row.key,
+    title: row.title,
+    type: row.type,
+  }));
 }

@@ -6,12 +6,17 @@ import {
   useId,
   useRef,
   useState,
-  type ChangeEvent,
   type DragEvent,
   type KeyboardEvent,
 } from "react";
 import { Avatar, Button } from "@/components/ui/primitives";
 import { RichText } from "@/components/richtext/RichText";
+import {
+  applyFormat,
+  MarkdownEditor,
+  type FormatCommand,
+  type MarkdownEditorHandle,
+} from "@/components/richtext/MarkdownEditor";
 import {
   IconClose,
   IconLink,
@@ -19,6 +24,7 @@ import {
   IconWarning,
 } from "@/components/ui/Icon";
 import { formatBytes } from "@/lib/attachments";
+import { searchIssuesForReference } from "@/server/issues";
 
 /**
  * The comment composer.
@@ -38,6 +44,13 @@ import { formatBytes } from "@/lib/attachments";
  * The Preview tab shows the same renderer the posted comment will use, so what
  * the author sees before posting is what everyone sees after.
  */
+
+/** One issue offered by the `#` picker. */
+export interface IssueMatch {
+  id: string;
+  key: string;
+  title: string;
+}
 
 export interface MentionablePerson {
   id: string;
@@ -67,26 +80,36 @@ export interface CommentComposerProps {
   onSubmit: (body: string, attachmentIds: string[]) => Promise<string | null>;
 }
 
-/** Toolbar actions, expressed as what they wrap the selection in. */
+/**
+ * Toolbar actions, expressed as editor commands.
+ *
+ * They used to be Markdown markers — `**` wrapped around the selection in a
+ * textarea. The editor applies formatting to the document instead, and the
+ * Markdown is produced when it is serialised, so what a button needs to know
+ * is which command it runs, not which characters it inserts.
+ */
 const FORMATS = [
-  { key: "bold", label: "Bold", hint: "Ctrl+B", wrap: "**", sample: "bold" },
-  { key: "italic", label: "Italic", hint: "Ctrl+I", wrap: "*", sample: "italic" },
-  {
-    key: "underline",
-    label: "Underline",
-    hint: "Ctrl+U",
-    wrap: "++",
-    sample: "underline",
-  },
-  { key: "code", label: "Inline code", hint: "Ctrl+E", wrap: "`", sample: "code" },
-] as const;
+  { key: "bold", label: "Bold", hint: "Ctrl+B", command: "bold" },
+  { key: "italic", label: "Italic", hint: "Ctrl+I", command: "italic" },
+  { key: "underline", label: "Underline", hint: "Ctrl+U", command: "underline" },
+  { key: "strike", label: "Strikethrough", hint: "Ctrl+D", command: "strikeThrough" },
+] as const satisfies readonly {
+  key: string;
+  label: string;
+  hint: string;
+  command: FormatCommand;
+}[];
 
 const BLOCKS = [
-  { key: "h", label: "Heading", prefix: "### ", sample: "Heading" },
-  { key: "ul", label: "Bulleted list", prefix: "- ", sample: "List item" },
-  { key: "ol", label: "Numbered list", prefix: "1. ", sample: "List item" },
-  { key: "quote", label: "Quote", prefix: "> ", sample: "Quoted text" },
-] as const;
+  { key: "h", label: "Heading", command: "heading" },
+  { key: "ul", label: "Bulleted list", command: "ul" },
+  { key: "ol", label: "Numbered list", command: "ol" },
+  { key: "quote", label: "Quote", command: "quote" },
+] as const satisfies readonly {
+  key: string;
+  label: string;
+  command: FormatCommand;
+}[];
 
 export function CommentComposer({
   issueId,
@@ -100,7 +123,7 @@ export function CommentComposer({
   onSubmit,
 }: CommentComposerProps) {
   const textareaId = useId();
-  const textarea = useRef<HTMLTextAreaElement>(null);
+  const editor = useRef<MarkdownEditorHandle>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const [body, setBody] = useState(initialBody);
@@ -126,6 +149,24 @@ export function CommentComposer({
    */
   const [highlight, setHighlight] = useState({ query: "", index: 0 });
 
+  /*
+   * Issue picker state, the `#` counterpart to the mention picker above.
+   * Unlike people, issues are not preloaded — there can be thousands — so the
+   * matches come from the server, which is also what applies the caller's
+   * project scope to them.
+   */
+  const [reference, setReference] = useState<{ at: number; query: string } | null>(
+    null,
+  );
+  /* Results carry the query they answer, so a response that arrives after the
+     text has moved on is simply not displayed — no clearing from an effect,
+     and never a list that belongs to something already typed past. */
+  const [issueResults, setIssueResults] = useState<{
+    query: string;
+    rows: IssueMatch[];
+  }>({ query: "", rows: [] });
+  const [issueHighlight, setIssueHighlight] = useState({ query: "", index: 0 });
+
   const query = mention?.query ?? "";
   const highlighted = highlight.query === query ? highlight.index : 0;
   const setHighlighted = (next: number | ((i: number) => number)) =>
@@ -142,108 +183,146 @@ export function CommentComposer({
         .slice(0, 6)
     : [];
 
-  /** Grows with its content instead of scrolling inside a fixed box. */
-  const autosize = useCallback(() => {
-    const el = textarea.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 420)}px`;
-  }, []);
+  /*
+   * Fetch matches for the `#` picker. Debounced, aborted when superseded, and
+   * cleared when the picker closes — so a stale response cannot repopulate a
+   * list the person has already dismissed.
+   */
+  const referenceQuery = reference?.query.trim() ?? "";
+  const issueMatches =
+    reference && issueResults.query === referenceQuery ? issueResults.rows : [];
+  const highlightedIssue =
+    issueHighlight.query === referenceQuery ? issueHighlight.index : 0;
+  const setHighlightedIssue = (next: number | ((i: number) => number)) =>
+    setIssueHighlight({
+      query: referenceQuery,
+      index: typeof next === "function" ? next(highlightedIssue) : next,
+    });
 
-  useEffect(autosize, [body, preview, autosize]);
+  useEffect(() => {
+    if (referenceQuery.length === 0) return;
+
+    let live = true;
+    const timer = setTimeout(() => {
+      searchIssuesForReference(referenceQuery)
+        .then((rows) => {
+          if (live) setIssueResults({ query: referenceQuery, rows });
+        })
+        .catch(() => {
+          if (live) setIssueResults({ query: referenceQuery, rows: [] });
+        });
+    }, 200);
+
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [referenceQuery]);
+
+  /* A contentEditable grows with its content on its own, so the old
+     height-measuring effect is gone with the textarea it measured. */
 
   const canSubmit = body.trim().length > 0 || attachments.length > 0;
 
   /* --------------------------------------------------------- formatting */
 
-  function surround(wrap: string, sample: string) {
-    const el = textarea.current;
-    if (!el) return;
-
-    const start = el.selectionStart;
-    const end = el.selectionEnd;
-    const selected = body.slice(start, end) || sample;
-    const next = `${body.slice(0, start)}${wrap}${selected}${wrap}${body.slice(end)}`;
-
-    setBody(next);
-    // Put the caret around the text, not after the closing marker, so typing
-    // continues where the author expects.
-    requestAnimationFrame(() => {
-      el.focus();
-      el.setSelectionRange(start + wrap.length, start + wrap.length + selected.length);
-    });
+  /**
+   * Formatting now acts on the document, not on the text.
+   *
+   * The old helpers wrapped a slice of the Markdown string in `**` and moved
+   * the caret around the markers. In a visual editor there are no markers to
+   * step over — the browser applies the formatting to the selection, and the
+   * Markdown is produced from the result when it is serialised.
+   */
+  function format_(command: FormatCommand) {
+    editor.current?.focus();
+    applyFormat(command);
+    // execCommand does not fire `input`, so the value is read back by hand.
+    requestAnimationFrame(() => editor.current?.syncNow());
   }
 
-  function prefixLine(prefix: string, sample: string) {
-    const el = textarea.current;
-    if (!el) return;
-
-    const start = el.selectionStart;
-    const lineStart = body.lastIndexOf("\n", start - 1) + 1;
-    const atLineStart = lineStart === start;
-    const insertion = `${atLineStart ? "" : "\n"}${prefix}`;
-    const selected = body.slice(start, el.selectionEnd) || sample;
-
-    const next = `${body.slice(0, start)}${insertion}${selected}${body.slice(el.selectionEnd)}`;
-    setBody(next);
-
-    requestAnimationFrame(() => {
-      el.focus();
-      const caret = start + insertion.length;
-      el.setSelectionRange(caret, caret + selected.length);
-    });
-  }
-
+  /** Wrap the selection in a link, asking only for the address. */
   function insertLink() {
-    surround("", "");
-    const el = textarea.current;
-    if (!el) return;
-    const start = el.selectionStart;
-    const selected = body.slice(start, el.selectionEnd) || "link text";
-    const next = `${body.slice(0, start)}[${selected}](https://)${body.slice(el.selectionEnd)}`;
-    setBody(next);
-    requestAnimationFrame(() => {
-      el.focus();
-      const urlAt = start + selected.length + 3;
-      el.setSelectionRange(urlAt, urlAt + 8);
-    });
+    editor.current?.focus();
+    const href = window.prompt("Link address", "https://");
+    if (!href) return;
+    document.execCommand("createLink", false, href);
+    requestAnimationFrame(() => editor.current?.syncNow());
   }
 
-  /* ------------------------------------------------------------ mentions */
-
-  function handleChange(event: ChangeEvent<HTMLTextAreaElement>) {
-    const value = event.target.value;
-    setBody(value);
+  /*
+   * What is being typed right before the caret, and therefore which picker
+   * should be open.
+   *
+   * Read from the editor's caret rather than from a textarea's
+   * `selectionStart`: in a visual editor the Markdown is a serialisation of
+   * the document, so an offset into it means nothing. `at` is now a length —
+   * how many characters to replace — instead of an index into the value.
+   */
+  function detectTriggers() {
     setError(null);
 
-    const caret = event.target.selectionStart;
-    const upTo = value.slice(0, caret);
+    const upTo = editor.current?.textBeforeCaret() ?? "";
+
     // An `@` counts only at a word boundary, so an email address does not open
     // the picker.
     const match = /(?:^|\s)@([\p{L}\p{N} ._-]{0,40})$/u.exec(upTo);
+    setMention(
+      match ? { at: (match[1]?.length ?? 0) + 1, query: match[1] ?? "" } : null,
+    );
 
-    setMention(match ? { at: caret - (match[1]?.length ?? 0) - 1, query: match[1] ?? "" } : null);
+    /* `#` at a word boundary, so a colour like #fff mid-sentence does not open
+       the picker any more than an email address opens the mention one. */
+    const hash = /(?:^|\s)#([\p{L}\p{N} _-]{0,40})$/u.exec(upTo);
+    setReference(
+      hash ? { at: (hash[1]?.length ?? 0) + 1, query: hash[1] ?? "" } : null,
+    );
+  }
+
+  /** Insert the chosen issue's key; the renderer turns it into a link. */
+  function chooseIssue(issue: IssueMatch) {
+    if (!reference) return;
+    /* Replace the `#` and whatever has been typed after it, in the document
+       itself — the caret is in a DOM, not at an offset into the Markdown. */
+    editor.current?.replaceBeforeCaret(reference.at, `${issue.key} `);
+    setReference(null);
+    editor.current?.focus();
   }
 
   function choose(person: MentionablePerson) {
     if (!mention) return;
-    const before = body.slice(0, mention.at);
-    const after = body.slice(mention.at + 1 + mention.query.length);
-    const next = `${before}@${person.name} ${after}`;
-
-    setBody(next);
+    editor.current?.replaceBeforeCaret(mention.at, `@${person.name} `);
     setMention(null);
-
-    requestAnimationFrame(() => {
-      const el = textarea.current;
-      if (!el) return;
-      const caret = before.length + person.name.length + 2;
-      el.focus();
-      el.setSelectionRange(caret, caret);
-    });
+    editor.current?.focus();
   }
 
-  function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+  function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (reference && issueMatches.length > 0) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setHighlightedIssue((i) => (i + 1) % issueMatches.length);
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setHighlightedIssue(
+          (i) => (i - 1 + issueMatches.length) % issueMatches.length,
+        );
+        return;
+      }
+      if (event.key === "Enter" || event.key === "Tab") {
+        event.preventDefault();
+        const picked = issueMatches[highlightedIssue];
+        if (picked) chooseIssue(picked);
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setReference(null);
+        return;
+      }
+    }
+
     if (mention && suggestions.length > 0) {
       if (event.key === "ArrowDown") {
         event.preventDefault();
@@ -281,7 +360,7 @@ export function CommentComposer({
       );
       if (shortcut) {
         event.preventDefault();
-        surround(shortcut.wrap, shortcut.sample);
+        format_(shortcut.command);
       }
     }
 
@@ -407,9 +486,13 @@ export function CommentComposer({
                 key={format.key}
                 type="button"
                 className="prio-composer__tool"
+                /* Keeps the caret in the editor: a button taking focus would
+                   collapse the selection before `execCommand` could act on
+                   it, which is exactly how formatting silently did nothing. */
+                onMouseDown={(event) => event.preventDefault()}
                 title={`${format.label} (${format.hint})`}
                 aria-label={format.label}
-                onClick={() => surround(format.wrap, format.sample)}
+                onClick={() => format_(format.command)}
               >
                 <span data-format={format.key}>
                   {format.key === "bold"
@@ -430,9 +513,13 @@ export function CommentComposer({
                 key={block.key}
                 type="button"
                 className="prio-composer__tool"
+                /* Keeps the caret in the editor: a button taking focus would
+                   collapse the selection before `execCommand` could act on
+                   it, which is exactly how formatting silently did nothing. */
+                onMouseDown={(event) => event.preventDefault()}
                 title={block.label}
                 aria-label={block.label}
-                onClick={() => prefixLine(block.prefix, block.sample)}
+                onClick={() => format_(block.command)}
               >
                 <span data-format={block.key}>
                   {block.key === "h"
@@ -449,6 +536,7 @@ export function CommentComposer({
             <button
               type="button"
               className="prio-composer__tool"
+              onMouseDown={(event) => event.preventDefault()}
               title="Link"
               aria-label="Link"
               onClick={insertLink}
@@ -461,21 +549,18 @@ export function CommentComposer({
             <button
               type="button"
               className="prio-composer__tool"
+              onMouseDown={(event) => event.preventDefault()}
               title="Mention someone"
               aria-label="Mention someone"
               onClick={() => {
-                const el = textarea.current;
-                if (!el) return;
-                const caret = el.selectionStart;
-                const needsSpace = caret > 0 && !/\s$/.test(body.slice(0, caret));
-                const next = `${body.slice(0, caret)}${needsSpace ? " " : ""}@${body.slice(caret)}`;
-                setBody(next);
-                const at = caret + (needsSpace ? 1 : 0);
-                setMention({ at, query: "" });
-                requestAnimationFrame(() => {
-                  el.focus();
-                  el.setSelectionRange(at + 1, at + 1);
-                });
+                /* Type the `@` into the document and let the same detection
+                   that watches the keyboard open the picker, rather than
+                   opening it here and having two ways in. */
+                editor.current?.focus();
+                const before = editor.current?.textBeforeCaret() ?? "";
+                const needsSpace = before.length > 0 && !/\s$/.test(before);
+                editor.current?.replaceBeforeCaret(0, `${needsSpace ? " " : ""}@`);
+                requestAnimationFrame(detectTriggers);
               }}
             >
               @
@@ -489,23 +574,28 @@ export function CommentComposer({
           </div>
         ) : (
           <div className="prio-composer__field">
-            <label className="prio-visually-hidden" htmlFor={textareaId}>
-              Add a comment
-            </label>
-            <textarea
+            {/* The editable region names itself with `aria-label`; a `<label
+                for>` associates only with form controls, so one here would
+                point at nothing. */}
+            <MarkdownEditor
               id={textareaId}
-              ref={textarea}
-              className="prio-composer__textarea"
+              ref={editor}
               value={body}
               placeholder={placeholder}
-              rows={3}
+              ariaLabel={placeholder}
               autoFocus={autoFocus}
-              disabled={busy}
-              onChange={handleChange}
+              mentionable={mentionable}
+              onChange={(markdown) => {
+                setBody(markdown);
+                detectTriggers();
+              }}
               onKeyDown={handleKeyDown}
               onBlur={() => {
                 // Let a click on a suggestion land before the list disappears.
-                window.setTimeout(() => setMention(null), 150);
+                window.setTimeout(() => {
+                  setMention(null);
+                  setReference(null);
+                }, 150);
               }}
             />
 
@@ -538,6 +628,35 @@ export function CommentComposer({
             {mention && suggestions.length === 0 ? (
               <p className="prio-mentions__empty">
                 Nobody on this project matches “{mention.query}”.
+              </p>
+            ) : null}
+
+            {reference && issueMatches.length > 0 ? (
+              <ul className="prio-mentions" role="listbox" aria-label="Issues">
+                {issueMatches.map((issue, index) => (
+                  <li key={issue.id}>
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={index === highlightedIssue}
+                      className="prio-mentions__item"
+                      data-active={index === highlightedIssue || undefined}
+                      onMouseEnter={() => setHighlightedIssue(index)}
+                      onClick={() => chooseIssue(issue)}
+                    >
+                      <span className="prio-key">{issue.key}</span>
+                      <span className="prio-truncate">{issue.title}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+
+            {reference && referenceQuery.length > 0 &&
+            issueResults.query === referenceQuery &&
+            issueMatches.length === 0 ? (
+              <p className="prio-mentions__empty">
+                No issue you can see matches “{reference.query}”.
               </p>
             ) : null}
           </div>

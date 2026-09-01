@@ -109,7 +109,11 @@ test.describe("Navigation adapts rather than shrinking", () => {
     /* "My Work" in place of "Activity": Activity is no longer a sidebar item,
        and the point of this loop is that a collapsed item keeps its accessible
        name and tooltip — any four real items prove that equally well. */
-    for (const name of ["Home", "Projects", "Issues", "My Work"]) {
+    /* "Reports" rather than "My Work": this runs as an administrator, and an
+       admin's sidebar no longer carries the personal queue. The point of the
+       loop is unchanged — a collapsed item keeps its accessible name and its
+       tooltip — and any four real items prove it. */
+    for (const name of ["Home", "Projects", "Issues", "Reports"]) {
       const item = sidebar.getByRole("link", { name, exact: true });
       await expect(item).toBeVisible();
       await expect(item).toHaveAttribute("title", name);

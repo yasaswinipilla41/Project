@@ -12,10 +12,13 @@ import { ADMIN_STATE, MEMBER_STATE } from "./support";
  *
  * The developer here is the seeded member (Priya) and the tester is the
  * administrator, purely because the suite already keeps signed-in states for
- * exactly those two.
+ * exactly those two. The tester is also the issue's reporter, because
+ * recording a verdict belongs to whoever raised the problem — a developer
+ * cannot sign off their own work simply by having filed the ticket.
  */
 
 const DEV_EMAIL = "priya.nair@symbiosystech.com";
+const TESTER_EMAIL = "admin@symbiosystech.com";
 
 /** A fresh issue assigned to the developer, removed however the test ends. */
 async function fixture() {
@@ -25,6 +28,14 @@ async function fixture() {
   });
   const dev = await prisma.user.findUniqueOrThrow({
     where: { email: DEV_EMAIL },
+    select: { id: true },
+  });
+  /* The tester raises the issue and the developer is assigned it, which is
+     what makes this a two-person loop: recording the verdict belongs to
+     whoever reported the problem, so the reporter has to be the tester and
+     not the developer being tested. */
+  const tester = await prisma.user.findUniqueOrThrow({
+    where: { email: TESTER_EMAIL },
     select: { id: true },
   });
 
@@ -45,7 +56,7 @@ async function fixture() {
         status: "TODO",
         priority: "URGENT",
         assigneeId: dev.id,
-        reporterId: dev.id,
+        reporterId: tester.id,
       },
       select: { id: true, key: true },
     }),
@@ -71,11 +82,14 @@ test.describe("Developer → Submit → Tester → verdict", () => {
       /* ---------------------------------------------- developer submits */
       await devPage.goto(path);
 
-      // Their own work: they get Submit, and are told somebody else verifies.
+      /* Their own work: they get Submit, and are told who records the verdict.
+         That is now the person who raised the issue rather than "anybody but
+         you" — the developer is not the reporter here, so they still get no
+         verdict controls, which is what this asserts. */
       const submit = devPage.getByRole("button", { name: "Submit for review" });
       await expect(submit).toBeVisible();
       await expect(
-        devPage.getByText("somebody else records the test result"),
+        devPage.getByText("The person who raised this issue records the test result"),
       ).toBeVisible();
       await expect(devPage.locator(".prio-qa__actions")).toHaveCount(0);
 

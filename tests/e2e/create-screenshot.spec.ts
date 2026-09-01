@@ -16,11 +16,10 @@ const PNG_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAFUlEQVR4nGP8z8DwnwEJMDEQCXAAADuIA/9LWl2XAAAAAElFTkSuQmCC";
 
 /**
- * The field carries a different label per form — "Files" on Create Issue,
- * where it sits in the reference layout's Files row, and "Screenshots" on
- * Create Project, which was not part of that change. Same component either
- * way. Exact match, because a loose one would also catch each attached
- * thumbnail's own link once one exists.
+ * The field is labelled "Attachments" on every form now — it takes documents
+ * and video, not only screenshots, and one term across the app says so. Exact
+ * match, because a loose one would also catch each attached thumbnail's own
+ * link once one exists.
  */
 /**
  * The editor's canvas sizes itself from the decoded image — `width: 100%`
@@ -54,7 +53,7 @@ async function settledBox(page: Page, canvas: Locator) {
   throw new Error("The canvas box never settled.");
 }
 
-async function attachScreenshot(page: Page, label = "Files") {
+async function attachScreenshot(page: Page, label = "Attachments") {
   const input = page.getByLabel(label, { exact: true });
   await input.setInputFiles({
     name: "screenshot.png",
@@ -177,7 +176,11 @@ test.describe("Screenshot attachments in Create flows", () => {
 
     // Removing the last one returns to the empty dropzone.
     await dialog.getByRole("button", { name: "Remove" }).click();
-    await expect(dialog.getByRole("button", { name: "Add screenshots" })).toBeVisible();
+    /* "Add attachments" now: the field takes documents and video, not only
+       screenshots, and the wording says so. */
+    await expect(
+      dialog.getByRole("button", { name: "Add attachments" }),
+    ).toBeVisible();
     await expect(dialog.getByRole("button", { name: /Annotate|Edit markup/ })).toHaveCount(0);
   });
 
@@ -206,7 +209,7 @@ test.describe("Screenshot attachments in Create flows", () => {
 
       await dialog.getByLabel("Project name").fill(name);
       await dialog.getByLabel("Project key").fill(key);
-      await attachScreenshot(page, "Screenshots");
+      await attachScreenshot(page, "Attachments");
       await expect(
         dialog.getByRole("button", { name: /Annotate|Edit markup/ }),
       ).toBeVisible();

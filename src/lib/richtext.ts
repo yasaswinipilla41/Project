@@ -29,6 +29,7 @@
  *   **bold**  *italic*  ++underline++  `code`  ~~strike~~
  *   [text](url)     link
  *   @name           mention
+ *   ENG-12          issue reference
  *
  * Underline has no Markdown spelling; `++text++` is used, matching the
  * convention several Markdown dialects settled on.
@@ -44,7 +45,8 @@ export type InlineNode =
   | { kind: "strike"; children: InlineNode[] }
   | { kind: "code"; value: string }
   | { kind: "link"; href: string; children: InlineNode[] }
-  | { kind: "mention"; handle: string; userId: string | null };
+  | { kind: "mention"; handle: string; userId: string | null }
+  | { kind: "issue"; key: string };
 
 export type BlockNode =
   | { kind: "paragraph"; children: InlineNode[] }
@@ -317,6 +319,18 @@ const LINK_PATTERN = /\[([^\]\n]{1,200})\]\(([^)\s]{1,2048})\)/;
 const BARE_URL_PATTERN = /\bhttps?:\/\/[^\s<>()]{3,2048}/;
 const MENTION_PATTERN = /@([A-Za-z][A-Za-z0-9._-]{0,63}(?: [A-Z][a-z]{1,31})?)/;
 
+/*
+ * An issue key: a project key, a dash, a number — "ENG-12". Matched anywhere
+ * in a sentence, with or without the `#` the composer types to find one, since
+ * people write keys either way and both mean the same issue. The boundaries
+ * stop it firing inside a longer word or a hyphenated compound.
+ *
+ * Whether the issue exists, and whether the reader may see it, is not decided
+ * here: this only produces a link to Prio's own issue route, which authorizes
+ * on arrival like any other visit to it.
+ */
+const ISSUE_PATTERN = /(?<![\w-])#?([A-Z][A-Z0-9]{1,9}-\d{1,7})(?![\w-])/;
+
 function parseInline(
   raw: string,
   candidates: MentionCandidate[],
@@ -370,6 +384,15 @@ function parseInline(
       ...parseInline(raw.slice(0, bare.index), candidates),
       node,
       ...parseInline(raw.slice(bare.index + bare[0].length), candidates),
+    ];
+  }
+
+  const issue = ISSUE_PATTERN.exec(raw);
+  if (issue) {
+    return [
+      ...parseInline(raw.slice(0, issue.index), candidates),
+      { kind: "issue", key: issue[1] ?? "" },
+      ...parseInline(raw.slice(issue.index + issue[0].length), candidates),
     ];
   }
 
@@ -435,6 +458,7 @@ export function richTextToPlain(raw: string, max = 280): string {
         if (node.kind === "text") return node.value;
         if (node.kind === "code") return node.value;
         if (node.kind === "mention") return `@${node.handle}`;
+        if (node.kind === "issue") return node.key;
         return flatten(node.children);
       })
       .join("");

@@ -19,9 +19,11 @@ export const dynamic = "force-dynamic";
  * through the same `updateIssue` action the issue detail page's own status
  * field uses; nothing here writes to the database on its own.
  *
- * Deliberately five columns, not six: Backlog is excluded from this board the
- * same way the reference design excludes it — it stays reachable from the
- * issue list and the create-issue dialog, it just isn't a board column here.
+ * The columns are `BOARD_STATUSES`, Backlog included: the query below asks the
+ * database for those statuses, so which issues reach the board is decided
+ * server-side. Nothing is filtered back out in the browser, which matters for
+ * unassigned work -- it holds Backlog far more often than anything else, and a
+ * client-side exclusion would have left it loaded but unshown.
  */
 
 async function loadProject(rawKey: string, user: CurrentUser) {

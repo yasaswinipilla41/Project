@@ -29,6 +29,8 @@ import {
   IssueKey,
   IssueTypeIcon,
   LabelChip,
+  PriorityIndicator,
+  SeverityChip,
   StatusPill,
 } from "@/components/ui/Indicators";
 import {
@@ -282,6 +284,22 @@ export default async function IssueDetailPage({
             assignee={issue.assignee}
             members={members.map((m) => m.user)}
           />
+          {/*
+            * Due date sits with the other things that get changed about an
+            * issue, next to who it is on. The calendar icon is what makes it
+            * legible at a glance among the pills either side of it, and it
+            * shows even with no date set -- "No due date" is a state worth
+            * being able to see and click, not an absence to leave blank.
+            */}
+          <DueDateField issueId={issue.id} dueDate={issue.dueDate}>
+            <span
+              className={overdue ? "prio-due prio-due--overdue" : "prio-due"}
+            >
+              {overdue ? <IconWarning size={13} /> : <IconCalendar size={13} />}
+              {issue.dueDate ? formatDate(issue.dueDate) : "No due date"}
+              {overdue ? " · overdue" : null}
+            </span>
+          </DueDateField>
         </div>
       </header>
 
@@ -298,7 +316,7 @@ export default async function IssueDetailPage({
                 testResult={issue.testResult}
                 testedBy={issue.testedBy}
                 testedAt={issue.testedAt}
-                assigneeId={issue.assignee?.id ?? null}
+                reporterId={issue.reporter.id}
                 currentUserId={user.id}
               />
             </CardBody>
@@ -416,15 +434,22 @@ export default async function IssueDetailPage({
             </CardBody>
           </Card>
 
-          {/* ------------------------------- activity and comments */}
+          {/* ------------------------------- comments and activity */}
           <Card className="prio-issue__section">
             <CardBody>
+              {/*
+               * Named for the discussion, because that is what people open an
+               * issue to read and write — the audit trail is the tab beside
+               * it. This is the section's heading only: the Activity tab, the
+               * /activity page and the audit records behind both are
+               * untouched, and nothing else in the app was renamed.
+               */}
               <h2 className="prio-issue__section-title">
                 <IconActivity size={14} />
-                Activity
+                Comments
                 <span className="prio-issue__section-note">
-                  System events are permanent; comments can be edited by their
-                  author, and every edit is recorded.
+                  Comments can be edited by their author; every edit, and every
+                  system event, is recorded under Activity.
                 </span>
               </h2>
 
@@ -450,6 +475,16 @@ export default async function IssueDetailPage({
         <div className="col-12 col-xl-4">
           <Card className="prio-issue__aside">
             <CardBody>
+              {/*
+               * Details reads; it does not edit.
+               *
+               * Status, priority, severity, assignee and the due date are all
+               * changed from the header above, and every one of them used to
+               * appear here a second time as a second control for the same
+               * field. Two live controls for one value is how a page ends up
+               * disagreeing with itself mid-save. What is left is the summary
+               * this panel was for.
+               */}
               <h2 className="prio-issue__section-title">Details</h2>
 
               <MetaRow label="Status">
@@ -457,12 +492,19 @@ export default async function IssueDetailPage({
               </MetaRow>
 
               <MetaRow label="Priority">
-                <PriorityControl issueId={issue.id} priority={issue.priority} />
+                <PriorityIndicator priority={issue.priority} />
               </MetaRow>
 
-              {isBug ? (
+              {/*
+               * N2: severity stays exactly the field it already was -- the
+               * same `issue.severity`, still shown only for a bug, because a
+               * severity on a task has nothing to describe. Read-only here
+               * like the rest of Details; the editable control is in the
+               * header, where it has always been for bugs.
+               */}
+              {isBug && issue.severity ? (
                 <MetaRow label="Severity">
-                  <SeverityControl issueId={issue.id} severity={issue.severity} />
+                  <SeverityChip severity={issue.severity} />
                 </MetaRow>
               ) : null}
 
@@ -517,23 +559,24 @@ export default async function IssueDetailPage({
               ) : null}
 
               <MetaRow label="Due date">
-                <DueDateField issueId={issue.id} dueDate={issue.dueDate}>
-                  {issue.dueDate ? (
-                    <span
-                      className={overdue ? "prio-due prio-due--overdue" : "prio-due"}
-                    >
-                      {overdue ? (
-                        <IconWarning size={13} />
-                      ) : (
-                        <IconCalendar size={13} />
-                      )}
-                      {formatDate(issue.dueDate)}
-                      {overdue ? " · overdue" : null}
-                    </span>
-                  ) : (
-                    <span className="prio-text-muted">None</span>
-                  )}
-                </DueDateField>
+                {issue.dueDate ? (
+                  <span
+                    className={overdue ? "prio-due prio-due--overdue" : "prio-due"}
+                  >
+                    {overdue ? (
+                      <IconWarning size={13} />
+                    ) : (
+                      <IconCalendar size={13} />
+                    )}
+                    {formatDate(issue.dueDate)}
+                    {overdue ? " · overdue" : null}
+                  </span>
+                ) : (
+                  <span className="prio-due prio-due--none">
+                    <IconCalendar size={13} />
+                    None
+                  </span>
+                )}
               </MetaRow>
 
               <hr className="prio-divider" />

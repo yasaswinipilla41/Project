@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import { UserAdmin } from "@/components/admin/UserAdmin";
 import { TeamAdmin } from "@/components/admin/TeamAdmin";
+import { NewUsers, SectionHead } from "@/components/dashboard/DashboardParts";
+import { loadNewUsers } from "@/server/queries/dashboard";
+import { Card, CardBody } from "@/components/ui/primitives";
 import { Stat } from "@/components/ui/primitives";
 import { IconAdmin, IconBug, IconIssues, IconUsers } from "@/components/ui/Icon";
 import { CLOSED_STATUSES, OPEN_STATUSES } from "@/lib/domain";
@@ -23,6 +26,7 @@ export default async function AdminPage() {
   const [
     users,
     projects,
+    newUsers,
     teams,
     totalIssues,
     openIssues,
@@ -57,6 +61,7 @@ export default async function AdminPage() {
         _count: { select: { members: true, issues: true } },
       },
     }),
+    loadNewUsers(),
     prisma.team.findMany({
       orderBy: { name: "asc" },
       select: {
@@ -160,6 +165,26 @@ export default async function AdminPage() {
           />
         </div>
       </div>
+
+      {/*
+        * Who joined recently.
+        *
+        * This used to sit at the top of Home, where it was the one piece of
+        * people administration on a page everybody else uses to see their own
+        * work. It belongs here, with the rest of people management, and Home
+        * is left to answer what is happening rather than who to onboard.
+        * Nothing about it changed but where it is rendered.
+        */}
+      {newUsers.length > 0 ? (
+        <div style={{ marginBottom: "var(--prio-space-6)" }}>
+          <SectionHead title="New members" count={newUsers.length} />
+          <Card>
+            <CardBody>
+              <NewUsers users={newUsers} />
+            </CardBody>
+          </Card>
+        </div>
+      ) : null}
 
       <div style={{ marginBottom: "var(--prio-space-6)" }}>
         <TeamAdmin

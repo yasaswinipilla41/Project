@@ -20,8 +20,18 @@ export interface FileKind {
   label: string;
 }
 
-export const MAX_UPLOAD_BYTES = 100 * 1024 * 1024; // 100 MB
-export const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+/*
+ * 30 MB is the ceiling for any attachment, enforced on the server against the
+ * parsed file's real size — the browser's check is a courtesy that fails fast,
+ * never the boundary.
+ *
+ * Images keep their own, stricter limit. A screenshot has no business being
+ * tens of megabytes, and the tighter cap is deliberate: it is what stops the
+ * one file type anybody can produce in bulk from filling the store. A stricter
+ * sub-limit is still within a 30 MB maximum.
+ */
+export const MAX_UPLOAD_BYTES = 30 * 1024 * 1024; // 30 MB
+export const MAX_IMAGE_BYTES = 20 * 1024 * 1024; // 20 MB
 
 /**
  * Signatures, longest-first where one is a prefix of another.
@@ -54,6 +64,30 @@ const KIND = {
     render: "document",
     label: "Zip archive",
   },
+  doc: {
+    mime: "application/msword",
+    extension: ".doc",
+    render: "document",
+    label: "Word document",
+  },
+  docx: {
+    mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    extension: ".docx",
+    render: "document",
+    label: "Word document",
+  },
+  xls: {
+    mime: "application/vnd.ms-excel",
+    extension: ".xls",
+    render: "document",
+    label: "Excel workbook",
+  },
+  xlsx: {
+    mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    extension: ".xlsx",
+    render: "document",
+    label: "Excel workbook",
+  },
   txt: { mime: "text/plain", extension: ".txt", render: "document", label: "Text file" },
   csv: { mime: "text/csv", extension: ".csv", render: "document", label: "CSV file" },
 } as const satisfies Record<string, FileKind>;
@@ -80,6 +114,13 @@ const SIGNATURES: Signature[] = [
   { kind: KIND.mp4, offset: 4, bytes: ascii("ftyp") },
   { kind: KIND.pdf, offset: 0, bytes: ascii("%PDF-") },
   { kind: KIND.zip, offset: 0, bytes: [0x50, 0x4b, 0x03, 0x04] },
+  /* OLE compound file: .doc and .xls share it byte for byte, so the extension
+     below decides which one this is. */
+  {
+    kind: KIND.doc,
+    offset: 0,
+    bytes: [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1],
+  },
 ];
 
 /** Bytes needed before a decision can be made. */
@@ -97,11 +138,29 @@ export function identifyUpload(
   declared: string | null,
   filename: string,
 ): FileKind | null {
+  const name = filename.toLowerCase();
+  const endsWith = (...suffixes: string[]) =>
+    suffixes.some((suffix) => name.endsWith(suffix));
+
   for (const signature of SIGNATURES) {
     if (!matches(head, signature.offset, signature.bytes)) continue;
     if (signature.also?.some((extra) => !matches(head, extra.offset, extra.bytes))) {
       continue;
     }
+
+    /*
+     * Two families share a signature with something already on the list, so
+     * the name breaks the tie — the one job the module allows a claim to do.
+     * Note what this does *not* do: a file whose bytes are not a zip or an OLE
+     * container is still refused however it is named, so the tie-break can
+     * only ever choose between formats the bytes already permit.
+     */
+    if (signature.kind === KIND.zip) {
+      if (endsWith(".docx")) return KIND.docx;
+      if (endsWith(".xlsx")) return KIND.xlsx;
+    }
+    if (signature.kind === KIND.doc && endsWith(".xls")) return KIND.xls;
+
     return signature.kind;
   }
 
@@ -111,8 +170,7 @@ export function identifyUpload(
    * executable from arriving as "notes.txt".
    */
   if (looksLikeText(head)) {
-    const wantsCsv =
-      declared === "text/csv" || filename.toLowerCase().endsWith(".csv");
+    const wantsCsv = declared === "text/csv" || endsWith(".csv");
     return wantsCsv ? KIND.csv : KIND.txt;
   }
 

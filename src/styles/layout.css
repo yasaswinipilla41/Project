@@ -287,6 +287,17 @@
   padding-right: 0;
 }
 
+/* Collapsed, a project row has to line up with every other rail item.
+   `.prio-navitem` already centres its own contents, but a project row's
+   content is one level deeper: the link is `flex: 1`, so it spans the rail and
+   left-aligns the chip inside itself while the plain nav icons above sit on the
+   centre line. Centring the link's own contents is what puts the chip back on
+   that line -- the row keeps its full width, so the whole rail stays clickable. */
+.prio-sidebar[data-collapsed="true"] .prio-sidebar__project-link {
+  justify-content: center;
+  gap: 0;
+}
+
 /* Project shortcut swatch. */
 .prio-project-chip {
   display: grid;

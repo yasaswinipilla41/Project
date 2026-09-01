@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { MEMBER_STATE } from "./support";
 
 /**
@@ -9,6 +9,26 @@ import { MEMBER_STATE } from "./support";
  * silently cleared its severity and reset its status. These tests change one
  * field at a time and assert the others are untouched.
  */
+
+/**
+ * Open the Activity tab.
+ *
+ * Comments and system events used to share one list; they are separate tabs
+ * now, and Comments opens first. The audit trail is unchanged and complete —
+ * it is one click away, which is what these assertions take.
+ */
+async function openActivity(page: Page): Promise<void> {
+  const tab = page.getByRole("tab", { name: /^Activity/ });
+  /* Waited for, not skipped when absent: called straight after a navigation
+     the tabs have not rendered yet, and returning early would leave Comments
+     showing and every assertion below looking at the wrong list. */
+  await tab.waitFor({ timeout: 15_000 });
+  await tab.click();
+  /* Both tabs render the same `<ol class="prio-activity">`, so waiting for
+     that element proves nothing — it is already on screen under Comments.
+     The tab reporting itself selected is the signal that the swap happened. */
+  await expect(tab).toHaveAttribute("aria-selected", "true");
+}
 
 test.describe("update regressions", () => {
   test("changing only priority leaves severity and status untouched", async ({
@@ -56,6 +76,7 @@ test.describe("update regressions", () => {
     expect(reporter).toContain("Sneha Iyer");
 
     // The trail records exactly one field change, naming priority only.
+    await openActivity(page);
     const activity = await page.locator(".prio-activity").innerText();
     expect(activity).toContain("changed the priority");
     expect(activity).not.toContain("changed the severity");
@@ -111,8 +132,15 @@ test.describe("update regressions", () => {
     /* Older events collapse behind a toggle so the comment composer stays
        within reach. This test is about the whole trail, so it opens it. */
     const expand = async () => {
+      await openActivity(page);
+      /* The trail collapses older events behind a toggle. Both counts below
+         must be of the whole list, or a list capped at the same number twice
+         would read as "nothing was appended". */
       const more = page.locator(".prio-conversation__more");
-      if (await more.count()) await more.click();
+      if (await more.count()) {
+        await more.click();
+        await expect(more).toHaveCount(0);
+      }
     };
     await expand();
 
@@ -125,9 +153,20 @@ test.describe("update regressions", () => {
     expect(text).toContain("reported this bug");
     expect(text).toContain("changed status");
 
-    // Making a change appends rather than rewrites.
+    /* Making a change appends rather than rewrites.
+     *
+     * The new priority is chosen against the current one rather than being
+     * hard-coded: setting a value the issue already holds is a no-op that
+     * writes no activity and raises no toast, so a fixed choice made this test
+     * pass once and fail on every later run against the same database. */
+    const priorityNow = await page
+      .locator(".prio-issue__headmeta .prio-priority")
+      .first()
+      .getAttribute("data-priority");
+    const nextPriority = priorityNow === "MEDIUM" ? /High/ : /Medium/;
+
     await page.locator(".prio-issue__headmeta .prio-priority").first().click();
-    await page.getByRole("menuitemradio", { name: /Medium/ }).click();
+    await page.getByRole("menuitemradio", { name: nextPriority }).click();
     await expect(page.locator(".prio-toast")).toContainText("Priority set to");
     await page.reload();
     await expand();
@@ -137,8 +176,18 @@ test.describe("update regressions", () => {
     const after = await page.locator(".prio-activity").innerText();
     expect(after).toContain("reported this bug");
 
+    /* Put it back where it started, so the issue is as it was found and the
+       next run of this test begins from the same place. */
+    const PRIORITY_LABEL: Record<string, RegExp> = {
+      URGENT: /Urgent/,
+      HIGH: /High/,
+      MEDIUM: /Medium/,
+      LOW: /Low/,
+      NONE: /None/,
+    };
+    const restoreTo = PRIORITY_LABEL[priorityNow ?? "MEDIUM"] ?? /Medium/;
     await page.locator(".prio-issue__headmeta .prio-priority").first().click();
-    await page.getByRole("menuitemradio", { name: /Urgent/ }).click();
+    await page.getByRole("menuitemradio", { name: restoreTo }).click();
     await expect(page.locator(".prio-toast")).toContainText("Priority set to");
   });
 });
@@ -191,6 +240,7 @@ test.describe("inline editing", () => {
     );
 
     // The trail records the rename.
+    await openActivity(page);
     const activity = await page.locator(".prio-activity").innerText();
     expect(activity).toContain("changed the title");
 

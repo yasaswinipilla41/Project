@@ -1,5 +1,6 @@
 import type { IssueStatus, IssueType, Priority, Role, Severity } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { dueWindow } from "@/lib/format";
 import { accessibleProjectIds } from "@/lib/authz";
 import { CLOSED_STATUSES, OPEN_STATUSES } from "@/lib/domain";
 import type { CurrentUser } from "@/lib/session";
@@ -176,14 +177,9 @@ export interface DashboardData {
 function windows() {
   const now = new Date();
 
-  const startOfToday = new Date(now);
-  startOfToday.setHours(0, 0, 0, 0);
-
-  const endOfToday = new Date(startOfToday);
-  endOfToday.setDate(endOfToday.getDate() + 1);
-
-  const endOfWeek = new Date(startOfToday);
-  endOfWeek.setDate(endOfWeek.getDate() + 7);
+  /* Shared with the issue list, so the counts here and the rows it shows when
+     one is clicked are cut on the same boundaries. */
+  const { startOfToday, endOfToday, endOfWeek } = dueWindow(now);
 
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
@@ -798,8 +794,13 @@ async function loadOrgStats() {
 /** How far back "new" reaches before Admin Home stops calling someone new. */
 const NEW_USER_WINDOW_DAYS = 14;
 
-/** Recently joined people, newest first — admin only, org-wide. */
-async function loadNewUsers(): Promise<DashboardNewUser[]> {
+/**
+ * Recently joined people, newest first — admin only, org-wide.
+ *
+ * Exported so Administration can render the same list from the same query
+ * rather than growing a second one beside it.
+ */
+export async function loadNewUsers(): Promise<DashboardNewUser[]> {
   const since = new Date();
   since.setDate(since.getDate() - NEW_USER_WINDOW_DAYS);
 

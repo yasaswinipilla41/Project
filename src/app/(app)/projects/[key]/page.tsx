@@ -78,7 +78,22 @@ async function loadProject(rawKey: string, user: CurrentUser) {
           },
         },
       },
-      labels: { select: { id: true, name: true, color: true } },
+      /*
+       * Only the labels this project's work actually carries.
+       *
+       * A project owns labels whether or not anything uses them — every new
+       * project starts with the canonical set — so listing all of them
+       * described the vocabulary rather than the work. `some: {}` on the
+       * relation keeps the ones with at least one issue behind them, which is
+       * what a summary is for. Nothing cross-project can appear: a label
+       * belongs to one project, and `createIssue` refuses a label from
+       * another.
+       */
+      labels: {
+        where: { issues: { some: {} } },
+        select: { id: true, name: true, color: true },
+        orderBy: { name: "asc" },
+      },
       attachments: {
         orderBy: { createdAt: "desc" },
         select: {

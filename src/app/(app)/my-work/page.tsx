@@ -324,7 +324,7 @@ export default async function MyWorkPage({
             icon={<IconCalendar size={13} />}
             tone={dueSoonCount > 0 ? "warning" : "default"}
             hint={`${resolvedCount} completed all time`}
-            href={`/issues?assignee=${user.id}&resolution=open&sort=due&dir=asc`}
+            href={`/issues?assignee=${user.id}&resolution=open&dueWeek=1&sort=due&dir=asc`}
           />
         </div>
       </div>

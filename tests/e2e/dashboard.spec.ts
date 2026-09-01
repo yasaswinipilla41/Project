@@ -247,7 +247,10 @@ test.describe("Dashboard — signed in as an administrator", () => {
     });
 
     try {
-      await page.goto("/");
+      /* New members moved to Administration: it is people management, and
+         Home is where everyone else looks at their own work. Same list,
+         same component, same query — only the page changed. */
+      await page.goto("/admin");
 
       await expect(
         page.getByRole("heading", { name: "New members" }),
@@ -283,16 +286,32 @@ test.describe("Dashboard — signed in as an administrator", () => {
       select: { id: true },
     });
 
-    // An unassigned open issue in the same project — the safest possible
-    // assignment target, since "revert" is simply setting it back to null
-    // rather than having to remember someone else's prior assignee.
+    /*
+     * An unassigned open issue in the same project — the safest possible
+     * assignment target, since "revert" is simply setting it back to null
+     * rather than having to remember someone else's prior assignee.
+     *
+     * Ordered the way the picker itself orders, which matters because the
+     * picker is capped at fifty. Taking whichever row the database happened
+     * to return first picked an arbitrary issue out of the sixty-odd that
+     * qualify, and the rest of the suite is meanwhile assigning and touching
+     * issues — so `updatedAt` moves, the capped window slides, and the
+     * candidate could be gone from the list by the time the dialog rendered.
+     * The test then failed with "did not find some options" rather than
+     * because anything was actually wrong. Picking the head of the same
+     * ordering keeps it inside the window.
+     */
     const candidate = await prisma.issue.findFirstOrThrow({
       where: { projectId: eng.id, status: "TODO", assigneeId: null },
+      orderBy: [{ priority: "asc" }, { updatedAt: "desc" }],
       select: { id: true, key: true },
     });
 
     try {
-      await page.goto("/");
+      /* New members moved to Administration: it is people management, and
+         Home is where everyone else looks at their own work. Same list,
+         same component, same query — only the page changed. */
+      await page.goto("/admin");
 
       const row = page
         .locator(".prio-newusers__row")
@@ -699,6 +718,20 @@ test.describe("Dashboard — presentation", () => {
     const light = await sample();
 
     await applyTheme("dark");
+
+    /*
+     * `.prio-kpi` transitions its border colour, so one frame after the flip
+     * the computed value can still be the light one, caught mid-transition.
+     * Every other sampled property changes instantly, which is why this test
+     * failed on the border alone under a loaded machine. Polling waits for the
+     * value to settle instead of assuming a frame is enough; the assertions
+     * below are unchanged, so a theme that genuinely fails to apply still
+     * fails here rather than being waited into passing.
+     */
+    await expect
+      .poll(async () => (await sample()).border, { timeout: 5000 })
+      .not.toBe(light.border);
+
     const dark = await sample();
 
     // Every one of these must change: a theme that only flips the background

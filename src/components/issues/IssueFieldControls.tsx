@@ -12,7 +12,7 @@ import {
 import { useToast } from "@/components/ui/Toast";
 import { IconChevronDown } from "@/components/ui/Icon";
 import {
-  ISSUE_STATUSES,
+  allowedTransitions,
   PRIORITIES,
   PRIORITY_LABEL,
   SEVERITIES,
@@ -90,7 +90,10 @@ export function StatusControl({
       )}
     >
       <MenuLabel>Move to</MenuLabel>
-      {ISSUE_STATUSES.map((option) => (
+      {/* Only where this issue may actually go. Offering the rest and
+          refusing the choice afterwards teaches people to distrust the menu;
+          the server checks the same rule regardless. */}
+      {allowedTransitions(status).map((option) => (
         <MenuItem
           key={option}
           selected={option === status}

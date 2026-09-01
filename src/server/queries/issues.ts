@@ -2,6 +2,7 @@ import type { Prisma } from "@prisma/client";
 import type { IssueType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { issueScope } from "@/lib/authz";
+import { dueWindow } from "@/lib/format";
 import type { CurrentUser } from "@/lib/session";
 import {
   CLOSED_STATUSES,
@@ -52,6 +53,8 @@ export interface IssueFilters {
   resolution?: string;
   /** Restricts to overdue items. */
   overdue?: boolean;
+  /** Restricts to items due between the end of today and the end of the week. */
+  dueWeek?: boolean;
   environment?: string;
   affectedModule?: string;
   /** Forces a single type, e.g. the /bugs surface. */
@@ -140,6 +143,18 @@ export function buildIssueWhere(
   if (filters.overdue) {
     and.push({
       dueDate: { lt: new Date() },
+      status: { notIn: [...CLOSED_STATUSES] },
+    });
+  }
+
+  if (filters.dueWeek) {
+    /* The same boundaries the dashboard counts on, so "Due this week" opens
+       exactly the issues it counted. Overdue work is excluded by starting at
+       the end of today — it belongs to the Overdue bucket, and showing it in
+       both would double-count the same problem. */
+    const { endOfToday, endOfWeek } = dueWindow();
+    and.push({
+      dueDate: { gte: endOfToday, lt: endOfWeek },
       status: { notIn: [...CLOSED_STATUSES] },
     });
   }

@@ -18,7 +18,7 @@ const PNG_BASE64 =
 const PNG_BYTES = Buffer.from(PNG_BASE64, "base64");
 
 async function attachScreenshot(page: Page) {
-  await page.getByLabel("Files", { exact: true }).setInputFiles({
+  await page.getByLabel("Attachments", { exact: true }).setInputFiles({
     name: "screenshot.png",
     mimeType: "image/png",
     buffer: PNG_BYTES,

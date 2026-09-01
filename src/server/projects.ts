@@ -486,14 +486,26 @@ export async function createLabel(
     // Any project member may add a label (§18 — members manage labels).
     await assertProjectAccess(user, parsed.data.projectId);
 
-    const existing = await prisma.label.findUnique({
+    /*
+     * Reuse rather than create, and match without regard to case.
+     *
+     * The unique constraint is on the exact name, so "Accounting" beside
+     * "accounting" is two rows to Postgres and one label to a person. Typing a
+     * name that already exists in another case now returns the existing label
+     * instead of quietly making a second one that filters and reports split
+     * their counts between.
+     *
+     * Only new labels are affected. Any case-variant pairs already in a
+     * project keep both rows and every issue keeps the exact label it was
+     * given — this refuses to make more, it does not merge what is there.
+     */
+    const existing = await prisma.label.findFirst({
       where: {
-        projectId_name: {
-          projectId: parsed.data.projectId,
-          name: parsed.data.name,
-        },
+        projectId: parsed.data.projectId,
+        name: { equals: parsed.data.name, mode: "insensitive" },
       },
       select: { id: true, name: true, color: true },
+      orderBy: { name: "asc" },
     });
     if (existing) return { ok: true, data: existing };
 

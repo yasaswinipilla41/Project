@@ -150,6 +150,22 @@
   max-width: 60ch;
 }
 
+/*
+ * Narrow viewports get a shorter title before the ellipsis.
+ *
+ * The fixed columns either side of Summary come to roughly 620px, so a title
+ * allowed 60 characters gives the table an intrinsic width near 1060 — and at
+ * tablet width that pushes the page itself sideways by a few pixels even
+ * though `.prio-table-wrap` scrolls the table correctly. Truncating sooner is
+ * what the ellipsis is for, and nothing is lost: the row still links to the
+ * issue and the full title is on the page it opens.
+ */
+@media (max-width: 900px) {
+  .prio-issuetitle {
+    max-width: 32ch;
+  }
+}
+
 .prio-issuetitle:hover {
   color: var(--prio-primary-600);
   text-decoration: none;

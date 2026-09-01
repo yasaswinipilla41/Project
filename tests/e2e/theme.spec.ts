@@ -337,7 +337,7 @@ test.describe("Search shortcut", () => {
   }) => {
     await page.goto("/issues/eng-1");
 
-    const field = page.getByPlaceholder("Write a comment…");
+    const field = page.getByRole("textbox", { name: "Write a comment…" });
     await field.click();
     await field.type("looks ok");
 
@@ -346,7 +346,7 @@ test.describe("Search shortcut", () => {
 
     // The composer keeps focus and its content; search is not summoned.
     await expect(field).toBeFocused();
-    await expect(field).toHaveValue(/looks ok/);
+    await expect(field).toContainText("looks ok");
   });
 });
 

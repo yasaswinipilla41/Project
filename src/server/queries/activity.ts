@@ -1,6 +1,11 @@
 import type { IssueType, Prisma } from "@prisma/client";
 import { issueScope } from "@/lib/authz";
-import { type ActivityType } from "@/lib/activity";
+import {
+  COMMENT_ACTIONS,
+  isCommentAction,
+  type ActivityType,
+  type CommentAction,
+} from "@/lib/activity";
 import { prisma } from "@/lib/prisma";
 import type { CurrentUser } from "@/lib/session";
 
@@ -11,8 +16,9 @@ import type { CurrentUser } from "@/lib/session";
  * (§31) — the same table `updateIssue` already writes to on every field
  * change, and the same table the dashboard, admin and project-detail activity
  * lists already read. Nothing here writes a new kind of record; this only
- * reads that trail, restricted to the two event kinds the feed renders as a
- * sentence: an issue being (re)assigned, and its status changing.
+ * reads that trail, restricted to the event kinds the feed renders as a
+ * sentence: an issue being (re)assigned, its status changing, and a comment
+ * being written, edited or deleted on it.
  */
 
 export const PAGE_SIZE = 25;
@@ -38,6 +44,8 @@ export interface ActivityEntry {
   /** Set when `kind === "status"`. */
   fromStatus?: string | null;
   toStatus?: string | null;
+  /** Set when `kind === "comment"` -- which of the three things happened. */
+  commentAction?: CommentAction;
 }
 
 export interface ActivityListResult {
@@ -48,15 +56,29 @@ export interface ActivityListResult {
   pageCount: number;
 }
 
+/*
+ * The three event kinds the feed can render as a sentence.
+ *
+ * Assignments and status changes are field changes on the issue, so they are
+ * recognised by `field`. A comment changes no field of the issue, so it is
+ * recognised by `action` instead. Keeping the three conditions in one place is
+ * what stops the unfiltered feed and the per-type filters drifting apart --
+ * "All activity" is exactly the union of the kinds the feed knows how to say.
+ */
+const ASSIGNMENT_WHERE: Prisma.ActivityLogEntryWhereInput = {
+  field: "assigneeId",
+  newValue: { not: null },
+};
+const STATUS_WHERE: Prisma.ActivityLogEntryWhereInput = { field: "status" };
+const COMMENT_WHERE: Prisma.ActivityLogEntryWhereInput = {
+  action: { in: [...COMMENT_ACTIONS] },
+};
+
 function typeCondition(type: ActivityType | undefined): Prisma.ActivityLogEntryWhereInput {
-  if (type === "assignment") return { field: "assigneeId", newValue: { not: null } };
-  if (type === "status") return { field: "status" };
-  return {
-    OR: [
-      { field: "assigneeId", newValue: { not: null } },
-      { field: "status" },
-    ],
-  };
+  if (type === "assignment") return ASSIGNMENT_WHERE;
+  if (type === "status") return STATUS_WHERE;
+  if (type === "comment") return COMMENT_WHERE;
+  return { OR: [ASSIGNMENT_WHERE, STATUS_WHERE, COMMENT_WHERE] };
 }
 
 export async function listActivity(
@@ -101,6 +123,7 @@ export async function listActivity(
       where,
       select: {
         id: true,
+        action: true,
         field: true,
         oldValue: true,
         newValue: true,
@@ -141,10 +164,23 @@ export async function listActivity(
   const assigneeNameById = new Map(assigneeUsers.map((u) => [u.id, u.name]));
 
   const rows: ActivityEntry[] = entries.map((entry) => {
-    const kind: ActivityType = entry.field === "status" ? "status" : "assignment";
+    /* Ordered so a comment row is never mistaken for an assignment: comment
+       entries carry no `field` at all, and the old "status or else
+       assignment" test would have called every one of them an assignment. */
+    /* Bound to a const first: TypeScript narrows through an aliased type
+       guard only when what was tested cannot have changed since, which a
+       mutable property of `entry` could have. */
+    const action = entry.action;
+    const comment = isCommentAction(action);
+    const kind: ActivityType = comment
+      ? "comment"
+      : entry.field === "status"
+        ? "status"
+        : "assignment";
     return {
       id: entry.id,
       kind,
+      commentAction: comment ? action : undefined,
       createdAt: entry.createdAt,
       actor: entry.actor,
       issue: { key: entry.issue.key, title: entry.issue.title, type: entry.issue.type },

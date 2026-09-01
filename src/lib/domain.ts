@@ -53,6 +53,63 @@ export function isClosedStatus(status: IssueStatus): boolean {
   return status === "DONE" || status === "CANCELLED";
 }
 
+/* ------------------------------------------------------- status workflow */
+
+/**
+ * Which statuses an issue may move to, from each status it can be in.
+ *
+ * One declaration, read by everything that can change a status: the issue
+ * page's status menu, the Flow Board's drag and drop, the "submit for review"
+ * button, and `updateIssue` on the server. Any of those disagreeing with the
+ * others is the bug this exists to prevent, so none of them carries rules of
+ * its own.
+ *
+ * The shape of the workflow, and why:
+ *
+ *   Backlog ⇄ Todo → In Progress → Ready for QA → In QA → Done
+ *
+ *  - **Done is only reachable from Ready for QA or In QA.** Work does not
+ *    finish without someone other than its author having had the chance to
+ *    look at it, which is the point of having those states at all. This is the
+ *    rule that makes the workflow more than decoration.
+ *  - **Todo may go straight to Ready for QA.** Not every task needs a spell in
+ *    In Progress, and forcing a flip through it teaches people to lie to the
+ *    board.
+ *  - **Anything open may be cancelled**, and anything closed may be reopened.
+ *    Work is abandoned and resurrected for reasons a workflow cannot know.
+ *  - **Backlog cannot jump to review**: something nobody has picked up has no
+ *    work to review.
+ *
+ * Creation is not a transition and is not restricted here — an issue may be
+ * created in whatever status the person filing it says it is in.
+ */
+export const STATUS_TRANSITIONS: Record<IssueStatus, readonly IssueStatus[]> = {
+  BACKLOG: ["TODO", "IN_PROGRESS", "CANCELLED"],
+  TODO: ["IN_PROGRESS", "IN_REVIEW", "BACKLOG", "CANCELLED"],
+  IN_PROGRESS: ["IN_REVIEW", "TODO", "BACKLOG", "CANCELLED"],
+  IN_REVIEW: ["IN_QA", "DONE", "IN_PROGRESS", "CANCELLED"],
+  IN_QA: ["DONE", "IN_REVIEW", "IN_PROGRESS", "CANCELLED"],
+  DONE: ["IN_PROGRESS", "CANCELLED"],
+  CANCELLED: ["BACKLOG", "TODO"],
+};
+
+/**
+ * May this issue move from `from` to `to`?
+ *
+ * Staying put is always allowed: saving a form without touching the status is
+ * not a transition, and treating it as one would refuse edits to every other
+ * field on an issue whose status happens to be a dead end.
+ */
+export function canTransition(from: IssueStatus, to: IssueStatus): boolean {
+  if (from === to) return true;
+  return STATUS_TRANSITIONS[from].includes(to);
+}
+
+/** Where this issue may go next, in the board's own order. */
+export function allowedTransitions(from: IssueStatus): IssueStatus[] {
+  return ISSUE_STATUSES.filter((status) => canTransition(from, status));
+}
+
 /** Ordinal used for sorting; matches the board column order. */
 export function statusOrder(status: IssueStatus): number {
   return ISSUE_STATUSES.indexOf(status);
@@ -305,3 +362,29 @@ export const FIELD_LABEL: Record<string, string> = {
   versionBuild: "version/build",
   affectedModule: "affected module",
 };
+
+/**
+ * The colours a label may be given, and how one is chosen for a name.
+ *
+ * `createLabel` requires a colour, so anything that creates a label without
+ * asking for one has to supply it. Picking by the name rather than at random
+ * means the same label name always comes out the same colour — including on a
+ * second project — which reads as deliberate instead of arbitrary.
+ */
+export const LABEL_COLOURS: readonly string[] = [
+  "#3B82F6",
+  "#8B5CF6",
+  "#E5484D",
+  "#F0961F",
+  "#14A06D",
+  "#0D9488",
+  "#6B7C98",
+];
+
+export function labelColourFor(name: string): string {
+  let hash = 0;
+  for (const char of name.trim().toLowerCase()) {
+    hash = (hash * 31 + char.charCodeAt(0)) % 100_000;
+  }
+  return LABEL_COLOURS[hash % LABEL_COLOURS.length] ?? "#3B82F6";
+}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { canTransition } from "@/lib/domain";
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/primitives";
 import { IconCheck } from "@/components/ui/Icon";
@@ -42,12 +43,11 @@ export function SubmitWorkButton({
 
   // Not their work, or already submitted / finished: nothing to offer.
   if (assigneeId !== currentUserId) return null;
-  if (
-    status === "IN_REVIEW" ||
-    status === "IN_QA" ||
-    status === "DONE" ||
-    status === "CANCELLED"
-  ) {
+  /* Offered exactly when Ready for QA is somewhere this issue may go — the
+     same rule the status menu and the board use, so the button never proposes
+     a move the server would refuse. That also covers the statuses it used to
+     list by hand: none of them can reach Ready for QA. */
+  if (!canTransition(status, "IN_REVIEW") || status === "IN_REVIEW") {
     return null;
   }
 

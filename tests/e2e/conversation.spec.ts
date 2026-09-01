@@ -14,7 +14,7 @@ const stamp = () => Math.random().toString(36).slice(2, 8);
 
 async function openIssue(page: Page, key = "eng-1") {
   await page.goto(`/issues/${key}`);
-  await expect(page.getByRole("heading", { name: "Activity" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Comments" })).toBeVisible();
 }
 
 test.describe("The comment composer", () => {
@@ -29,12 +29,12 @@ test.describe("The comment composer", () => {
     await expect(
       page.getByRole("heading", { name: "Add a comment" }),
     ).toBeVisible();
-    await expect(composer.getByPlaceholder("Write a comment…")).toBeVisible();
+    await expect(composer.getByRole("textbox", { name: "Write a comment…" })).toBeVisible();
 
     // …and it sits inside the Activity section, not somewhere else entirely.
     const activityCard = page
       .locator(".prio-issue__section")
-      .filter({ has: page.getByRole("heading", { name: "Activity" }) });
+      .filter({ has: page.getByRole("heading", { name: "Comments" }) });
     await expect(activityCard.locator(".prio-composer")).toBeVisible();
 
     expect(consoleErrors).toEqual([]);
@@ -45,7 +45,7 @@ test.describe("The comment composer", () => {
     await openIssue(page);
 
     const body = `Reproduced on the latest build ${stamp()}`;
-    await page.getByPlaceholder("Write a comment…").fill(body);
+    await page.getByRole("textbox", { name: "Write a comment…" }).fill(body);
     await page.getByRole("button", { name: "Comment", exact: true }).click();
 
     // It lands in the conversation, attributed and timestamped.
@@ -53,8 +53,11 @@ test.describe("The comment composer", () => {
     await expect(comment).toBeVisible({ timeout: 15_000 });
     await expect(comment.locator(".prio-comment__author")).not.toBeEmpty();
 
-    // The composer is emptied and ready for the next one.
-    await expect(page.getByPlaceholder("Write a comment…")).toHaveValue("");
+    /* The composer is emptied and ready for the next one. It is a rich text
+       region rather than an input now, so this reads its text, not a value. */
+    await expect(
+      page.getByRole("textbox", { name: "Write a comment…" }),
+    ).toHaveText("");
   });
 
   test("renders formatting, and renders markup as text", async ({ page }) => {
@@ -62,7 +65,7 @@ test.describe("The comment composer", () => {
 
     const marker = stamp();
     await page
-      .getByPlaceholder("Write a comment…")
+      .getByRole("textbox", { name: "Write a comment…" })
       .fill(`**bold ${marker}** and <script>alert(1)</script>`);
     await page.getByRole("button", { name: "Comment", exact: true }).click();
 
@@ -83,7 +86,7 @@ test.describe("The comment composer", () => {
   test("previews exactly what will be posted", async ({ page }) => {
     await openIssue(page);
 
-    await page.getByPlaceholder("Write a comment…").fill("# Heading\n\n- one");
+    await page.getByRole("textbox", { name: "Write a comment…" }).fill("# Heading\n\n- one");
     await page.getByRole("tab", { name: "Preview" }).click();
 
     const preview = page.locator(".prio-composer__preview");
@@ -91,9 +94,13 @@ test.describe("The comment composer", () => {
     await expect(preview.locator("li")).toContainText("one");
 
     await page.getByRole("tab", { name: "Write" }).click();
-    await expect(page.getByPlaceholder("Write a comment…")).toHaveValue(
-      "# Heading\n\n- one",
-    );
+    /* Back in the editor the same content is shown formatted rather than
+       as markers — that is the point of a visual editor — so this asserts
+       nothing was lost, not that the syntax is on screen. */
+    const back = page.getByRole("textbox", { name: "Write a comment…" });
+    await expect(back).toContainText("Heading");
+    await expect(back).toContainText("one");
+    await expect(back).not.toContainText("#");
   });
 
   test("formats through the toolbar and posts with Ctrl+Enter", async ({
@@ -102,12 +109,19 @@ test.describe("The comment composer", () => {
     await openIssue(page);
 
     const marker = stamp();
-    const field = page.getByPlaceholder("Write a comment…");
+    const field = page.getByRole("textbox", { name: "Write a comment…" });
     await field.click();
-    await field.fill(`keyboard ${marker} `);
+    await field.fill(`keyboard ${marker}`);
 
+    /*
+     * Bold applies to the selection now, rather than inserting a `**bold**`
+     * sample to type over. The two things worth asserting about a visual
+     * editor are that the formatting shows and the syntax does not.
+     */
+    await field.press("Control+a");
     await page.getByRole("button", { name: "Bold", exact: true }).click();
-    await expect(field).toHaveValue(new RegExp(`\\*\\*bold\\*\\*`));
+    await expect(field.locator("b, strong")).toHaveCount(1);
+    await expect(field).not.toContainText("**");
 
     await field.press("Control+Enter");
 
@@ -122,7 +136,7 @@ test.describe("The comment composer", () => {
     const post = page.getByRole("button", { name: "Comment", exact: true });
     await expect(post).toBeDisabled();
 
-    await page.getByPlaceholder("Write a comment…").fill("   ");
+    await page.getByRole("textbox", { name: "Write a comment…" }).fill("   ");
     await expect(post).toBeDisabled();
   });
 });
@@ -133,7 +147,7 @@ test.describe("Mentions", () => {
   }) => {
     await openIssue(page);
 
-    const field = page.getByPlaceholder("Write a comment…");
+    const field = page.getByRole("textbox", { name: "Write a comment…" });
     await field.click();
     await field.type("Hello @");
 
@@ -158,7 +172,7 @@ test.describe("Mentions", () => {
     await field.press("Enter");
 
     await expect(picker).toBeHidden();
-    await expect(field).toHaveValue(new RegExp(`@${escapeRegExp(chosen)}`));
+    await expect(field).toContainText(`@${chosen}`);
 
     const marker = stamp();
     await field.press("End");
@@ -177,7 +191,7 @@ test.describe("Mentions", () => {
   }) => {
     await openIssue(page);
 
-    const field = page.getByPlaceholder("Write a comment…");
+    const field = page.getByRole("textbox", { name: "Write a comment…" });
     await field.click();
     await field.type("ping @");
 
@@ -185,13 +199,13 @@ test.describe("Mentions", () => {
     await field.press("Escape");
     await expect(page.getByRole("listbox", { name: "People" })).toBeHidden();
 
-    await expect(field).toHaveValue("ping @");
+    await expect(field).toHaveText("ping @");
   });
 
   test("says so when nobody matches", async ({ page }) => {
     await openIssue(page);
 
-    const field = page.getByPlaceholder("Write a comment…");
+    const field = page.getByRole("textbox", { name: "Write a comment…" });
     await field.click();
     await field.type("hi @Zzzqqq");
 
@@ -206,7 +220,7 @@ test.describe("Editing and deleting a comment", () => {
     await openIssue(page);
 
     const marker = stamp();
-    await page.getByPlaceholder("Write a comment…").fill(`before ${marker}`);
+    await page.getByRole("textbox", { name: "Write a comment…" }).fill(`before ${marker}`);
     await page.getByRole("button", { name: "Comment", exact: true }).click();
 
     const comment = page.locator(".prio-comment").filter({ hasText: marker });
@@ -215,7 +229,9 @@ test.describe("Editing and deleting a comment", () => {
     await comment.getByRole("button", { name: "Comment actions" }).click();
     await page.getByRole("menuitem", { name: "Edit" }).click();
 
-    const editor = comment.locator("textarea");
+    /* The edit form is the same visual editor, so it is found by role
+       rather than by tag. */
+    const editor = comment.getByRole("textbox", { name: "Write a comment…" });
     await editor.fill(`after ${marker}`);
     await comment.getByRole("button", { name: "Save changes" }).click();
 
@@ -228,7 +244,7 @@ test.describe("Editing and deleting a comment", () => {
     await openIssue(page);
 
     const marker = stamp();
-    await page.getByPlaceholder("Write a comment…").fill(`temporary ${marker}`);
+    await page.getByRole("textbox", { name: "Write a comment…" }).fill(`temporary ${marker}`);
     await page.getByRole("button", { name: "Comment", exact: true }).click();
 
     const comment = page.locator(".prio-comment").filter({ hasText: marker });
@@ -253,7 +269,7 @@ test.describe("Editing and deleting a comment", () => {
 
     const marker = stamp();
     await adminPage
-      .getByPlaceholder("Write a comment…")
+      .getByRole("textbox", { name: "Write a comment…" })
       .fill(`written by the admin ${marker}`);
     await adminPage
       .getByRole("button", { name: "Comment", exact: true })
@@ -400,7 +416,7 @@ test.describe("Presentation", () => {
     await setViewport(page, 390, 844);
 
     await expect(page.locator(".prio-composer")).toBeVisible();
-    await expect(page.getByPlaceholder("Write a comment…")).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "Write a comment…" })).toBeVisible();
 
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - window.innerWidth,
@@ -430,6 +446,3 @@ test.describe("Presentation", () => {
   });
 });
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}

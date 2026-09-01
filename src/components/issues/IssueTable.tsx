@@ -41,6 +41,7 @@ const COLUMNS: Column[] = [
   { field: "priority", label: "Priority", className: "prio-col-priority" },
   { field: "severity", label: "Severity", className: "prio-col-severity" },
   { field: null, label: "Assignee", className: "prio-col-person" },
+  { field: null, label: "Reporter", className: "prio-col-person" },
   { field: "due", label: "Due", className: "prio-col-date" },
   { field: "updated", label: "Updated", className: "prio-col-date" },
   { field: null, label: "", className: "prio-col-actions" },
@@ -271,6 +272,24 @@ export function IssueTable({
                         <span className="prio-text-disabled">Unassigned</span>
                       </span>
                     )}
+                  </td>
+
+                  {/* Who raised it. `reporterId` is required on an issue and
+                      the relation is never optional, so there is no
+                      "unreported" state to render — but the name is shown
+                      defensively in case the account was removed. */}
+                  <td className="prio-col-person">
+                    <span className="prio-person">
+                      <Avatar
+                        name={issue.reporter?.name ?? null}
+                        image={issue.reporter?.image ?? null}
+                        size="xs"
+                        empty={!issue.reporter}
+                      />
+                      <span className="prio-truncate">
+                        {issue.reporter?.name ?? "Unknown"}
+                      </span>
+                    </span>
                   </td>
 
                   <td className="prio-col-date">

@@ -172,6 +172,11 @@ export default async function ReportsPage() {
     prisma.project.findMany({
       where: { id: { in: projectIds } },
       select: { id: true, key: true, name: true },
+      /* Newest first, and ordered by the database rather than by whatever
+         order the ids happened to arrive in — so a project created a moment
+         ago is at the top, and stays there across a refresh or a new
+         session. */
+      orderBy: { createdAt: "desc" },
     }),
     prisma.label.findMany({
       where: { id: { in: byLabel.map((r) => r.labelId) } },

@@ -173,6 +173,20 @@ function InlineOne({ node }: { node: InlineNode }): React.ReactElement {
       );
     }
 
+    case "issue":
+      /* A link to Prio's own issue route — the same route every other issue
+         link uses, so it authorizes on arrival. Nothing here asserts the
+         issue exists: an unknown key lands on the ordinary not-found page
+         rather than being silently swallowed while typing. */
+      return (
+        <Link
+          href={`/issues/${node.key.toLowerCase()}`}
+          className="prio-rt__issue"
+        >
+          {node.key}
+        </Link>
+      );
+
     case "mention":
       return (
         <span className="prio-rt__mention" data-user={node.userId ?? undefined}>

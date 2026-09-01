@@ -29,6 +29,26 @@ async function openCreate(page: Page, type: "Task" | "Bug" | "Story") {
   return dialog;
 }
 
+/**
+ * Open the Activity tab.
+ *
+ * Comments and system events used to share one list; they are separate tabs
+ * now, and Comments opens first. The audit trail is still complete — it is one
+ * click away, which is what these assertions take.
+ */
+async function openActivity(page: Page): Promise<void> {
+  const tab = page.getByRole("tab", { name: /^Activity/ });
+  /* Waited for, not skipped when absent: called straight after a navigation
+     the tabs have not rendered yet, and returning early would leave Comments
+     showing and every assertion below looking at the wrong list. */
+  await tab.waitFor({ timeout: 15_000 });
+  await tab.click();
+  /* Both tabs render the same `<ol class="prio-activity">`, so waiting for
+     that element proves nothing — it is already on screen under Comments.
+     The tab reporting itself selected is the signal that the swap happened. */
+  await expect(tab).toHaveAttribute("aria-selected", "true");
+}
+
 test.describe("Create flow", () => {
   test("the dialog validates required fields before writing anything", async ({
     page,
@@ -109,10 +129,19 @@ test.describe("Create flow", () => {
     await expect(assignee.locator("option")).not.toHaveCount(1);
     await assignee.selectOption({ label: "Priya Nair" });
 
-    // Labels belong to the project and toggle on click.
-    const label = dialog.getByRole("button", { name: "backend" });
-    await label.click();
-    await expect(label).toHaveAttribute("aria-pressed", "true");
+    /* Labels belong to the project and are found by typing — the form no
+       longer renders every one of them as a chip to hunt through. Only what
+       is chosen becomes a chip. */
+    const labelSearch = dialog.getByRole("combobox", {
+      name: "Search or create a label",
+    });
+    await labelSearch.fill("backend");
+    const option = dialog.locator(".prio-labelpicker__option").first();
+    await expect(option).toBeVisible();
+    await option.click();
+    await expect(
+      dialog.locator(".prio-chipset__chip", { hasText: "backend" }),
+    ).toBeVisible();
 
     // A parent may be chosen from the project's top-level issues.
     const parent = dialog.getByLabel("Parent issue");
@@ -133,6 +162,7 @@ test.describe("Create flow", () => {
     await expect(page.locator(".prio-label-chip").first()).toContainText("backend");
 
     // The immutable trail recorded the creation.
+    await openActivity(page);
     await expect(page.locator(".prio-activity")).toContainText(
       "created this issue",
     );
@@ -213,6 +243,7 @@ test.describe("Create flow", () => {
       "URGENT",
     );
 
+    await openActivity(page);
     await expect(page.locator(".prio-activity")).toContainText(
       "reported this bug",
     );
@@ -260,10 +291,12 @@ test.describe("Create flow", () => {
     }
   });
 
-  test("severity belongs to bugs, and starts unset", async ({ page }) => {
+  test("severity belongs to bugs, and opens at Major", async ({ page }) => {
     /* Severity is the impact of a defect, so the Create flow asks for it only
-       where it means something. A Task is not asked; a Bug is, and still
-       defaults to unset so an untouched bug stores no severity. */
+       where it means something. A Task is not asked at all — defaulting one to
+       a severity would write an opinion onto a record with no use for it. A
+       Bug is asked, and now opens at Major rather than "Not set", so a bug
+       filed without touching the field still carries a real impact. */
     const taskDialog = await openCreate(page, "Task");
     await expect(taskDialog.getByLabel("Severity")).toHaveCount(0);
     await expect(taskDialog.getByLabel("Steps to reproduce")).toHaveCount(0);
@@ -272,10 +305,12 @@ test.describe("Create flow", () => {
     const bugDialog = await openCreate(page, "Bug");
     const severity = bugDialog.getByLabel("Severity");
     await expect(severity).toBeVisible();
-    await expect(severity).toHaveValue("");
-
-    // Choosing one is possible, and sticks.
-    await severity.selectOption("MAJOR");
     await expect(severity).toHaveValue("MAJOR");
+
+    // Still the author's to change, in either direction.
+    await severity.selectOption("MINOR");
+    await expect(severity).toHaveValue("MINOR");
+    await severity.selectOption("");
+    await expect(severity).toHaveValue("");
   });
 });

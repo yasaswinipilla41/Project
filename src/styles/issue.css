@@ -236,6 +236,12 @@
   font-weight: var(--prio-weight-medium);
 }
 
+/* No date set. Muted, but still a due-date row with a calendar on it rather
+   than a bare "None" that could belong to any field in the panel. */
+.prio-due--none {
+  color: var(--prio-text-muted);
+}
+
 /* -------------------------------------------------------------- activity */
 .prio-activity {
   list-style: none;

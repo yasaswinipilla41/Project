@@ -129,7 +129,21 @@ export function Sidebar({
       excludeSuffix: "/board",
     },
     { href: "/issues", label: "Issues", Icon: IconIssues, prefix: true },
-    { href: "/my-work", label: "My Work", Icon: IconMyWork, prefix: true },
+    /* My Work is a personal queue, and an administrator's sidebar is not the
+       place for one — the same reasoning that took My assigned tasks off
+       Admin Home. The route, the page and the data are untouched: an admin
+       who opens /my-work directly still gets it, and every member still has
+       the link. */
+    ...(isAdmin
+      ? []
+      : [
+          {
+            href: "/my-work",
+            label: "My Work",
+            Icon: IconMyWork,
+            prefix: true,
+          } satisfies NavEntry,
+        ]),
     {
       href: "/notifications",
       label: "Notifications",

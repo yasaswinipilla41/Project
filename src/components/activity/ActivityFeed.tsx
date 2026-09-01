@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Avatar, EmptyState } from "@/components/ui/primitives";
 import { IconEmptyBox } from "@/components/ui/Icon";
+import { COMMENT_ACTION_VERB } from "@/lib/activity";
 import { ISSUE_TYPE_LABEL, STATUS_LABEL, isIssueStatus } from "@/lib/domain";
 import { formatDateTime, formatRelative } from "@/lib/format";
 import type { ActivityEntry } from "@/server/queries/activity";
@@ -21,6 +22,24 @@ function sentence(entry: ActivityEntry) {
   const issueLink = (
     <Link href={`/issues/${entry.issue.key.toLowerCase()}`}>{entry.issue.title}</Link>
   );
+
+  if (entry.kind === "comment") {
+    /*
+     * Deliberately says only that a comment happened, never what it said.
+     * A deleted comment still has a row here -- that is the point of an
+     * append-only trail -- and quoting its text in the feed would undo the
+     * deletion it is recording.
+     */
+    const verb = entry.commentAction
+      ? COMMENT_ACTION_VERB[entry.commentAction]
+      : "commented on";
+    return (
+      <>
+        <strong>{entry.actor.name}</strong> {verb} {issueLink}{" "}
+        {ISSUE_TYPE_LABEL[entry.issue.type].toLowerCase()}.
+      </>
+    );
+  }
 
   if (entry.kind === "assignment") {
     return (

@@ -29,15 +29,24 @@ import {
 } from "@/components/ui/Icon";
 import { IssueRowActions } from "@/components/issues/IssueRowActions";
 import { BOARD_STATUSES } from "@/lib/board";
-import { PRIORITIES, PRIORITY_LABEL, STATUS_LABEL } from "@/lib/domain";
+import {
+  canTransition,
+  PRIORITIES,
+  PRIORITY_LABEL,
+  STATUS_LABEL,
+} from "@/lib/domain";
 import { updateIssue } from "@/server/issues";
 
 /**
  * The project Flow Board, laid out and styled to match the approved Flow
- * Board design: breadcrumb, page header, a filter toolbar, and five status
- * columns. Backlog is deliberately excluded as a column, the same way the
- * reference design excludes it — it stays reachable everywhere else (the
- * issue list, the create dialog), it just isn't shown here.
+ * Board design: breadcrumb, page header, a filter toolbar, and one column per
+ * status in `BOARD_STATUSES` — Backlog included, so filed-but-unplanned work
+ * is visible on the board rather than only in the issue list.
+ *
+ * No column carries a rule of its own. Which moves are offered, and which
+ * drops are refused, come from `canTransition` below — so Backlog is an
+ * ordinary column that happens to lead into Todo, In Progress and Cancelled,
+ * and is never a stand-in for review or QA.
  *
  * Dragging a card between columns — the board's only way to change status,
  * matching the reference design's plain, menu-free cards — calls the same
@@ -321,10 +330,34 @@ export function FlowBoard({
    * events into one and lose that history.
    */
   function move(issueIds: string[], status: IssueStatus) {
-    const moving = issueIds.filter((id) => {
-      const issue = issues.find((i) => i.id === id);
-      return issue && issue.status !== status;
-    });
+    const candidates = issueIds
+      .map((id) => issues.find((i) => i.id === id))
+      .filter((issue): issue is (typeof issues)[number] => Boolean(issue))
+      .filter((issue) => issue.status !== status);
+
+    /*
+     * The workflow decides what may land here, using the same rules as the
+     * issue page's status menu and the server. Refusing the drop outright is
+     * better than moving the card optimistically and watching it spring back
+     * when `updateIssue` says no.
+     */
+    const moving = candidates
+      .filter((issue) => canTransition(issue.status, status))
+      .map((issue) => issue.id);
+
+    const refused = candidates.filter(
+      (issue) => !canTransition(issue.status, status),
+    );
+    if (refused.length > 0) {
+      const first = refused[0];
+      toast(
+        refused.length === 1 && first
+          ? `${first.key} cannot move straight from ${STATUS_LABEL[first.status]} to ${STATUS_LABEL[status]}.`
+          : `${refused.length} issues cannot move to ${STATUS_LABEL[status]} from where they are.`,
+        "error",
+      );
+    }
+
     if (moving.length === 0) return;
 
     startTransition(async () => {
@@ -346,6 +379,23 @@ export function FlowBoard({
       router.refresh();
     });
   }
+
+  /*
+   * While a card is in the air, which columns will take it. Only the dragged
+   * card is considered when it sits outside the selection, matching what the
+   * drop itself will do.
+   */
+  const draggingStatuses = (() => {
+    if (!dragIssueId) return [];
+    const ids = selected.has(dragIssueId) ? [...selected] : [dragIssueId];
+    return ids
+      .map((id) => issues.find((i) => i.id === id)?.status)
+      .filter((s): s is IssueStatus => Boolean(s));
+  })();
+
+  const columnAccepts = (status: IssueStatus): boolean =>
+    draggingStatuses.length === 0 ||
+    draggingStatuses.some((from) => canTransition(from, status));
 
   function handleDrop(event: DragEvent<HTMLDivElement>, status: IssueStatus) {
     event.preventDefault();
@@ -565,12 +615,19 @@ export function FlowBoard({
               className="prio-board__column"
               data-status={status ?? undefined}
               data-drop-active={(status && dropTarget === status) || undefined}
+              data-refuses={
+                status && dragIssueId && !columnAccepts(status) ? "true" : undefined
+              }
               onDragOver={
                 status
                   ? (event) => {
                       event.preventDefault();
-                      event.dataTransfer.dropEffect = "move";
-                      if (dropTarget !== status) setDropTarget(status);
+                      /* "none" turns the cursor into the no-entry sign, so the
+                         workflow is visible before the card is let go rather
+                         than explained afterwards. */
+                      const ok = columnAccepts(status);
+                      event.dataTransfer.dropEffect = ok ? "move" : "none";
+                      if (ok && dropTarget !== status) setDropTarget(status);
                     }
                   : undefined
               }

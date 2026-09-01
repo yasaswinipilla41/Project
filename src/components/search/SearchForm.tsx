@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { IconSearch } from "@/components/ui/Icon";
+import { IconClose, IconSearch } from "@/components/ui/Icon";
 
 /**
  * The search box. Focused on mount and reachable from anywhere with "/", so the
@@ -43,6 +43,17 @@ export function SearchForm({ initialQuery }: { initialQuery: string }) {
     router.push(q ? `/search?q=${encodeURIComponent(q)}` : "/search");
   }
 
+  /*
+   * Clearing takes the results with it. Emptying the field alone would leave
+   * the previous results on screen under an empty box, still described by a
+   * `?q=` in the address bar that no longer matches what is typed.
+   */
+  function clear() {
+    setValue("");
+    router.push("/search");
+    inputRef.current?.focus();
+  }
+
   return (
     <form onSubmit={onSubmit} role="search" className="prio-searchpage__form">
       <div className="prio-search">
@@ -58,9 +69,21 @@ export function SearchForm({ initialQuery }: { initialQuery: string }) {
           onChange={(e) => setValue(e.target.value)}
           aria-label="Search Prio"
         />
-        <kbd className="prio-kbd prio-search__kbd" aria-hidden>
-          /
-        </kbd>
+        {value ? (
+          <button
+            type="button"
+            className="prio-search__clear"
+            onClick={clear}
+            aria-label="Clear search"
+            title="Clear search"
+          >
+            <IconClose size={14} />
+          </button>
+        ) : (
+          <kbd className="prio-kbd prio-search__kbd" aria-hidden>
+            /
+          </kbd>
+        )}
       </div>
     </form>
   );

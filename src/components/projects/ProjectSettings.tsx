@@ -6,6 +6,7 @@ import { Button, Card, CardBody } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/Toast";
 import { IconPlus } from "@/components/ui/Icon";
 import { createLabel, updateProject } from "@/server/projects";
+import { LABEL_COLOURS } from "@/lib/domain";
 import type { FieldErrors } from "@/server/schemas";
 
 /**
@@ -27,16 +28,6 @@ export interface SettingsLabel {
   color: string;
   issueCount: number;
 }
-
-const LABEL_COLOURS = [
-  "#3B82F6",
-  "#8B5CF6",
-  "#E5484D",
-  "#F0961F",
-  "#14A06D",
-  "#0D9488",
-  "#6B7C98",
-];
 
 export function ProjectSettings({
   project,

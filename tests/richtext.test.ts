@@ -32,6 +32,7 @@ function textOf(blocks: BlockNode[]): string {
         if (node.kind === "text") return node.value;
         if (node.kind === "code") return node.value;
         if (node.kind === "mention") return `@${node.handle}`;
+        if (node.kind === "issue") return node.key;
         return inline(node.children);
       })
       .join("");

@@ -8,6 +8,7 @@ import {
   AttachmentGrid,
   type AttachmentView,
 } from "@/components/issues/Attachments";
+import { MAX_IMAGE_BYTES, MAX_UPLOAD_BYTES } from "@/server/upload-types";
 
 /**
  * Files attached to the issue itself, rather than to one of its comments.
@@ -15,7 +16,22 @@ import {
  * Drag anywhere onto the panel, or use the button — the file input is the real
  * control and the drop zone is a convenience on top of it, so the feature works
  * with a keyboard and on a phone where there is nothing to drag.
+ *
+ * The size limits are stated next to the control rather than only enforced on
+ * the server, so nobody spends a minute uploading something that was never
+ * going to be accepted. They are read from the same constants the server
+ * checks against, so the number on screen cannot drift from the rule.
  */
+
+/*
+ * Whole megabytes, because these are round numbers by definition.
+ * `formatBytes` is for real file sizes and always prints one decimal, which
+ * turns a 30 MB limit into "30.0 MB" -- precision the reader cannot use about
+ * a number that was never measured.
+ */
+function megabytes(bytes: number): string {
+  return `${Math.round(bytes / (1024 * 1024))} MB`;
+}
 
 export function IssueAttachments({
   issueId,
@@ -144,6 +160,11 @@ export function IssueAttachments({
         </button>
       </div>
 
+      <p className="prio-dropzone__limit">
+        Up to {megabytes(MAX_UPLOAD_BYTES)} per file, and{" "}
+        {megabytes(MAX_IMAGE_BYTES)} for an image.
+      </p>
+
       {attachments.length === 0 && progress.length === 0 ? (
         <p className="prio-dropzone__empty">
           Drop screenshots, screen recordings or documents here — or use{" "}
@@ -164,7 +185,17 @@ export function IssueAttachments({
           {progress.map((entry) => (
             <li key={entry.name}>
               <span className="prio-truncate">{entry.name}</span>
-              <span className="prio-progress" aria-hidden>
+              {/* A real progressbar rather than a decorative bar: the percent
+                  is the one the browser reports for bytes actually sent, so a
+                  screen reader can follow the upload as well as an eye can. */}
+              <span
+                className="prio-progress"
+                role="progressbar"
+                aria-valuenow={entry.percent}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-label={`Uploading ${entry.name}`}
+              >
                 <span
                   className="prio-progress__bar"
                   style={{ width: `${entry.percent}%` }}

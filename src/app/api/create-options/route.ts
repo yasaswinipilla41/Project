@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { canAccessProject, projectScope } from "@/lib/authz";
 import { getCurrentUser } from "@/lib/session";
+import { issueTextSearch } from "@/server/queries/issues";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -27,9 +28,10 @@ export async function GET(request: NextRequest) {
   });
 
   const projectId = request.nextUrl.searchParams.get("projectId");
+  const parentQuery = request.nextUrl.searchParams.get("q")?.trim() || null;
   if (!projectId) {
     return NextResponse.json(
-      { projects },
+      { projects, viewerId: user.id },
       { headers: { "Cache-Control": "no-store" } },
     );
   }
@@ -54,18 +56,31 @@ export async function GET(request: NextRequest) {
       select: { id: true, name: true, color: true },
       orderBy: { name: "asc" },
     }),
-    // Only top-level issues can be parents — Prio allows one level (§24).
+    /*
+     * Only top-level issues can be parents — Prio allows one level (§24).
+     *
+     * With no `q` this is the most recently touched handful, which is what a
+     * picker should open on. With one it is a search, matched by the same
+     * `issueTextSearch` the Issues page and global search use rather than a
+     * second set of rules — so an issue key matches as a key here too, and a
+     * project with thousands of issues never ships them all to the browser.
+     */
     prisma.issue.findMany({
-      where: { projectId, parentId: null },
+      where: {
+        projectId,
+        parentId: null,
+        ...(parentQuery ? issueTextSearch(parentQuery) : {}),
+      },
       select: { id: true, key: true, title: true, type: true },
       orderBy: { updatedAt: "desc" },
-      take: 100,
+      take: 20,
     }),
   ]);
 
   return NextResponse.json(
     {
       projects,
+      viewerId: user.id,
       members: members.map((m) => m.user),
       labels,
       parents,

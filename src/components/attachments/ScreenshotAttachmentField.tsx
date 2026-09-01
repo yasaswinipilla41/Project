@@ -44,7 +44,7 @@ export interface ScreenshotAttachmentFieldProps {
 export function ScreenshotAttachmentField({
   value,
   onChange,
-  label = "Screenshots",
+  label = "Attachments",
 }: ScreenshotAttachmentFieldProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
@@ -162,7 +162,7 @@ export function ScreenshotAttachmentField({
           onClick={() => inputRef.current?.click()}
         >
           <IconImage size={14} />
-          {value.length > 0 ? "Add more screenshots" : "Add screenshots"}
+          {value.length > 0 ? "Add more attachments" : "Add attachments"}
         </Button>
         <span className={styles.dropzoneHint}>
           Drag images here, paste from your clipboard, or choose files.

@@ -17,7 +17,6 @@ import {
   DueBar,
   IssueRow,
   KpiCard,
-  NewUsers,
   PriorityDistribution,
   ProjectRow,
   RoleBadge,
@@ -100,28 +99,6 @@ export default async function HomePage() {
         <QuickActions role={user.role} />
       </header>
 
-      {/* --------------------------------------------------- admin: new users */}
-      {/* At the top, above everything else — admin-only, and independent of
-          whether any project exists yet, so a brand-new colleague is never
-          lost among the rest of the dashboard. Renders nothing when there are
-          no recent joiners, the same "hide the section" precedent "Needs
-          attention" below already follows. */}
-      {isAdmin && data.newUsers && data.newUsers.length > 0 ? (
-        <section>
-          <SectionHead
-            title="New members"
-            count={data.newUsers.length}
-            href="/admin"
-            linkLabel="Manage people"
-          />
-          <Card>
-            <CardBody>
-              <NewUsers users={data.newUsers} />
-            </CardBody>
-          </Card>
-        </section>
-      ) : null}
-
       {data.kpi.projects === 0 ? (
         /* No project membership: one honest empty state, and nothing else.
            Rendering zeroed charts here would only be decoration. */
@@ -175,13 +152,22 @@ export default async function HomePage() {
               />
             </div>
             <div className="col-12 col-sm-6 col-xl-3">
+              {/*
+                * High priority rather than open bugs: what needs attention is
+                * a question about urgency, not about issue type, and a
+                * high-priority story is no less pressing than a bug. The
+                * figure is `highPriorityOpen`, which the dashboard already
+                * computed — Urgent and High, still open — and the link filters
+                * the issue list to exactly that, so the count and the list it
+                * opens can never disagree.
+                */}
               <KpiCard
-                label="Open bugs"
-                value={data.kpi.openBugs}
-                icon={<IconBug size={13} />}
-                tone={data.kpi.openBugs > 0 ? "danger" : "default"}
-                hint={`${data.kpi.highPriorityOpen} high-priority items open`}
-                href="/bugs"
+                label="High priority"
+                value={data.kpi.highPriorityOpen}
+                icon={<IconWarning size={13} />}
+                tone={data.kpi.highPriorityOpen > 0 ? "danger" : "default"}
+                hint={`${data.kpi.openBugs} of them ${data.kpi.openBugs === 1 ? "is a bug" : "are bugs"}`}
+                href="/issues?priority=URGENT&priority=HIGH&resolution=open"
               />
             </div>
             <div className="col-12 col-sm-6 col-xl-3">

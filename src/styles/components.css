@@ -295,6 +295,44 @@
   pointer-events: none;
 }
 
+/* Sits where the shortcut hint does, and replaces it: the hint is only useful
+   while the field is empty, which is exactly when there is nothing to clear. */
+.prio-search__clear {
+  position: absolute;
+  right: var(--prio-space-2);
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: none;
+  border-radius: var(--prio-radius-sm);
+  color: var(--prio-text-muted);
+  cursor: pointer;
+  transition:
+    background var(--prio-duration-fast) var(--prio-ease),
+    color var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-search__clear:hover,
+.prio-search__clear:focus-visible {
+  background: var(--prio-bg-subtle);
+  color: var(--prio-text);
+}
+
+/*
+ * The browser's own clear button, suppressed.
+ *
+ * WebKit draws one inside `input[type="search"]`, and it only empties the
+ * field -- it cannot know that the results and the `?q=` behind them have to
+ * go too. Leaving it would put two X's side by side that do different things.
+ */
+.prio-search .prio-input[type="search"]::-webkit-search-cancel-button,
+.prio-search .prio-input[type="search"]::-webkit-search-decoration {
+  appearance: none;
+  display: none;
+}
+
 /* ------------------------------------------------------------------- kbd */
 .prio-kbd {
   display: inline-flex;
@@ -767,10 +805,30 @@ a.prio-key:hover {
   }
 }
 
+/*
+ * The panel is a column bounded by the viewport, so only its body ever
+ * scrolls.
+ *
+ * The body used to carry `max-height: calc(100vh - 260px)` -- a guess at how
+ * much room the header, the footer and the backdrop's padding would take. When
+ * the real chrome came to more than that guess (a tall footer, a wrapped
+ * title), the panel grew past the viewport and the backdrop's own `overflow-y`
+ * took over: a second scrollbar down the side of the page, scrolling the
+ * dialog rather than the form inside it. Bounding the panel here instead makes
+ * the arithmetic the browser's, so the body gets exactly the space that is
+ * actually left and the backdrop never has anything to scroll.
+ *
+ * `--prio-space-8` twice is the backdrop's own vertical padding; `dvh` so a
+ * mobile browser's retracting URL bar does not leave the panel taller than the
+ * window it is in.
+ */
 .prio-dialog {
   position: relative;
+  display: flex;
+  flex-direction: column;
   width: 100%;
   max-width: 560px;
+  max-height: calc(100dvh - (2 * var(--prio-space-8)));
   background: var(--prio-bg-surface);
   border-radius: var(--prio-radius-xl);
   box-shadow: var(--prio-shadow-xl);
@@ -800,6 +858,7 @@ a.prio-key:hover {
   display: flex;
   align-items: center;
   gap: var(--prio-space-4);
+  flex-shrink: 0;
   padding: var(--prio-space-5) var(--prio-space-6);
   border-bottom: 1px solid var(--prio-border-subtle);
 }
@@ -812,8 +871,11 @@ a.prio-key:hover {
 }
 
 .prio-dialog__body {
+  flex: 1 1 auto;
+  /* Without this a flex item refuses to shrink below its content, which would
+     put the overflow back on the page instead of in here. */
+  min-height: 0;
   padding: var(--prio-space-6);
-  max-height: calc(100vh - 260px);
   overflow-y: auto;
 }
 
@@ -822,6 +884,7 @@ a.prio-key:hover {
   align-items: center;
   justify-content: flex-end;
   gap: var(--prio-space-3);
+  flex-shrink: 0;
   padding: var(--prio-space-5) var(--prio-space-6);
   border-top: 1px solid var(--prio-border-subtle);
   background: var(--prio-neutral-25);
@@ -1997,12 +2060,39 @@ a.prio-stat:focus-visible {
 
 /* ------------------------------------------------------------ project nav */
 
+/*
+ * The tab strip, and the reason its rule is a shadow rather than a border.
+ *
+ * `overflow-x: auto` is needed so the tabs can be reached on a narrow screen.
+ * But CSS does not let the two axes disagree about being visible: when one
+ * axis is anything other than `visible`, the other's `visible` is promoted to
+ * `auto`. So this element had an implicit `overflow-y: auto` nobody wrote.
+ *
+ * That was harmless until something overflowed vertically, and something did,
+ * by exactly one pixel: the tabs used `margin-bottom: -1px` to pull their
+ * active underline down over the strip's bottom border, which put their boxes
+ * 1px below the scroll container's padding box. One pixel of scrollable
+ * overflow is enough to earn a vertical scrollbar, and on a platform that
+ * draws classic scrollbars rather than overlay ones, a scrollbar in a strip
+ * this short is almost entirely its two stepper buttons -- an up arrow above a
+ * down arrow, hard against the right-hand edge. It reads as a native up/down
+ * spinner sitting beside the tabs, because visually that is exactly what it
+ * is.
+ *
+ * Clipping it with `overflow-y: hidden` would have cut the same pixel off the
+ * active tab's underline, so the overflow is removed at its source instead:
+ * the strip paints its rule with an inset shadow, which takes no layout space
+ * and needs no negative margin to sit under. The geometry is unchanged --
+ * losing a 1px border and a -1px margin together leaves the strip the same
+ * height, with the active underline covering the rule exactly as before -- and
+ * with nothing overflowing, no scrollbar can be asked for on either axis.
+ */
 .prio-projectnav {
   display: flex;
   gap: var(--prio-space-1);
   margin-bottom: var(--prio-space-5);
   overflow-x: auto;
-  border-bottom: 1px solid var(--prio-border);
+  box-shadow: inset 0 -1px 0 var(--prio-border);
 }
 
 .prio-projectnav__tab {
@@ -2012,7 +2102,6 @@ a.prio-stat:focus-visible {
   font-weight: var(--prio-weight-medium);
   color: var(--prio-text-muted);
   border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
 }
 
 .prio-projectnav__tab:hover {
@@ -2163,4 +2252,96 @@ a.prio-stat:focus-visible {
 .prio-memberrow[data-selected] {
   background: var(--prio-bg-subtle);
   border-radius: var(--prio-radius-md);
+}
+
+/* "Assign to me" — a quiet shortcut under the assignee select, not a second
+   primary action competing with the dialog's own submit button. */
+.prio-assignself {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 0;
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-medium);
+  color: var(--prio-text-link);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.prio-assignself:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.prio-assignself:disabled {
+  color: var(--prio-text-muted);
+  cursor: default;
+}
+
+/* An issue key inside prose — recognisably a reference, not body text. */
+.prio-rt__issue {
+  font-family: var(--prio-font-mono, ui-monospace, monospace);
+  font-size: 0.92em;
+  font-weight: var(--prio-weight-medium);
+  color: var(--prio-text-link);
+}
+
+.prio-rt__issue:hover {
+  text-decoration: underline;
+}
+
+/* ------------------------------------------------------------ label picker */
+
+.prio-labelpicker {
+  position: relative;
+  display: flex;
+  gap: var(--prio-space-2);
+  margin-top: var(--prio-space-2);
+}
+
+.prio-labelpicker .prio-input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Above the fields below it, and out of the flow so opening it does not push
+   the rest of the form down. */
+.prio-labelpicker__list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: var(--prio-z-dropdown);
+  max-height: 220px;
+  overflow-y: auto;
+  margin: 0;
+  padding: var(--prio-space-1);
+  list-style: none;
+  background: var(--prio-bg-surface-raised);
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-md);
+  box-shadow: var(--prio-shadow-lg);
+}
+
+.prio-labelpicker__option {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  width: 100%;
+  padding: var(--prio-space-2) var(--prio-space-3);
+  font-size: var(--prio-text-sm);
+  color: var(--prio-text-primary);
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: var(--prio-radius-sm);
+  cursor: pointer;
+}
+
+.prio-labelpicker__option[data-active] {
+  background: var(--prio-bg-subtle);
+}
+
+.prio-labelpicker__option[data-create] {
+  color: var(--prio-text-link);
+  font-weight: var(--prio-weight-medium);
 }

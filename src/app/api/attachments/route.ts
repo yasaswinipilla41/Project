@@ -92,7 +92,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error:
-          "That file type is not supported. Images, videos, PDFs, text and zip archives are accepted.",
+          "That file type is not supported. Images, videos, PDFs, Word and Excel documents, text and zip archives are accepted.",
       },
       { status: 415 },
     );

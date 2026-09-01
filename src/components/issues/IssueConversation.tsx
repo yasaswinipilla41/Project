@@ -21,15 +21,16 @@ import {
 } from "@/components/issues/CommentComposer";
 
 /**
- * Activity and comments as one conversation.
+ * The discussion on an issue, and the record of what happened to it.
  *
- * The two are interleaved by time rather than split into tabs, because they
- * describe the same thing: what has happened to this issue. They are styled
- * differently — a system event is a thin line on the rail, a comment is a card
- * — so the eye can still separate "someone said" from "something changed".
+ * Two tabs, not one interleaved list. They answer different questions — "what
+ * did the team say" and "what changed, when, by whom" — and mixing them meant
+ * a conversation with a dozen status flips through the middle of it. Comments
+ * open first because discussion is what people come here for; the audit trail
+ * is a click away and complete when you want it.
  *
- * The composer sits inside this block, directly beneath the timeline. Finding
- * where to comment should not require looking for it.
+ * The composer sits under the comments, where the conversation ends. Finding
+ * where to reply should not require looking for it.
  */
 
 export interface CommentView {
@@ -97,6 +98,9 @@ export function IssueConversation({
    * how a comment box becomes hard to find — so older entries collapse behind
    * a toggle. Comments are never hidden: they are the part people came to read.
    */
+  /* Comments first: it is the reason the page is open. */
+  const [tab, setTab] = useState<"comments" | "activity">("comments");
+
   const RECENT = 12;
   const hiddenCount = Math.max(
     0,
@@ -174,15 +178,50 @@ export function IssueConversation({
     router.refresh();
   }
 
+  const commentItems = ordered.filter((item) => item.kind === "comment");
+  const activityItems = ordered.filter((item) => item.kind === "activity");
+  const shown = tab === "comments" ? commentItems : activityItems;
+
   return (
     <div className="prio-conversation">
-      {timeline.length === 0 ? (
+      <div className="prio-tabs" role="tablist" aria-label="Issue discussion">
+        <button
+          type="button"
+          role="tab"
+          className="prio-tabs__tab"
+          aria-selected={tab === "comments"}
+          data-active={tab === "comments" || undefined}
+          onClick={() => setTab("comments")}
+        >
+          Comments
+          {commentItems.length > 0 ? (
+            <span className="prio-tabs__count">{commentItems.length}</span>
+          ) : null}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          className="prio-tabs__tab"
+          aria-selected={tab === "activity"}
+          data-active={tab === "activity" || undefined}
+          onClick={() => setTab("activity")}
+        >
+          Activity
+          {activityItems.length > 0 ? (
+            <span className="prio-tabs__count">{activityItems.length}</span>
+          ) : null}
+        </button>
+      </div>
+
+      {shown.length === 0 ? (
         <p className="prio-text-muted" style={{ fontSize: "var(--prio-text-sm)" }}>
-          Nothing has happened on this issue yet.
+          {tab === "comments"
+            ? "No comments yet. Start the discussion below."
+            : "Nothing has happened on this issue yet."}
         </p>
       ) : (
         <ol className="prio-activity prio-conversation__timeline">
-          {ordered.map((item) =>
+          {shown.map((item) =>
             item.kind === "activity" ? (
               <ActivityFeedItem
                 key={`a-${item.entry.id}`}
@@ -334,7 +373,10 @@ export function IssueConversation({
         </ol>
       )}
 
-      {hiddenCount > 0 && !showAll ? (
+      {/* Older events used to collapse behind a toggle so they could not push
+          the composer off the screen. With activity in its own tab there is
+          nothing to push, so the trail is shown whole. */}
+      {tab === "activity" && hiddenCount > 0 && !showAll ? (
         <button
           type="button"
           className="prio-conversation__more"
@@ -344,8 +386,11 @@ export function IssueConversation({
         </button>
       ) : null}
 
-      {/* The composer, always visible directly under the timeline. */}
-      <div className="prio-conversation__composer">
+      {/* The composer belongs to the discussion, so it follows it. */}
+      <div
+        className="prio-conversation__composer"
+        hidden={tab !== "comments"}
+      >
         <h3 className="prio-conversation__composer-title">Add a comment</h3>
         <CommentComposer
           issueId={issueId}

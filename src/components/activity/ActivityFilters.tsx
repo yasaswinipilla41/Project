@@ -14,6 +14,13 @@ import { ACTIVITY_TYPES, ACTIVITY_TYPE_LABEL, type ActivityType } from "@/lib/ac
  * view is shareable and survives a refresh, and the server re-queries rather
  * than filtering client-side. Project, User and Type are single-select here —
  * "which one project" reads more naturally than a checklist for this feed.
+ *
+ * Being single-select is also why none of these items sets `keepOpen`:
+ * picking a project *replaces* the previous one, so once a choice is made
+ * there is nothing further to pick, and leaving the panel open only hides
+ * the results it just changed. The multi-select filters elsewhere (Status,
+ * Priority and Labels on the board and the issue list) do keep theirs open,
+ * because there ticking one value is usually not the whole answer.
  */
 
 export interface FilterOption {
@@ -127,7 +134,6 @@ export function ActivityFilters({ projects, people, total }: ActivityFiltersProp
         >
           <MenuLabel>Project</MenuLabel>
           <MenuItem
-            keepOpen
             selected={!projectId}
             onSelect={() => apply((n) => n.delete("project"))}
           >
@@ -136,7 +142,6 @@ export function ActivityFilters({ projects, people, total }: ActivityFiltersProp
           {projects.map((project) => (
             <MenuItem
               key={project.id}
-              keepOpen
               selected={project.id === projectId}
               onSelect={() => apply((n) => n.set("project", project.id))}
             >
@@ -152,7 +157,6 @@ export function ActivityFilters({ projects, people, total }: ActivityFiltersProp
         >
           <MenuLabel>User</MenuLabel>
           <MenuItem
-            keepOpen
             selected={!userId}
             onSelect={() => apply((n) => n.delete("user"))}
           >
@@ -161,7 +165,6 @@ export function ActivityFilters({ projects, people, total }: ActivityFiltersProp
           {people.map((person) => (
             <MenuItem
               key={person.id}
-              keepOpen
               selected={person.id === userId}
               onSelect={() => apply((n) => n.set("user", person.id))}
             >
@@ -176,13 +179,12 @@ export function ActivityFilters({ projects, people, total }: ActivityFiltersProp
           activeLabel={type ? ACTIVITY_TYPE_LABEL[type] : undefined}
         >
           <MenuLabel>Activity type</MenuLabel>
-          <MenuItem keepOpen selected={!type} onSelect={() => apply((n) => n.delete("type"))}>
+          <MenuItem selected={!type} onSelect={() => apply((n) => n.delete("type"))}>
             All activity
           </MenuItem>
           {ACTIVITY_TYPES.map((t) => (
             <MenuItem
               key={t}
-              keepOpen
               selected={t === type}
               onSelect={() => apply((n) => n.set("type", t))}
             >

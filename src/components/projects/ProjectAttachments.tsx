@@ -146,7 +146,7 @@ export function ProjectAttachments({
 
       {attachments.length === 0 && progress.length === 0 ? (
         <p className="prio-dropzone__empty">
-          Drop screenshots or documents here — or use <strong>Add files</strong>.
+          Drop images or documents here — or use <strong>Add files</strong>.
           Images preview in place; everything else is offered as a download.
         </p>
       ) : (

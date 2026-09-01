@@ -556,6 +556,13 @@
   color: var(--prio-text-secondary);
 }
 
+/* The limits, stated where the control is rather than only in a rejection. */
+.prio-dropzone__limit {
+  margin: 0;
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-muted);
+}
+
 .prio-dropzone__progress {
   list-style: none;
   margin: var(--prio-space-3) 0 0;
@@ -1092,4 +1099,144 @@
 .prio-conversation__more:hover {
   background: var(--prio-bg-hover);
   color: var(--prio-text-primary);
+}
+
+/* ------------------------------------------------- comments / activity tabs */
+
+.prio-tabs {
+  display: flex;
+  gap: var(--prio-space-1);
+  margin-bottom: var(--prio-space-4);
+  border-bottom: 1px solid var(--prio-border);
+}
+
+.prio-tabs__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  padding: var(--prio-space-2) var(--prio-space-3);
+  font-size: var(--prio-text-sm);
+  font-weight: var(--prio-weight-medium);
+  color: var(--prio-text-muted);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+}
+
+.prio-tabs__tab:hover {
+  color: var(--prio-text-primary);
+}
+
+.prio-tabs__tab[data-active] {
+  color: var(--prio-primary-700);
+  border-bottom-color: var(--prio-primary-600);
+}
+
+.prio-tabs__count {
+  padding: 0 6px;
+  font-size: var(--prio-text-2xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--prio-text-muted);
+  background: var(--prio-bg-subtle);
+  border-radius: var(--prio-radius-pill);
+}
+
+/* ------------------------------------------------------- visual editor */
+/*
+ * The editable surface. Sized and spaced like the textarea it replaced, so the
+ * composer looks the same as before — what changed is that the formatting is
+ * now visible while typing rather than written as markers.
+ *
+ * It grows with its content on its own, and stops at the same height the
+ * textarea did before scrolling inside itself, so a long comment never pushes
+ * the page around.
+ */
+.prio-wysiwyg {
+  display: block;
+  width: 100%;
+  min-height: 84px;
+  max-height: 420px;
+  overflow-y: auto;
+  padding: var(--prio-space-4);
+  color: var(--prio-text-primary);
+  font-size: var(--prio-text-sm);
+  line-height: var(--prio-leading-normal);
+}
+
+.prio-wysiwyg:focus {
+  outline: none;
+}
+
+/*
+ * The prompt an empty editor shows, standing in for the textarea's
+ * placeholder. Drawn as a pseudo-element, so it can never be typed into,
+ * selected, or serialised into a comment.
+ *
+ * "Empty" here means the one empty paragraph the editor starts with — a
+ * `contentEditable` is never truly `:empty`, because the caret needs a line
+ * box to sit in.
+ */
+.prio-wysiwyg:has(> p:only-child:empty)::before,
+.prio-wysiwyg:has(> p:only-child > br:only-child)::before {
+  content: attr(data-placeholder);
+  color: var(--prio-text-disabled);
+  pointer-events: none;
+}
+
+.prio-wysiwyg :is(p, ul, ol, blockquote, pre, h1, h2, h3) {
+  margin: 0 0 var(--prio-space-3);
+}
+
+.prio-wysiwyg > :last-child {
+  margin-bottom: 0;
+}
+
+.prio-wysiwyg :is(h1, h2, h3) {
+  font-size: var(--prio-text-md);
+  font-weight: var(--prio-weight-semibold);
+  line-height: var(--prio-leading-tight);
+}
+
+.prio-wysiwyg :is(ul, ol) {
+  padding-left: var(--prio-space-6);
+}
+
+.prio-wysiwyg blockquote {
+  padding-left: var(--prio-space-3);
+  border-left: 2px solid var(--prio-border-strong);
+  color: var(--prio-text-secondary);
+}
+
+.prio-wysiwyg code {
+  padding: 1px 4px;
+  font-family: var(--prio-font-mono, ui-monospace, monospace);
+  font-size: 0.92em;
+  background: var(--prio-bg-subtle);
+  border-radius: var(--prio-radius-sm);
+}
+
+.prio-wysiwyg pre {
+  padding: var(--prio-space-3);
+  overflow-x: auto;
+  background: var(--prio-bg-subtle);
+  border-radius: var(--prio-radius-md);
+}
+
+.prio-wysiwyg pre code {
+  padding: 0;
+  background: none;
+}
+
+.prio-wysiwyg a {
+  color: var(--prio-text-link);
+}
+
+/* A mention or an issue key, marked while being edited so it reads as one
+   thing rather than as loose punctuation. */
+.prio-wysiwyg [data-rt="mention"],
+.prio-wysiwyg [data-rt="issue"] {
+  color: var(--prio-text-link);
+  font-weight: var(--prio-weight-medium);
 }

@@ -48,7 +48,7 @@ async function openEditorWithImage(page: Page): Promise<Locator> {
   await expect(dialog).toBeVisible();
 
   const image = await makeTestImage(page);
-  await dialog.getByLabel("Files", { exact: true }).setInputFiles({
+  await dialog.getByLabel("Attachments", { exact: true }).setInputFiles({
     name: "screenshot.png",
     mimeType: "image/png",
     buffer: image,
@@ -496,7 +496,7 @@ test.describe("Screenshot editor — every tool", () => {
     await expect(dialog).toBeVisible();
 
     const original = await makeTestImage(page, 40, 40);
-    await dialog.getByLabel("Files", { exact: true }).setInputFiles({
+    await dialog.getByLabel("Attachments", { exact: true }).setInputFiles({
       name: "original.png",
       mimeType: "image/png",
       buffer: original,
@@ -601,7 +601,7 @@ async function openEditorWith(page: Page, image: Buffer): Promise<Locator> {
   await page.locator(".prio-create__main").click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
-  await dialog.getByLabel("Files", { exact: true }).setInputFiles({
+  await dialog.getByLabel("Attachments", { exact: true }).setInputFiles({
     name: "screenshot.png",
     mimeType: "image/png",
     buffer: image,

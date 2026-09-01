@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   useEffect,
   useRef,
@@ -18,6 +18,7 @@ import {
   IconHelp,
   IconList,
   IconLogout,
+  IconClose,
   IconPlus,
   IconProjects,
   IconSearch,
@@ -28,6 +29,9 @@ import { CreateIssueDialog } from "@/components/create/CreateIssueDialog";
 import { ThemeSwitcher } from "@/components/theme/ThemeSwitcher";
 import { ISSUE_TYPES, ISSUE_TYPE_LABEL, ROLE_LABEL } from "@/lib/domain";
 import type { IssueType, Role } from "@prisma/client";
+
+/** The results page. Named once so the field, the submit and the clear agree. */
+const SEARCH_PATH = "/search";
 
 export interface TopbarUser {
   id: string;
@@ -78,7 +82,30 @@ export function Topbar({
   onOpenMobileNav: () => void;
 }) {
   const router = useRouter();
-  const [query, setQuery] = useState("");
+  const pathname = usePathname();
+  const params = useSearchParams();
+
+  /*
+   * The field mirrors the search that is actually running.
+   *
+   * Away from the results page there is no active search, so it shows nothing.
+   * On the results page it shows the query those results came from -- which is
+   * what makes clearing possible at all: the box used to start empty no matter
+   * what was on screen, so there was never anything to clear, and the results
+   * and the `?q=` behind them stayed put.
+   */
+  const activeQuery = pathname === SEARCH_PATH ? (params.get("q") ?? "") : "";
+  const [query, setQuery] = useState(activeQuery);
+  const [syncedQuery, setSyncedQuery] = useState(activeQuery);
+  if (syncedQuery !== activeQuery) {
+    /* Adjusting state during render, which React restarts immediately: the
+       field never paints the stale query, and no effect is needed. The
+       previous value is held in state rather than a ref because a ref read
+       during render is exactly what would make this miss an update. */
+    setSyncedQuery(activeQuery);
+    setQuery(activeQuery);
+  }
+
   const [signingOut, setSigningOut] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [createType, setCreateType] = useState<IssueType>("TASK");
@@ -139,7 +166,23 @@ export function Topbar({
     if (!q) return;
     // Projects only. The Search page in the sidebar still searches
     // everything; this entry point deliberately narrows it.
-    router.push(`/search?q=${encodeURIComponent(q)}&scope=projects`);
+    router.push(`${SEARCH_PATH}?q=${encodeURIComponent(q)}&scope=projects`);
+  }
+
+  /**
+   * Clears the search, not just the box.
+   *
+   * Emptying the input on its own would leave the results and the `?q=` that
+   * produced them exactly where they were, which is the state this used to get
+   * stuck in. So when the results page is what is on screen, this also
+   * navigates back to it with no parameters at all -- the query, the results
+   * and the scope go together. Focus stays in the field, because clearing is
+   * almost always the start of the next search rather than the end of one.
+   */
+  function clearSearch() {
+    setQuery("");
+    if (pathname === SEARCH_PATH) router.push(SEARCH_PATH);
+    searchInput.current?.focus();
   }
 
   async function handleSignOut() {
@@ -181,13 +224,32 @@ export function Topbar({
             aria-label="Search projects"
           />
           {/*
+            * A real control rather than the browser's own X, which only ever
+            * empties the box: this one is the app's, so it can take the
+            * results and the URL with it. The native decoration is turned off
+            * in CSS so there are not two of them.
+            */}
+          {query ? (
+            <button
+              type="button"
+              className="prio-search__clear"
+              onClick={clearSearch}
+              aria-label="Clear search"
+              title="Clear search"
+            >
+              <IconClose size={13} />
+            </button>
+          ) : null}
+          {/*
             * Decorative: the shortcut is announced through the field's own
             * `aria-keyshortcuts`, so repeating it here would have a screen
             * reader read "K" as part of the label.
             */}
-          <kbd className="prio-search__kbd" aria-hidden>
-            <ShortcutHint />
-          </kbd>
+          {query ? null : (
+            <kbd className="prio-search__kbd" aria-hidden>
+              <ShortcutHint />
+            </kbd>
+          )}
         </div>
       </form>
 

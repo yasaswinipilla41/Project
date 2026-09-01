@@ -151,7 +151,7 @@ test.describe("Deleting from the issue's own page", () => {
 
     // Everything else about the page still works — this is a permission
     // boundary, not a broken page.
-    await expect(memberPage.getByRole("heading", { name: "Activity" })).toBeVisible();
+    await expect(memberPage.getByRole("heading", { name: "Comments" })).toBeVisible();
 
     await memberContext.close();
   });

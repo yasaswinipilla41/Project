@@ -39,10 +39,10 @@ test.describe("Email notifications", () => {
     const before = await inboxTotal(request);
 
     await page.goto("/issues/eng-1");
-    await expect(page.getByRole("heading", { name: "Activity" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Comments" })).toBeVisible();
 
     const marker = Math.random().toString(36).slice(2, 8);
-    const field = page.getByPlaceholder("Write a comment…");
+    const field = page.getByRole("textbox", { name: "Write a comment…" });
     await field.click();
     await field.type("@");
 

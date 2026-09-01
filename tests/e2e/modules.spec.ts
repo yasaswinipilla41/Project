@@ -376,13 +376,26 @@ test.describe("Project settings", () => {
     await page.getByRole("button", { name: "Save details" }).click();
     await expect(page.locator(".prio-toast").last()).toContainText("saved");
 
-    // Add a uniquely-named label.
+    /*
+     * Add a uniquely-named label, and take it away again.
+     *
+     * The name has to be unique so a re-run does not collide with itself, and
+     * it used to be left behind — sixty-odd `e2e-*` labels had accumulated on
+     * the project, none attached to any issue, crowding out the real
+     * vocabulary in every label list. The assertions below are unchanged; only
+     * the clearing up is new.
+     */
     const labelName = `e2e-${Date.now().toString(36)}`;
-    await page.getByLabel("Label name").fill(labelName);
-    await page.getByRole("button", { name: "Add label" }).click();
-    await expect(page.locator(".prio-toast").last()).toContainText("added");
-    await page.reload();
-    await expect(page.getByText(labelName)).toBeVisible();
+    try {
+      await page.getByLabel("Label name").fill(labelName);
+      await page.getByRole("button", { name: "Add label" }).click();
+      await expect(page.locator(".prio-toast").last()).toContainText("added");
+      await page.reload();
+      await expect(page.getByText(labelName)).toBeVisible();
+    } finally {
+      // Safe to remove outright: it was created here and nothing uses it.
+      await prisma.label.deleteMany({ where: { name: labelName } });
+    }
   });
 
   test("the default-project toggle persists and is off by default", async ({
@@ -431,7 +444,15 @@ test.describe("Admin", () => {
       .locator("tbody tr");
     expect(await rows.count()).toBeGreaterThan(0);
 
-    await expect(page.getByText("admin@symbiosystech.com")).toBeVisible();
+    /* Scoped to the people table: New members moved onto this page and
+       lists emails too, so an unscoped match now finds two. */
+    await expect(
+      page
+        .locator(".prio-card", {
+          has: page.getByRole("button", { name: "New user" }),
+        })
+        .getByText("admin@symbiosystech.com"),
+    ).toBeVisible();
     await expect(page.getByRole("button", { name: "New user" })).toBeVisible();
 
     // Statistics come from the database, not placeholders.

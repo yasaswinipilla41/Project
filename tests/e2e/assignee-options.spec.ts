@@ -193,7 +193,7 @@ test.describe("Assignee options come from project membership", () => {
     const idle = await membersWithNothingAssigned("ENG");
 
     await page.goto("/issues/eng-2");
-    await expect(page.getByRole("heading", { name: "Activity" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Comments" })).toBeVisible();
 
     await page.locator(".prio-fieldtrigger__person").first().click();
     const items = await openMenuItems(page, "Change assignee");

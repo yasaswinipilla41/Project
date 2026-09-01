@@ -71,7 +71,6 @@ describe("the developer ↔ tester round trip", () => {
   it("carries an issue from assignment to a passing verdict", async () => {
     const issueId = await anIssue("QA round trip fixture");
     const dev = await userId(DEV);
-    const tester = await userId(TESTER);
 
     // 1. Admin assigns it to the developer.
     await actAs(ADMIN);
@@ -90,7 +89,11 @@ describe("the developer ↔ tester round trip", () => {
     expect(submit.ok).toBe(true);
     expect((await verdict(issueId)).status).toBe("IN_REVIEW");
 
-    // 3. The tester finds a problem: comment plus a FAILED verdict.
+    /* 3. A problem is found: comment plus a FAILED verdict.
+     *
+     * The comment is anyone's to leave, but the verdict belongs to whoever
+     * raised the issue — the fixture files it as ADMIN, so that is who
+     * records it. */
     await actAs(TESTER);
     const qaNote = await createComment({
       issueId,
@@ -98,12 +101,13 @@ describe("the developer ↔ tester round trip", () => {
     });
     expect(qaNote.ok).toBe(true);
 
+    await actAs(ADMIN);
     const failed = await recordTestResult({ issueId, result: "FAILED" });
     expect(failed.ok).toBe(true);
 
     const afterFail = await verdict(issueId);
     expect(afterFail.testResult).toBe("FAILED");
-    expect(afterFail.testedById).toBe(tester);
+    expect(afterFail.testedById).toBe(await userId(ADMIN));
     expect(afterFail.testedAt).toBeInstanceOf(Date);
 
     // The developer is told, through the existing notification system.
@@ -112,7 +116,7 @@ describe("the developer ↔ tester round trip", () => {
       select: { message: true, actorId: true },
     });
     expect(told).not.toBeNull();
-    expect(told?.actorId).toBe(tester);
+    expect(told?.actorId).toBe(await userId(ADMIN));
     expect(told?.message).toContain("failed");
 
     // 4. The developer responds and resubmits.
@@ -124,8 +128,8 @@ describe("the developer ↔ tester round trip", () => {
     expect(reply.ok).toBe(true);
     await updateIssue({ issueId, status: "IN_REVIEW" });
 
-    // 5. The tester verifies again.
-    await actAs(TESTER);
+    // 5. The reporter verifies again and signs it off.
+    await actAs(ADMIN);
     const passed = await recordTestResult({ issueId, result: "PASSED" });
     expect(passed.ok).toBe(true);
     expect((await verdict(issueId)).testResult).toBe("PASSED");
@@ -141,7 +145,11 @@ describe("the developer ↔ tester round trip", () => {
       select: { oldValue: true, newValue: true, actorId: true },
     });
     expect(trail.map((t) => t.newValue)).toEqual(["FAILED", "PASSED"]);
-    expect(new Set(trail.map((t) => t.actorId))).toEqual(new Set([tester]));
+    /* Both verdicts were recorded by the same person — the one who raised the
+       issue, which is the only person who may. */
+    expect(new Set(trail.map((t) => t.actorId))).toEqual(
+      new Set([await userId(ADMIN)]),
+    );
   });
 
   it("keeps the verdict across independent sessions", async () => {
@@ -150,7 +158,7 @@ describe("the developer ↔ tester round trip", () => {
 
     await actAs(ADMIN);
     await updateIssue({ issueId, assigneeId: dev });
-    await actAs(TESTER);
+    // The reporter records it — the fixture raised this issue as ADMIN.
     await recordTestResult({ issueId, result: "BLOCKED" });
 
     // A different person entirely reads it back.
@@ -175,28 +183,51 @@ describe("who may record a verdict", () => {
     expect((await verdict(issueId)).testResult).toBe("NOT_TESTED");
   });
 
-  it("lets any other project member record one", async () => {
+  it("refuses a project member who did not raise the issue", async () => {
+    /* Recording a verdict says whether the reported problem is actually
+       fixed, and only the person who reported it can say that. Being on the
+       project is not enough — this used to be allowed and is not any more. */
     const issueId = await anIssue("QA peer verdict fixture");
     const dev = await userId(DEV);
-    const tester = await userId(TESTER);
 
     await actAs(ADMIN);
     await updateIssue({ issueId, assigneeId: dev });
 
     await actAs(TESTER);
     const result = await recordTestResult({ issueId, result: "PASSED" });
-    expect(result.ok).toBe(true);
-    expect((await verdict(issueId)).testedById).toBe(tester);
+    expect(result.ok).toBe(false);
+
+    expect((await verdict(issueId)).testResult).toBe("NOT_TESTED");
   });
 
-  it("lets an admin record one even on their own work", async () => {
-    const issueId = await anIssue("QA admin override fixture");
+  it("refuses an administrator who did not raise the issue", async () => {
+    /* Administering Prio does not confer knowledge of whether a fix works,
+       so there is no override here. */
+    const issueId = await anIssue("QA admin non-reporter fixture");
+    const tester = await userId(TESTER);
+
+    /* The reporter is set directly: `updateIssue` does not expose it, which
+       is itself the point — who raised an issue is not something anybody
+       edits later. */
+    await prisma.issue.update({
+      where: { id: issueId },
+      data: { reporterId: tester },
+    });
+
+    await actAs(ADMIN);
+    const result = await recordTestResult({ issueId, result: "PASSED" });
+    expect(result.ok).toBe(false);
+    expect((await verdict(issueId)).testResult).toBe("NOT_TESTED");
+  });
+
+  it("lets the person who raised the issue record one", async () => {
+    const issueId = await anIssue("QA reporter verdict fixture");
     const admin = await userId(ADMIN);
 
     await actAs(ADMIN);
-    await updateIssue({ issueId, assigneeId: admin });
     const result = await recordTestResult({ issueId, result: "PASSED" });
     expect(result.ok).toBe(true);
+    expect((await verdict(issueId)).testedById).toBe(admin);
   });
 
   it("refuses someone with no access to the issue's project", async () => {
@@ -301,7 +332,7 @@ describe("notification restraint", () => {
 
     await actAs(ADMIN);
     await updateIssue({ issueId, assigneeId: dev });
-    await actAs(TESTER);
+    // Recorded by the reporter, which the fixture makes ADMIN.
     await recordTestResult({ issueId, result: "PASSED" });
 
     const entries = await prisma.activityLogEntry.count({
