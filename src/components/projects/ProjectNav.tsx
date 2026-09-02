@@ -36,6 +36,23 @@ export function ProjectNav({
   const pathname = usePathname();
   const base = `/projects/${projectKey.toLowerCase()}`;
 
+  /*
+   * The Flow Board shows no tab strip.
+   *
+   * The strip lives in the project layout, so every view under it gets one --
+   * which is what keeps there being exactly one. The board is the exception:
+   * it is asked to carry no project navigation at all. Deciding that here,
+   * from the path, rather than in the layout is what keeps the rule in one
+   * place: the layout still renders this for every view, and this is the only
+   * thing that knows which view is showing.
+   *
+   * Nothing is removed by returning null -- the board is still reached from
+   * the strip on the other four views, and its route is unchanged.
+   */
+  if (pathname === `${base}/board` || pathname.startsWith(`${base}/board/`)) {
+    return null;
+  }
+
   const tabs: { id: ProjectTab; label: string; href: string }[] = [
     { id: "summary", label: "Summary", href: base },
     { id: "list", label: "List", href: `${base}/list` },

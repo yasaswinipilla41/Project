@@ -75,20 +75,47 @@ export function IssueConversation({
   const [showAll, setShowAll] = useState(false);
 
   /*
-   * Replies, gathered under the comment they answer.
+   * Replies, gathered under the comment that starts their thread.
    *
    * `parentId` has always been stored correctly -- what was missing is any
    * use of it when laying the conversation out. Replies are kept oldest-first
    * within a thread, which is how a conversation reads, even though the
    * top-level stream below runs newest-first.
+   *
+   * Each reply is grouped under the *root* of its thread rather than under
+   * whatever it directly answers. Every comment carries a Reply control,
+   * including replies, so somebody answering a reply produces a comment two
+   * deep -- and a thread is drawn one level deep, so grouping by the immediate
+   * parent left that comment belonging to a card that renders no replies of
+   * its own. It was saved, and then it was nowhere: not in the top-level
+   * stream, which is parentless comments only, and not under anything. Walking
+   * up to the root means a reply appears in its conversation however deep it
+   * was aimed, and no answer can be swallowed by the shape of the thread.
    */
   const repliesByParent = useMemo(() => {
+    const byId = new Map(comments.map((comment) => [comment.id, comment]));
+
+    /* Bounded, so a parent chain that somehow points at itself cannot spin. */
+    const rootOf = (start: CommentView): string => {
+      let current = start;
+      for (let hops = 0; current.parentId !== null && hops < 100; hops += 1) {
+        const parent = byId.get(current.parentId);
+        if (!parent || parent.id === current.id) break;
+        current = parent;
+      }
+      return current.id;
+    };
+
     const map = new Map<string, CommentView[]>();
     for (const comment of comments) {
       if (comment.parentId === null) continue;
-      const thread = map.get(comment.parentId);
+      const root = rootOf(comment);
+      // A broken chain would resolve to the comment itself; it stays out
+      // rather than being listed as a reply to nothing.
+      if (root === comment.id) continue;
+      const thread = map.get(root);
       if (thread) thread.push(comment);
-      else map.set(comment.parentId, [comment]);
+      else map.set(root, [comment]);
     }
     for (const thread of map.values()) {
       thread.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
@@ -425,9 +452,11 @@ function CommentActions({
  * the comment it was answering as it could get.
  *
  * The card markup is unchanged; it simply lives here now so a parent and a
- * reply render through the same code rather than through two copies of it.
- * A reply is not offered its own Reply button: threads here are one level
- * deep, and answering a reply answers the same conversation.
+ * reply render through the same code rather than through two copies of it --
+ * which means a reply carries a Reply control of its own, like any comment.
+ * Threads are drawn one level deep, so an answer to a reply joins the same
+ * thread rather than starting a nested one; `repliesByParent` above is what
+ * arranges that, by grouping on the thread's root.
  */
 function CommentCard({
   comment,

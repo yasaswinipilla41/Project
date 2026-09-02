@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { BackLink } from "@/components/shell/BackLink";
 import { ProjectActions } from "@/components/projects/ProjectActions";
 import { ProjectNav } from "@/components/projects/ProjectNav";
-import { IconBoard, IconSettings } from "@/components/ui/Icon";
+import { IconSettings } from "@/components/ui/Icon";
 import { canManageProject, projectScope } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
@@ -74,13 +74,6 @@ export default async function ProjectLayout({
         </div>
 
         <div className="prio-page-header__actions">
-          <Link
-            href={`/projects/${project.key.toLowerCase()}/board`}
-            className="prio-btn prio-btn--secondary"
-          >
-            <IconBoard />
-            Board
-          </Link>
           {user.role === "ADMIN" ? (
             <Link
               href={`/projects/${project.key.toLowerCase()}/settings`}

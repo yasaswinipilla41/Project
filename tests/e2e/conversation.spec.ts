@@ -446,3 +446,93 @@ test.describe("Presentation", () => {
   });
 });
 
+
+test.describe("Threading", () => {
+  /**
+   * A reply belongs to the conversation it answers, however it was aimed.
+   *
+   * Every comment carries a Reply control, replies included, and a thread is
+   * drawn one level deep. Answering a reply therefore produces a comment two
+   * deep — and grouping those by their immediate parent put them under a card
+   * that renders no replies of its own, so they were saved and then shown
+   * nowhere: not in the top-level stream, which is parentless comments only,
+   * and not under anything. Somebody wrote an answer, it was accepted, and it
+   * vanished on the next load.
+   *
+   * This walks the full path — comment, reply, reply to that reply — and
+   * reloads, because the bug only showed after a round trip.
+   */
+  test("an answer to a reply stays in the conversation", async ({ page }) => {
+    const tag = stamp();
+    const root = `root-${tag}`;
+    const reply = `reply-${tag}`;
+    const answer = `answer-${tag}`;
+
+    await openIssue(page, "eng-6");
+
+    // A root comment.
+    await page.getByRole("textbox", { name: /Write a comment/i }).first().click();
+    await page.keyboard.type(root);
+    await page.getByRole("button", { name: /^Comment$/ }).first().click();
+    const rootCard = page.locator(".prio-comment").filter({ hasText: root }).first();
+    await expect(rootCard).toBeVisible({ timeout: 20000 });
+
+    // A reply to it.
+    await rootCard.getByRole("button", { name: /^Reply$/ }).first().click();
+    const rootComposer = rootCard.locator(".prio-composer").last();
+    await rootComposer.getByRole("textbox").first().click();
+    await page.keyboard.type(reply);
+    await rootComposer.getByRole("button", { name: /^Reply$/ }).click();
+
+    const replyCard = page
+      .locator(".prio-comment__replies .prio-comment")
+      .filter({ hasText: reply })
+      .first();
+    await expect(replyCard).toBeVisible({ timeout: 20000 });
+
+    // And an answer to that reply — the case that used to disappear.
+    await replyCard.getByRole("button", { name: /^Reply$/ }).first().click();
+    const replyComposer = replyCard.locator(".prio-composer").last();
+    await replyComposer.getByRole("textbox").first().click();
+    await page.keyboard.type(answer);
+    await replyComposer.getByRole("button", { name: /^Reply$/ }).click();
+    await expect(
+      page.locator(".prio-comment").filter({ hasText: answer }).first(),
+    ).toBeVisible({ timeout: 20000 });
+
+    /* The card appears as soon as the refreshed tree arrives, which can be a
+       moment before the write has settled everywhere it is read from. A person
+       does not reload in the same instant they press Reply; reloading here
+       without letting it settle tests the race rather than the threading. */
+    await page.waitForTimeout(1500);
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "Comments" })).toBeVisible();
+
+    /* All three survive, and both answers sit inside the thread they belong
+       to rather than beside it. Asserted through the DOM's own containment:
+       the root's replies list is what "in the thread" means here. */
+    const rootAfter = page
+      .locator(".prio-conversation__timeline > .prio-comment")
+      .filter({ hasText: root })
+      .first();
+    await expect(rootAfter).toBeVisible();
+
+    const thread = rootAfter.locator(".prio-comment__replies .prio-comment");
+    await expect(
+      thread.filter({ hasText: reply }),
+      "the reply belongs to the thread",
+    ).toHaveCount(1);
+    await expect(
+      thread.filter({ hasText: answer }),
+      "and so does the answer to it, which used to vanish",
+    ).toHaveCount(1);
+
+    // Neither may surface as a conversation of its own.
+    const topLevel = page.locator(".prio-conversation__timeline > .prio-comment");
+    await expect(topLevel.filter({ hasText: answer })).toHaveCount(1); // only the root, which contains it
+    await expect(
+      topLevel.filter({ hasText: answer }).filter({ hasText: root }),
+      "the only top-level card carrying the answer is the root it belongs to",
+    ).toHaveCount(1);
+  });
+});
