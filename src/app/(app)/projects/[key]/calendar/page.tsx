@@ -2,9 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Card, CardBody, EmptyState } from "@/components/ui/primitives";
-import { IconCalendar, IconEmptyBox } from "@/components/ui/Icon";
+import { IconEmptyBox } from "@/components/ui/Icon";
 import { IssueKey, IssueTypeIcon, StatusPill } from "@/components/ui/Indicators";
-import { ProjectNav } from "@/components/projects/ProjectNav";
 import { projectScope } from "@/lib/authz";
 import { isClosedStatus } from "@/lib/domain";
 import { prisma } from "@/lib/prisma";
@@ -133,32 +132,6 @@ export default async function ProjectCalendarPage({
 
   return (
     <>
-      <div className="prio-page-header">
-        <div className="prio-page-header__text">
-          <div className="prio-breadcrumb">
-            <Link href="/projects">Projects</Link>
-            <span aria-hidden>/</span>
-            <Link href={`/projects/${project.key.toLowerCase()}`}>
-              {project.name}
-            </Link>
-          </div>
-          <h1 className="prio-page-header__title">
-            <IconCalendar />
-            Calendar
-          </h1>
-          <p className="prio-page-header__subtitle">
-            {issues.length === 0
-              ? `Nothing due in ${monthLabel}.`
-              : `${issues.length} item${issues.length === 1 ? "" : "s"} due in ${monthLabel}.`}
-          </p>
-        </div>
-      </div>
-
-      <ProjectNav
-        projectKey={project.key}
-        projectId={project.id}
-        active="calendar"
-      />
 
       <Card>
         <CardBody>

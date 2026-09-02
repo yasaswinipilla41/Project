@@ -557,6 +557,28 @@
 }
 
 /* The limits, stated where the control is rather than only in a rejection. */
+/*
+ * Replies, indented under the comment they answer.
+ *
+ * The indent is the only visual difference: a reply is the same card, so it
+ * keeps the same avatar, header, body and actions rather than becoming a
+ * second, lesser kind of comment. The rail down the left is what ties a thread
+ * together once it has more than one answer in it.
+ */
+.prio-comment__replies {
+  list-style: none;
+  margin: var(--prio-space-4) 0 0;
+  padding: 0 0 0 var(--prio-space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-4);
+  border-left: 2px solid var(--prio-border-subtle);
+}
+
+.prio-comment__replies .prio-comment {
+  margin: 0;
+}
+
 .prio-dropzone__limit {
   margin: 0;
   font-size: var(--prio-text-xs);

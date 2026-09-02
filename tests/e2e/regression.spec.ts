@@ -101,16 +101,39 @@ test.describe("update regressions", () => {
       .first()
       .getAttribute("data-priority");
 
-    await page.locator(".prio-issue__headmeta .prio-status").first().click();
-    await page.getByRole("menuitemradio", { name: "In Progress" }).click();
+    /*
+     * Where this issue starts is read, not assumed.
+     *
+     * The move used to be hard-coded -- to In Progress, and back to Todo. Both
+     * halves went stale: the issue is left wherever the previous run put it,
+     * so a run that began already In Progress selected the status it was
+     * on, which the menu correctly treats as a no-op and no save happened;
+     * and "Todo" is now shown as "New", so the restore named a menu item that
+     * no longer exists. Choosing a destination the issue is not already in,
+     * and putting it back where it was found, makes this repeatable whatever
+     * state the database is left in.
+     */
+    const pill = page.locator(".prio-issue__headmeta .prio-status").first();
+    const statusBefore = await pill.getAttribute("data-status");
+    const labelBefore = (await pill.innerText()).trim();
+
+    await pill.click();
+    const options = page.getByRole("menuitemradio");
+    const labels = (await options.allInnerTexts()).map((s) => s.trim());
+    const target = labels.find((l) => l !== labelBefore);
+    expect(target, "the menu must offer somewhere else to go").toBeTruthy();
+
+    await page.getByRole("menuitemradio", { name: target!, exact: true }).click();
     await expect(page.locator(".prio-toast")).toContainText("Moved to");
 
     await page.reload();
 
-    await expect(page.locator(".prio-status").first()).toHaveAttribute(
+    // The status moved...
+    await expect(page.locator(".prio-status").first()).not.toHaveAttribute(
       "data-status",
-      "IN_PROGRESS",
+      statusBefore!,
     );
+    // ...and nothing else did, which is what this test is for.
     await expect(page.locator(".prio-severity").first()).toHaveAttribute(
       "data-severity",
       severityBefore!,
@@ -120,10 +143,17 @@ test.describe("update regressions", () => {
       priorityBefore!,
     );
 
-    // Restore.
+    // Put it back where it was found.
     await page.locator(".prio-issue__headmeta .prio-status").first().click();
-    await page.getByRole("menuitemradio", { name: "Todo" }).click();
+    await page
+      .getByRole("menuitemradio", { name: labelBefore, exact: true })
+      .click();
     await expect(page.locator(".prio-toast")).toContainText("Moved to");
+    await page.reload();
+    await expect(page.locator(".prio-status").first()).toHaveAttribute(
+      "data-status",
+      statusBefore!,
+    );
   });
 
   test("activity history is append-only and reads honestly", async ({ page }) => {

@@ -269,15 +269,19 @@ test.describe("Notifications", () => {
 });
 
 test.describe("Search", () => {
-  test("groups results and jumps straight to an issue key", async ({ page }) => {
+  test("groups results, and keeps an issue key in the results", async ({ page }) => {
     await page.goto("/search");
     await expect(page.getByRole("heading", { name: "Search" })).toBeVisible();
 
-    // An exact key navigates rather than listing one result.
+    /* An exact key used to navigate straight to the issue. It no longer does:
+       results belong in the results, and being thrown onto another page
+       answered "where" without answering "what matched". The issue is the
+       first result instead, one click away rather than none. */
     const searchBox = page.locator(".prio-searchpage__form").getByRole("searchbox");
     await searchBox.fill("ENG-1");
     await searchBox.press("Enter");
-    await expect(page).toHaveURL(/\/issues\/eng-1$/);
+    await expect(page).toHaveURL(/\/search\?q=ENG-1/);
+    await expect(page.getByRole("link", { name: /ENG-1/ }).first()).toBeVisible();
 
     // A text term returns grouped results.
     await page.goto("/search?q=login");

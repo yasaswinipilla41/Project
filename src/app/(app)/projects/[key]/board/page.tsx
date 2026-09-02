@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { BoardHeaderActions } from "@/components/projects/BoardHeaderActions";
 import { FlowBoard } from "@/components/projects/FlowBoard";
-import { ProjectNav } from "@/components/projects/ProjectNav";
+import { InsightsPanel } from "@/components/reports/InsightsPanel";
 import { canManageProject, projectScope } from "@/lib/authz";
 import { BOARD_STATUSES } from "@/lib/board";
 import { prisma } from "@/lib/prisma";
@@ -109,42 +108,27 @@ export default async function ProjectBoardPage({
 
   return (
     <>
-      <div className="prio-page-header">
-        <div className="prio-page-header__text">
-          <div className="prio-breadcrumb">
-            <Link href="/projects">Projects</Link>
-            <span aria-hidden>/</span>
-            <Link href={`/projects/${project.key.toLowerCase()}`}>
-              {project.name}
-            </Link>
-          </div>
-          <h1 className="prio-page-header__title">Flow Board</h1>
-          <p className="prio-page-header__subtitle">
-            Manage issues and track progress for the {project.name} project.
-          </p>
-        </div>
-
-        <div className="prio-page-header__actions">
-          <BoardHeaderActions
-            project={{
-              id: project.id,
-              key: project.key,
-              name: project.name,
-              description: project.description,
-            }}
-            issueCount={issueCount}
-            initialFavorite={favorite !== null}
-            canManage={canManageProject(user, project)}
-            isAdmin={user.role === "ADMIN"}
-          />
-        </div>
+      {/*
+       * The board's own controls, kept when its page header moved to the
+       * project layout. They belong to the board rather than to the project
+       * shell -- favouriting this project and the board's edit/archive/delete
+       * menu -- so they stay here, in a row of their own, rather than being
+       * lost with the header or duplicated into every project view.
+       */}
+      <div className="prio-board__actions">
+        <BoardHeaderActions
+          project={{
+            id: project.id,
+            key: project.key,
+            name: project.name,
+            description: project.description,
+          }}
+          issueCount={issueCount}
+          initialFavorite={favorite !== null}
+          canManage={canManageProject(user, project)}
+          isAdmin={user.role === "ADMIN"}
+        />
       </div>
-
-      <ProjectNav
-        projectKey={project.key}
-        projectId={project.id}
-        active="board"
-      />
 
       <FlowBoard
         project={{ id: project.id, key: project.key, name: project.name }}
@@ -154,6 +138,11 @@ export default async function ProjectBoardPage({
         columns={columns}
         currentUserId={user.id}
         isAdmin={user.role === "ADMIN"}
+        /* Scoped to this project alone, so the figures describe the board
+           being looked at rather than the whole organisation. Rendered here
+           on the server and handed over, so opening Insights needs no
+           navigation and no second request. */
+        insights={<InsightsPanel projectIds={[project.id]} />}
       />
     </>
   );

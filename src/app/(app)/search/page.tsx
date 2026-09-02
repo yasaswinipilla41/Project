@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import type { IssueType } from "@prisma/client";
+import type { IssueStatus, IssueType } from "@prisma/client";
 import { Card, CardBody, EmptyState } from "@/components/ui/primitives";
 import {
   IssueKey,
@@ -28,14 +27,11 @@ import { formatRelative } from "@/lib/format";
 export const metadata: Metadata = { title: "Search" };
 export const dynamic = "force-dynamic";
 
-/** An exact issue key such as ENG-1 or eng-1. */
-const ISSUE_KEY = /^([A-Za-z][A-Za-z0-9]*)-(\d+)$/;
-
 /**
  * Global search (§34), grouped by what was found.
  *
- * Typing an exact issue key jumps straight to that issue rather than showing a
- * result list of one.
+ * Every match is shown here, in this section. Nothing navigates away on the
+ * strength of a query looking like something in particular.
  */
 export default async function SearchPage({
   searchParams,
@@ -54,20 +50,18 @@ export default async function SearchPage({
    */
   const projectsOnly = scope === "projects";
 
-  if (query.length > 0 && !projectsOnly) {
-    const keyMatch = ISSUE_KEY.exec(query);
-    if (keyMatch) {
-      // Only jump if the caller may actually see it; otherwise fall through to
-      // a normal (empty) result set rather than leaking its existence.
-      const exact = await prisma.issue.findFirst({
-        where: { key: query.toUpperCase(), ...issueScope(user) },
-        select: { key: true },
-      });
-      if (exact) redirect(`/issues/${exact.key.toLowerCase()}`);
-    }
-  }
-
-  const hasQuery = query.length >= 2;
+  /*
+   * Searching an issue key used to jump straight to that issue. It no longer
+   * does: results belong in the search results, and being thrown onto another
+   * page is not an answer to "what matches this?" -- it also gave no way back
+   * to the rest of what matched, and no way to tell a key from a word that
+   * happened to look like one.
+   *
+   * Nothing is lost by staying: `issueTextSearch` matches a whole key exactly,
+   * so the issue that used to be jumped to is the first result instead, one
+   * click away rather than none.
+   */
+  const hasQuery = query.length >= 1;
 
   const [issues, projects, people] = hasQuery
     ? await Promise.all([
@@ -292,14 +286,7 @@ function IssueResult({
     key: string;
     type: IssueType;
     title: string;
-    status:
-      | "BACKLOG"
-      | "TODO"
-      | "IN_PROGRESS"
-      | "IN_REVIEW"
-      | "IN_QA"
-      | "DONE"
-      | "CANCELLED";
+    status: IssueStatus;
     priority: "URGENT" | "HIGH" | "MEDIUM" | "LOW" | "NONE";
     severity: "CRITICAL" | "MAJOR" | "MINOR" | "TRIVIAL" | null;
     updatedAt: Date;

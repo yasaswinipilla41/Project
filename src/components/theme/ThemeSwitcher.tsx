@@ -91,6 +91,10 @@ export function ThemeSwitcher() {
           type="button"
           className="prio-btn prio-btn--ghost prio-btn--icon"
           aria-label={`Theme: ${LABEL[choice]}`}
+          /* The tooltip every other icon button in the top bar uses. The
+             accessible name still carries the current choice; the tooltip
+             names the control. */
+          title="Theme"
           {...props}
         >
           <Glyph />

@@ -103,15 +103,56 @@
 }
 
 /* --------------------------------------------------------------- columns */
+/*
+ * `scroll` rather than `auto` on purpose: the board's horizontal scrollbar is
+ * how anyone knows there are more columns to the right, so it is kept even
+ * when the columns happen to fit and even when a column is empty. With `auto`
+ * it appeared and vanished as filters changed the board's width, moving
+ * everything below it by the height of a scrollbar each time.
+ *
+ * It sits at the bottom of this element, below the columns, because this is
+ * the element that scrolls -- the page never scrolls sideways.
+ */
+/*
+ * The column area is bounded to what is left of the window below it, so its
+ * horizontal scrollbar sits at the bottom of the board as it is seen rather
+ * than at the bottom of the tallest column. `--prio-board-top` is written by
+ * the board itself from a real measurement; the fallback only matters for the
+ * first paint before that runs.
+ *
+ * Vertical overflow is handled in here too, which is what keeps a long column
+ * from giving the whole page a scrollbar.
+ */
 .prio-board__columns {
   display: flex;
   align-items: flex-start;
   gap: var(--prio-space-4);
-  overflow-x: auto;
+  height: calc(100dvh - var(--prio-board-top, 300px) - var(--prio-space-6));
+  min-height: 260px;
+  overflow-y: auto;
+  overflow-x: scroll;
   padding: var(--prio-space-2) var(--prio-space-2) var(--prio-space-4);
   margin: calc(var(--prio-space-2) * -1);
   background: var(--prio-bg-app);
   border-radius: var(--prio-radius-lg);
+}
+
+/* Insights, shown in place of the columns. Bounded the same way so opening it
+   does not hand the page a scrollbar the board never had. */
+.prio-board__insights {
+  height: calc(100dvh - var(--prio-board-top, 300px) - var(--prio-space-6));
+  min-height: 260px;
+  overflow-y: auto;
+  padding-right: var(--prio-space-2);
+}
+
+/* The board's own controls, in a row where the page header used to be. */
+.prio-board__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--prio-space-2);
+  margin-bottom: var(--prio-space-4);
 }
 
 .prio-board__column {
@@ -140,6 +181,12 @@
 }
 .prio-board__column[data-status="DONE"] {
   border-top: 3px solid #10b981;
+}
+.prio-board__column[data-status="REOPENED"] {
+  border-top: 3px solid #f59e0b;
+}
+.prio-board__column[data-status="REJECTED"] {
+  border-top: 3px solid #ef4444;
 }
 .prio-board__column[data-status="CANCELLED"] {
   border-top: 3px solid #ef4444;

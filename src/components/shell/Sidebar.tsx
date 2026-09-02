@@ -194,33 +194,34 @@ export function Sidebar({
           <span className="prio-navitem__label">{project.name}</span>
         </Link>
 
-        {/* The badge slot. Its class still reads `__project-fav` because it is
-            the same slot in the same place — only which icon sits in it has
-            changed. */}
-        {!collapsed && project.isPinned ? (
+        {/* The favourite badge, restored to the filled star it has always
+            been. A later change swapped this slot's star for a pin and the
+            quick action's pin for a star; both are back where they were, and
+            only the slots' order on the row reflects the current layout. */}
+        {!collapsed && project.isFavorite ? (
           <span
             className="prio-sidebar__project-fav"
-            title="Pinned"
-            aria-label="Pinned"
+            title="Favorited"
+            aria-label="Favorited"
           >
-            <IconPin size={12} fill="currentColor" />
+            <IconStar size={12} fill="currentColor" />
           </span>
         ) : null}
 
         {!collapsed ? (
           <div className="prio-sidebar__project-actions">
-            {/* Already favourited needs no second star: the row would just be
-               repeating itself. Removing a favourite still works, from the
-               "..." menu below. */}
-            {!project.isFavorite ? (
+            {/* Already pinned is exactly what the Pinned section itself
+               says — a persistent pin icon there would just repeat it.
+               Unpinning still works, from the "..." menu below. */}
+            {!project.isPinned ? (
               <button
                 type="button"
                 className="prio-sidebar__project-menu-trigger"
-                aria-label={`Favorite ${project.name}`}
-                title="Add to Favorites"
-                onClick={() => handleFavorite(project)}
+                aria-label={`Pin ${project.name}`}
+                title="Pin"
+                onClick={() => handlePin(project)}
               >
-                <IconStar size={13} fill="none" />
+                <IconPin size={13} fill="none" />
               </button>
             ) : null}
 

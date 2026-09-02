@@ -389,6 +389,19 @@ export async function loadDashboard(user: CurrentUser): Promise<DashboardData> {
     prisma.notification.findMany({
       where: { userId: user.id, type: "ISSUE_ASSIGNED", readAt: null },
       select: { issueId: true },
+      /*
+       * Newest first, which this was missing.
+       *
+       * The cap is fine -- this only decides which unacknowledged assignments
+       * are worth surfacing, and nobody reads more than a screenful. Taking
+       * fifty of them in whatever order the database happened to return was
+       * not: somebody with a large unread backlog could have their *newest*
+       * assignment fall outside the fifty and drop out of the list entirely,
+       * which is the exact failure the surrounding code exists to prevent.
+       * The comment below already says these lead "most recent first"; this
+       * makes the query agree with it.
+       */
+      orderBy: { createdAt: "desc" },
       take: 50,
     }),
     countBundle(user, scope, w),

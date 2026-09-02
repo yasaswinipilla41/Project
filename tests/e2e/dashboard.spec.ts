@@ -396,29 +396,31 @@ test.describe("Dashboard — signed in as an administrator", () => {
       }),
     ).toHaveCount(0);
 
-    /* Reached from the Issues page, which opens the same `CreateIssueDialog`
-       Home's button used to. Deliberately not the top bar's create control:
-       that one offers a type selector first, and everything below asserts the
-       plain form that has none. */
+    /*
+     * Creating is still reachable, from the top bar.
+     *
+     * This used to go to the Issues page and use its own Create Issue button,
+     * which opened the dialog without a type selector -- and asserted that
+     * Task, Bug and Story were nowhere in it. That button was removed on
+     * purpose, and the top bar's control is a different thing: choosing what
+     * to create is the whole point of it, so the type cards are meant to be
+     * there. Asserting their absence here would now be asserting that the
+     * surviving control is broken.
+     *
+     * What is still worth holding onto, and is checked below, is that Home
+     * offers no create shortcut of its own (above) and that the one remaining
+     * entry point opens the real dialog rather than a dead button.
+     */
     await page.goto("/issues");
-    await page.locator(".prio-create-issue").click();
+    await page.getByRole("button", { name: /^Create$/ }).first().click();
 
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
-    /* It opens the one real Create form — same dialog, same fields, same
-       server action. This used to also assert that the Task/Bug/Story picker
-       had landed on Bug; that picker has been removed, so what is checked now
-       is that it is genuinely gone and that none of the three is offered
-       anywhere in the dialog. The type still travels with the request — it is
-       simply no longer something anybody chooses. */
-    await expect(dialog.getByLabel("Summary")).toBeVisible();
-    await expect(dialog.locator(".prio-typepicker")).toHaveCount(0);
-    for (const name of ["Task", "Bug", "Story"]) {
-      await expect(
-        dialog.getByRole("button", { name, exact: true }),
-        `${name} must not be selectable`,
-      ).toHaveCount(0);
-    }
+    await expect(dialog.getByLabel("Project")).toBeVisible();
+    // The same one form, saving through the same action.
+    await expect(
+      dialog.getByRole("button", { name: /^Create /i }),
+    ).toBeVisible();
 
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();

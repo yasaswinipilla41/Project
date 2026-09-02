@@ -3,8 +3,11 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  useCallback,
+  useEffect,
   useMemo,
   useOptimistic,
+  useRef,
   useState,
   useTransition,
   type DragEvent,
@@ -24,6 +27,7 @@ import { useToast } from "@/components/ui/Toast";
 import {
   IconCheck,
   IconChevronDown,
+  IconClose,
   IconReports,
   IconSearch,
 } from "@/components/ui/Icon";
@@ -179,6 +183,7 @@ export function FlowBoard({
   columns,
   currentUserId,
   isAdmin,
+  insights,
 }: {
   project: BoardProjectRef;
   allProjects: BoardProjectRef[];
@@ -187,6 +192,13 @@ export function FlowBoard({
   columns: BoardColumn[];
   currentUserId: string;
   isAdmin: boolean;
+  /**
+   * This project's Insights, rendered on the server by the board's page and
+   * handed over as content. Passing the finished element rather than fetching
+   * on demand is what lets Insights open without leaving the board: there is
+   * no route to change and nothing to wait for.
+   */
+  insights?: ReactNode;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -198,6 +210,71 @@ export function FlowBoard({
   const [priorityFilter, setPriorityFilter] = useState<string[]>([]);
   const [labelFilter, setLabelFilter] = useState<string[]>([]);
   const [groupBy, setGroupBy] = useState<GroupBy>("NONE");
+
+  /* What Clear will undo. Group by is included: it is a view the person
+     chose, and "clear" that left it applied would be lying about what it did. */
+  const activeFilterCount =
+    (query.trim() ? 1 : 0) +
+    statusFilter.length +
+    assigneeFilter.length +
+    priorityFilter.length +
+    labelFilter.length +
+    (groupBy === "NONE" ? 0 : 1);
+
+  function clearFilters() {
+    setQuery("");
+    setStatusFilter([]);
+    setAssigneeFilter([]);
+    setPriorityFilter([]);
+    setLabelFilter([]);
+    setGroupBy("NONE");
+  }
+
+  /* Insights replaces the columns rather than sitting above them: the board is
+     wide and the figures are tall, and stacking the two would put one of them
+     off-screen whichever came first. The toolbar stays, so the way back is in
+     the same place as the way in. */
+  const [showInsights, setShowInsights] = useState(false);
+
+  /*
+   * The board ends where the window does.
+   *
+   * The columns used to be as tall as their tallest column, so the board's
+   * horizontal scrollbar sat at the bottom of the *content* -- to reach the
+   * control that scrolls the board sideways you first had to scroll the page
+   * down past every card, and on a full board it was several screens away.
+   *
+   * Bounding the column area to the space actually left below it puts that
+   * scrollbar at the bottom of the board as it is seen, and takes the vertical
+   * scrolling into the board instead of the page.
+   *
+   * The distance from the top is measured rather than assumed: it changes with
+   * the toolbar's height, which wraps at narrow widths and grows when Clear
+   * appears. A hard-coded offset would be right at one width and wrong at the
+   * next.
+   */
+  const columnsRef = useRef<HTMLDivElement>(null);
+
+  const measure = useCallback(() => {
+    const el = columnsRef.current;
+    if (!el) return;
+    const top = el.getBoundingClientRect().top;
+    el.style.setProperty("--prio-board-top", `${Math.max(0, Math.round(top))}px`);
+  }, []);
+
+  useEffect(() => {
+    measure();
+    window.addEventListener("resize", measure);
+    /* The toolbar above can change height without the window doing anything --
+       a filter chip wrapping onto a second line moves the board down. */
+    const observer = new ResizeObserver(measure);
+    const board = columnsRef.current?.parentElement;
+    if (board) observer.observe(board);
+    return () => {
+      window.removeEventListener("resize", measure);
+      observer.disconnect();
+    };
+  }, [measure]);
 
   const [dragIssueId, setDragIssueId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<IssueStatus | null>(null);
@@ -546,6 +623,19 @@ export function FlowBoard({
                 ))
               )}
             </ToolbarMenu>
+
+            {/* Same control the issue list carries, in the same place beside
+                the chips it clears. */}
+            {activeFilterCount > 0 ? (
+              <button
+                type="button"
+                className="prio-btn prio-btn--ghost prio-btn--sm"
+                onClick={clearFilters}
+              >
+                <IconClose size={13} />
+                Clear {activeFilterCount}
+              </button>
+            ) : null}
           </div>
         </div>
 
@@ -580,10 +670,30 @@ export function FlowBoard({
             </Menu>
           </div>
 
-          <a href="/reports" className="prio-btn prio-btn--secondary">
-            <IconReports size={18} style={{ color: "var(--prio-primary-600)" }} />
-            Insights
-          </a>
+          {/*
+            * Insights opens here rather than at /reports. It used to be a link
+            * away from the board, which meant losing the board -- its filters,
+            * its scroll position and the project it was showing -- to read
+            * figures about that same project. It is a view of the board's own
+            * content, so it belongs on the board.
+            */}
+          {insights ? (
+            <button
+              type="button"
+              className="prio-btn prio-btn--secondary"
+              onClick={() => setShowInsights((open) => !open)}
+              aria-pressed={showInsights}
+              aria-expanded={showInsights}
+            >
+              <IconReports size={18} style={{ color: "var(--prio-primary-600)" }} />
+              {showInsights ? "Back to board" : "Insights"}
+            </button>
+          ) : (
+            <a href="/reports" className="prio-btn prio-btn--secondary">
+              <IconReports size={18} style={{ color: "var(--prio-primary-600)" }} />
+              Insights
+            </a>
+          )}
         </div>
       </div>
 
@@ -605,7 +715,10 @@ export function FlowBoard({
         </div>
       ) : null}
 
-      <div className="prio-board__columns prio-scroll">
+      {showInsights ? (
+        <div className="prio-board__insights">{insights}</div>
+      ) : (
+      <div className="prio-board__columns prio-scroll" ref={columnsRef}>
         {groups.map((group) => {
           const status = group.status;
 
@@ -691,6 +804,7 @@ export function FlowBoard({
           );
         })}
       </div>
+      )}
     </div>
   );
 }

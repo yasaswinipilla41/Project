@@ -106,6 +106,23 @@ export function Topbar({
     setQuery(activeQuery);
   }
 
+  /*
+   * Creating while inside a project files into that project.
+   *
+   * The Issues page used to carry its own Create Issue button, which passed
+   * the project the list was filtered to so a tester did not have to pick it
+   * again. That button is gone, and with it the only thing that ever supplied
+   * a default -- the capability stayed in `CreateIssueDialog`, simply with
+   * nothing left to reach it. Reading the project from the path restores it
+   * without putting a second Create control back on the page: the project
+   * being looked at is context the top bar already has, since `projects`
+   * carries the key-to-id mapping this needs.
+   */
+  const projectInPath = /^\/projects\/([^/]+)/.exec(pathname)?.[1];
+  const currentProject = projectInPath
+    ? projects.find((p) => p.key.toLowerCase() === projectInPath.toLowerCase())
+    : undefined;
+
   const [signingOut, setSigningOut] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [createType, setCreateType] = useState<IssueType>("TASK");
@@ -302,6 +319,7 @@ export function Topbar({
             onClose={() => setCreateOpen(false)}
             defaultType={createType}
             showTypeSelector
+            defaultProjectId={currentProject?.id ?? null}
           />
         ) : null}
 

@@ -503,6 +503,26 @@
 .prio-status[data-status="DONE"] .prio-status__dot {
   background: var(--prio-status-done-dot);
 }
+/* Reopened borrows the "in progress" palette: it is active work again, and
+   inventing a ninth colour would say something the status does not mean. */
+.prio-status[data-status="REOPENED"] {
+  background: var(--prio-status-progress-bg);
+  color: var(--prio-status-progress-fg);
+}
+.prio-status[data-status="REOPENED"] .prio-status__dot {
+  background: var(--prio-status-progress-dot);
+}
+/* Rejected closes an issue, like Cancelled, and reads the same way -- struck
+   through, so a closed issue is recognisable without reading the word. */
+.prio-status[data-status="REJECTED"] {
+  background: var(--prio-status-cancelled-bg);
+  color: var(--prio-status-cancelled-fg);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+.prio-status[data-status="REJECTED"] .prio-status__dot {
+  background: var(--prio-status-cancelled-dot);
+}
 .prio-status[data-status="CANCELLED"] {
   background: var(--prio-status-cancelled-bg);
   color: var(--prio-status-cancelled-fg);
@@ -829,6 +849,19 @@ a.prio-key:hover {
   width: 100%;
   max-width: 560px;
   max-height: calc(100dvh - (2 * var(--prio-space-8)));
+  /*
+   * The panel clips itself.
+   *
+   * Its three children already fit -- the header and footer do not shrink, and
+   * the body takes what is left and scrolls -- but the panel still reported
+   * the body's full unscrolled content as its own scrollable overflow, and
+   * handed that overflow to the backdrop. The backdrop then scrolled by a few
+   * hundred pixels behind an open dialog: a full-page scrollbar belonging to a
+   * popup, which is exactly what should not happen. Nothing is meant to paint
+   * outside the panel anyway -- menus opened inside a dialog portal to the
+   * body -- so clipping here costs nothing and also keeps the corners round.
+   */
+  overflow: hidden;
   background: var(--prio-bg-surface);
   border-radius: var(--prio-radius-xl);
   box-shadow: var(--prio-shadow-xl);
@@ -2091,6 +2124,12 @@ a.prio-stat:focus-visible {
   display: flex;
   gap: var(--prio-space-1);
   margin-bottom: var(--prio-space-5);
+  /* Without this the strip cannot scroll, and on a narrow screen the tabs
+     push the whole page wider instead of scrolling within it. Safe to keep
+     now: the negative margin that used to overflow this box vertically is
+     gone, so the promoted `overflow-y: auto` has nothing to scroll and no
+     scrollbar is drawn. */
+  overflow-x: auto;
   box-shadow: inset 0 -1px 0 var(--prio-border);
 }
 

@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { CreateIssueButton } from "@/components/issues/CreateIssueButton";
 import { IssueFilters } from "@/components/issues/IssueFilters";
 import { IssueTable } from "@/components/issues/IssueTable";
 import { filterOptions, listIssues } from "@/server/queries/issues";
@@ -35,24 +34,6 @@ export default async function IssuesPage({
           <p className="prio-page-header__subtitle">
             Tasks, stories and bugs across every project you can see.
           </p>
-        </div>
-        <div className="prio-page-header__actions">
-          {/*
-           * Export lives on the filter bar below, next to the result count it
-           * acts on, so this slot carries the page's primary action instead.
-           *
-           * When the list is filtered to a single project — which is how a
-           * project's own Issues tab links here — that project is passed
-           * through as the dialog's default, so a tester creating work
-           * against the project they are already looking at does not have to
-           * pick it again.
-           */}
-          <CreateIssueButton
-            defaultProjectId={
-              filters.projectIds?.length === 1 ? filters.projectIds[0] : null
-            }
-            disabled={options.projects.length === 0}
-          />
         </div>
       </div>
 

@@ -26,14 +26,21 @@ async function attachScreenshot(page: Page) {
 }
 
 /** Navigates to the issue list scoped to a project, the way its own tab does. */
+/**
+ * A project's own issue list.
+ *
+ * This used to hop to `/issues?project=<id>` through a link on the project
+ * page. The project's issues now have a List tab inside the project shell
+ * instead, so that is where "arriving from a project" leads; the destination
+ * is the same list, scoped the same way.
+ */
 async function openProjectIssues(page: Page, projectKey: string) {
   await page.goto(`/projects/${projectKey}`);
-  const href = await page
-    .locator('a[href^="/issues?project="]')
-    .first()
-    .getAttribute("href");
-  if (!href) throw new Error("The project page has no scoped Issues link.");
-  await page.goto(href);
+  await page
+    .locator(".prio-projectnav")
+    .getByRole("link", { name: "List", exact: true })
+    .click();
+  await page.waitForURL(new RegExp(`/projects/${projectKey}/list`));
 }
 
 /** Draws an oval around the middle of the image, as a tester would. */
@@ -70,26 +77,28 @@ async function attachmentBytes(page: Page) {
 }
 
 test.describe("Create Issue from the Issues module", () => {
-  test("the header offers Create Issue, and exporting is still available", async ({
+  test("the Issues header carries no Create Issue, and creating still works", async ({
     page,
   }) => {
     const { consoleErrors, failedRequests } = watchForProblems(page);
 
     await page.goto("/issues");
-    const header = page.locator(".prio-page-header__actions");
 
-    await expect(header.getByRole("button", { name: "Create Issue" })).toBeVisible();
-
-    /* Export moved off the header, but the capability did not move anywhere —
-       it sits on the filter bar next to the result count it acts on. Asserting
-       both halves is the point: a "replace" that quietly dropped the feature
-       would pass the first assertion alone. */
-    await expect(header.getByRole("button", { name: /export/i })).toHaveCount(0);
+    /* The Issues page's own Create Issue button was removed on purpose. What
+       matters is that removing the button removed only the button: creating an
+       issue is still reachable from the top bar, and exporting is still on the
+       filter bar next to the result count it acts on. Asserting all three is
+       the point — a removal that quietly took the capability with it would
+       pass the first assertion alone. */
+    await expect(page.locator(".prio-create-issue")).toHaveCount(0);
+    await expect(
+      page.locator(".prio-page-header__actions").getByRole("button", { name: /export/i }),
+    ).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Export Excel" })).toBeVisible();
 
-    await header.getByRole("button", { name: "Create Issue" }).click();
+    await page.getByRole("button", { name: /^Create$/ }).first().click();
     await expect(page.getByRole("dialog")).toBeVisible();
-    await expect(page.getByRole("dialog").getByLabel("Summary")).toBeVisible();
+    await expect(page.getByRole("dialog").getByLabel("Project")).toBeVisible();
 
     expect(consoleErrors).toEqual([]);
     expect(failedRequests).toEqual([]);
@@ -97,9 +106,9 @@ test.describe("Create Issue from the Issues module", () => {
 
   test("arriving from a project preselects that project", async ({ page }) => {
     await openProjectIssues(page, "eng");
-    await expect(page).toHaveURL(/\/issues\?project=/);
+    await expect(page).toHaveURL(/\/projects\/eng\/list/);
 
-    await page.getByRole("button", { name: "Create Issue" }).click();
+    await page.getByRole("button", { name: /^Create$/ }).first().click();
     const dialog = page.getByRole("dialog");
 
     /* The options arrive over the network, so the select reads
@@ -126,10 +135,10 @@ test.describe("Create Issue from the Issues module", () => {
     const title = `Login button is not working ${Date.now()}`;
 
     await openProjectIssues(page, "eng");
-    await page.getByRole("button", { name: "Create Issue" }).click();
+    await page.getByRole("button", { name: /^Create$/ }).first().click();
 
     const dialog = page.getByRole("dialog");
-    await dialog.getByLabel("Summary").fill(title);
+    await dialog.getByLabel("Task title").fill(title);
     await attachScreenshot(page);
 
     // The affordance says what it does before any markup exists…
@@ -142,7 +151,7 @@ test.describe("Create Issue from the Issues module", () => {
     // …and changes once it does, so a second visit is clearly a continuation.
     await expect(dialog.getByRole("button", { name: "Edit markup" })).toBeVisible();
 
-    await dialog.getByRole("button", { name: /^create issue$/i }).click();
+    await dialog.getByRole("button", { name: /^create (issue|task|bug|story|epic|feature)$/i }).click();
     await expect(dialog).toBeHidden();
 
     // Straight to the existing issue detail page.
@@ -183,12 +192,12 @@ test.describe("Create Issue from the Issues module", () => {
     const title = `Re-annotated ${Date.now()}`;
 
     await openProjectIssues(page, "eng");
-    await page.getByRole("button", { name: "Create Issue" }).click();
+    await page.getByRole("button", { name: /^Create$/ }).first().click();
 
     const dialog = page.getByRole("dialog");
-    await dialog.getByLabel("Summary").fill(title);
+    await dialog.getByLabel("Task title").fill(title);
     await attachScreenshot(page);
-    await dialog.getByRole("button", { name: /^create issue$/i }).click();
+    await dialog.getByRole("button", { name: /^create (issue|task|bug|story|epic|feature)$/i }).click();
 
     await expect(page).toHaveURL(/\/issues\/eng-\d+$/i);
     await expect(page.locator(".prio-attachment")).toHaveCount(1);

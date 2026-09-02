@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { BOARD_STATUSES } from "@/lib/board";
-import { canTransition, ISSUE_STATUSES } from "@/lib/domain";
+import { allowedTransitions, canTransition, ISSUE_STATUSES } from "@/lib/domain";
 import { prisma } from "@/lib/prisma";
 import { createIssue, updateIssue } from "@/server/issues";
 import { actAs, projectByKey } from "./helpers";
@@ -16,9 +16,11 @@ import { actAs, projectByKey } from "./helpers";
  *     this is decided by the query, not by anything the browser does after
  *     the rows arrive.
  *
- *  2. Being a column buys it no privileges. What may leave Backlog comes from
- *     `STATUS_TRANSITIONS` exactly as it does for every other status, which is
- *     what stops the column being quietly treated as a review or QA queue.
+ *  2. Being a column buys it no privileges. Which columns will accept a card
+ *     dragged from Backlog comes from `STATUS_TRANSITIONS`, exactly as it does
+ *     for every other status, which is what stops the column being quietly
+ *     treated as a review or QA queue. The issue page's own status menu is a
+ *     separate surface and deliberately offers every status.
  */
 
 describe("the board's columns", () => {
@@ -63,7 +65,7 @@ describe("Backlog is not a QA queue", () => {
   });
 });
 
-describe("the server enforces that, not the board", () => {
+describe("what the board reads, and what the server stores", () => {
   const created: string[] = [];
 
   beforeAll(async () => {
@@ -90,17 +92,13 @@ describe("the server enforces that, not the board", () => {
     return result.data.id;
   }
 
-  it("refuses a drag from Backlog into In QA", async () => {
-    const issueId = await aBacklogIssue("Backlog fixture: refused move");
-
-    const result = await updateIssue({ issueId, status: "IN_QA" });
-
-    expect(result.ok).toBe(false);
-    const after = await prisma.issue.findUniqueOrThrow({
-      where: { id: issueId },
-      select: { status: true },
-    });
-    expect(after.status).toBe("BACKLOG");
+  it("does not offer Backlog to In QA as a drop target", () => {
+    /* What stops a card being dragged from Backlog into In QA is the table,
+       which the board reads to decide which columns will accept a drop. The
+       server no longer refuses the write -- the issue page deliberately offers
+       every status -- so this is asserted where the rule now lives. */
+    expect(canTransition("BACKLOG", "IN_QA")).toBe(false);
+    expect(allowedTransitions("BACKLOG")).not.toContain("IN_QA");
   });
 
   it("allows a drag from Backlog into Todo", async () => {

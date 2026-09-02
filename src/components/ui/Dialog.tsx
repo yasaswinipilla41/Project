@@ -109,15 +109,68 @@ export function Dialog({
     };
   }, [open]);
 
+  /*
+   * Focus moves in once, when the dialog opens.
+   *
+   * This used to share an effect with the key handling below, which depends on
+   * `requestClose` -- and `requestClose` is rebuilt whenever `onClose` changes
+   * identity, which is every render, because every caller passes `onClose` as
+   * an inline arrow. So the effect re-ran on each render, and each re-run
+   * called `.focus()` on the dialog's first focusable element again.
+   *
+   * While a dialog merely sits there that is invisible. While somebody is
+   * typing into it, it is not: each keystroke re-renders, focus jumps out of
+   * the field to the header's close button, and the very next character goes
+   * nowhere. Exactly one character could be typed into any input in any dialog
+   * in the application.
+   *
+   * Depending only on `open` is what fixes it -- opening is the event that
+   * should move focus, and nothing else is.
+   */
   useEffect(() => {
     if (!open) return;
-
     const panel = panelRef.current;
     const first = panel?.querySelector<HTMLElement>(FOCUSABLE);
     (first ?? panel)?.focus();
+  }, [open]);
 
-    const { overflow } = document.body.style;
+  /* The page lock belongs with the opening too, not with the key handler:
+     applied and undone on every keystroke it would flicker the scrollbar. */
+  useEffect(() => {
+    if (!open) return;
+
+    /*
+     * Lock the page behind the dialog, without moving it.
+     *
+     * Hiding the body's overflow is what stops the page scrolling underneath.
+     * On its own it also takes the page's scrollbar away, and on a platform
+     * that reserves space for one -- Windows, most Linux desktops -- the whole
+     * layout then jumps sideways by the width of the gutter the instant the
+     * dialog opens, and jumps back when it closes. Replacing that width with
+     * padding keeps everything exactly where it was.
+     *
+     * `innerWidth - clientWidth` is the gutter's real width as this browser
+     * draws it, which is 0 wherever scrollbars are drawn as an overlay, so
+     * nothing is added on the platforms that do not need it.
+     */
+    const { overflow, paddingRight } = document.body.style;
+    const gutter = window.innerWidth - document.documentElement.clientWidth;
     document.body.style.overflow = "hidden";
+    if (gutter > 0) {
+      const current = Number.parseFloat(
+        getComputedStyle(document.body).paddingRight,
+      );
+      document.body.style.paddingRight = `${(Number.isFinite(current) ? current : 0) + gutter}px`;
+    }
+
+    return () => {
+      document.body.style.overflow = overflow;
+      document.body.style.paddingRight = paddingRight;
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
 
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
@@ -154,7 +207,6 @@ export function Dialog({
     document.addEventListener("keydown", onKeyDown, true);
     return () => {
       document.removeEventListener("keydown", onKeyDown, true);
-      document.body.style.overflow = overflow;
     };
   }, [open, requestClose]);
 

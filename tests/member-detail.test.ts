@@ -127,6 +127,19 @@ describe("loadMemberDetail", () => {
       title: "Member detail — unassigned candidate fixture",
       description: "Created by the integration suite.",
       status: "TODO",
+      /*
+       * Urgent, so this fixture is inside the window the picker offers.
+       *
+       * `assignableIssues` is capped at fifty and ordered unassigned-first,
+       * then by priority, then by recency. That is the intended contract --
+       * the fifty most important things this person could be given -- and on a
+       * database with more than fifty unassigned urgent issues in it, a
+       * freshly created medium one is correctly absent. The claim being tested
+       * is that unassigned work is offered at all, not that the cap does not
+       * exist, so the fixture is made to belong in the window rather than the
+       * window widened to admit it.
+       */
+      priority: "URGENT",
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;

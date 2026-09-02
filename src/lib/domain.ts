@@ -22,21 +22,25 @@ export const ISSUE_STATUSES = [
   "IN_REVIEW",
   "IN_QA",
   "DONE",
+  "REOPENED",
+  "REJECTED",
   "CANCELLED",
 ] as const satisfies readonly IssueStatus[];
 
 export const STATUS_LABEL: Record<IssueStatus, string> = {
   BACKLOG: "Backlog",
-  TODO: "Todo",
+  TODO: "New",
   IN_PROGRESS: "In Progress",
   IN_REVIEW: "Ready for QA",
   IN_QA: "In QA",
   DONE: "Done",
+  REOPENED: "Reopen",
+  REJECTED: "Reject / Not an Issue",
   CANCELLED: "Cancelled",
 };
 
 /** Statuses that take an issue out of active work. */
-export const CLOSED_STATUSES = ["DONE", "CANCELLED"] as const satisfies
+export const CLOSED_STATUSES = ["DONE", "REJECTED", "CANCELLED"] as const satisfies
   readonly IssueStatus[];
 
 /* IN_QA is open work: it is being tested, which is not the same as finished.
@@ -47,10 +51,13 @@ export const OPEN_STATUSES = [
   "IN_PROGRESS",
   "IN_REVIEW",
   "IN_QA",
+  /* Reopened work is open again by definition -- that is the whole point of
+     reopening it. */
+  "REOPENED",
 ] as const satisfies readonly IssueStatus[];
 
 export function isClosedStatus(status: IssueStatus): boolean {
-  return status === "DONE" || status === "CANCELLED";
+  return (CLOSED_STATUSES as readonly IssueStatus[]).includes(status);
 }
 
 /* ------------------------------------------------------- status workflow */
@@ -84,13 +91,17 @@ export function isClosedStatus(status: IssueStatus): boolean {
  * created in whatever status the person filing it says it is in.
  */
 export const STATUS_TRANSITIONS: Record<IssueStatus, readonly IssueStatus[]> = {
-  BACKLOG: ["TODO", "IN_PROGRESS", "CANCELLED"],
-  TODO: ["IN_PROGRESS", "IN_REVIEW", "BACKLOG", "CANCELLED"],
-  IN_PROGRESS: ["IN_REVIEW", "TODO", "BACKLOG", "CANCELLED"],
-  IN_REVIEW: ["IN_QA", "DONE", "IN_PROGRESS", "CANCELLED"],
-  IN_QA: ["DONE", "IN_REVIEW", "IN_PROGRESS", "CANCELLED"],
-  DONE: ["IN_PROGRESS", "CANCELLED"],
-  CANCELLED: ["BACKLOG", "TODO"],
+  BACKLOG: ["TODO", "IN_PROGRESS", "REJECTED", "CANCELLED"],
+  TODO: ["IN_PROGRESS", "IN_REVIEW", "BACKLOG", "REJECTED", "CANCELLED"],
+  IN_PROGRESS: ["IN_REVIEW", "TODO", "BACKLOG", "REJECTED", "CANCELLED"],
+  IN_REVIEW: ["IN_QA", "DONE", "IN_PROGRESS", "REJECTED", "CANCELLED"],
+  IN_QA: ["DONE", "IN_REVIEW", "IN_PROGRESS", "REJECTED", "CANCELLED"],
+  /* Finished work does not go back to being in progress by pretending it was
+     never finished -- it is reopened, which says so. */
+  DONE: ["REOPENED", "IN_PROGRESS", "CANCELLED"],
+  REOPENED: ["IN_PROGRESS", "TODO", "IN_REVIEW", "DONE", "REJECTED", "CANCELLED"],
+  REJECTED: ["REOPENED", "BACKLOG", "TODO"],
+  CANCELLED: ["BACKLOG", "TODO", "REOPENED"],
 };
 
 /**

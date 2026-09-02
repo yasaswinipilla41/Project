@@ -46,7 +46,9 @@ describe("the transition rules themselves", () => {
     const canFinish = ISSUE_STATUSES.filter(
       (from) => from !== "DONE" && canTransition(from, "DONE"),
     );
-    expect(canFinish.sort()).toEqual(["IN_QA", "IN_REVIEW"]);
+    /* Reopened work can finish again without repeating the whole journey --
+       it has already been through review once. */
+    expect(canFinish.sort()).toEqual(["IN_QA", "IN_REVIEW", "REOPENED"]);
   });
 
   it("refuses the jumps that skip the workflow", () => {
@@ -85,7 +87,20 @@ describe("the transition rules themselves", () => {
   });
 });
 
-describe("the server enforces the workflow", () => {
+/*
+ * What the server does with a status change.
+ *
+ * It used to refuse any move the table did not describe. That followed from
+ * the issue page offering only valid destinations -- and the issue page now
+ * offers every status the project has, deliberately, so refusing the choice it
+ * just presented would leave a control that visibly does nothing. The table
+ * still describes the ordinary path and still shapes the board's drag and
+ * drop; it is no longer a gate on the write.
+ *
+ * Authorization is untouched and is tested elsewhere: who may change an issue
+ * is a security question, and that answer has not moved.
+ */
+describe("the server accepts any status the project has", () => {
   const created: string[] = [];
 
   beforeAll(async () => {
@@ -113,32 +128,51 @@ describe("the server enforces the workflow", () => {
     return result.data.id;
   }
 
-  it("refuses a jump the interface would never offer", async () => {
+  it("allows a jump the ordinary path does not describe", async () => {
     const issueId = await anIssueIn("TODO");
 
+    // The table does not describe this move...
+    expect(canTransition("TODO", "DONE")).toBe(false);
+
+    // ...and the server performs it anyway, because somebody chose it.
     const result = await updateIssue({ issueId, status: "DONE" });
+    expect(result.ok).toBe(true);
 
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error).toMatch(/cannot move/i);
-    }
-
-    // And the issue did not move.
     const after = await prisma.issue.findUniqueOrThrow({
       where: { id: issueId },
       select: { status: true, completedAt: true },
     });
-    expect(after.status).toBe("TODO");
-    expect(after.completedAt).toBeNull();
+    expect(after.status).toBe("DONE");
+    // Finishing still stamps the completion date, however it was reached.
+    expect(after.completedAt).not.toBeNull();
   });
 
-  it("records nothing in the history for a refused move", async () => {
+  it("records the move in the history like any other", async () => {
     const issueId = await anIssueIn("TODO");
     const before = await prisma.activityLogEntry.count({ where: { issueId } });
 
     await updateIssue({ issueId, status: "DONE" });
 
-    expect(await prisma.activityLogEntry.count({ where: { issueId } })).toBe(before);
+    expect(await prisma.activityLogEntry.count({ where: { issueId } })).toBe(
+      before + 1,
+    );
+  });
+
+  it("reaches the statuses added for reopening and rejecting", async () => {
+    const issueId = await anIssueIn("TODO");
+
+    expect(await updateIssue({ issueId, status: "REJECTED" })).toMatchObject({
+      ok: true,
+    });
+    expect(await updateIssue({ issueId, status: "REOPENED" })).toMatchObject({
+      ok: true,
+    });
+
+    const after = await prisma.issue.findUniqueOrThrow({
+      where: { id: issueId },
+      select: { status: true },
+    });
+    expect(after.status).toBe("REOPENED");
   });
 
   it("allows a move the workflow permits", async () => {

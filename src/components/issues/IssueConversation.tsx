@@ -74,8 +74,32 @@ export function IssueConversation({
   const [reactingTo, setReactingTo] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
 
+  /*
+   * Replies, gathered under the comment they answer.
+   *
+   * `parentId` has always been stored correctly -- what was missing is any
+   * use of it when laying the conversation out. Replies are kept oldest-first
+   * within a thread, which is how a conversation reads, even though the
+   * top-level stream below runs newest-first.
+   */
+  const repliesByParent = useMemo(() => {
+    const map = new Map<string, CommentView[]>();
+    for (const comment of comments) {
+      if (comment.parentId === null) continue;
+      const thread = map.get(comment.parentId);
+      if (thread) thread.push(comment);
+      else map.set(comment.parentId, [comment]);
+    }
+    for (const thread of map.values()) {
+      thread.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    }
+    return map;
+  }, [comments]);
+
   /* One chronological stream. Sorted here rather than in SQL because the two
-     sources are separate queries and the merge is trivial at this size. */
+     sources are separate queries and the merge is trivial at this size.
+     Only top-level comments take a place in it: a reply belongs under its
+     parent, not beside it. */
   const timeline = useMemo<TimelineItem[]>(() => {
     const items: TimelineItem[] = [
       ...activity.map((entry) => ({
@@ -83,11 +107,13 @@ export function IssueConversation({
         at: entry.createdAt,
         entry,
       })),
-      ...comments.map((comment) => ({
-        kind: "comment" as const,
-        at: comment.createdAt,
-        comment,
-      })),
+      ...comments
+        .filter((comment) => comment.parentId === null)
+        .map((comment) => ({
+          kind: "comment" as const,
+          at: comment.createdAt,
+          comment,
+        })),
     ];
     return items.sort((a, b) => a.at.getTime() - b.at.getTime());
   }, [activity, comments]);
@@ -194,8 +220,8 @@ export function IssueConversation({
           onClick={() => setTab("comments")}
         >
           Comments
-          {commentItems.length > 0 ? (
-            <span className="prio-tabs__count">{commentItems.length}</span>
+          {comments.length > 0 ? (
+            <span className="prio-tabs__count">{comments.length}</span>
           ) : null}
         </button>
         <button
@@ -229,145 +255,24 @@ export function IssueConversation({
                 names={names}
               />
             ) : (
-              <li
+              <CommentCard
                 key={`c-${item.comment.id}`}
-                id={`comment-${item.comment.id}`}
-                className="prio-comment"
-              >
-                <span className="prio-activity__rail" aria-hidden />
-                <Avatar
-                  name={item.comment.author.name}
-                  image={item.comment.author.image}
-                  size="md"
-                  className="prio-activity__avatar"
-                />
-
-                <div className="prio-comment__card">
-                  <div className="prio-comment__head">
-                    <strong className="prio-comment__author">
-                      {item.comment.author.name}
-                    </strong>
-                    <time
-                      className="prio-activity__time"
-                      dateTime={item.comment.createdAt.toISOString()}
-                      title={formatDateTime(item.comment.createdAt)}
-                      /* See the note in ActivityFeed: relative time may round
-                         differently between render and hydration. */
-                      suppressHydrationWarning
-                    >
-                      {formatRelative(item.comment.createdAt)}
-                    </time>
-                    {item.comment.editedAt ? (
-                      <span
-                        className="prio-comment__edited"
-                        title={`Edited ${formatDateTime(item.comment.editedAt)}`}
-                      >
-                        edited
-                      </span>
-                    ) : null}
-
-                    {/* Authors edit their own; administrators can remove any. */}
-                    {item.comment.author.id === currentUser.id ||
-                    currentUser.role === "ADMIN" ? (
-                      <Menu
-                        align="end"
-                        width={188}
-                        label="Comment actions"
-                        trigger={(props) => (
-                          <button
-                            type="button"
-                            className="prio-comment__menu"
-                            aria-label="Comment actions"
-                            {...props}
-                          >
-                            <IconMore size={14} />
-                          </button>
-                        )}
-                      >
-                        {item.comment.author.id === currentUser.id ? (
-                          <MenuItem
-                            icon={<IconEdit />}
-                            onSelect={() => setEditing(item.comment.id)}
-                          >
-                            Edit
-                          </MenuItem>
-                        ) : null}
-                        {item.comment.author.id === currentUser.id ? (
-                          <MenuSeparator />
-                        ) : null}
-                        <MenuItem
-                          danger
-                          icon={<IconTrash />}
-                          onSelect={() => void remove(item.comment.id)}
-                        >
-                          Delete
-                        </MenuItem>
-                      </Menu>
-                    ) : null}
-                  </div>
-
-                  {editing === item.comment.id ? (
-                    <CommentComposer
-                      issueId={issueId}
-                      author={currentUser}
-                      mentionable={mentionable}
-                      initialBody={item.comment.body}
-                      submitLabel="Save changes"
-                      autoFocus
-                      onCancel={() => setEditing(null)}
-                      onSubmit={(body) => saveEdit(item.comment.id, body)}
-                    />
-                  ) : (
-                    <>
-                      <RichText
-                        value={item.comment.body}
-                        mentionable={mentionable}
-                        className="prio-comment__body"
-                      />
-                      {item.comment.attachments.length > 0 ? (
-                        <AttachmentGrid
-                          attachments={item.comment.attachments}
-                          currentUserId={currentUser.id}
-                          isAdmin={currentUser.role === "ADMIN"}
-                          compact
-                        />
-                      ) : null}
-
-                      <CommentActions
-                        comment={item.comment}
-                        currentUserId={currentUser.id}
-                        replying={replyingTo === item.comment.id}
-                        picking={reactingTo === item.comment.id}
-                        onReply={() =>
-                          setReplyingTo(
-                            replyingTo === item.comment.id ? null : item.comment.id,
-                          )
-                        }
-                        onPick={() =>
-                          setReactingTo(
-                            reactingTo === item.comment.id ? null : item.comment.id,
-                          )
-                        }
-                        onReact={(emoji) => react(item.comment.id, emoji)}
-                      />
-
-                      {replyingTo === item.comment.id ? (
-                        <CommentComposer
-                          issueId={issueId}
-                          author={currentUser}
-                          mentionable={mentionable}
-                          submitLabel="Reply"
-                          autoFocus
-                          onCancel={() => setReplyingTo(null)}
-                          onSubmit={(body, attachmentIds) =>
-                            postReply(item.comment.id, body, attachmentIds)
-                          }
-                        />
-                      ) : null}
-                    </>
-                  )}
-                </div>
-              </li>
+                comment={item.comment}
+                replies={repliesByParent.get(item.comment.id) ?? []}
+                issueId={issueId}
+                currentUser={currentUser}
+                mentionable={mentionable}
+                editing={editing}
+                setEditing={setEditing}
+                replyingTo={replyingTo}
+                setReplyingTo={setReplyingTo}
+                reactingTo={reactingTo}
+                setReactingTo={setReactingTo}
+                onReact={react}
+                onRemove={(id) => void remove(id)}
+                onSaveEdit={saveEdit}
+                onPostReply={postReply}
+              />
             ),
           )}
         </ol>
@@ -506,5 +411,226 @@ function CommentActions({
         ) : null}
       </span>
     </div>
+  );
+}
+
+/**
+ * One comment, and the replies that answer it.
+ *
+ * The replies are rendered *inside* this comment's own `<li>`, which is the
+ * whole point: a reply carries a `parentId`, and until now the conversation
+ * ignored it and laid every comment out in one flat chronological stream. A
+ * reply therefore appeared as an independent top-level comment, and since it
+ * was the newest thing on the issue it appeared at the very top -- as far from
+ * the comment it was answering as it could get.
+ *
+ * The card markup is unchanged; it simply lives here now so a parent and a
+ * reply render through the same code rather than through two copies of it.
+ * A reply is not offered its own Reply button: threads here are one level
+ * deep, and answering a reply answers the same conversation.
+ */
+function CommentCard({
+  comment,
+  replies,
+  issueId,
+  currentUser,
+  mentionable,
+  editing,
+  setEditing,
+  replyingTo,
+  setReplyingTo,
+  reactingTo,
+  setReactingTo,
+  onReact,
+  onRemove,
+  onSaveEdit,
+  onPostReply,
+}: {
+  comment: CommentView;
+  replies: CommentView[];
+  issueId: string;
+  currentUser: IssueConversationProps["currentUser"];
+  mentionable: MentionablePerson[];
+  editing: string | null;
+  setEditing: (id: string | null) => void;
+  replyingTo: string | null;
+  setReplyingTo: (id: string | null) => void;
+  reactingTo: string | null;
+  setReactingTo: (id: string | null) => void;
+  onReact: (commentId: string, emoji: string) => void;
+  onRemove: (commentId: string) => void;
+  onSaveEdit: (commentId: string, body: string) => Promise<string | null>;
+  onPostReply: (
+    parentId: string,
+    body: string,
+    attachmentIds: string[],
+  ) => Promise<string | null>;
+}) {
+  return (
+    <li
+      key={`c-${comment.id}`}
+      id={`comment-${comment.id}`}
+      className="prio-comment"
+    >
+      <span className="prio-activity__rail" aria-hidden />
+      <Avatar
+        name={comment.author.name}
+        image={comment.author.image}
+        size="md"
+        className="prio-activity__avatar"
+      />
+
+      <div className="prio-comment__card">
+        <div className="prio-comment__head">
+          <strong className="prio-comment__author">
+            {comment.author.name}
+          </strong>
+          <time
+            className="prio-activity__time"
+            dateTime={comment.createdAt.toISOString()}
+            title={formatDateTime(comment.createdAt)}
+            /* See the note in ActivityFeed: relative time may round
+               differently between render and hydration. */
+            suppressHydrationWarning
+          >
+            {formatRelative(comment.createdAt)}
+          </time>
+          {comment.editedAt ? (
+            <span
+              className="prio-comment__edited"
+              title={`Edited ${formatDateTime(comment.editedAt)}`}
+            >
+              edited
+            </span>
+          ) : null}
+
+          {/* Authors edit their own; administrators can remove any. */}
+          {comment.author.id === currentUser.id ||
+          currentUser.role === "ADMIN" ? (
+            <Menu
+              align="end"
+              width={188}
+              label="Comment actions"
+              trigger={(props) => (
+                <button
+                  type="button"
+                  className="prio-comment__menu"
+                  aria-label="Comment actions"
+                  {...props}
+                >
+                  <IconMore size={14} />
+                </button>
+              )}
+            >
+              {comment.author.id === currentUser.id ? (
+                <MenuItem
+                  icon={<IconEdit />}
+                  onSelect={() => setEditing(comment.id)}
+                >
+                  Edit
+                </MenuItem>
+              ) : null}
+              {comment.author.id === currentUser.id ? (
+                <MenuSeparator />
+              ) : null}
+              <MenuItem
+                danger
+                icon={<IconTrash />}
+                onSelect={() => onRemove(comment.id)}
+              >
+                Delete
+              </MenuItem>
+            </Menu>
+          ) : null}
+        </div>
+
+        {editing === comment.id ? (
+          <CommentComposer
+            issueId={issueId}
+            author={currentUser}
+            mentionable={mentionable}
+            initialBody={comment.body}
+            submitLabel="Save changes"
+            autoFocus
+            onCancel={() => setEditing(null)}
+            onSubmit={(body) => onSaveEdit(comment.id, body)}
+          />
+        ) : (
+          <>
+            <RichText
+              value={comment.body}
+              mentionable={mentionable}
+              className="prio-comment__body"
+            />
+            {comment.attachments.length > 0 ? (
+              <AttachmentGrid
+                attachments={comment.attachments}
+                currentUserId={currentUser.id}
+                isAdmin={currentUser.role === "ADMIN"}
+                compact
+              />
+            ) : null}
+
+            <CommentActions
+              comment={comment}
+              currentUserId={currentUser.id}
+              replying={replyingTo === comment.id}
+              picking={reactingTo === comment.id}
+              onReply={() =>
+                setReplyingTo(
+                  replyingTo === comment.id ? null : comment.id,
+                )
+              }
+              onPick={() =>
+                setReactingTo(
+                  reactingTo === comment.id ? null : comment.id,
+                )
+              }
+              onReact={(emoji) => onReact(comment.id, emoji)}
+            />
+
+            {replyingTo === comment.id ? (
+              <CommentComposer
+                issueId={issueId}
+                author={currentUser}
+                mentionable={mentionable}
+                submitLabel="Reply"
+                autoFocus
+                onCancel={() => setReplyingTo(null)}
+                onSubmit={(body, attachmentIds) =>
+                  onPostReply(comment.id, body, attachmentIds)
+                }
+              />
+            ) : null}
+          </>
+        )}
+      </div>
+
+      {replies.length > 0 ? (
+        <ol className="prio-comment__replies">
+          {replies.map((reply) => (
+            <CommentCard
+              key={reply.id}
+              comment={reply}
+              replies={[]}
+              issueId={issueId}
+              currentUser={currentUser}
+              mentionable={mentionable}
+              editing={editing}
+              setEditing={setEditing}
+              replyingTo={replyingTo}
+              setReplyingTo={setReplyingTo}
+              reactingTo={reactingTo}
+              setReactingTo={setReactingTo}
+              onReact={onReact}
+              onRemove={onRemove}
+              onSaveEdit={onSaveEdit}
+              onPostReply={onPostReply}
+            />
+          ))}
+        </ol>
+      ) : null}
+    </li>
+
   );
 }

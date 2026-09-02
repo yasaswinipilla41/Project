@@ -16,24 +16,19 @@ import {
   StatusPill,
 } from "@/components/ui/Indicators";
 import {
-  IconBoard,
   IconBug,
   IconEmptyBox,
   IconIssues,
-  IconSettings,
   IconUsers,
 } from "@/components/ui/Icon";
-import { canManageProject, projectScope } from "@/lib/authz";
+import { projectScope } from "@/lib/authz";
 import {
   AssignmentActivityList,
   type AssignmentActivityEntry,
 } from "@/components/projects/AssignmentActivity";
-import { ProjectActions } from "@/components/projects/ProjectActions";
 import { ProjectAttachments } from "@/components/projects/ProjectAttachments";
 import { ProjectMembers } from "@/components/projects/ProjectMembers";
 import { ProjectAccess } from "@/components/projects/ProjectAccess";
-import { ProjectNav } from "@/components/projects/ProjectNav";
-import { BackLink } from "@/components/shell/BackLink";
 import {
   CLOSED_STATUSES,
   ISSUE_STATUSES,
@@ -316,83 +311,6 @@ export default async function ProjectOverviewPage({
 
   return (
     <>
-      <div className="prio-page-header">
-        <div className="prio-page-header__text">
-          <BackLink href="/projects" label="All projects" />
-          <div className="prio-projecthead">
-            <span className="prio-projectcard__badge" aria-hidden>
-              {project.key.slice(0, 2)}
-            </span>
-            <div style={{ minWidth: 0 }}>
-              <h1 className="prio-page-header__title">
-                {project.name}
-                <span className="prio-key">{project.key}</span>
-              </h1>
-              <p className="prio-page-header__subtitle">
-                {project.description ??
-                  "No description yet."}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="prio-page-header__actions">
-          <Link
-            href={`/projects/${project.key.toLowerCase()}/board`}
-            className="prio-btn prio-btn--secondary"
-          >
-            <IconBoard />
-            Board
-          </Link>
-          <Link
-            href={`/issues?project=${project.id}`}
-            className="prio-btn prio-btn--secondary"
-          >
-            <IconIssues />
-            Issues
-          </Link>
-          <Link
-            href={`/bugs?project=${project.id}`}
-            className="prio-btn prio-btn--secondary"
-          >
-            <IconBug />
-            Bugs
-          </Link>
-          {user.role === "ADMIN" ? (
-            <Link
-              href={`/projects/${project.key.toLowerCase()}/settings`}
-              className="prio-btn prio-btn--secondary"
-            >
-              <IconSettings />
-              Settings
-            </Link>
-          ) : null}
-
-          {/*
-           * Edit and Delete appear for an administrator or for the person who
-           * created this project — never for another member of it. The server
-           * enforces the same rule inside `updateProject` and `deleteProject`,
-           * so this only decides what is worth showing.
-           */}
-          {canManageProject(user, project) ? (
-            <ProjectActions
-              project={{
-                id: project.id,
-                key: project.key,
-                name: project.name,
-                description: project.description,
-              }}
-              issueCount={total}
-            />
-          ) : null}
-        </div>
-      </div>
-
-      <ProjectNav
-        projectKey={project.key}
-        projectId={project.id}
-        active="summary"
-      />
 
       <div className="row g-3" style={{ marginBottom: "var(--prio-space-6)" }}>
         <div className="col-12 col-sm-6 col-xl-3">

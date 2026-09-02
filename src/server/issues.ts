@@ -11,12 +11,7 @@ import {
   NotFoundError,
 } from "@/lib/authz";
 import { requireUser } from "@/lib/session";
-import {
-  canTransition,
-  ISSUE_TYPE_LABEL,
-  isClosedStatus,
-  STATUS_LABEL,
-} from "@/lib/domain";
+import { ISSUE_TYPE_LABEL, isClosedStatus } from "@/lib/domain";
 import {
   addWatchers,
   notify,
@@ -390,27 +385,19 @@ export async function updateIssue(
       const nextStatus = statusChange.newValue as IssueStatus;
 
       /*
-       * The workflow, enforced where it cannot be avoided.
+       * Any status the project has is accepted here.
        *
-       * Every status change in Prio arrives here — the issue page's menu, the
-       * board's drag and drop, the submit-for-review button — so this one
-       * check covers all of them, including a request that never went near the
-       * interface. The interface offers only valid destinations; this is what
-       * makes that an accuracy rather than a security measure.
+       * This used to refuse a move `STATUS_TRANSITIONS` did not describe. That
+       * followed from the issue page offering only valid destinations -- with
+       * the menu now offering every status, refusing the choice it just made
+       * would leave a control that visibly does nothing. Authorization is
+       * unchanged and still runs above: who may touch this issue is a security
+       * question, which way the issue moves is a workflow one.
        *
-       * Deliberately after the authorization checks above, so a caller who may
-       * not touch this issue is told that, rather than being handed a hint
-       * about which transitions exist.
+       * `STATUS_TRANSITIONS` is still the description of the ordinary path,
+       * and still shapes the board's drag and drop, where dragging a card into
+       * a column it cannot reach has no other way to be explained.
        */
-      if (!canTransition(existing.status, nextStatus)) {
-        return {
-          ok: false,
-          error: `${STATUS_LABEL[existing.status]} cannot move straight to ${STATUS_LABEL[nextStatus]}.`,
-          fieldErrors: {
-            status: `Not a valid move from ${STATUS_LABEL[existing.status]}.`,
-          },
-        };
-      }
 
       data.completedAt =
         nextStatus === "DONE" || nextStatus === "CANCELLED" ? new Date() : null;

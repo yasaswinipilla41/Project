@@ -36,6 +36,12 @@ enum IssueStatus {
   /// what `orderBy: { status }` sorts on.
   IN_QA
   DONE
+  /// Finished work that has come back. Declared after DONE because enum order
+  /// is what `orderBy: { status }` sorts on.
+  REOPENED
+  /// Displayed as "Rejected / Not an Issue" - a closing status like CANCELLED,
+  /// for work that turned out not to be work.
+  REJECTED
   CANCELLED
 }
 

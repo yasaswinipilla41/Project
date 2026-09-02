@@ -30,5 +30,7 @@ export const BOARD_STATUSES: IssueStatus[] = [
   "IN_REVIEW",
   "IN_QA",
   "DONE",
+  "REOPENED",
+  "REJECTED",
   "CANCELLED",
 ];

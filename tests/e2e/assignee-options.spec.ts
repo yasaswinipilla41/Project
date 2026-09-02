@@ -74,9 +74,9 @@ async function openMenuItems(page: Page, name?: string | RegExp) {
 
 async function openCreateDialog(page: Page) {
   await page.goto("/issues");
-  await page.getByRole("button", { name: "Create Issue" }).click();
+  await page.getByRole("button", { name: /^Create$/ }).first().click();
   const dialog = page.getByRole("dialog");
-  await expect(dialog.getByLabel("Summary")).toBeVisible();
+  await expect(dialog.getByLabel("Project")).toBeVisible();
   return dialog;
 }
 

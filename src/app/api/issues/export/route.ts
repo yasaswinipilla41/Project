@@ -1,4 +1,5 @@
 import writeXlsxFile, { type Cell, type Row } from "write-excel-file/node";
+import { getEnv } from "@/lib/env";
 import { getCurrentUser } from "@/lib/session";
 import {
   ISSUE_TYPE_LABEL,
@@ -8,7 +9,7 @@ import {
 } from "@/lib/domain";
 import { exportIssues, EXPORT_LIMIT } from "@/server/queries/issues";
 import { parseIssueParams, type SearchParams } from "@/server/queries/params";
-import type { IssueListRow } from "@/server/queries/issues";
+import type { IssueExportRow } from "@/server/queries/issues";
 
 /**
  * Issue sheet → Excel.
@@ -34,9 +35,44 @@ export const dynamic = "force-dynamic";
 interface Column {
   header: string;
   width: number;
-  value: (row: IssueListRow) => string | number | Date | null;
+  /** `origin` is the application's public base URL, so links resolve. */
+  value: (row: IssueExportRow, origin: string) => string | number | Date | null;
   format?: string;
 }
+
+/*
+ * An issue's attachments, spread across three columns rather than crammed into
+ * one.
+ *
+ * A single cell holding "two files" would lose the names, and one holding a
+ * blob of names and URLs together is not something a reader can sort, filter
+ * or click. So the count is a number Excel can total, the names are text, and
+ * the links are the same authorized `/api/attachments/<id>` URLs the
+ * application itself serves -- absolute, because a relative path in a
+ * spreadsheet points nowhere.
+ *
+ * Multiple attachments are newline-separated within their cell, which keeps
+ * every filename and every link present and lines them up row for row between
+ * the two columns. An issue with no attachments gets 0 and two empty cells.
+ */
+const ATTACHMENT_COLUMNS: Column[] = [
+  {
+    header: "Attachments",
+    width: 12,
+    value: (r) => r.attachments.length,
+  },
+  {
+    header: "Attachment files",
+    width: 40,
+    value: (r) => r.attachments.map((a) => a.filename).join("\n"),
+  },
+  {
+    header: "Attachment links",
+    width: 52,
+    value: (r, origin) =>
+      r.attachments.map((a) => `${origin}/api/attachments/${a.id}`).join("\n"),
+  },
+];
 
 /** Only fields the Issue model actually carries — nothing derived or invented. */
 const COLUMNS: Column[] = [
@@ -62,6 +98,7 @@ const COLUMNS: Column[] = [
   { header: "Parent", width: 14, value: (r) => r.parent?.key ?? "" },
   { header: "Sub-issues", width: 12, value: (r) => r._count.children },
   { header: "Comments", width: 12, value: (r) => r._count.comments },
+  ...ATTACHMENT_COLUMNS,
   {
     header: "Due date",
     width: 14,
@@ -101,6 +138,16 @@ export async function GET(request: Request) {
     params[key] = values.length > 1 ? values : values[0];
   }
 
+  /*
+   * The application's public base URL, not the request's.
+   *
+   * Inside a container the request reports the address the server bound
+   * to -- `http://0.0.0.0:3000` -- and a spreadsheet full of links to
+   * 0.0.0.0 opens nowhere. `BASE_URL` is what the notification emails and
+   * the share links already use for exactly this reason.
+   */
+  const origin = getEnv().BASE_URL.replace(/[/]+$/, "");
+
   try {
     const rows = await exportIssues(user, parseIssueParams(params));
 
@@ -111,7 +158,7 @@ export async function GET(request: Request) {
 
     const body: Row[] = rows.map((row) =>
       COLUMNS.map((column): Cell => {
-        const value = column.value(row);
+        const value = column.value(row, origin);
         // A typed cell, so Excel sorts and filters dates and counts as dates
         // and numbers rather than as text that merely looks like them.
         if (value instanceof Date) {
@@ -120,7 +167,10 @@ export async function GET(request: Request) {
         if (typeof value === "number") {
           return { type: Number, value };
         }
-        return { type: String, value: value ?? "" };
+        const text = value ?? "";
+        // Several attachments share one cell, so it has to be allowed to
+        // wrap or Excel shows only the first line.
+        return { type: String, value: text, wrap: text.includes("\n") };
       }),
     );
 

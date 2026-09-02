@@ -326,14 +326,18 @@ export const EXPORT_LIMIT = 5000;
 export async function exportIssues(
   user: CurrentUser,
   filters: IssueFilters,
-): Promise<IssueListRow[]> {
+): Promise<IssueExportRow[]> {
   const rows = await prisma.issue.findMany({
     where: buildIssueWhere(user, filters),
-    select: LIST_SELECT,
+    /* `EXPORT_SELECT` rather than `LIST_SELECT`: the spreadsheet carries each
+       issue's attachments, which the on-screen list has no column for. The
+       select and its row type already existed for exactly this and were simply
+       never wired up. */
+    select: EXPORT_SELECT,
     orderBy: buildOrderBy(filters.sort ?? "updated", filters.dir ?? "desc"),
     take: EXPORT_LIMIT,
   });
-  return rows as unknown as IssueListRow[];
+  return rows as unknown as IssueExportRow[];
 }
 
 export interface IssueListResult {

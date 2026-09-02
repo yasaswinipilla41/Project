@@ -12,11 +12,11 @@ import {
 import { useToast } from "@/components/ui/Toast";
 import { IconChevronDown } from "@/components/ui/Icon";
 import {
-  allowedTransitions,
   PRIORITIES,
   PRIORITY_LABEL,
   SEVERITIES,
   SEVERITY_LABEL,
+  ISSUE_STATUSES,
   STATUS_LABEL,
 } from "@/lib/domain";
 import type { IssueStatus, Priority, Severity } from "@prisma/client";
@@ -90,10 +90,18 @@ export function StatusControl({
       )}
     >
       <MenuLabel>Move to</MenuLabel>
-      {/* Only where this issue may actually go. Offering the rest and
-          refusing the choice afterwards teaches people to distrust the menu;
-          the server checks the same rule regardless. */}
-      {allowedTransitions(status).map((option) => (
+      {/*
+       * Every status the project has, not a subset.
+       *
+       * This menu used to offer only `allowedTransitions(status)`, which meant
+       * a status that existed could be unreachable from where an issue happened
+       * to be -- a bug filed straight to Done had no way to Reject, and nothing
+       * on the page explained why the option was missing rather than merely
+       * disabled. Showing the whole vocabulary and letting the person choose is
+       * what was asked for; `STATUS_TRANSITIONS` still describes the ordinary
+       * path and still shapes the board's drag and drop.
+       */}
+      {ISSUE_STATUSES.map((option) => (
         <MenuItem
           key={option}
           selected={option === status}

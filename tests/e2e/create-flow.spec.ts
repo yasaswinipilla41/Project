@@ -156,7 +156,7 @@ test.describe("Create flow", () => {
 
     // The detail page is server-rendered from PostgreSQL.
     await expect(page.getByRole("heading", { name: title })).toBeVisible();
-    await expect(page.locator(".prio-status").first()).toContainText("Todo");
+    await expect(page.locator(".prio-status").first()).toContainText("New");
     await expect(page.locator(".prio-issue__headmeta")).toContainText("High");
     await expect(page.locator(".prio-issue__aside")).toContainText("Priya Nair");
     await expect(page.locator(".prio-label-chip").first()).toContainText("backend");
