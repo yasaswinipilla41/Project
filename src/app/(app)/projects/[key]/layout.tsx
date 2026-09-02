@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { BackLink } from "@/components/shell/BackLink";
 import { ProjectActions } from "@/components/projects/ProjectActions";
 import { ProjectNav } from "@/components/projects/ProjectNav";
+import { ProjectShellChrome } from "@/components/projects/ProjectShellChrome";
 import { IconSettings } from "@/components/ui/Icon";
 import { canManageProject, projectScope } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
@@ -54,6 +55,7 @@ export default async function ProjectLayout({
 
   return (
     <>
+      <ProjectShellChrome projectKey={project.key}>
       <div className="prio-page-header">
         <div className="prio-page-header__text">
           <BackLink href="/projects" label="All projects" />
@@ -105,6 +107,7 @@ export default async function ProjectLayout({
       </div>
 
       <ProjectNav projectKey={project.key} />
+      </ProjectShellChrome>
 
       {children}
     </>
