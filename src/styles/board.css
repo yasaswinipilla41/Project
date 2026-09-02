@@ -182,12 +182,6 @@
 .prio-board__column[data-status="DONE"] {
   border-top: 3px solid #10b981;
 }
-.prio-board__column[data-status="REOPENED"] {
-  border-top: 3px solid #f59e0b;
-}
-.prio-board__column[data-status="REJECTED"] {
-  border-top: 3px solid #ef4444;
-}
 .prio-board__column[data-status="CANCELLED"] {
   border-top: 3px solid #ef4444;
 }

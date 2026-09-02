@@ -295,6 +295,80 @@
   pointer-events: none;
 }
 
+/*
+ * Suggestions, under the search field.
+ *
+ * Absolutely positioned against `.prio-search`, which is already the
+ * positioning context for the icon, the shortcut hint and the clear button, so
+ * this needs no new wrapper. It floats above whatever follows it on the page.
+ */
+.prio-suggestions {
+  position: absolute;
+  top: calc(100% + var(--prio-space-2));
+  left: 0;
+  right: 0;
+  z-index: var(--prio-z-dropdown, 40);
+  list-style: none;
+  margin: 0;
+  padding: var(--prio-space-2);
+  max-height: 20rem;
+  overflow-y: auto;
+  background: var(--prio-bg-surface);
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-lg);
+  box-shadow: var(--prio-shadow-lg);
+}
+
+.prio-suggestions__item {
+  display: grid;
+  grid-template-columns: 5rem 1fr auto;
+  align-items: center;
+  gap: var(--prio-space-3);
+  width: 100%;
+  padding: var(--prio-space-2) var(--prio-space-3);
+  border: none;
+  background: none;
+  border-radius: var(--prio-radius-md);
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+
+.prio-suggestions__item:hover,
+.prio-suggestions__item[data-active] {
+  background: var(--prio-bg-subtle);
+}
+
+.prio-suggestions__kind {
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-semibold);
+  letter-spacing: var(--prio-tracking-caps);
+  text-transform: uppercase;
+  color: var(--prio-text-muted);
+}
+
+.prio-suggestions__label {
+  font-size: var(--prio-text-sm);
+  min-width: 0;
+}
+
+.prio-suggestions__hint {
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-muted);
+  min-width: 0;
+  max-width: 12rem;
+}
+
+@media (max-width: 640px) {
+  .prio-suggestions__item {
+    grid-template-columns: 4rem 1fr;
+  }
+  .prio-suggestions__hint {
+    display: none;
+  }
+}
+
 /* Sits where the shortcut hint does, and replaces it: the hint is only useful
    while the field is empty, which is exactly when there is nothing to clear. */
 .prio-search__clear {

@@ -14,7 +14,20 @@ export default async function NotificationsPage() {
   const [notifications, unreadCount] = await Promise.all([
     prisma.notification.findMany({
       where: { userId: user.id },
-      orderBy: [{ readAt: { sort: "asc", nulls: "first" } }, { createdAt: "desc" }],
+      /*
+       * Newest first, and nothing else.
+       *
+       * This used to sort unread ahead of read. Reading a notification writes
+       * `readAt`, which moved it out of the unread group and down to the
+       * bottom of the list -- so opening the second notification and coming
+       * back found it last. Ordering on a column that opening the thing
+       * changes cannot hold a list still.
+       *
+       * `createdAt` never changes, so a notification keeps its place whatever
+       * is done to it. Read and unread are still told apart, by the dot and
+       * the `data-read` styling the row already carries.
+       */
+      orderBy: { createdAt: "desc" },
       take: 100,
       select: {
         id: true,

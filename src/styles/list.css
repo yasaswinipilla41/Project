@@ -614,6 +614,25 @@
 
 /* The viewer's own assigned work stands out in a shared list without hiding
    anyone else's permitted rows — a tint plus the "You" badge in the cell. */
+/*
+ * A cancelled issue, marked as such on the row.
+ *
+ * The status pill already strikes its own label through; this carries that
+ * same reading out to the row, so a cancelled issue is recognisable while
+ * scanning the key and title rather than only when the eye reaches the status
+ * column. It uses the row-level mechanism the table already has -- an
+ * attribute on the `<tr>`, the same as `data-mine` below -- and the muted
+ * colour the cancelled pill is already built from, rather than a new one.
+ */
+.prio-table tbody tr[data-cancelled="true"] .prio-issuelink,
+.prio-table tbody tr[data-cancelled="true"] .prio-issuetitle {
+  color: var(--prio-text-muted);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+/* "Mine" still wins the background: whose work it is stays the more useful
+   thing to see at a glance, and the strike-through already says cancelled. */
 .prio-table tbody tr[data-mine="true"] {
   background: var(--prio-primary-50);
 }

@@ -32,7 +32,7 @@ import {
   IconSearch,
 } from "@/components/ui/Icon";
 import { IssueRowActions } from "@/components/issues/IssueRowActions";
-import { BOARD_STATUSES } from "@/lib/board";
+import { BOARD_STATUSES, boardColumnFor } from "@/lib/board";
 import {
   canTransition,
   PRIORITIES,
@@ -310,7 +310,15 @@ export function FlowBoard({
     if (q && !issue.title.toLowerCase().includes(q) && !issue.key.toLowerCase().includes(q)) {
       return false;
     }
-    if (statusFilter.length && !statusFilter.includes(issue.status)) return false;
+    /* Filtered by column, not by raw status: the Status menu offers the
+       board's columns, so picking New must keep the reopened issues drawn in
+       New rather than hiding them. */
+    if (
+      statusFilter.length &&
+      !statusFilter.includes(boardColumnFor(issue.status))
+    ) {
+      return false;
+    }
     if (priorityFilter.length && !priorityFilter.includes(issue.priority)) return false;
     if (assigneeFilter.length) {
       const id = issue.assignee?.id ?? UNASSIGNED;
@@ -341,7 +349,9 @@ export function FlowBoard({
         key: status,
         status,
         title: STATUS_LABEL[status].toUpperCase(),
-        issues: visible.filter((issue) => issue.status === status),
+        // Same mapping the page used, so an optimistic move lands in the same
+        // column the server would have put it in.
+        issues: visible.filter((issue) => boardColumnFor(issue.status) === status),
       }));
     }
 

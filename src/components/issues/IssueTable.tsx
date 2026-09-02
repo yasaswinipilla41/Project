@@ -172,7 +172,11 @@ export function IssueTable({
               const mine = issue.assignee?.id === currentUser?.id;
 
               return (
-                <tr key={issue.id} data-mine={mine || undefined}>
+                <tr
+                  key={issue.id}
+                  data-mine={mine || undefined}
+                  data-cancelled={issue.status === "CANCELLED" || undefined}
+                >
                   <td className="prio-col-key">
                     <Link
                       href={`/issues/${issue.key.toLowerCase()}`}

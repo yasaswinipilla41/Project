@@ -294,14 +294,24 @@ const LIST_SELECT = {
 } satisfies Prisma.IssueSelect;
 
 /**
- * `LIST_SELECT` plus the issue's own image attachments, for the Excel export
+ * `LIST_SELECT` plus every file attached to the issue, for the Excel export
  * only — the paginated `/issues` list never renders them, so it stays on
  * `LIST_SELECT` to avoid the extra read on every page view.
+ *
+ * Every file, including the ones posted on the issue's comments. This used to
+ * filter to `commentId: null`, which quietly left out evidence attached to a
+ * comment rather than to the issue itself — the screenshot somebody replied
+ * with was simply missing from the sheet.
+ *
+ * No deduplication is needed, and none is done. A file uploaded to a comment
+ * keeps the `issueId` it was uploaded against and gains a `commentId` when the
+ * comment claims it, so it is one row reachable once through this relation.
+ * Widening the select therefore adds the comment's files without repeating the
+ * issue's own.
  */
 const EXPORT_SELECT = {
   ...LIST_SELECT,
   attachments: {
-    where: { commentId: null },
     orderBy: { createdAt: "asc" },
     select: { id: true, filename: true, mimeType: true, storageKey: true },
   },

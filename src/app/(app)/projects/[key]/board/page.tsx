@@ -4,7 +4,11 @@ import { BoardHeaderActions } from "@/components/projects/BoardHeaderActions";
 import { FlowBoard } from "@/components/projects/FlowBoard";
 import { InsightsPanel } from "@/components/reports/InsightsPanel";
 import { canManageProject, projectScope } from "@/lib/authz";
-import { BOARD_STATUSES } from "@/lib/board";
+import {
+  BOARD_STATUSES,
+  BOARD_VISIBLE_STATUSES,
+  boardColumnFor,
+} from "@/lib/board";
 import { prisma } from "@/lib/prisma";
 import { recordProjectVisit } from "@/lib/recents";
 import { requireUser, type CurrentUser } from "@/lib/session";
@@ -72,7 +76,7 @@ export default async function ProjectBoardPage({
 
   const [issues, allProjects, issueCount, favorite] = await Promise.all([
     prisma.issue.findMany({
-      where: { projectId: project.id, status: { in: BOARD_STATUSES } },
+      where: { projectId: project.id, status: { in: BOARD_VISIBLE_STATUSES } },
       orderBy: { sortIndex: "asc" },
       select: {
         id: true,
@@ -101,9 +105,12 @@ export default async function ProjectBoardPage({
     }),
   ]);
 
+  /* Grouped by the column each issue belongs in rather than by its status,
+     so Reopened lands in New and Rejected in Done without either becoming a
+     column of its own. */
   const columns = BOARD_STATUSES.map((status) => ({
     status,
-    issues: issues.filter((issue) => issue.status === status),
+    issues: issues.filter((issue) => boardColumnFor(issue.status) === status),
   }));
 
   return (
