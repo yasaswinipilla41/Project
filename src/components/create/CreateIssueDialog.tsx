@@ -32,23 +32,26 @@ import {
 } from "@/lib/domain";
 import type { IssueStatus, IssueType, Priority, Severity } from "@prisma/client";
 import { createIssue } from "@/server/issues";
-import { createComment } from "@/server/comments";
 import { createLabel } from "@/server/projects";
 import { LabelPicker } from "@/components/create/LabelPicker";
 import {
+  DESCRIPTION_PLACEHOLDER,
   ISSUE_TYPE_FORM,
-  composeTypeDetail,
 } from "@/lib/issueTypeForms";
 import type { FieldErrors } from "@/server/schemas";
 
 /**
  * The create dialog.
  *
- * Deliberately short: a title, a type, and the metadata that decides where the
- * work lands. The long-form fields a bug used to demand up front — description,
- * reproduction steps, expected and actual result — are no longer collected
- * here. Their columns still exist and still hold what earlier issues recorded;
- * detail now arrives through comments and attachments on the issue itself.
+ * One form, for every type.
+ *
+ * A Story, a Task and a Bug are the same record and are filed the same way:
+ * summary, description, priority, severity, assignee, attachments, parent. The
+ * type selector picks which of them this is, and changes nothing else — no
+ * type-specific prompts, no bug-only Environment box, no severity that appears
+ * for one type and vanishes for another. Everything a bug reporter used to be
+ * asked separately (steps, expected, actual) belongs in the description, which
+ * every type now has.
  */
 
 interface OptionProject {
@@ -150,13 +153,14 @@ function FieldRow({
 }
 
 /*
- * `severity` is deliberately absent here and set from the type below.
- * Severity describes a defect's impact, so it means something on a bug and
- * nothing on a story — defaulting every issue to a severity would write an
- * opinion onto records that have no use for one.
+ * Severity is a field on every type, exactly like priority. Only its *default*
+ * differs: a bug opens at Major because a defect always has an impact, while
+ * anything else opens unset rather than being given an opinion it has no use
+ * for. That is a starting value, not a difference in the form.
  */
 const EMPTY_FORM = {
   title: "",
+  description: "",
   status: "BACKLOG" as IssueStatus,
   priority: "MEDIUM" as Priority,
   assigneeId: "",
@@ -196,12 +200,6 @@ export function CreateIssueDialog({
   });
   const [labelIds, setLabelIds] = useState<string[]>([]);
   const [screenshots, setScreenshots] = useState<StagedScreenshot[]>([]);
-  /* Answers to the type's long-form prompts, keyed by section. Kept apart
-     from `form` because none of them are columns — they are composed into the
-     issue's opening comment once it exists. */
-  const [details, setDetails] = useState<Record<string, string>>({});
-  const [environment, setEnvironment] = useState("");
-
   const spec = ISSUE_TYPE_FORM[type];
 
   const [projects, setProjects] = useState<OptionProject[]>([]);
@@ -385,6 +383,7 @@ export function CreateIssueDialog({
       projectId,
       type,
       title: form.title,
+      description: form.description,
       status: form.status,
       priority: form.priority,
       assigneeId: form.assigneeId,
@@ -392,7 +391,6 @@ export function CreateIssueDialog({
       dueDate: form.dueDate,
       parentId: form.parentId,
       severity: form.severity === "" ? null : form.severity,
-      environment: spec.showEnvironment ? environment : undefined,
     });
 
     if (!result.ok) {
@@ -400,20 +398,6 @@ export function CreateIssueDialog({
       setFormError(result.error);
       setErrors(result.fieldErrors ?? {});
       return;
-    }
-
-    /* The written detail goes where this application already keeps written
-       detail: the issue's own conversation. A failure here never blocks
-       navigation — the issue is real either way. */
-    if (showTypeSelector) {
-      const body = composeTypeDetail(type, details);
-      if (body.length > 0) {
-        try {
-          await createComment({ issueId: result.data.id, body });
-        } catch {
-          /* The issue stands on its own; the detail can be re-added by hand. */
-        }
-      }
     }
 
     // The issue exists now, so the staged screenshots have somewhere to
@@ -570,21 +554,13 @@ export function CreateIssueDialog({
               ) : null}
             </FieldRow>
 
-            <FieldRow
-              label={showTypeSelector ? spec.titleLabel : "Summary"}
-              htmlFor="create-title"
-              required
-            >
+            <FieldRow label="Summary" htmlFor="create-title" required>
               <input
                 id="create-title"
                 className="prio-input"
                 value={form.title}
                 onChange={(e) => set("title", e.target.value)}
-                placeholder={
-                  showTypeSelector
-                    ? spec.titlePlaceholder
-                    : "Short, specific summary of the work"
-                }
+                placeholder="Short, specific summary of the work"
                 required
                 maxLength={200}
                 aria-invalid={invalid("title")}
@@ -592,64 +568,30 @@ export function CreateIssueDialog({
               <FieldError errors={errors} field="title" />
             </FieldRow>
 
-            {showTypeSelector && spec.showEnvironment ? (
-              <FieldRow label="Environment" htmlFor="create-environment">
-                <input
-                  id="create-environment"
-                  className="prio-input"
-                  value={environment}
-                  onChange={(e) => setEnvironment(e.target.value)}
-                  placeholder="e.g. Chrome 151, Windows 11, Production"
-                  maxLength={120}
-                />
-              </FieldRow>
-            ) : null}
-
-            {showTypeSelector
-              ? spec.sections.map((section) => (
-                  <FieldRow
-                    key={section.key}
-                    label={section.label}
-                    htmlFor={`create-detail-${section.key}`}
-                  >
-                    {section.options ? (
-                      <select
-                        id={`create-detail-${section.key}`}
-                        className="prio-select"
-                        value={details[section.key] ?? ""}
-                        onChange={(e) =>
-                          setDetails((prev) => ({
-                            ...prev,
-                            [section.key]: e.target.value,
-                          }))
-                        }
-                      >
-                        <option value="">Not set</option>
-                        {section.options.map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <textarea
-                        id={`create-detail-${section.key}`}
-                        className="prio-textarea"
-                        rows={section.rows ?? 2}
-                        value={details[section.key] ?? ""}
-                        onChange={(e) =>
-                          setDetails((prev) => ({
-                            ...prev,
-                            [section.key]: e.target.value,
-                          }))
-                        }
-                        placeholder={section.placeholder}
-                        maxLength={4000}
-                      />
-                    )}
-                  </FieldRow>
-                ))
-              : null}
+            {/*
+             * One description, for every type.
+             *
+             * This is the field that replaced the per-type prompt lists. A bug
+             * writes its reproduction steps and expected behaviour in here; a
+             * story writes its acceptance criteria in here; the placeholder
+             * says so. It is the `description` column the schema always had
+             * and that search has always read — the form simply stopped
+             * offering it at some point, which is why a bug had nowhere to put
+             * its detail except a comment.
+             */}
+            <FieldRow label="Description" htmlFor="create-description">
+              <textarea
+                id="create-description"
+                className="prio-textarea"
+                rows={7}
+                value={form.description}
+                onChange={(e) => set("description", e.target.value)}
+                placeholder={DESCRIPTION_PLACEHOLDER[type]}
+                maxLength={20000}
+                aria-invalid={invalid("description")}
+              />
+              <FieldError errors={errors} field="description" />
+            </FieldRow>
 
             <FieldRow label="Priority" htmlFor="create-priority">
               <select
@@ -806,13 +748,14 @@ export function CreateIssueDialog({
             </div>
 
             {/*
-             * Severity used to appear only when the type picker said "Bug".
-             * With the picker gone it would have become unreachable, so it is
-             * offered here with an explicit "Not set" — which is also the
-             * default, so an issue created without touching it still stores
-             * `null`, exactly as a non-bug always did.
+             * Severity, for every type.
+             *
+             * It used to appear only when the type picker said "Bug", which
+             * made the form a different shape for a bug than for a task. It is
+             * a standard field now, defaulting to "Not set" for everything
+             * except a bug — so an issue created without touching it still
+             * stores `null`, exactly as a non-bug always did.
              */}
-            {!showTypeSelector || spec.showSeverity ? (
             <div className="prio-field">
               <label className="prio-label" htmlFor="create-severity">
                 Severity
@@ -835,10 +778,9 @@ export function CreateIssueDialog({
               <span className="prio-hint">
                 {form.severity
                   ? SEVERITY_DESCRIPTION[form.severity]
-                  : "Impact of the defect. Priority is how soon it is worked on — the two are independent."}
+                  : "Impact if this goes wrong. Priority is how soon it is worked on — the two are independent."}
               </span>
             </div>
-            ) : null}
 
             <div className="prio-field">
               <label className="prio-label" htmlFor="create-parent">

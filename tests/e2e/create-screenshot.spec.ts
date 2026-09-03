@@ -75,7 +75,7 @@ test.describe("Screenshot attachments in Create flows", () => {
     await expect(dialog).toBeVisible();
 
     await dialog.getByLabel("Project").selectOption({ label: "Engineering (ENG)" });
-    await dialog.getByLabel("Task title").fill(title);
+    await dialog.getByLabel("Summary").fill(title);
 
     await attachScreenshot(page);
 

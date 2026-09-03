@@ -6,7 +6,14 @@ import { Menu, MenuItem, MenuSeparator } from "@/components/ui/Menu";
 import { Dialog } from "@/components/ui/Dialog";
 import { Alert, Button } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/Toast";
-import { IconEdit, IconMore, IconTrash, IconWarning } from "@/components/ui/Icon";
+import {
+  IconCopy,
+  IconEdit,
+  IconMore,
+  IconTrash,
+  IconWarning,
+} from "@/components/ui/Icon";
+import { CloneIssueDialog } from "@/components/issues/CloneIssueDialog";
 import { deleteIssue } from "@/server/issues";
 
 /**
@@ -44,6 +51,7 @@ export function IssueRowActions({
   const router = useRouter();
   const { toast } = useToast();
   const [confirming, setConfirming] = useState(false);
+  const [cloning, setCloning] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -87,6 +95,11 @@ export function IssueRowActions({
         <MenuItem href={href} icon={<IconEdit />}>
           Open / edit
         </MenuItem>
+        {/* Cloning creates an issue, which any project member may already do —
+            the same gate the Create dialog has, re-checked on the server. */}
+        <MenuItem icon={<IconCopy />} onSelect={() => setCloning(true)}>
+          Clone
+        </MenuItem>
         {canDelete ? (
           <>
             <MenuSeparator />
@@ -100,6 +113,14 @@ export function IssueRowActions({
           </>
         ) : null}
       </Menu>
+
+      {cloning ? (
+        <CloneIssueDialog
+          issueId={issueId}
+          issueKey={issueKey}
+          onClose={() => setCloning(false)}
+        />
+      ) : null}
 
       {confirming ? (
         <Dialog

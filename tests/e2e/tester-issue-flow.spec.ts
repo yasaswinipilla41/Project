@@ -138,7 +138,7 @@ test.describe("Create Issue from the Issues module", () => {
     await page.getByRole("button", { name: /^Create$/ }).first().click();
 
     const dialog = page.getByRole("dialog");
-    await dialog.getByLabel("Task title").fill(title);
+    await dialog.getByLabel("Summary").fill(title);
     await attachScreenshot(page);
 
     // The affordance says what it does before any markup exists…
@@ -195,7 +195,7 @@ test.describe("Create Issue from the Issues module", () => {
     await page.getByRole("button", { name: /^Create$/ }).first().click();
 
     const dialog = page.getByRole("dialog");
-    await dialog.getByLabel("Task title").fill(title);
+    await dialog.getByLabel("Summary").fill(title);
     await attachScreenshot(page);
     await dialog.getByRole("button", { name: /^create (issue|task|bug|story|epic|feature)$/i }).click();
 

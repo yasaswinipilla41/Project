@@ -19,7 +19,8 @@ import {
   EditProjectDialog,
 } from "@/components/projects/ProjectActions";
 import { ArchiveProjectDialog } from "@/components/projects/ArchiveProjectDialog";
-import { duplicateProject, toggleProjectFavorite } from "@/server/projects";
+import { CloneProjectDialog } from "@/components/projects/CloneProjectDialog";
+import { toggleProjectFavorite } from "@/server/projects";
 
 /**
  * The Star and "..." controls in the Flow Board's page header.
@@ -58,7 +59,7 @@ export function BoardHeaderActions({
 
   const [isFavorite, setIsFavorite] = useState(initialFavorite);
   const [favoritePending, setFavoritePending] = useState(false);
-  const [duplicating, setDuplicating] = useState(false);
+  const [cloning, setCloning] = useState(false);
 
   /*
    * `useState(initialFavorite)` only reads this argument on the very first
@@ -98,20 +99,6 @@ export function BoardHeaderActions({
 
     // The board list elsewhere (sidebar, /projects) reads favourite state too.
     router.refresh();
-  }
-
-  async function handleDuplicate() {
-    setDuplicating(true);
-    const result = await duplicateProject({ projectId: project.id });
-    setDuplicating(false);
-
-    if (!result.ok) {
-      toast(result.error, "error");
-      return;
-    }
-
-    toast(`Duplicated as ${result.data.key}`);
-    router.push(`/projects/${result.data.key.toLowerCase()}/board`);
   }
 
   const showMenu = canManage || isAdmin;
@@ -165,12 +152,8 @@ export function BoardHeaderActions({
           ) : null}
 
           {isAdmin ? (
-            <MenuItem
-              icon={<IconCopy />}
-              disabled={duplicating}
-              onSelect={handleDuplicate}
-            >
-              {duplicating ? "Duplicating…" : "Duplicate board"}
+            <MenuItem icon={<IconCopy />} onSelect={() => setCloning(true)}>
+              Clone project
             </MenuItem>
           ) : null}
 
@@ -190,6 +173,10 @@ export function BoardHeaderActions({
             </>
           ) : null}
         </Menu>
+      ) : null}
+
+      {cloning ? (
+        <CloneProjectDialog project={project} onClose={() => setCloning(false)} />
       ) : null}
 
       {editing ? (

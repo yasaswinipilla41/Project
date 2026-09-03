@@ -1,7 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import type { IssueStatus, IssueType, Prisma } from "@prisma/client";
+import type {
+  IssueStatus,
+  IssueType,
+  Prisma,
+  Priority,
+  Severity,
+} from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { listIssues } from "@/server/queries/issues";
 import {
@@ -20,12 +26,14 @@ import {
   watcherIds,
 } from "@/server/activity";
 import {
+  cloneIssueSchema,
   createIssueSchema,
   fieldErrors,
   reportBugSchema,
   updateIssueSchema,
   type FieldErrors,
 } from "@/server/schemas";
+import { createIssueLink } from "@/server/links";
 
 /**
  * Issue, story and bug writes.
@@ -72,6 +80,62 @@ async function nextIssueNumber(
     number: project.issueSequence,
     key: `${project.key}-${project.issueSequence}`,
   };
+}
+
+/* ------------------------------------------------------------ parenthood */
+
+/**
+ * Whether `parentId` may become the parent of an issue in `projectId`.
+ *
+ * The parent of an issue is another **issue** — never its project. The two are
+ * separate relationships and neither substitutes for the other: `projectId`
+ * says where the work is filed, `parentId` says what larger piece of work it
+ * belongs to, and this only ever resolves the second.
+ *
+ * Returns the message to show, or `null` when the choice is legal. Four things
+ * are refused, and the fourth is why this exists as a function at all:
+ *
+ *   - a parent in another project — a child would then belong to two;
+ *   - a parent that is itself a sub-issue (Prio supports one level, §24);
+ *   - the issue itself, which is a cycle of length one;
+ *   - a parent chosen for an issue that already *has* sub-issues, which would
+ *     make three levels and, if the two pointed at each other, a loop.
+ *
+ * `createIssue` checked the first two inline. `updateIssue` checked none of
+ * them: it tracked `parentId` as ordinary text and wrote whatever it was
+ * handed, so a crafted payload could file an issue under another project's, or
+ * under itself. Both callers now go through here.
+ */
+async function parentProblem(
+  parentId: string,
+  projectId: string,
+  /** The issue being re-parented, or `null` when it does not exist yet. */
+  childId: string | null,
+): Promise<string | null> {
+  if (childId !== null && parentId === childId) {
+    return "An issue cannot be its own parent.";
+  }
+
+  const parent = await prisma.issue.findUnique({
+    where: { id: parentId },
+    select: { projectId: true, parentId: true },
+  });
+
+  if (!parent || parent.projectId !== projectId) {
+    return "Choose an issue from this project.";
+  }
+  if (parent.parentId) {
+    return "Prio supports one level of sub-issues.";
+  }
+
+  if (childId !== null) {
+    const children = await prisma.issue.count({ where: { parentId: childId } });
+    if (children > 0) {
+      return "This issue has sub-issues of its own, so it cannot become one.";
+    }
+  }
+
+  return null;
 }
 
 /* --------------------------------------------------------------- create */
@@ -126,27 +190,15 @@ export async function createIssue(
       }
     }
 
-    // Only one level of nesting (§24): a sub-issue cannot itself have a parent.
+    // The parent is an issue in this project, and only one level deep (§24).
     if (input.parentId) {
-      const parent = await prisma.issue.findUnique({
-        where: { id: input.parentId },
-        select: { projectId: true, parentId: true },
-      });
-      if (!parent || parent.projectId !== input.projectId) {
-        return {
-          ok: false,
-          error: "The parent issue is not in this project.",
-          fieldErrors: { parentId: "Choose an issue from this project." },
-        };
-      }
-      if (parent.parentId) {
-        return {
-          ok: false,
-          error: "That issue is already a sub-issue.",
-          fieldErrors: {
-            parentId: "Prio supports one level of sub-issues.",
-          },
-        };
+      const problem = await parentProblem(
+        input.parentId,
+        input.projectId,
+        null,
+      );
+      if (problem) {
+        return { ok: false, error: problem, fieldErrors: { parentId: problem } };
       }
     }
 
@@ -167,6 +219,11 @@ export async function createIssue(
           projectId: input.projectId,
           type: input.type,
           title: input.title,
+          /* The schema has always accepted a description and this never
+             wrote it, so every description handed to `createIssue` was
+             silently dropped. Harmless while no form offered the field;
+             not harmless now that every type has one. */
+          description: input.description,
           status: input.status,
           priority: input.priority,
           assigneeId: input.assigneeId,
@@ -176,8 +233,14 @@ export async function createIssue(
           sortIndex: (last?.sortIndex ?? 0) + 1000,
           completedAt: isClosedStatus(input.status) ? new Date() : null,
 
-          // Bug fields — null for tasks and stories.
-          severity: input.type === "BUG" ? input.severity : null,
+          /* Severity is a standard field on every type now, so it is stored
+             as given rather than being thrown away for anything that is not a
+             bug — which is what used to happen, and would have made the
+             severity control on a task or story silently do nothing. */
+          severity: input.severity,
+
+          // The retired bug columns. Nothing collects them any more; they are
+          // still accepted so an existing caller is not broken.
           environment: input.type === "BUG" ? input.environment : null,
           browser: input.type === "BUG" ? input.browser : null,
           operatingSystem: input.type === "BUG" ? input.operatingSystem : null,
@@ -277,6 +340,19 @@ export async function updateIssue(
           error: "That person is not a member of this project.",
           fieldErrors: { assigneeId: "Not a member of this project." },
         };
+      }
+    }
+
+    /*
+     * And the same rule for the parent, which this path did not check at all.
+     * Re-parenting is a separate write from creation, so the constraints have
+     * to be re-stated here or they simply do not apply — `parentId` was being
+     * written as though it were a piece of text.
+     */
+    if (input.parentId) {
+      const problem = await parentProblem(input.parentId, projectId, issueId);
+      if (problem) {
+        return { ok: false, error: problem, fieldErrors: { parentId: problem } };
       }
     }
 
@@ -506,6 +582,291 @@ export async function deleteIssue(
   } catch (error) {
     return failure(error);
   }
+}
+
+/* ---------------------------------------------------------------- clone */
+
+/**
+ * What the Clone dialog needs in order to open an editable draft.
+ *
+ * The draft lives entirely in the browser until it is saved, so it has to be
+ * handed the source's editable content up front. Nothing here is written and
+ * nothing is reserved — in particular no issue row and no key, which is the
+ * point of §8: a clone has no ticket ID until somebody saves it.
+ *
+ * The two counts are what the options dialog reports back ("3 links, 2 files"),
+ * so the person ticking the boxes can see what the boxes would carry.
+ */
+export interface IssueCloneDraft {
+  sourceId: string;
+  sourceKey: string;
+  projectId: string;
+  projectKey: string;
+  projectName: string;
+  type: IssueType;
+  title: string;
+  description: string | null;
+  status: IssueStatus;
+  priority: Priority;
+  severity: Severity | null;
+  assigneeId: string | null;
+  dueDate: string | null;
+  labelIds: string[];
+  parentKey: string | null;
+  linkCount: number;
+  attachmentCount: number;
+}
+
+export async function issueCloneDraft(
+  issueId: string,
+): Promise<ActionResult<IssueCloneDraft>> {
+  try {
+    const user = await requireUser();
+    await assertIssueAccess(user, issueId);
+
+    const source = await prisma.issue.findUnique({
+      where: { id: issueId },
+      select: {
+        id: true,
+        key: true,
+        type: true,
+        title: true,
+        description: true,
+        status: true,
+        priority: true,
+        severity: true,
+        assigneeId: true,
+        dueDate: true,
+        project: { select: { id: true, key: true, name: true } },
+        parent: { select: { key: true } },
+        labels: { select: { labelId: true } },
+        _count: {
+          select: {
+            linksFrom: true,
+            /* Files on the issue itself. A comment's files belong to the
+               comment, and comments are not cloned. */
+            attachments: { where: { commentId: null } },
+          },
+        },
+      },
+    });
+    if (!source) throw new NotFoundError("This issue no longer exists.");
+
+    return {
+      ok: true,
+      data: {
+        sourceId: source.id,
+        sourceKey: source.key,
+        projectId: source.project.id,
+        projectKey: source.project.key,
+        projectName: source.project.name,
+        type: source.type,
+        /* The draft opens named for what it is. The person can rename it
+           before saving — this is a starting point, not a decision. */
+        title: `Clone of ${source.title}`.slice(0, 200),
+        description: source.description,
+        status: source.status,
+        priority: source.priority,
+        severity: source.severity,
+        assigneeId: source.assigneeId,
+        dueDate: source.dueDate
+          ? source.dueDate.toISOString().slice(0, 10)
+          : null,
+        labelIds: source.labels.map((label) => label.labelId),
+        parentKey: source.parent?.key ?? null,
+        linkCount: source._count.linksFrom,
+        attachmentCount: source._count.attachments,
+      },
+    };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+export interface ClonedIssue extends CreatedIssue {
+  copiedLinks: number;
+  copiedAttachments: number;
+}
+
+/**
+ * Save an edited clone.
+ *
+ * This is the *only* moment a cloned issue becomes real. Everything before it
+ * — the options dialog, the editable draft, the title the person changed —
+ * happened in the browser against no database row at all, which is what makes
+ * §8 true by construction rather than by cleanup: there is no temporary issue
+ * to expose a temporary key, and cancelling leaves nothing to remove.
+ *
+ * The creation itself goes through `createIssue`, so a clone is validated,
+ * authorized, keyed, watched, notified and logged exactly like any other new
+ * issue. There is no second create path and no second key generator; the key
+ * is allocated by `nextIssueNumber` inside that call and not one moment
+ * earlier.
+ *
+ * What this adds on top is the two copy choices:
+ *
+ *   - **links** — the source's own relationships, replayed through
+ *     `createIssueLink`. That action already refuses a self-link, a duplicate
+ *     and a target the caller cannot see, and it writes the matching inverse
+ *     row; replaying through it means a copied link obeys the same rules as a
+ *     hand-made one. A target that has since been deleted does not resolve,
+ *     and is skipped rather than written as a dangling row.
+ *   - **attachments** — the source's own files, copied *byte for byte* into
+ *     new storage objects. Sharing a `storageKey` is impossible (it is unique)
+ *     and would be wrong anyway: deleting the clone would take the original's
+ *     file with it.
+ *
+ * With neither ticked the clone is a standalone issue carrying only its own
+ * content, which is the default.
+ */
+export async function cloneIssue(
+  raw: unknown,
+): Promise<ActionResult<ClonedIssue>> {
+  try {
+    const user = await requireUser();
+
+    const parsed = cloneIssueSchema.safeParse(raw);
+    if (!parsed.success) {
+      return {
+        ok: false,
+        error: "Please correct the highlighted fields.",
+        fieldErrors: fieldErrors(parsed.error),
+      };
+    }
+    const { sourceIssueId, copyLinks, copyAttachments, ...draft } = parsed.data;
+
+    // Reading the source is what grants the right to clone it.
+    await assertIssueAccess(user, sourceIssueId);
+
+    const source = await prisma.issue.findUnique({
+      where: { id: sourceIssueId },
+      select: {
+        id: true,
+        key: true,
+        parentId: true,
+        linksFrom: {
+          select: { type: true, target: { select: { key: true } } },
+        },
+        attachments: {
+          where: { commentId: null },
+          orderBy: { createdAt: "asc" },
+          select: {
+            filename: true,
+            storageKey: true,
+            mimeType: true,
+            width: true,
+            height: true,
+          },
+        },
+      },
+    });
+    if (!source) throw new NotFoundError("This issue no longer exists.");
+
+    /*
+     * The parent travels with the links and only with the links, and only if
+     * it is still a legal parent where the clone is landing — a clone may be
+     * filed into a different project from the one the source's parent lives
+     * in, and `parentProblem` is what decides that rather than a guess here.
+     */
+    let parentId: string | null = null;
+    if (copyLinks && source.parentId) {
+      const problem = await parentProblem(
+        source.parentId,
+        draft.projectId,
+        null,
+      );
+      if (problem === null) parentId = source.parentId;
+    }
+
+    const created = await createIssue({ ...draft, parentId });
+    if (!created.ok) return created;
+
+    let copiedLinks = 0;
+    if (copyLinks) {
+      for (const link of source.linksFrom) {
+        const result = await createIssueLink({
+          issueId: created.data.id,
+          targetKey: link.target.key,
+          type: link.type,
+        });
+        if (result.ok) copiedLinks += 1;
+      }
+    }
+
+    const copiedAttachments = copyAttachments
+      ? await duplicateAttachments(source.attachments, created.data.id, user.id)
+      : 0;
+
+    revalidateIssueSurfaces(created.data.projectKey, created.data.key);
+
+    return {
+      ok: true,
+      data: { ...created.data, copiedLinks, copiedAttachments },
+    };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/** One attachment as this module needs to read it in order to copy it. */
+export interface CopyableAttachment {
+  filename: string;
+  storageKey: string;
+  mimeType: string;
+  width: number | null;
+  height: number | null;
+}
+
+/**
+ * Duplicates stored files onto another issue and returns how many made it.
+ *
+ * Bytes are re-streamed through the storage provider rather than the new row
+ * being pointed at the same object: `storageKey` is unique, so two rows
+ * *cannot* share one, and if they could, deleting either issue would destroy
+ * the other's file. A source whose bytes have already gone is skipped — a row
+ * pointing at a missing file is a broken attachment, and a clone should not
+ * inherit one.
+ */
+async function duplicateAttachments(
+  sources: CopyableAttachment[],
+  issueId: string,
+  uploadedById: string,
+): Promise<number> {
+  if (sources.length === 0) return 0;
+
+  const { storage } = await import("@/server/storage");
+  const provider = storage();
+  let copied = 0;
+
+  for (const source of sources) {
+    try {
+      if ((await provider.size(source.storageKey)) === null) continue;
+
+      const extension = /\.[A-Za-z0-9]{1,8}$/.exec(source.filename)?.[0] ?? "";
+      const stored = await provider.put(await provider.read(source.storageKey), {
+        extension,
+      });
+
+      await prisma.attachment.create({
+        data: {
+          issueId,
+          uploadedById,
+          filename: source.filename,
+          storageKey: stored.key,
+          mimeType: source.mimeType,
+          byteSize: stored.byteSize,
+          width: source.width,
+          height: source.height,
+        },
+      });
+      copied += 1;
+    } catch (error) {
+      // One unreadable file must not cost the clone the rest of them.
+      console.error("[prio] could not copy an attachment:", error);
+    }
+  }
+
+  return copied;
 }
 
 /* ----------------------------------------------------------- report bug */

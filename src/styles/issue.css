@@ -493,6 +493,58 @@
   gap: var(--prio-space-2);
 }
 
+/*
+ * The parent, in Details.
+ *
+ * A link and not a plain label: the parent is another issue, so it has a page
+ * to go to. The row directly beneath it is the project, which does not — that
+ * visual difference is deliberate, because the two are different things.
+ */
+.prio-parentlink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  font-weight: var(--prio-weight-medium);
+}
+
+/*
+ * The banner at the top of an unsaved clone.
+ *
+ * It exists to say one thing plainly: this has no ticket ID yet. A number here
+ * would be quoted in a message or a standup before it was ever saved.
+ */
+.prio-clonedraft {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--prio-space-1) var(--prio-space-3);
+  align-items: baseline;
+  padding: var(--prio-space-4);
+  margin-bottom: var(--prio-space-5);
+  border: 1px dashed var(--prio-border);
+  border-radius: var(--prio-radius-md);
+  background: var(--prio-bg-subtle);
+}
+
+.prio-clonedraft__label {
+  font-size: var(--prio-text-xs);
+  font-weight: var(--prio-weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--prio-text-muted);
+}
+
+.prio-clonedraft__value {
+  font-size: var(--prio-text-sm);
+  font-weight: var(--prio-weight-semibold);
+  color: var(--prio-text-primary);
+}
+
+.prio-clonedraft__note {
+  grid-column: 1 / -1;
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-muted);
+}
+
 /* ------------------------------------------------------- testing / QA panel */
 
 .prio-qa {

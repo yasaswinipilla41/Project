@@ -12,6 +12,7 @@ import {
 import { DEFAULT_PROJECT_LABELS } from "@/lib/domain";
 import { requireUser } from "@/lib/session";
 import {
+  cloneProjectSchema,
   createLabelSchema,
   createProjectSchema,
   deleteProjectSchema,
@@ -110,44 +111,79 @@ export async function createProject(
 }
 
 /**
- * Duplicate a project's structure — name, description and labels — onto a
- * fresh, empty project the caller now owns. Membership carries over too, so
- * the same team keeps working without being re-invited by hand.
+ * Clone a project.
  *
- * Deliberately does not copy issues: a "board" here means the structure
- * issues get filed into, not its history, and duplicating hundreds of issues
- * (with fresh keys, reset activity, no comments) would produce something that
- * only looks like a history and misleads anyone reading it later.
+ * The clone is a genuinely new project: its own id, its own key, its own issue
+ * sequence, created by whoever asked for it. The source is only ever read.
+ *
+ * What always travels is the project's *structure* — name, description, labels
+ * and membership — so the same team can start working in it without being
+ * re-invited by hand. Its issues travel too, as new issues with fresh keys
+ * from the clone's own sequence: without them the two copy choices below would
+ * have nothing to act on, because a project owns no relationships of its own,
+ * only the ones between the issues inside it.
+ *
+ * What never travels is history: no activity, no comments, no notifications,
+ * no watchers, no created/updated timestamps and no keys. A cloned board is a
+ * board to work in, not a fabricated record of work that was done.
+ *
+ * The two choices, both off by default:
+ *
+ *   - **links** — parent/child hierarchy and `IssueLink` relationships,
+ *     re-pointed at the cloned counterparts. Relationships are re-pointed and
+ *     never re-used: nothing in the clone links back into the original, and a
+ *     link whose other end was not copied is dropped rather than left dangling.
+ *   - **attachments** — the project's own files and its issues' files, copied
+ *     byte for byte into new storage objects.
  *
  * Gated the same way `createProject` is — creating a project, in whatever
  * form, is an administrator action.
  */
 export async function duplicateProject(
   raw: unknown,
-): Promise<ProjectActionResult<{ id: string; key: string }>> {
+): Promise<
+  ProjectActionResult<{
+    id: string;
+    key: string;
+    copiedIssues: number;
+    copiedLinks: number;
+    copiedAttachments: number;
+  }>
+> {
   try {
     const user = await requireUser();
     assertAdmin(user);
 
-    const parsed = projectIdSchema.safeParse(raw);
+    const parsed = cloneProjectSchema.safeParse(raw);
     if (!parsed.success) {
       return { ok: false, error: "Choose a project to duplicate." };
     }
+    const { projectId, copyLinks, copyAttachments } = parsed.data;
 
     const source = await prisma.project.findUnique({
-      where: { id: parsed.data.projectId },
+      where: { id: projectId },
       select: {
         name: true,
         description: true,
         members: { select: { userId: true } },
         labels: { select: { name: true, color: true } },
+        attachments: {
+          orderBy: { createdAt: "asc" },
+          select: {
+            filename: true,
+            storageKey: true,
+            mimeType: true,
+            width: true,
+            height: true,
+          },
+        },
       },
     });
     if (!source) {
       return { ok: false, error: "This project no longer exists." };
     }
 
-    const key = await deriveCopyKey(source.name, parsed.data.projectId);
+    const key = await deriveCopyKey(source.name, projectId);
     const memberIds = new Set([user.id, ...source.members.map((m) => m.userId)]);
 
     const project = await prisma.project.create({
@@ -160,19 +196,317 @@ export async function duplicateProject(
           createMany: { data: [...memberIds].map((userId) => ({ userId })) },
         },
         labels: {
-          createMany: { data: source.labels.map((l) => ({ name: l.name, color: l.color })) },
+          createMany: {
+            data: source.labels.map((l) => ({ name: l.name, color: l.color })),
+          },
         },
       },
       select: { id: true, key: true },
     });
 
+    const copied = await copyProjectIssues(project.id, project.key, projectId, {
+      copyLinks,
+      memberIds,
+    });
+
+    let copiedAttachments = 0;
+    if (copyAttachments) {
+      copiedAttachments =
+        (await copyProjectFiles(source.attachments, project.id, user.id)) +
+        (await copyIssueFiles(copied.idByOldId, user.id));
+    }
+
     revalidatePath("/projects");
     revalidatePath("/");
 
-    return { ok: true, data: project };
+    return {
+      ok: true,
+      data: {
+        id: project.id,
+        key: project.key,
+        copiedIssues: copied.count,
+        copiedLinks: copied.links,
+        copiedAttachments,
+      },
+    };
   } catch (error) {
     return failure(error);
   }
+}
+
+/**
+ * Re-creates one project's issues inside another, and reports the mapping.
+ *
+ * Keys come from the destination project's own `issueSequence`, taken in one
+ * increment so the numbers are contiguous and no other create can interleave
+ * with them. Nothing here reuses a source key: `INT-4` cloned into `INTCOPY`
+ * becomes `INTCOPY-4` because it is the fourth issue *there*, not because it
+ * was the fourth issue anywhere else.
+ *
+ * The old-id → new-id map is what makes relationships copyable at all, and is
+ * returned so attachments can be copied against it afterwards.
+ */
+async function copyProjectIssues(
+  targetProjectId: string,
+  targetProjectKey: string,
+  sourceProjectId: string,
+  options: { copyLinks: boolean; memberIds: Set<string> },
+): Promise<{ count: number; links: number; idByOldId: Map<string, string> }> {
+  const issues = await prisma.issue.findMany({
+    where: { projectId: sourceProjectId },
+    orderBy: { number: "asc" },
+    select: {
+      id: true,
+      type: true,
+      title: true,
+      description: true,
+      status: true,
+      priority: true,
+      severity: true,
+      assigneeId: true,
+      reporterId: true,
+      dueDate: true,
+      sortIndex: true,
+      completedAt: true,
+      parentId: true,
+      environment: true,
+      browser: true,
+      operatingSystem: true,
+      versionBuild: true,
+      affectedModule: true,
+      labels: { select: { label: { select: { name: true } } } },
+    },
+  });
+
+  const idByOldId = new Map<string, string>();
+  if (issues.length === 0) return { count: 0, links: 0, idByOldId };
+
+  const sequence = await prisma.project.update({
+    where: { id: targetProjectId },
+    data: { issueSequence: { increment: issues.length } },
+    select: { issueSequence: true },
+  });
+  const firstNumber = sequence.issueSequence - issues.length + 1;
+
+  await prisma.issue.createMany({
+    data: issues.map((issue, index) => ({
+      key: `${targetProjectKey}-${firstNumber + index}`,
+      number: firstNumber + index,
+      projectId: targetProjectId,
+      type: issue.type,
+      title: issue.title,
+      description: issue.description,
+      status: issue.status,
+      priority: issue.priority,
+      severity: issue.severity,
+      /* Only if they can still be assigned here. Membership is copied, so in
+         practice they can — but an assignee who is not a member of the project
+         they are assigned in is precisely what `createIssue` refuses, and a
+         clone must not create one by the back door. */
+      assigneeId:
+        issue.assigneeId && options.memberIds.has(issue.assigneeId)
+          ? issue.assigneeId
+          : null,
+      reporterId: issue.reporterId,
+      dueDate: issue.dueDate,
+      sortIndex: issue.sortIndex,
+      completedAt: issue.completedAt,
+      environment: issue.environment,
+      browser: issue.browser,
+      operatingSystem: issue.operatingSystem,
+      versionBuild: issue.versionBuild,
+      affectedModule: issue.affectedModule,
+    })),
+  });
+
+  const created = await prisma.issue.findMany({
+    where: { projectId: targetProjectId },
+    orderBy: { number: "asc" },
+    select: { id: true, number: true },
+  });
+  const idByNumber = new Map(created.map((row) => [row.number, row.id]));
+  issues.forEach((issue, index) => {
+    const id = idByNumber.get(firstNumber + index);
+    if (id) idByOldId.set(issue.id, id);
+  });
+
+  // Labels, matched by name — the clone has its own label rows.
+  const labels = await prisma.label.findMany({
+    where: { projectId: targetProjectId },
+    select: { id: true, name: true },
+  });
+  const labelIdByName = new Map(labels.map((label) => [label.name, label.id]));
+
+  const issueLabels = issues.flatMap((issue) => {
+    const newIssueId = idByOldId.get(issue.id);
+    if (!newIssueId) return [];
+    return issue.labels.flatMap((entry) => {
+      const labelId = labelIdByName.get(entry.label.name);
+      return labelId ? [{ issueId: newIssueId, labelId }] : [];
+    });
+  });
+  if (issueLabels.length > 0) {
+    await prisma.issueLabel.createMany({
+      data: issueLabels,
+      skipDuplicates: true,
+    });
+  }
+
+  let links = 0;
+  if (options.copyLinks) {
+    // Hierarchy, re-pointed at the cloned parent — never at the original's.
+    for (const issue of issues) {
+      const child = idByOldId.get(issue.id);
+      const parent = issue.parentId ? idByOldId.get(issue.parentId) : undefined;
+      if (child && parent) {
+        await prisma.issue.update({
+          where: { id: child },
+          data: { parentId: parent },
+        });
+        links += 1;
+      }
+    }
+
+    /*
+     * Relationships, both directions of each pair. Only links whose *other*
+     * end was copied too: a relationship reaching outside this project has no
+     * counterpart here, and pointing the clone back at the original's issues
+     * would tie the two projects together — the opposite of a clone.
+     */
+    const sourceLinks = await prisma.issueLink.findMany({
+      where: {
+        source: { projectId: sourceProjectId },
+        target: { projectId: sourceProjectId },
+      },
+      select: { sourceId: true, targetId: true, type: true, createdById: true },
+    });
+
+    const mapped = sourceLinks.flatMap((link) => {
+      const sourceId = idByOldId.get(link.sourceId);
+      const targetId = idByOldId.get(link.targetId);
+      if (!sourceId || !targetId || sourceId === targetId) return [];
+      return [
+        { sourceId, targetId, type: link.type, createdById: link.createdById },
+      ];
+    });
+
+    if (mapped.length > 0) {
+      const written = await prisma.issueLink.createMany({
+        data: mapped,
+        skipDuplicates: true,
+      });
+      links += written.count;
+    }
+  }
+
+  return { count: issues.length, links, idByOldId };
+}
+
+/** The project's own files, copied onto the clone. */
+async function copyProjectFiles(
+  sources: {
+    filename: string;
+    storageKey: string;
+    mimeType: string;
+    width: number | null;
+    height: number | null;
+  }[],
+  projectId: string,
+  uploadedById: string,
+): Promise<number> {
+  if (sources.length === 0) return 0;
+
+  const { storage } = await import("@/server/storage");
+  const provider = storage();
+  let copied = 0;
+
+  for (const source of sources) {
+    try {
+      if ((await provider.size(source.storageKey)) === null) continue;
+      const extension = /\.[A-Za-z0-9]{1,8}$/.exec(source.filename)?.[0] ?? "";
+      const stored = await provider.put(await provider.read(source.storageKey), {
+        extension,
+      });
+      await prisma.attachment.create({
+        data: {
+          projectId,
+          uploadedById,
+          filename: source.filename,
+          storageKey: stored.key,
+          mimeType: source.mimeType,
+          byteSize: stored.byteSize,
+          width: source.width,
+          height: source.height,
+        },
+      });
+      copied += 1;
+    } catch (error) {
+      console.error("[prio] could not copy a project attachment:", error);
+    }
+  }
+
+  return copied;
+}
+
+/**
+ * Each copied issue's own files.
+ *
+ * Comment attachments are deliberately left behind: comments are not cloned,
+ * so a comment's file would arrive with nothing to belong to.
+ */
+async function copyIssueFiles(
+  idByOldId: Map<string, string>,
+  uploadedById: string,
+): Promise<number> {
+  if (idByOldId.size === 0) return 0;
+
+  const attachments = await prisma.attachment.findMany({
+    where: { issueId: { in: [...idByOldId.keys()] }, commentId: null },
+    orderBy: { createdAt: "asc" },
+    select: {
+      issueId: true,
+      filename: true,
+      storageKey: true,
+      mimeType: true,
+      width: true,
+      height: true,
+    },
+  });
+  if (attachments.length === 0) return 0;
+
+  const { storage } = await import("@/server/storage");
+  const provider = storage();
+  let copied = 0;
+
+  for (const source of attachments) {
+    const issueId = source.issueId ? idByOldId.get(source.issueId) : undefined;
+    if (!issueId) continue;
+
+    try {
+      if ((await provider.size(source.storageKey)) === null) continue;
+      const extension = /\.[A-Za-z0-9]{1,8}$/.exec(source.filename)?.[0] ?? "";
+      const stored = await provider.put(await provider.read(source.storageKey), {
+        extension,
+      });
+      await prisma.attachment.create({
+        data: {
+          issueId,
+          uploadedById,
+          filename: source.filename,
+          storageKey: stored.key,
+          mimeType: source.mimeType,
+          byteSize: stored.byteSize,
+          width: source.width,
+          height: source.height,
+        },
+      });
+      copied += 1;
+    } catch (error) {
+      console.error("[prio] could not copy an issue attachment:", error);
+    }
+  }
+
+  return copied;
 }
 
 /**

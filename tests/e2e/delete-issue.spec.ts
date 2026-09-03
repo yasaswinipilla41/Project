@@ -21,7 +21,7 @@ async function createTask(page: Page, title: string): Promise<string> {
 
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("Project").selectOption({ label: "Engineering (ENG)" });
-  await dialog.getByLabel("Task title").fill(title);
+  await dialog.getByLabel("Summary").fill(title);
   await dialog.getByRole("button", { name: /^create task$/i }).click();
 
   await expect(dialog).toBeHidden();

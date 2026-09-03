@@ -13,7 +13,9 @@ import {
 } from "@/components/issues/IssueFieldControls";
 import {
   DueDateField,
+  EditableDescription,
   EditableTitle,
+  ParentControl,
 } from "@/components/issues/EditableIssueFields";
 import { IssueDetailActions } from "@/components/issues/IssueDetailActions";
 import { SubmitWorkButton } from "@/components/issues/SubmitWorkButton";
@@ -36,6 +38,7 @@ import {
 import {
   IconActivity,
   IconCalendar,
+  IconEdit,
   IconParent,
   IconSubIssue,
   IconWarning,
@@ -49,12 +52,18 @@ import { requireUser, type CurrentUser } from "@/lib/session";
 export const dynamic = "force-dynamic";
 
 /**
- * Issue detail — and, for `type = BUG`, the bug detail experience of §11.
+ * Issue detail.
  *
- * One route serves all three issue types. A bug additionally renders its
- * environment block; a task
- * or story simply has nothing to show there, so those sections are omitted
- * rather than rendered empty.
+ * One route, and now one *shape*, for every type. A Story, a Task and a Bug
+ * are the same record — summary, description, priority, severity, assignee,
+ * attachments, parent, links — and this page renders all of them the same way.
+ * There is no bug-only section any more: what a bug used to be asked for
+ * separately is written in the description, which every type has.
+ *
+ * The retired columns (`stepsToReproduce`, `expectedResult`, `actualResult`
+ * and the environment group) are untouched in the database and still reached
+ * by search; they are simply no longer a panel that appears for one type and
+ * not the others.
  */
 
 async function loadIssue(rawKey: string, user: CurrentUser) {
@@ -72,6 +81,7 @@ async function loadIssue(rawKey: string, user: CurrentUser) {
       key: true,
       type: true,
       title: true,
+      description: true,
       status: true,
       priority: true,
       severity: true,
@@ -88,6 +98,7 @@ async function loadIssue(rawKey: string, user: CurrentUser) {
       versionBuild: true,
       affectedModule: true,
       project: { select: { id: true, key: true, name: true } },
+      parentId: true,
       assignee: { select: { id: true, name: true, image: true } },
       reporter: { select: { id: true, name: true, image: true } },
       parent: { select: { key: true, title: true, type: true, status: true } },
@@ -189,7 +200,6 @@ export default async function IssueDetailPage({
   const issue = await loadIssue(key, user);
   if (!issue) notFound();
 
-  const isBug = issue.type === "BUG";
   const closed = isClosedStatus(issue.status);
   const overdue = isOverdue(issue.dueDate, closed);
 
@@ -276,9 +286,9 @@ export default async function IssueDetailPage({
           </span>
           <StatusControl issueId={issue.id} status={issue.status} />
           <PriorityControl issueId={issue.id} priority={issue.priority} />
-          {isBug ? (
-            <SeverityControl issueId={issue.id} severity={issue.severity} />
-          ) : null}
+          {/* Severity is a standard field, offered for every type — the same
+              control a bug has always had, no longer hidden on the others. */}
+          <SeverityControl issueId={issue.id} severity={issue.severity} />
           <AssigneeControl
             issueId={issue.id}
             assignee={issue.assignee}
@@ -306,6 +316,20 @@ export default async function IssueDetailPage({
       <div className="row g-4">
         {/* --------------------------------------------------- main column */}
         <div className="col-12 col-xl-8">
+          {/* --------------------------------------------- description */}
+          <Card className="prio-issue__section">
+            <CardBody>
+              <h2 className="prio-issue__section-title">
+                <IconEdit size={14} />
+                Description
+              </h2>
+              <EditableDescription
+                issueId={issue.id}
+                description={issue.description}
+              />
+            </CardBody>
+          </Card>
+
           {/* ------------------------------------------- development + QA */}
           <Card className="prio-issue__section">
             <CardBody>
@@ -321,50 +345,6 @@ export default async function IssueDetailPage({
               />
             </CardBody>
           </Card>
-
-          {/* --------------------------------------------- bug specifics */}
-          {isBug ? (
-            <>
-              {issue.environment ||
-              issue.browser ||
-              issue.operatingSystem ||
-              issue.versionBuild ? (
-                <Card className="prio-issue__section">
-                  <CardBody>
-                    <h2 className="prio-issue__section-title prio-issue__section-title--environment">
-                      Environment
-                    </h2>
-                    <dl className="prio-envgrid">
-                      {issue.environment ? (
-                        <div>
-                          <dt>Environment</dt>
-                          <dd>{issue.environment}</dd>
-                        </div>
-                      ) : null}
-                      {issue.browser ? (
-                        <div>
-                          <dt>Browser</dt>
-                          <dd>{issue.browser}</dd>
-                        </div>
-                      ) : null}
-                      {issue.operatingSystem ? (
-                        <div>
-                          <dt>Operating system</dt>
-                          <dd>{issue.operatingSystem}</dd>
-                        </div>
-                      ) : null}
-                      {issue.versionBuild ? (
-                        <div>
-                          <dt>Version / build</dt>
-                          <dd className="prio-mono">{issue.versionBuild}</dd>
-                        </div>
-                      ) : null}
-                    </dl>
-                  </CardBody>
-                </Card>
-              ) : null}
-            </>
-          ) : null}
 
           {/* ------------------------------------------- relationships */}
           {issue.parent || issue.children.length > 0 ? (
@@ -496,13 +476,12 @@ export default async function IssueDetailPage({
               </MetaRow>
 
               {/*
-               * N2: severity stays exactly the field it already was -- the
-               * same `issue.severity`, still shown only for a bug, because a
-               * severity on a task has nothing to describe. Read-only here
-               * like the rest of Details; the editable control is in the
-               * header, where it has always been for bugs.
+               * Severity, read-only here like the rest of Details, editable
+               * from the header. Shown for whatever type carries one — it is a
+               * standard field now, not a bug's field, so the row appears
+               * because a severity was set and not because of the type.
                */}
-              {isBug && issue.severity ? (
+              {issue.severity ? (
                 <MetaRow label="Severity">
                   <SeverityChip severity={issue.severity} />
                 </MetaRow>
@@ -534,6 +513,21 @@ export default async function IssueDetailPage({
                 </span>
               </MetaRow>
 
+              {/*
+               * Two different relationships, deliberately adjacent and
+               * deliberately distinct: Parent is the **issue** this one is
+               * filed under, Project is where both of them live. Neither is
+               * ever derived from the other, and the project never appears as
+               * an issue's parent.
+               */}
+              <MetaRow label="Parent">
+                <ParentControl
+                  issueId={issue.id}
+                  projectId={issue.project.id}
+                  parent={issue.parent}
+                />
+              </MetaRow>
+
               <MetaRow label="Project">
                 <Link href={`/projects/${issue.project.key.toLowerCase()}`}>
                   {issue.project.name}
@@ -554,8 +548,42 @@ export default async function IssueDetailPage({
                 </MetaRow>
               ) : null}
 
-              {isBug && issue.affectedModule ? (
+              {/*
+               * What the retired columns still hold.
+               *
+               * Nothing collects these any more — there is no Environment box
+               * on the form and no bug-only panel on this page — but nine
+               * issues recorded before that change still carry real values,
+               * and Module is still written today by the QA report-bug flow.
+               * Deleting the data was never on the table; hiding it would have
+               * been the same loss by a slower route.
+               *
+               * Each row appears because a value exists, never because of the
+               * issue's type, so the page keeps one shape for a story, a task
+               * and a bug alike.
+               */}
+              {issue.affectedModule ? (
                 <MetaRow label="Module">{issue.affectedModule}</MetaRow>
+              ) : null}
+
+              {issue.environment ? (
+                <MetaRow label="Environment">{issue.environment}</MetaRow>
+              ) : null}
+
+              {issue.browser ? (
+                <MetaRow label="Browser">{issue.browser}</MetaRow>
+              ) : null}
+
+              {issue.operatingSystem ? (
+                <MetaRow label="Operating system">
+                  {issue.operatingSystem}
+                </MetaRow>
+              ) : null}
+
+              {issue.versionBuild ? (
+                <MetaRow label="Version / build">
+                  <span className="prio-mono">{issue.versionBuild}</span>
+                </MetaRow>
               ) : null}
 
               <MetaRow label="Due date">

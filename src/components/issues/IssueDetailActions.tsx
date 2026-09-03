@@ -5,17 +5,24 @@ import { useState } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { Alert, Button } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/Toast";
-import { IconTrash, IconWarning } from "@/components/ui/Icon";
+import { IconCopy, IconTrash, IconWarning } from "@/components/ui/Icon";
+import { CloneIssueDialog } from "@/components/issues/CloneIssueDialog";
 import { deleteIssue } from "@/server/issues";
 
 /**
- * Delete, from the issue's own page.
+ * Clone and Delete, from the issue's own page.
  *
  * Editing already happens inline everywhere on this page — every field is
- * click-to-edit in place — so the only action this page is missing is the one
- * that removes the issue outright. Shown only to the reporter or an
- * administrator; `deleteIssue` enforces the same rule independently, so
- * hiding the button here is a courtesy, not the control.
+ * click-to-edit in place — so what is left are the two actions that produce or
+ * remove a whole issue.
+ *
+ * They are gated differently, and deliberately so. **Cloning creates an
+ * issue**, which anyone who can open the issue can already do from the Create
+ * dialog, so it is offered to everyone here and authorized on the server the
+ * same way an ordinary create is. **Deleting** stays with the reporter or an
+ * administrator, exactly as before. Neither gate is new and neither widened:
+ * `cloneIssue` and `deleteIssue` each re-check independently, so what is shown
+ * here is a courtesy, not the control.
  */
 export function IssueDetailActions({
   issueId,
@@ -33,10 +40,11 @@ export function IssueDetailActions({
   const router = useRouter();
   const { toast } = useToast();
   const [confirming, setConfirming] = useState(false);
+  const [cloning, setCloning] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  if (!isAdmin && reporterId !== currentUserId) return null;
+  const canDelete = isAdmin || reporterId === currentUserId;
 
   async function confirmDelete() {
     setDeleting(true);
@@ -57,14 +65,29 @@ export function IssueDetailActions({
 
   return (
     <>
-      <Button
-        variant="danger-outline"
-        size="sm"
-        onClick={() => setConfirming(true)}
-      >
-        <IconTrash size={13} />
-        Delete issue
+      <Button variant="secondary" size="sm" onClick={() => setCloning(true)}>
+        <IconCopy size={13} />
+        Clone
       </Button>
+
+      {canDelete ? (
+        <Button
+          variant="danger-outline"
+          size="sm"
+          onClick={() => setConfirming(true)}
+        >
+          <IconTrash size={13} />
+          Delete issue
+        </Button>
+      ) : null}
+
+      {cloning ? (
+        <CloneIssueDialog
+          issueId={issueId}
+          issueKey={issueKey}
+          onClose={() => setCloning(false)}
+        />
+      ) : null}
 
       {confirming ? (
         <Dialog

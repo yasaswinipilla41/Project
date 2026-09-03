@@ -63,39 +63,90 @@ test.describe("Create flow", () => {
     await expect(dialog.getByRole("alert").first()).toBeVisible();
   });
 
-  test("creates a Bug from a title alone, though it now offers more", async ({
+  test("a Bug is filed on the same form as a Task, with no bug-only fields", async ({
     page,
   }) => {
     /*
-     * A bug used to be *rejected* without a description. The reproduction,
-     * expected and actual prompts have since come back — but as prompts, not
-     * demands: the Bug form asks a tester the questions a tester should be
-     * asked, and none of them block creation. That distinction is the whole
-     * point of this test, so it checks both halves: the fields are there, and
-     * a title on its own is still enough.
+     * A Story, a Task and a Bug are one record and one form. The type is the
+     * only thing that distinguishes them, so the strongest assertion here is a
+     * comparison rather than a checklist: whatever the Task dialog offers, the
+     * Bug dialog offers too, field for field.
+     *
+     * The bug-only prompts that used to sit in this form — reproduction steps,
+     * expected and actual behaviour, environment — are gone. What they asked
+     * for is written in the description, which every type now has.
      */
-    const title = `Title-only bug ${stamp()}`;
-    const dialog = await openCreate(page, "Bug");
+    const labelsFor = async (type: "Task" | "Bug" | "Story") => {
+      const dialog = await openCreate(page, type);
+      /* `.prio-label` rather than `label`: the attachments field labels its
+         drop zone with a span, since a group of controls has no single element
+         for a `<label>` to point at. Asking for the app's own label class is
+         what actually answers "what does this form offer". */
+      const labels = await dialog
+        .locator(".prio-label")
+        .evaluateAll((els) =>
+          els
+            .map((el) => (el.textContent ?? "").replace(/\s*\*\s*$/, "").trim())
+            .filter(Boolean)
+            .sort(),
+        );
+      await page.keyboard.press("Escape");
+      return labels;
+    };
 
-    for (const offered of [
+    const task = await labelsFor("Task");
+    const bug = await labelsFor("Bug");
+    const story = await labelsFor("Story");
+
+    expect(bug).toEqual(task);
+    expect(story).toEqual(task);
+
+    for (const standard of [
+      "Summary",
+      "Description",
+      "Priority",
+      "Severity",
+      "Assignee",
+      "Attachments",
+      "Parent issue",
+    ]) {
+      expect(task).toContain(standard);
+    }
+
+    for (const retired of [
       "Steps to reproduce",
       "Expected behaviour",
       "Actual behaviour",
+      "Environment",
+      "Business value",
+      "Acceptance criteria",
+      "Story points",
     ]) {
-      const field = dialog.getByLabel(offered);
-      await expect(field).toHaveCount(1);
-      await expect(field).not.toHaveAttribute("required", /.*/);
+      expect(task).not.toContain(retired);
     }
+  });
+
+  test("creates a Bug from a summary alone", async ({ page }) => {
+    /* Nothing on the form is demanded beyond the summary — the description is
+       offered, never required, so a bug can still be filed in one line. */
+    const title = `Title-only bug ${stamp()}`;
+    const dialog = await openCreate(page, "Bug");
+
+    await expect(dialog.getByLabel("Description")).toHaveCount(1);
+    await expect(dialog.getByLabel("Description")).not.toHaveAttribute(
+      "required",
+      /.*/,
+    );
 
     await dialog.getByLabel("Project").selectOption({ label: "Engineering (ENG)" });
-    await dialog.getByLabel("Bug title").fill(title);
+    await dialog.getByLabel("Summary").fill(title);
     await dialog.getByRole("button", { name: /^create bug$/i }).click();
 
     // It is created rather than refused, and lands on its own page.
     await expect(page).toHaveURL(/\/issues\/eng-\d+$/);
     await expect(page.locator("h1.prio-issue__title")).toHaveText(title);
 
-    // This test now creates a real row, so it removes it again.
+    // This test creates a real row, so it removes it again.
     await prisma.issue.deleteMany({ where: { title } });
   });
 
@@ -104,7 +155,7 @@ test.describe("Create flow", () => {
     const dialog = await openCreate(page, "Task");
 
     await dialog.getByLabel("Project").selectOption({ label: "Engineering (ENG)" });
-    await dialog.getByLabel("Task title").fill(title);
+    await dialog.getByLabel("Summary").fill(title);
     await dialog.getByRole("button", { name: "Cancel" }).click();
 
     await expect(dialog).toBeHidden();
@@ -120,7 +171,7 @@ test.describe("Create flow", () => {
     const dialog = await openCreate(page, "Task");
 
     await dialog.getByLabel("Project").selectOption({ label: "Engineering (ENG)" });
-    await dialog.getByLabel("Task title").fill(title);
+    await dialog.getByLabel("Summary").fill(title);
     await dialog.getByLabel("Status").selectOption("TODO");
     await dialog.getByLabel("Priority").selectOption("HIGH");
 
@@ -175,34 +226,24 @@ test.describe("Create flow", () => {
     expect(failedRequests).toEqual([]);
   });
 
-  test("creates a real Bug, offering the tester prompts but demanding none", async ({
-    page,
-  }) => {
+  test("creates a real Bug through the standard fields", async ({ page }) => {
     const { consoleErrors, failedRequests } = watchForProblems(page);
     const title = `E2E bug ${stamp()}`;
+    const description = `Steps, expected and actual all live here now. ${stamp()}`;
     const dialog = await openCreate(page, "Bug");
 
     /*
-     * The Bug form asks a tester what a tester should be asked — reproduction,
-     * expected and actual behaviour, and the environment it happened in. What
-     * did *not* come back is the old "Bug details" panel and its long tail of
-     * browser/OS/build/module inputs, which asked for far more than anyone
-     * filled in. Both halves are pinned here: what the form offers now, and
-     * what deliberately stays gone.
+     * A bug is filed through the standard fields and nothing else. What a
+     * tester used to be asked in separate boxes — reproduction, expected,
+     * actual, environment — is written in the description, so what is pinned
+     * here is that those boxes are gone and that the description really
+     * carries the text through to the page.
      */
-    for (const offered of [
+    for (const gone of [
       "Steps to reproduce",
       "Expected behaviour",
       "Actual behaviour",
       "Environment",
-    ]) {
-      await expect(dialog.getByLabel(offered)).toHaveCount(1);
-    }
-
-    await expect(dialog.getByText("Bug details")).toHaveCount(0);
-    for (const gone of [
-      "Expected result",
-      "Actual result",
       "Browser",
       "Operating system",
       "Version / build",
@@ -210,18 +251,11 @@ test.describe("Create flow", () => {
     ]) {
       await expect(dialog.getByLabel(gone)).toHaveCount(0);
     }
+    await expect(dialog.getByText("Bug details")).toHaveCount(0);
 
-    const sections = dialog.locator(".prio-formsection");
-    for (let i = 0; i < (await sections.count()); i += 1) {
-      const label = await sections.nth(i).getAttribute("aria-label");
-      expect(label).not.toBe("Bug details");
-      // No section may be left standing with nothing inside it.
-      const box = await sections.nth(i).boundingBox();
-      expect(box?.height ?? 0).toBeGreaterThan(20);
-    }
-
+    await dialog.getByLabel("Description").fill(description);
     await dialog.getByLabel("Project").selectOption({ label: "Engineering (ENG)" });
-    await dialog.getByLabel("Bug title").fill(title);
+    await dialog.getByLabel("Summary").fill(title);
     await dialog.getByLabel("Severity").selectOption("CRITICAL");
     await dialog.getByLabel("Status").selectOption("TODO");
     await dialog.getByLabel("Priority").selectOption("URGENT");
@@ -241,6 +275,11 @@ test.describe("Create flow", () => {
     await expect(page.locator(".prio-priority").first()).toHaveAttribute(
       "data-priority",
       "URGENT",
+    );
+
+    // The description was stored and is rendered on the issue itself.
+    await expect(page.locator(".prio-issue__section").first()).toContainText(
+      description,
     );
 
     await openActivity(page);
@@ -291,15 +330,22 @@ test.describe("Create flow", () => {
     }
   });
 
-  test("severity belongs to bugs, and opens at Major", async ({ page }) => {
-    /* Severity is the impact of a defect, so the Create flow asks for it only
-       where it means something. A Task is not asked at all — defaulting one to
-       a severity would write an opinion onto a record with no use for it. A
-       Bug is asked, and now opens at Major rather than "Not set", so a bug
-       filed without touching the field still carries a real impact. */
+  test("severity is a standard field, opening at Major only for a bug", async ({
+    page,
+  }) => {
+    /* Severity is one of the fields every type shares, so it is offered on all
+       of them. Only the *starting value* differs: a bug opens at Major because
+       a defect always has an impact, while anything else opens unset rather
+       than being handed an opinion it has no use for. */
     const taskDialog = await openCreate(page, "Task");
-    await expect(taskDialog.getByLabel("Severity")).toHaveCount(0);
+    const taskSeverity = taskDialog.getByLabel("Severity");
+    await expect(taskSeverity).toHaveCount(1);
+    await expect(taskSeverity).toHaveValue("");
     await expect(taskDialog.getByLabel("Steps to reproduce")).toHaveCount(0);
+
+    // And it is a real field on a task: choosing one sticks.
+    await taskSeverity.selectOption("MINOR");
+    await expect(taskSeverity).toHaveValue("MINOR");
     await page.keyboard.press("Escape");
 
     const bugDialog = await openCreate(page, "Bug");

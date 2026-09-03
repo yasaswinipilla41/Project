@@ -214,6 +214,47 @@ export const updateIssueSchema = z.object({
 
 export type UpdateIssueInput = z.infer<typeof updateIssueSchema>;
 
+/* --------------------------------------------------------------- cloning */
+
+/**
+ * The two copy choices, asked identically of an issue and of a project.
+ *
+ * Both default to *off*. A clone that quietly inherited relationships and
+ * files nobody asked for is the failure mode this pair exists to prevent, so
+ * an absent key means "do not copy" rather than "copy anyway".
+ */
+const copyChoices = {
+  copyLinks: z.boolean().default(false),
+  copyAttachments: z.boolean().default(false),
+};
+
+/**
+ * Cloning an issue *is* creating one.
+ *
+ * The draft the person edited is validated by exactly the same rules as any
+ * new issue — same `issueBase`, same limits — plus which issue it was cloned
+ * from and what they chose to carry across. There is no second, looser create
+ * contract for clones.
+ *
+ * `parentId` is deliberately omitted: a clone's parent is not typed into the
+ * draft, it is inherited from the source, and only when "copy the links" was
+ * ticked. Accepting one here would let the choice be bypassed.
+ */
+export const cloneIssueSchema = issueBase.omit({ parentId: true }).extend({
+  sourceIssueId: z.string().min(1),
+  ...copyChoices,
+});
+
+export type CloneIssueInput = z.infer<typeof cloneIssueSchema>;
+
+/** The same two questions, asked of a project. */
+export const cloneProjectSchema = z.object({
+  projectId: z.string().min(1),
+  ...copyChoices,
+});
+
+export type CloneProjectInput = z.infer<typeof cloneProjectSchema>;
+
 /* ------------------------------------------------------------ bug report */
 
 /**
