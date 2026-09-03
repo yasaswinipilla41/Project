@@ -11,7 +11,11 @@ import {
   updateIssue,
 } from "@/server/issues";
 import { createIssueLink } from "@/server/links";
-import { createProject, duplicateProject } from "@/server/projects";
+import {
+  createLabel,
+  createProject,
+  duplicateProject,
+} from "@/server/projects";
 import {
   LocalStorageProvider,
   setStorageProvider,
@@ -743,6 +747,103 @@ describe("cloning a project", () => {
 
     return { id: created.data.id, parentId: parent.data.id };
   }
+
+  it("carries the project's own configuration, and nothing shared", async () => {
+    const admin = await actAs(ADMIN);
+    const created = await createProject({
+      name: "Clone config source",
+      key: "CFGSRC",
+      description: "Every project-scoped setting should travel.",
+      memberIds: [],
+    });
+    if (!created.ok) throw new Error(created.error);
+    createdProjects.push(created.data.id);
+
+    /* A label the project grew, on top of the default vocabulary — the copy
+       has to bring both, not just the defaults a new project would get. */
+    const grown = await createLabel({
+      projectId: created.data.id,
+      name: "Regression sweep",
+      color: "#AA33CC",
+    });
+    if (!grown.ok) throw new Error(grown.error);
+
+    const source = await prisma.project.findUniqueOrThrow({
+      where: { id: created.data.id },
+      select: {
+        description: true,
+        labels: { select: { id: true, name: true, color: true } },
+        members: { select: { userId: true } },
+      },
+    });
+
+    const result = await duplicateProject({
+      projectId: created.data.id,
+      copyLinks: false,
+      copyAttachments: false,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    createdProjects.push(result.data.id);
+
+    const clone = await prisma.project.findUniqueOrThrow({
+      where: { id: result.data.id },
+      select: {
+        id: true,
+        key: true,
+        name: true,
+        description: true,
+        issueSequence: true,
+        labels: { select: { id: true, name: true, color: true } },
+        members: { select: { userId: true } },
+      },
+    });
+
+    // Its own identity: a different id, a different key, its own sequence.
+    expect(clone.id).not.toBe(created.data.id);
+    expect(clone.key).not.toBe("CFGSRC");
+    expect(clone.name).toBe("Clone config source (Copy)");
+
+    // The configuration itself.
+    expect(clone.description).toBe(source.description);
+    expect(clone.labels.map((l) => l.name).sort()).toEqual(
+      source.labels.map((l) => l.name).sort(),
+    );
+    expect(clone.labels.map((l) => l.color).sort()).toEqual(
+      source.labels.map((l) => l.color).sort(),
+    );
+    expect(clone.labels.map((l) => l.name)).toContain("Regression sweep");
+    expect(new Set(clone.members.map((m) => m.userId))).toEqual(
+      new Set([...source.members.map((m) => m.userId), admin.id]),
+    );
+
+    /* Copied, never shared. Every label on the clone is a row of its own, so
+       renaming one cannot reach the original's vocabulary. */
+    const sourceLabelIds = new Set(source.labels.map((l) => l.id));
+    for (const label of clone.labels) {
+      expect(sourceLabelIds.has(label.id)).toBe(false);
+    }
+
+    await prisma.label.update({
+      where: { id: clone.labels[0]!.id },
+      data: { name: "Renamed on the copy" },
+    });
+
+    const original = await prisma.project.findUniqueOrThrow({
+      where: { id: created.data.id },
+      select: {
+        description: true,
+        labels: { select: { name: true } },
+      },
+    });
+    expect(original.description).toBe(source.description);
+    expect(original.labels.map((l) => l.name).sort()).toEqual(
+      source.labels.map((l) => l.name).sort(),
+    );
+    expect(original.labels.map((l) => l.name)).not.toContain(
+      "Renamed on the copy",
+    );
+  });
 
   const cases = [
     { links: false, files: false },

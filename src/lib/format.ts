@@ -202,14 +202,26 @@ export function humanizeActivity(
  * exactly those issues when the count is clicked. A second calculation, even a
  * correct-looking one, is how a figure and the list behind it drift apart.
  *
- * `thisWeek` deliberately starts at the end of today rather than at the start
- * of the week: anything already past its date is overdue, and overdue is its
- * own bucket. So the two never overlap and nothing is counted twice.
+ * "This week" is the *current calendar week*, not a rolling seven days, and it
+ * runs `[startOfToday, endOfWeek)`:
+ *
+ *   - it starts at the beginning of today, so work due today is due this week.
+ *     Today used to be excluded so the today/this-week counts could not
+ *     overlap, which made "Due this week" answer a question nobody asks —
+ *     everything due this week *except* the part due first.
+ *   - it ends when the week does. A rolling seven days from today spills into
+ *     next week for most of the week, so an issue due next Tuesday showed up
+ *     under "this week" whenever today was a Wednesday or later.
+ *   - anything before today is overdue, and overdue is its own bucket, so it
+ *     is never in this window.
+ *
+ * Weeks start on Monday, the same convention the project calendar uses.
  */
 export function dueWindow(now: Date = new Date()): {
   now: Date;
   startOfToday: Date;
   endOfToday: Date;
+  /** Start of the *next* calendar week — exclusive upper bound for "this week". */
   endOfWeek: Date;
 } {
   const startOfToday = new Date(now);
@@ -218,8 +230,11 @@ export function dueWindow(now: Date = new Date()): {
   const endOfToday = new Date(startOfToday);
   endOfToday.setDate(endOfToday.getDate() + 1);
 
+  /* Monday-first: `getDay()` is Sunday-based, so shift it before measuring how
+     far into the week today already is. */
+  const dayOfWeek = (startOfToday.getDay() + 6) % 7;
   const endOfWeek = new Date(startOfToday);
-  endOfWeek.setDate(endOfWeek.getDate() + 7);
+  endOfWeek.setDate(endOfWeek.getDate() + (7 - dayOfWeek));
 
   return { now, startOfToday, endOfToday, endOfWeek };
 }

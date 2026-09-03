@@ -692,11 +692,15 @@ async function countBundle(
         dueDate: { gte: w.startOfToday, lt: w.endOfToday },
       },
     }),
+    /* Due this week: the current calendar week, today included. It therefore
+       overlaps the "due today" bucket above by design — work due today is due
+       this week — and the figure matches what `dueWeek=1` shows when the
+       number is clicked. */
     prisma.issue.count({
       where: {
         ...mine,
         status: open,
-        dueDate: { gte: w.endOfToday, lt: w.endOfWeek },
+        dueDate: { gte: w.startOfToday, lt: w.endOfWeek },
       },
     }),
 

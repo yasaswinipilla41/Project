@@ -5,7 +5,9 @@ import { Readable } from "node:stream";
 import { afterAll, describe, expect, it } from "vitest";
 import {
   identifyUpload,
+  MAX_UPLOAD_BYTES,
   maxBytesFor,
+  oversizeMessage,
   safeFilename,
   SNIFF_BYTES,
 } from "@/server/upload-types";
@@ -134,6 +136,55 @@ describe("refusing disguised files", () => {
     const text = new TextEncoder().encode("id,name\n1,Prio\n");
     expect(identifyUpload(text, "text/csv", "rows.csv")?.mime).toBe("text/csv");
     expect(identifyUpload(text, null, "notes.txt")?.mime).toBe("text/plain");
+  });
+
+  /*
+   * Video is capped at the general 30 MB limit, not below it and not above
+   * it. The boundary is inclusive — 30 MB exactly is a file somebody has, and
+   * a limit that refuses the number it states is a bug, not a policy.
+   */
+  it("accepts a video up to 30 MB and refuses one past it", () => {
+    const MB = 1024 * 1024;
+    const videos = [
+      identifyUpload(withSignature(ascii("ftyp"), 4), null, "clip.mp4"),
+      identifyUpload(withSignature([0x1a, 0x45, 0xdf, 0xa3]), null, "clip.webm"),
+    ];
+
+    for (const video of videos) {
+      expect(video?.render).toBe("video");
+      if (!video) continue;
+
+      const limit = maxBytesFor(video);
+      expect(limit).toBe(30 * MB);
+      expect(limit).toBe(MAX_UPLOAD_BYTES);
+
+      // What the route does with `file.size` against that limit.
+      expect(29 * MB > limit).toBe(false);
+      expect(30 * MB > limit).toBe(false);
+      expect(30 * MB + 1 > limit).toBe(true);
+    }
+  });
+
+  it("fails an oversized video fast, at the same 30 MB the server enforces", () => {
+    const MB = 1024 * 1024;
+
+    expect(
+      oversizeMessage({ name: "clip.mp4", type: "video/mp4", size: 30 * MB }),
+    ).toBeNull();
+    expect(
+      oversizeMessage({ name: "clip.mp4", type: "video/mp4", size: 30 * MB + 1 }),
+    ).toContain("30 MB");
+
+    // Other kinds keep the limits they already had.
+    expect(
+      oversizeMessage({ name: "notes.pdf", type: "application/pdf", size: 30 * MB }),
+    ).toBeNull();
+    expect(
+      oversizeMessage({ name: "shot.png", type: "image/png", size: 21 * MB }),
+    ).toContain("20 MB");
+    expect(
+      oversizeMessage({ name: "shot.png", type: "image/png", size: 19 * MB }),
+    ).toBeNull();
   });
 
   it("caps images well below the general limit", () => {

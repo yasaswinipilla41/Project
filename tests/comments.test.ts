@@ -190,6 +190,125 @@ describe("writing a comment", () => {
   });
 });
 
+describe("replying to a comment", () => {
+  /*
+   * A reply is an ordinary comment carrying `parentId`. What the reported bug
+   * was about is that the association has to survive the round trip: the row
+   * has to keep pointing at the comment that was answered, so a page loaded
+   * fresh can draw the reply underneath it rather than beside it.
+   */
+  it("keeps the parent it was written against", async () => {
+    const author = await actAs(ADMIN);
+    const issue = await anIssue();
+
+    const parent = await createComment({
+      issueId: issue.id,
+      body: "Newly created video is not displaying in History.",
+    });
+    expect(parent.ok).toBe(true);
+    if (!parent.ok) return;
+    createdComments.push(parent.data.id);
+
+    await actAs(MEMBER);
+    const reply = await createComment({
+      issueId: issue.id,
+      body: "yes",
+      parentId: parent.data.id,
+    });
+    expect(reply.ok).toBe(true);
+    if (!reply.ok) return;
+    createdComments.push(reply.data.id);
+
+    const stored = await prisma.comment.findUniqueOrThrow({
+      where: { id: reply.data.id },
+      select: { parentId: true, issueId: true, authorId: true },
+    });
+
+    expect(stored.parentId).toBe(parent.data.id);
+    expect(stored.issueId).toBe(issue.id);
+    expect(stored.authorId).not.toBe(author.id);
+
+    /* Re-read the way the issue page reads them. The reply is not a top-level
+       comment, and it is listed under the comment it answers — which is what
+       decides where it is drawn. */
+    const onIssue = await prisma.comment.findMany({
+      where: { issueId: issue.id },
+      select: { id: true, parentId: true },
+    });
+
+    const topLevel = onIssue.filter((c) => c.parentId === null).map((c) => c.id);
+    expect(topLevel).toContain(parent.data.id);
+    expect(topLevel).not.toContain(reply.data.id);
+
+    expect(
+      onIssue
+        .filter((c) => c.parentId === parent.data.id)
+        .map((c) => c.id),
+    ).toContain(reply.data.id);
+  });
+
+  it("refuses a parent that belongs to another issue", async () => {
+    await actAs(ADMIN);
+    const project = await projectByKey("ENG");
+    const [first, second] = await prisma.issue.findMany({
+      where: { projectId: project.id },
+      select: { id: true },
+      orderBy: { number: "asc" },
+      take: 2,
+    });
+    expect(second).toBeDefined();
+    if (!first || !second) return;
+
+    const parent = await createComment({
+      issueId: first.id,
+      body: "On the first issue.",
+    });
+    expect(parent.ok).toBe(true);
+    if (!parent.ok) return;
+    createdComments.push(parent.data.id);
+
+    // Grafting a thread onto an issue it was not written on is refused, so a
+    // crafted parentId cannot move a reply somewhere it does not belong.
+    const grafted = await createComment({
+      issueId: second.id,
+      body: "Onto the second.",
+      parentId: parent.data.id,
+    });
+    expect(grafted.ok).toBe(false);
+  });
+
+  it("leaves an existing top-level comment alone", async () => {
+    await actAs(ADMIN);
+    const issue = await anIssue();
+
+    const standalone = await createComment({
+      issueId: issue.id,
+      body: "Unrelated, and still top level.",
+    });
+    expect(standalone.ok).toBe(true);
+    if (!standalone.ok) return;
+    createdComments.push(standalone.data.id);
+
+    const parent = await createComment({ issueId: issue.id, body: "Parent." });
+    if (!parent.ok) return;
+    createdComments.push(parent.data.id);
+
+    const reply = await createComment({
+      issueId: issue.id,
+      body: "Reply.",
+      parentId: parent.data.id,
+    });
+    if (!reply.ok) return;
+    createdComments.push(reply.data.id);
+
+    const row = await prisma.comment.findUniqueOrThrow({
+      where: { id: standalone.data.id },
+      select: { parentId: true },
+    });
+    expect(row.parentId).toBeNull();
+  });
+});
+
 describe("mentions", () => {
   it("records a mention and notifies the person named", async () => {
     const author = await actAs(MEMBER);

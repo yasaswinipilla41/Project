@@ -44,7 +44,9 @@ async function loadProject(rawKey: string, user: CurrentUser) {
       members: {
         orderBy: { createdAt: "asc" },
         select: {
-          user: { select: { id: true, name: true, image: true } },
+          /* `role` feeds the board's Assignee filter, which offers members an
+             "Admin" bucket rather than their colleagues' names. */
+          user: { select: { id: true, name: true, image: true, role: true } },
         },
       },
     },
@@ -129,9 +131,11 @@ export default async function ProjectBoardPage({
        * destination in Prio that never says what it is. This says it, the way
        * Issues, Notifications and Reports say it.
        *
-       * There is only one Flow Board page: the sidebar entry and the project's
-       * own tab both resolve to this route, so this single header serves both
-       * and cannot be duplicated.
+       * This is the *project* Flow Board, reached from the project's own tab
+       * strip or from the board's Project dropdown. The sidebar's Flow Board
+       * entry goes to `/board`, the all-projects board, which draws its own
+       * header and deliberately has no back link — see that page for why the
+       * two contexts are two routes.
        */}
       <div className="prio-page-header">
         <div className="prio-page-header__text">
@@ -176,7 +180,12 @@ export default async function ProjectBoardPage({
       <FlowBoard
         project={{ id: project.id, key: project.key, name: project.name }}
         allProjects={allProjects}
-        members={project.members.map((m) => m.user)}
+        members={project.members.map((m) => ({
+          id: m.user.id,
+          name: m.user.name,
+          image: m.user.image,
+          isAdmin: m.user.role === "ADMIN",
+        }))}
         labels={project.labels}
         columns={columns}
         currentUserId={user.id}

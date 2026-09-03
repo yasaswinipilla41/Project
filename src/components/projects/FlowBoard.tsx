@@ -22,7 +22,7 @@ import {
   PriorityIndicator,
   StatusPill,
 } from "@/components/ui/Indicators";
-import { Menu, MenuItem, MenuLabel } from "@/components/ui/Menu";
+import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/Menu";
 import { useToast } from "@/components/ui/Toast";
 import {
   IconCheck,
@@ -87,6 +87,13 @@ export interface BoardMember {
   id: string;
   name: string;
   image: string | null;
+  /**
+   * Whether this person administers Prio. Read by the Assignee filter, which
+   * offers members an "Admin" bucket instead of a roster of their colleagues'
+   * names — so the board has to know which assignees are administrators
+   * without the viewer being told who they are.
+   */
+  isAdmin: boolean;
 }
 
 export interface BoardLabel {
@@ -98,6 +105,21 @@ export interface BoardLabel {
 type MoveAction = { issueId: string; status: IssueStatus };
 
 const UNASSIGNED = "unassigned";
+
+/**
+ * Assignee filter values that are not a person.
+ *
+ * A member's Assignee dropdown does not list the team. It offers the three
+ * questions somebody working a board actually asks of it — is this mine, is
+ * this nobody's, is this with an administrator — and none of them requires
+ * knowing who else is on the project. An administrator's dropdown is
+ * unchanged and still lists everyone, because assigning and re-assigning work
+ * is an administrator's job and it cannot be done blind.
+ *
+ * `MINE` is not a sentinel: it is the viewer's own id, so it filters through
+ * exactly the same path a picked name does.
+ */
+const ADMIN_ASSIGNEES = "admins";
 
 /**
  * Grouping choices actually backed by real Prio data. "Project" and "Epic"
@@ -185,7 +207,13 @@ export function FlowBoard({
   isAdmin,
   insights,
 }: {
-  project: BoardProjectRef;
+  /**
+   * The project this board is showing, or `null` for the all-projects board
+   * reached from the sidebar. Only the Project dropdown reads it — the
+   * columns, the cards and every filter work the same either way, because
+   * the page above has already decided which issues to hand over.
+   */
+  project: BoardProjectRef | null;
   allProjects: BoardProjectRef[];
   members: BoardMember[];
   labels: BoardLabel[];
@@ -305,6 +333,14 @@ export function FlowBoard({
       ),
   );
 
+  /* Who counts as an administrator on this board. Used to resolve the
+     "Admin" filter value, and to decide whether that option is offered at
+     all — there is no point in a bucket nobody could be in. */
+  const adminIds = useMemo(
+    () => new Set(members.filter((m) => m.isAdmin).map((m) => m.id)),
+    [members],
+  );
+
   const q = query.trim().toLowerCase();
   const visible = issues.filter((issue) => {
     if (q && !issue.title.toLowerCase().includes(q) && !issue.key.toLowerCase().includes(q)) {
@@ -322,11 +358,21 @@ export function FlowBoard({
     if (priorityFilter.length && !priorityFilter.includes(issue.priority)) return false;
     if (assigneeFilter.length) {
       const id = issue.assignee?.id ?? UNASSIGNED;
-      if (!assigneeFilter.includes(id)) return false;
+      /* "Admin" stands for a set of people rather than one, so it is resolved
+         against the roster here; every other value is still a plain id. */
+      const matches = assigneeFilter.some((value) =>
+        value === ADMIN_ASSIGNEES ? adminIds.has(id) : value === id,
+      );
+      if (!matches) return false;
     }
     if (labelFilter.length) {
-      const ids = issue.labels.map(({ label }) => label.id);
-      if (!labelFilter.some((id) => ids.includes(id))) return false;
+      /* Matched by name, not id. A label is project-scoped and unique by name
+         within its project, so on one project's board this is exactly the id
+         match it replaces — and on the all-projects board it is what lets a
+         single "QA" entry mean QA in every project that has one, rather than
+         one project's QA and a menu full of repeats. */
+      const names = issue.labels.map(({ label }) => label.name);
+      if (!labelFilter.some((name) => names.includes(name))) return false;
     }
     return true;
   });
@@ -521,11 +567,30 @@ export function FlowBoard({
           <div className="prio-board__filters">
             <ToolbarMenu label="Project">
               <MenuLabel>Go to project</MenuLabel>
+              {/*
+               * The board reached from the sidebar is every project's, and
+               * this is the way back to it — and the way in, for anyone who
+               * arrived on a single project's board. It is what "All
+               * Projects" is selected as on `/board`, so the control always
+               * names the board being looked at.
+               */}
+              <MenuItem
+                href="/board"
+                selected={project === null}
+                icon={
+                  <span className="prio-project-chip" aria-hidden>
+                    ALL
+                  </span>
+                }
+              >
+                All Projects
+              </MenuItem>
+              <MenuSeparator />
               {allProjects.map((p) => (
                 <MenuItem
                   key={p.id}
                   href={`/projects/${p.key.toLowerCase()}/board`}
-                  selected={p.id === project.id}
+                  selected={p.id === project?.id}
                   icon={
                     <span className="prio-project-chip" aria-hidden>
                       {p.key.slice(0, 2)}
@@ -576,6 +641,27 @@ export function FlowBoard({
               )}
             >
               <MenuLabel>Filter by assignee</MenuLabel>
+
+              {/*
+               * A member sees roles, not colleagues: Assigned to me,
+               * Unassigned, and Admin. An administrator sees the roster, as
+               * before. Only the options differ — the trigger, the panel, the
+               * ticks and the multi-select behaviour are the same control in
+               * both cases.
+               */}
+              {isAdmin ? null : (
+                <MenuItem
+                  keepOpen
+                  selected={assigneeFilter.includes(currentUserId)}
+                  onSelect={() =>
+                    setAssigneeFilter((prev) => toggleValue(prev, currentUserId))
+                  }
+                  icon={<Avatar name={null} empty size="xs" />}
+                >
+                  Assigned to me
+                </MenuItem>
+              )}
+
               <MenuItem
                 keepOpen
                 selected={assigneeFilter.includes(UNASSIGNED)}
@@ -584,17 +670,38 @@ export function FlowBoard({
               >
                 Unassigned
               </MenuItem>
-              {members.map((member) => (
+
+              {/* Offered only when an administrator could actually hold work
+                  here — an empty bucket is a filter that can only ever return
+                  nothing. */}
+              {!isAdmin && adminIds.size > 0 ? (
                 <MenuItem
-                  key={member.id}
                   keepOpen
-                  selected={assigneeFilter.includes(member.id)}
-                  onSelect={() => setAssigneeFilter((prev) => toggleValue(prev, member.id))}
-                  icon={<Avatar name={member.name} image={member.image} size="xs" />}
+                  selected={assigneeFilter.includes(ADMIN_ASSIGNEES)}
+                  onSelect={() =>
+                    setAssigneeFilter((prev) => toggleValue(prev, ADMIN_ASSIGNEES))
+                  }
+                  icon={<Avatar name={null} empty size="xs" />}
                 >
-                  {member.name}
+                  Admin
                 </MenuItem>
-              ))}
+              ) : null}
+
+              {isAdmin
+                ? members.map((member) => (
+                    <MenuItem
+                      key={member.id}
+                      keepOpen
+                      selected={assigneeFilter.includes(member.id)}
+                      onSelect={() =>
+                        setAssigneeFilter((prev) => toggleValue(prev, member.id))
+                      }
+                      icon={<Avatar name={member.name} image={member.image} size="xs" />}
+                    >
+                      {member.name}
+                    </MenuItem>
+                  ))
+                : null}
             </Menu>
 
             <ToolbarMenu label="Priority" count={priorityFilter.length}>
@@ -618,8 +725,8 @@ export function FlowBoard({
                   <MenuItem
                     key={label.id}
                     keepOpen
-                    selected={labelFilter.includes(label.id)}
-                    onSelect={() => setLabelFilter((prev) => toggleValue(prev, label.id))}
+                    selected={labelFilter.includes(label.name)}
+                    onSelect={() => setLabelFilter((prev) => toggleValue(prev, label.name))}
                     icon={
                       <span
                         className="prio-label-chip__swatch"

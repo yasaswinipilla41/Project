@@ -1490,6 +1490,23 @@ a.prio-stat:focus-visible {
   transition: width var(--prio-duration-slow) var(--prio-ease-out);
 }
 
+/*
+ * A video upload fills green.
+ *
+ * Video is the one attachment big enough that the bar is watched rather than
+ * glanced at — a screen recording takes long enough for "is this moving?" to
+ * be a real question — and green answers it at a distance in a way the brand
+ * gradient, which is also the colour of every other progress bar in Prio,
+ * does not. Only the fill changes: the track, the height, the radius and the
+ * easing are the shared ones, so nothing else about the control moves.
+ *
+ * Keyed on the upload's declared kind, so an image or a document keeps the
+ * bar it always had.
+ */
+.prio-progress[data-kind="video"] .prio-progress__bar {
+  background: var(--prio-green-500);
+}
+
 /* ---------------------------------------------------- create type cards */
 /*
  * The five-type selector at the head of the Create dialog, shown only when

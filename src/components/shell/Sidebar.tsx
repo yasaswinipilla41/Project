@@ -115,11 +115,25 @@ export function Sidebar({
 
   const entries: NavEntry[] = [
     { href: "/", label: "Home", Icon: IconHome },
+    /*
+     * The sidebar's Flow Board is the all-projects board, always.
+     *
+     * It used to resolve to whichever project you happened to be inside,
+     * which made one navigation item mean two different boards depending on
+     * where you clicked it — and put a "Back to <project>" control above a
+     * board you had not reached from that project. The two contexts are now
+     * two routes: this one, and the project's own board reached from its tab
+     * strip or from the board's Project dropdown. Both light this entry up,
+     * because both are the Flow Board.
+     */
     {
-      href: flowBoardHref(pathname, projects),
+      href: "/board",
       label: "Flow Board",
       Icon: IconBoard,
-      activeTest: (p) => /^\/projects\/[^/]+\/board(\/|$)/.test(p),
+      activeTest: (p) =>
+        p === "/board" ||
+        p.startsWith("/board/") ||
+        /^\/projects\/[^/]+\/board(\/|$)/.test(p),
     },
     {
       href: "/projects",
@@ -194,26 +208,22 @@ export function Sidebar({
           <span className="prio-navitem__label">{project.name}</span>
         </Link>
 
-        {/* The favourite badge, restored to the filled star it has always
-            been. A later change swapped this slot's star for a pin and the
-            quick action's pin for a star; both are back where they were, and
-            only the slots' order on the row reflects the current layout. */}
-        {!collapsed && project.isFavorite ? (
-          <span
-            className="prio-sidebar__project-fav"
-            title="Favorited"
-            aria-label="Favorited"
-          >
-            <IconStar size={12} fill="currentColor" />
-          </span>
-        ) : null}
-
         {!collapsed ? (
+          /*
+           * Name -> Pin -> Favourite -> "...", in that order.
+           *
+           * A pinned project has no Pin control -- the section it is in
+           * already says it is pinned, and unpinning is in the "..." menu --
+           * but it keeps the *space* the control would occupy. That empty
+           * slot is the whole reason Favourite and "..." land on the same two
+           * x-positions in Pinned as they do in Recents: without it the two
+           * sections' icons sit a control apart and the eye has to re-find
+           * them on every section boundary.
+           */
           <div className="prio-sidebar__project-actions">
-            {/* Already pinned is exactly what the Pinned section itself
-               says — a persistent pin icon there would just repeat it.
-               Unpinning still works, from the "..." menu below. */}
-            {!project.isPinned ? (
+            {project.isPinned ? (
+              <span className="prio-sidebar__project-slot" aria-hidden />
+            ) : (
               <button
                 type="button"
                 className="prio-sidebar__project-menu-trigger"
@@ -223,7 +233,32 @@ export function Sidebar({
               >
                 <IconPin size={13} fill="none" />
               </button>
-            ) : null}
+            )}
+
+            {/*
+             * One star, doing both jobs. Favourited, it stays lit whether or
+             * not the row is hovered -- that is the badge beside the project
+             * name that a Flow Board favourite has to show up as, and it
+             * reads from the same `isFavorite` the board writes, so the two
+             * cannot disagree. Not favourited, it appears on hover like every
+             * other action here. A separate badge *and* a separate toggle
+             * would put two stars on the same row.
+             */}
+            <button
+              type="button"
+              className="prio-sidebar__project-menu-trigger prio-sidebar__project-fav"
+              data-on={project.isFavorite || undefined}
+              aria-pressed={project.isFavorite}
+              aria-label={
+                project.isFavorite
+                  ? `Remove ${project.name} from favorites`
+                  : `Add ${project.name} to favorites`
+              }
+              title={project.isFavorite ? "Favorited" : "Favorite"}
+              onClick={() => handleFavorite(project)}
+            >
+              <IconStar size={13} fill={project.isFavorite ? "currentColor" : "none"} />
+            </button>
 
             <Menu
               align="end"
@@ -397,26 +432,6 @@ export function Sidebar({
       </nav>
     </>
   );
-}
-
-/**
- * Where the sidebar's single "Flow Board" link goes.
- *
- * The route is always project-scoped (`/projects/[key]/board`), but the item
- * itself is a plain link — no picker, no submenu. If the caller is already
- * inside a project's pages, its board is what "Flow Board" means right now;
- * otherwise it falls back to the first project the sidebar already lists.
- */
-function flowBoardHref(pathname: string, projects: SidebarProject[]): string {
-  const [firstProject] = projects;
-  if (!firstProject) return "/projects";
-
-  const current = projects.find((project) => {
-    const projectHref = `/projects/${project.key.toLowerCase()}`;
-    return pathname === projectHref || pathname.startsWith(`${projectHref}/`);
-  });
-
-  return `/projects/${(current ?? firstProject).key.toLowerCase()}/board`;
 }
 
 export const SIDEBAR_COOKIE = "prio.sidebar.collapsed";

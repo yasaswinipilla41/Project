@@ -198,8 +198,16 @@ export function DueBar({
         </Link>
       ) : null}
 
+      {/* `dueWeek=1` is the filter the count was made with, so clicking the
+          number opens exactly the issues it counted — this week's dated, open
+          work, with nothing overdue and nothing undated alongside it. It used
+          to sort by due date and filter by nothing, which showed every open
+          issue assigned to the reader. */}
       {thisWeek > 0 ? (
-        <Link href={`${base}&sort=due&dir=asc`} className="prio-duebar__item">
+        <Link
+          href={`${base}&dueWeek=1&sort=due&dir=asc`}
+          className="prio-duebar__item"
+        >
           <IconCalendar size={14} />
           <strong>{thisWeek}</strong>
           due this week

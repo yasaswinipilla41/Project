@@ -277,6 +277,84 @@ test.describe("Assignee options come from project membership", () => {
 test.describe("Assignee options for a member account", () => {
   test.use({ storageState: MEMBER_STATE });
 
+  /*
+   * The Flow Board's Assignee filter is the one place a member's options are
+   * deliberately *not* the project roster.
+   *
+   * A member filing and working their own issues has no business being handed
+   * a list of their colleagues' names to browse; the three questions they
+   * actually ask of a board are "is this mine", "is this nobody's" and "is
+   * this with an administrator". An administrator's filter is untouched and
+   * still lists everyone — that test lives in the describe above, and the two
+   * together are what pin the difference.
+   */
+  test("the Flow Board filter offers roles, not colleagues", async ({ page }) => {
+    const members = await projectMembers("ENG");
+
+    await page.goto("/projects/eng/board");
+    await page.locator(".prio-board__assignee-trigger").click();
+    const items = await openMenuItems(page);
+
+    expect(items.some((t) => t.includes("Assigned to me"))).toBe(true);
+    expect(items.some((t) => t.includes("Unassigned"))).toBe(true);
+
+    /* No member's name is on the list -- not a colleague's, and not the
+       signed-in member's own. */
+    for (const member of members) {
+      expect(
+        items.some((t) => t.includes(member.name)),
+        `${member.name} must not be named in a member's assignee filter`,
+      ).toBe(false);
+    }
+
+    /* Nothing beyond the three role buckets. Each row's leading avatar
+       contributes its placeholder glyph to `innerText`, so the label is
+       matched within the row rather than against it. */
+    expect(items.length).toBeLessThanOrEqual(3);
+    for (const item of items) {
+      expect(
+        ["Assigned to me", "Unassigned", "Admin"].some((label) =>
+          item.includes(label),
+        ),
+        `unexpected option "${item}" in a member's assignee filter`,
+      ).toBe(true);
+    }
+  });
+
+  test("Assigned to me narrows the board to the member's own cards", async ({
+    page,
+  }) => {
+    const me = await prisma.user.findUniqueOrThrow({
+      where: { email: "priya.nair@symbiosystech.com" },
+      select: { id: true },
+    });
+
+    const expected = await prisma.issue.count({
+      where: {
+        project: { key: "ENG" },
+        assigneeId: me.id,
+        status: { in: BOARD_STATUSES },
+      },
+    });
+
+    await page.goto("/projects/eng/board");
+    await page.locator(".prio-board__assignee-trigger").click();
+    await page
+      .getByRole("menu")
+      .first()
+      .locator(
+        '[role="menuitem"],[role="menuitemradio"],[role="menuitemcheckbox"]',
+      )
+      .filter({ hasText: "Assigned to me" })
+      .first()
+      .click();
+    await page.keyboard.press("Escape");
+
+    await expect
+      .poll(async () => page.locator(".prio-board__card").count())
+      .toBe(expected);
+  });
+
   test("a member sees their own project's full membership, and no more", async ({
     page,
   }) => {

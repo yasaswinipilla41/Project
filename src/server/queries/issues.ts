@@ -149,12 +149,13 @@ export function buildIssueWhere(
 
   if (filters.dueWeek) {
     /* The same boundaries the dashboard counts on, so "Due this week" opens
-       exactly the issues it counted. Overdue work is excluded by starting at
-       the end of today — it belongs to the Overdue bucket, and showing it in
-       both would double-count the same problem. */
-    const { endOfToday, endOfWeek } = dueWindow();
+       exactly the issues it counted: from the start of today to the end of
+       the current calendar week. Overdue work is excluded by starting at
+       today — it belongs to the Overdue bucket — and an undated issue matches
+       neither bound, so it is never in this list. */
+    const { startOfToday, endOfWeek } = dueWindow();
     and.push({
-      dueDate: { gte: endOfToday, lt: endOfWeek },
+      dueDate: { gte: startOfToday, lt: endOfWeek },
       status: { notIn: [...CLOSED_STATUSES] },
     });
   }

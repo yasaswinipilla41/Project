@@ -46,6 +46,13 @@ export interface IssueFiltersProps {
   projects: FilterOption[];
   people: FilterOption[];
   labels: FilterOption[];
+  /**
+   * Hides the Project dropdown on a surface that is already one project's —
+   * a project's own List tab, where the route fixes the project and the
+   * control could only ever confirm what the page already says. Every other
+   * filter on the bar is unaffected.
+   */
+  showProjectFilter?: boolean;
   /** Hides the type filter on surfaces locked to one type, e.g. /bugs. */
   showTypeFilter?: boolean;
   showSeverityFilter?: boolean;
@@ -130,6 +137,7 @@ export function IssueFilters({
   projects,
   people,
   labels,
+  showProjectFilter = true,
   showTypeFilter = true,
   showSeverityFilter = true,
   currentUserId,
@@ -316,7 +324,7 @@ export function IssueFilters({
           <IconFilter />
         </span>
 
-        {projects.length > 1 ? (
+        {showProjectFilter && projects.length > 1 ? (
           <FilterMenu
             label="Project"
             paramKey="project"

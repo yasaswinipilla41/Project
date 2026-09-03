@@ -55,6 +55,10 @@ export default async function ProjectListPage({
     <>
       <IssueFilters
         projects={options.projects}
+        /* The project is fixed by the route, so the bar does not offer one to
+           choose. Every other control on it — search, status, type, priority,
+           severity, assignee, reporter, labels, resolution — is untouched. */
+        showProjectFilter={false}
         people={options.people}
         labels={options.labels}
         currentUserId={user.id}

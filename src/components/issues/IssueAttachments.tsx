@@ -8,7 +8,13 @@ import {
   AttachmentGrid,
   type AttachmentView,
 } from "@/components/issues/Attachments";
-import { MAX_IMAGE_BYTES, MAX_UPLOAD_BYTES } from "@/server/upload-types";
+import { renderKindFor, type AttachmentRender } from "@/lib/attachments";
+import {
+  MAX_IMAGE_BYTES,
+  MAX_UPLOAD_BYTES,
+  megabytes,
+  oversizeMessage,
+} from "@/server/upload-types";
 
 /**
  * Files attached to the issue itself, rather than to one of its comments.
@@ -22,16 +28,6 @@ import { MAX_IMAGE_BYTES, MAX_UPLOAD_BYTES } from "@/server/upload-types";
  * going to be accepted. They are read from the same constants the server
  * checks against, so the number on screen cannot drift from the rule.
  */
-
-/*
- * Whole megabytes, because these are round numbers by definition.
- * `formatBytes` is for real file sizes and always prints one decimal, which
- * turns a 30 MB limit into "30.0 MB" -- precision the reader cannot use about
- * a number that was never measured.
- */
-function megabytes(bytes: number): string {
-  return `${Math.round(bytes / (1024 * 1024))} MB`;
-}
 
 export function IssueAttachments({
   issueId,
@@ -49,9 +45,12 @@ export function IssueAttachments({
   const input = useRef<HTMLInputElement>(null);
 
   const [dragging, setDragging] = useState(false);
-  const [progress, setProgress] = useState<{ name: string; percent: number }[]>(
-    [],
-  );
+  /* `kind` is only ever used to colour the bar, so the browser's declared type
+     is good enough for it — nothing is stored or trusted on the strength of
+     it, and the server still identifies the file from its own bytes. */
+  const [progress, setProgress] = useState<
+    { name: string; percent: number; kind: AttachmentRender }[]
+  >([]);
   const [error, setError] = useState<string | null>(null);
 
   const upload = useCallback(
@@ -59,7 +58,20 @@ export function IssueAttachments({
       setError(null);
 
       for (const file of files) {
-        setProgress((list) => [...list, { name: file.name, percent: 0 }]);
+        /* Refused before a byte is sent. The server enforces the same two
+           limits against the file it actually parsed — this only spares
+           somebody a minute of upload for a file that was never going to be
+           accepted. */
+        const oversize = oversizeMessage(file);
+        if (oversize) {
+          setError(oversize);
+          continue;
+        }
+
+        setProgress((list) => [
+          ...list,
+          { name: file.name, percent: 0, kind: renderKindFor(file.type) },
+        ]);
 
         try {
           await new Promise<void>((resolve, reject) => {
@@ -190,6 +202,7 @@ export function IssueAttachments({
                   screen reader can follow the upload as well as an eye can. */}
               <span
                 className="prio-progress"
+                data-kind={entry.kind}
                 role="progressbar"
                 aria-valuenow={entry.percent}
                 aria-valuemin={0}

@@ -214,6 +214,43 @@ export function maxBytesFor(kind: FileKind): number {
 }
 
 /**
+ * The ceiling a browser can apply *before* uploading, from the type the file
+ * picker declared.
+ *
+ * This is a courtesy, not the boundary: the declared type is a claim, so this
+ * can only ever fail a file fast. `maxBytesFor` — keyed on the type the server
+ * verified from the bytes themselves — is what actually decides, and it is
+ * deliberately the same two constants, so the number a person is told cannot
+ * drift from the number they are held to. A video is therefore refused here at
+ * exactly the 30 MB the server refuses it at.
+ */
+export function declaredMaxBytes(declaredType: string | null): number {
+  return declaredType?.startsWith("image/") ? MAX_IMAGE_BYTES : MAX_UPLOAD_BYTES;
+}
+
+/** Whole megabytes — these limits are round numbers by definition. */
+export function megabytes(bytes: number): string {
+  return `${Math.round(bytes / (1024 * 1024))} MB`;
+}
+
+/**
+ * The message shown when a file is refused before it is sent, or `null` when
+ * it is within its limit. Worded like the server's own rejection so the two
+ * paths read the same.
+ */
+export function oversizeMessage(file: {
+  name: string;
+  type: string;
+  size: number;
+}): string | null {
+  const limit = declaredMaxBytes(file.type || null);
+  if (file.size <= limit) return null;
+  return `${file.name} is too large — ${
+    file.type.startsWith("image/") ? "images are" : "files are"
+  } limited to ${megabytes(limit)}.`;
+}
+
+/**
  * A filename safe to put in a `Content-Disposition` header and to show in the
  * interface. Path separators and control characters are removed; the name is
  * never used to locate the file, only to label it.

@@ -23,7 +23,12 @@ import {
   IconPlus,
   IconWarning,
 } from "@/components/ui/Icon";
-import { formatBytes } from "@/lib/attachments";
+import {
+  formatBytes,
+  renderKindFor,
+  type AttachmentRender,
+} from "@/lib/attachments";
+import { oversizeMessage } from "@/server/upload-types";
 import { searchIssuesForReference } from "@/server/issues";
 
 /**
@@ -133,7 +138,11 @@ export function CommentComposer({
   const [dragging, setDragging] = useState(false);
 
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
-  const [uploading, setUploading] = useState<{ name: string; percent: number }[]>(
+  /* `kind` colours the bar and nothing else — see the note in
+     `IssueAttachments`; the server still identifies the file from its bytes. */
+  const [uploading, setUploading] = useState<
+    { name: string; percent: number; kind: AttachmentRender }[]
+  >(
     [],
   );
 
@@ -374,7 +383,17 @@ export function CommentComposer({
   const upload = useCallback(
     async (files: File[]) => {
       for (const file of files) {
-        setUploading((list) => [...list, { name: file.name, percent: 0 }]);
+        // Refused before a byte is sent; the server enforces the same limits.
+        const oversize = oversizeMessage(file);
+        if (oversize) {
+          setError(oversize);
+          continue;
+        }
+
+        setUploading((list) => [
+          ...list,
+          { name: file.name, percent: 0, kind: renderKindFor(file.type) },
+        ]);
 
         try {
           const result = await uploadOne(file, issueId, (percent) => {
@@ -688,7 +707,7 @@ export function CommentComposer({
             {uploading.map((entry) => (
               <li key={entry.name} className="prio-composer__file" data-uploading>
                 <span className="prio-truncate">{entry.name}</span>
-                <span className="prio-progress" aria-hidden>
+                <span className="prio-progress" data-kind={entry.kind} aria-hidden>
                   <span
                     className="prio-progress__bar"
                     style={{ width: `${entry.percent}%` }}

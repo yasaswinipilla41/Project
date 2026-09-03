@@ -349,13 +349,16 @@ describe("loadDashboard — every figure is the real count", () => {
 
     expect(data.due.overdue).toBe(overdue);
 
-    // The three buckets are disjoint windows over the same set, so their sum
-    // can never exceed the number of dated open items assigned to the person.
+    /* Overdue and this-week are disjoint windows over the same set, so their
+       sum can never exceed the number of dated open items assigned to the
+       person. "Due today" is deliberately *not* disjoint from them: work due
+       today is due this week, so it is counted in both and is only ever a
+       subset of the week. */
     const dated = await prisma.issue.count({
       where: { ...mine, dueDate: { not: null } },
     });
-    expect(data.due.overdue + data.due.today + data.due.thisWeek)
-      .toBeLessThanOrEqual(dated);
+    expect(data.due.overdue + data.due.thisWeek).toBeLessThanOrEqual(dated);
+    expect(data.due.today).toBeLessThanOrEqual(data.due.thisWeek);
   });
 
   it("shows only real, open, assigned work in the assigned list", async () => {

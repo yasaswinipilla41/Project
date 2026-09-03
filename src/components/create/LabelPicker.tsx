@@ -10,12 +10,14 @@ export interface PickerLabel {
 }
 
 /**
- * Choosing a label by typing, and creating one when none matches.
+ * Choosing a label from the project's own list, and creating one when none
+ * matches.
  *
- * There is deliberately no list until something is typed. A project owns a
- * vocabulary of labels — the canonical set plus whatever it has grown — and
- * showing all of it turns filing an issue into reading a glossary. Typing
- * narrows to what matches; only when nothing matches is creating offered.
+ * Opening the control shows what the project already has, so picking an
+ * existing label is a choice from a list rather than a guess at a name — you
+ * cannot select from a vocabulary you cannot see. Typing narrows that list;
+ * only when nothing on it answers to what was typed is creating offered. The
+ * list scrolls, so a project with a long vocabulary costs the form no height.
  *
  * Matching is case-insensitive and ignores surrounding whitespace, the same
  * rule the server applies when it decides whether a label already exists. That
@@ -39,6 +41,7 @@ export function LabelPicker({
   onCreate: (name: string) => Promise<void>;
 }) {
   const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
   const input = useRef<HTMLInputElement>(null);
 
@@ -46,12 +49,15 @@ export function LabelPicker({
   const folded = trimmed.toLowerCase();
 
   const matches = useMemo(() => {
-    if (folded.length === 0) return [];
-    return labels
-      .filter((label) => !selectedIds.includes(label.id))
+    const available = labels.filter((label) => !selectedIds.includes(label.id));
+    /* Nothing typed: the project's own labels, in full. Already-selected ones
+       are left out because picking them again would do nothing — they are
+       still on the issue as removable chips above this control. */
+    if (folded.length === 0) return open ? available : [];
+    return available
       .filter((label) => label.name.toLowerCase().includes(folded))
       .slice(0, 6);
-  }, [labels, selectedIds, folded]);
+  }, [labels, selectedIds, folded, open]);
 
   /* Creating is offered only when nothing on the project already answers to
      this name — including a label already picked, which would otherwise look
@@ -77,6 +83,7 @@ export function LabelPicker({
   function reset() {
     setQuery("");
     setHighlight(0);
+    setOpen(false);
     input.current?.focus();
   }
 
@@ -84,9 +91,16 @@ export function LabelPicker({
     if (event.key === "Escape") {
       event.preventDefault();
       setQuery("");
+      setOpen(false);
       return;
     }
     if (options === 0) {
+      // Arrowing into a closed list is how a combobox is opened.
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setOpen(true);
+        return;
+      }
       // Enter on an empty or whitespace-only query does nothing at all.
       if (event.key === "Enter") event.preventDefault();
       return;
@@ -130,11 +144,17 @@ export function LabelPicker({
         onChange={(event) => {
           setQuery(event.target.value);
           setHighlight(0);
+          setOpen(true);
         }}
         onKeyDown={onKeyDown}
+        onFocus={() => setOpen(true)}
+        onMouseDown={() => setOpen(true)}
         onBlur={() => {
           // Let a click on an option land before the list disappears.
-          window.setTimeout(() => setQuery(""), 150);
+          window.setTimeout(() => {
+            setQuery("");
+            setOpen(false);
+          }, 150);
         }}
       />
 

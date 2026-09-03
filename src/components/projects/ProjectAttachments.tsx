@@ -8,6 +8,8 @@ import {
   AttachmentGrid,
   type AttachmentView,
 } from "@/components/issues/Attachments";
+import { renderKindFor, type AttachmentRender } from "@/lib/attachments";
+import { oversizeMessage } from "@/server/upload-types";
 
 /**
  * Files attached directly to a project — the project-scoped twin of
@@ -33,9 +35,11 @@ export function ProjectAttachments({
   const input = useRef<HTMLInputElement>(null);
 
   const [dragging, setDragging] = useState(false);
-  const [progress, setProgress] = useState<{ name: string; percent: number }[]>(
-    [],
-  );
+  /* `kind` colours the bar and nothing else — see the note in
+     `IssueAttachments`; the server still identifies the file from its bytes. */
+  const [progress, setProgress] = useState<
+    { name: string; percent: number; kind: AttachmentRender }[]
+  >([]);
   const [error, setError] = useState<string | null>(null);
 
   const upload = useCallback(
@@ -43,7 +47,17 @@ export function ProjectAttachments({
       setError(null);
 
       for (const file of files) {
-        setProgress((list) => [...list, { name: file.name, percent: 0 }]);
+        // Refused before a byte is sent; the server enforces the same limits.
+        const oversize = oversizeMessage(file);
+        if (oversize) {
+          setError(oversize);
+          continue;
+        }
+
+        setProgress((list) => [
+          ...list,
+          { name: file.name, percent: 0, kind: renderKindFor(file.type) },
+        ]);
 
         try {
           await new Promise<void>((resolve, reject) => {
@@ -163,7 +177,7 @@ export function ProjectAttachments({
           {progress.map((entry) => (
             <li key={entry.name}>
               <span className="prio-truncate">{entry.name}</span>
-              <span className="prio-progress" aria-hidden>
+              <span className="prio-progress" data-kind={entry.kind} aria-hidden>
                 <span
                   className="prio-progress__bar"
                   style={{ width: `${entry.percent}%` }}
