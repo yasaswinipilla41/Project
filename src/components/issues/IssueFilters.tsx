@@ -76,12 +76,23 @@ function FilterMenu({
   options,
   selected,
   onToggle,
+  single = false,
 }: {
   label: string;
   paramKey: string;
   options: { value: string; node: React.ReactNode }[];
   selected: string[];
   onToggle: (paramKey: string, value: string) => void;
+  /**
+   * One value at a time. Choosing another replaces what was chosen before,
+   * rather than adding to it, and the panel closes once the choice is made --
+   * there is nothing further to pick. Choosing the current value again clears
+   * the filter, which is how clearing already worked here.
+   *
+   * The chip, the label, the tick and the spacing are untouched: this changes
+   * how many values may be held, not how the control looks.
+   */
+  single?: boolean;
 }) {
   return (
     <Menu
@@ -104,7 +115,7 @@ function FilterMenu({
       {options.map((option) => (
         <MenuItem
           key={option.value}
-          keepOpen
+          keepOpen={!single}
           selected={selected.includes(option.value)}
           onSelect={() => onToggle(paramKey, option.value)}
         >
@@ -168,6 +179,24 @@ export function IssueFilters({
    * and closed are mutually exclusive, so they set and clear a single value
    * of their own.
    */
+  /**
+   * One value for this filter, replacing whatever was there.
+   *
+   * Only the project filter uses this. Picking the value that is already on
+   * removes it, so the single-select control clears the same way the
+   * multi-select ones do -- by choosing the ticked entry again.
+   */
+  const selectOne = useCallback(
+    (key: string, value: string) => {
+      apply((next) => {
+        const already = next.getAll(key).includes(value);
+        next.delete(key);
+        if (!already) next.append(key, value);
+      });
+    },
+    [apply],
+  );
+
   const toggle = useCallback(
     (key: string, value: string) => {
       apply((next) => {
@@ -292,7 +321,10 @@ export function IssueFilters({
             label="Project"
             paramKey="project"
             selected={values("project")}
-            onToggle={toggle}
+            /* The only single-select filter on this bar. Everything else here
+               stays multi-select and keeps `toggle`. */
+            single
+            onToggle={selectOne}
             options={projects.map((p) => ({
               value: p.id,
               node: p.name,
