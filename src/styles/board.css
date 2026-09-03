@@ -146,15 +146,6 @@
   padding-right: var(--prio-space-2);
 }
 
-/* The board's own controls, in a row where the page header used to be. */
-.prio-board__actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--prio-space-2);
-  margin-bottom: var(--prio-space-4);
-}
-
 .prio-board__column {
   display: flex;
   flex-direction: column;

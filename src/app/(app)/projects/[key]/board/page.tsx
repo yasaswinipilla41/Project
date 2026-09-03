@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { BoardHeaderActions } from "@/components/projects/BoardHeaderActions";
+import { IconBoard } from "@/components/ui/Icon";
+import { BackLink } from "@/components/shell/BackLink";
 import { FlowBoard } from "@/components/projects/FlowBoard";
 import { InsightsPanel } from "@/components/reports/InsightsPanel";
 import { canManageProject, projectScope } from "@/lib/authz";
@@ -116,25 +118,59 @@ export default async function ProjectBoardPage({
   return (
     <>
       {/*
-       * The board's own controls, kept when its page header moved to the
-       * project layout. They belong to the board rather than to the project
-       * shell -- favouriting this project and the board's edit/archive/delete
-       * menu -- so they stay here, in a row of their own, rather than being
-       * lost with the header or duplicated into every project view.
+       * The page's own header, in the shape every other main navigation page
+       * uses: `.prio-page-header` with the section's name as its `h1` and the
+       * same icon the sidebar entry carries.
+       *
+       * The board reached this state by losing the project shell's header --
+       * which was right, that header was the project's summary with its
+       * Settings and actions on it, and did not belong above a board. But
+       * nothing replaced it, so Flow Board became the one navigation
+       * destination in Prio that never says what it is. This says it, the way
+       * Issues, Notifications and Reports say it.
+       *
+       * There is only one Flow Board page: the sidebar entry and the project's
+       * own tab both resolve to this route, so this single header serves both
+       * and cannot be duplicated.
        */}
-      <div className="prio-board__actions">
-        <BoardHeaderActions
-          project={{
-            id: project.id,
-            key: project.key,
-            name: project.name,
-            description: project.description,
-          }}
-          issueCount={issueCount}
-          initialFavorite={favorite !== null}
-          canManage={canManageProject(user, project)}
-          isAdmin={user.role === "ADMIN"}
-        />
+      <div className="prio-page-header">
+        <div className="prio-page-header__text">
+          {/*
+           * The way back to the project this board belongs to. The destination
+           * comes from the project the page already loaded, so it always leads
+           * back to the project the reader came from rather than to a fixed
+           * one or to a global board.
+           */}
+          <BackLink
+            href={`/projects/${project.key.toLowerCase()}`}
+            label={`Back to ${project.name}`}
+          />
+          <h1 className="prio-page-header__title">
+            <IconBoard />
+            Flow Board
+          </h1>
+          <p className="prio-page-header__subtitle">
+            Issues in {project.name}, by status.
+          </p>
+        </div>
+
+        {/* The board's own controls -- favouriting this project, and its
+            edit/archive/delete menu -- in the slot every other page puts its
+            actions in. */}
+        <div className="prio-page-header__actions">
+          <BoardHeaderActions
+            project={{
+              id: project.id,
+              key: project.key,
+              name: project.name,
+              description: project.description,
+            }}
+            issueCount={issueCount}
+            initialFavorite={favorite !== null}
+            canManage={canManageProject(user, project)}
+            isAdmin={user.role === "ADMIN"}
+          />
+        </div>
       </div>
 
       <FlowBoard
