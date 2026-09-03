@@ -366,16 +366,20 @@ test.describe("Cloning a project", () => {
 
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
+
+    /* Still exactly two questions — but for a *project* they start ticked.
+       Duplicating a project is expected to produce a complete copy, so links
+       and files travel unless somebody says otherwise; the issue clone above
+       keeps its own unticked defaults, because duplicating one issue is
+       usually the start of a new one rather than a faithful copy. */
+    await expect(dialog.locator('input[type="checkbox"]')).toHaveCount(2);
     await expect(
       dialog.getByLabel("Do you want to copy the links?"),
-    ).not.toBeChecked();
+    ).toBeChecked();
     await expect(
       dialog.getByLabel("Do you want to copy the attachments?"),
-    ).not.toBeChecked();
-    await expect(dialog.locator('input[type="checkbox"]')).toHaveCount(2);
+    ).toBeChecked();
 
-    await dialog.getByLabel("Do you want to copy the links?").check();
-    await dialog.getByLabel("Do you want to copy the attachments?").check();
     await dialog.getByRole("button", { name: "Clone" }).click();
 
     /* Lands on the clone's own board. Waited for by leaving Website's board,

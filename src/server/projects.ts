@@ -116,25 +116,54 @@ export async function createProject(
  * The clone is a genuinely new project: its own id, its own key, its own issue
  * sequence, created by whoever asked for it. The source is only ever read.
  *
- * What always travels is the project's *structure* — name, description, labels
- * and membership — so the same team can start working in it without being
- * re-invited by hand. Its issues travel too, as new issues with fresh keys
- * from the clone's own sequence: without them the two copy choices below would
- * have nothing to act on, because a project owns no relationships of its own,
- * only the ones between the issues inside it.
+ * **What travels.** The project's project-scoped configuration — name,
+ * description, membership and its label vocabulary — and the work inside it:
+ * every issue, with its type, status, priority, assignee, reporter, labels,
+ * due date and remaining fields, and every comment on those issues with its
+ * thread structure and its reactions. The result is a working copy, not a
+ * skeleton: somebody can open it and carry on.
  *
- * What never travels is history: no activity, no comments, no notifications,
- * no watchers, no created/updated timestamps and no keys. A cloned board is a
- * board to work in, not a fabricated record of work that was done.
+ * **What is copied rather than shared.** Everything. Every row above is a new
+ * row with a new primary key, and every attachment is written to a new storage
+ * object rather than pointing at the original's bytes. There is no mutable
+ * state in common, which is the property the whole feature rests on: editing,
+ * or deleting, anything in the clone cannot reach the original.
  *
- * The two choices, both off by default:
+ * **What deliberately does not travel:**
+ *
+ *   - keys, ids and timestamps — all fresh, and `createdBy` is whoever asked
+ *     for the copy, not whoever created the source;
+ *   - `isDefaultProject`, so a copy never silently starts enrolling every new
+ *     account that signs up. It is left at its default of `false`;
+ *   - the audit trail, notifications and watchers. A clone is a board to work
+ *     in, not a fabricated record of work that was already done — and for the
+ *     same reason a copied issue arrives with a fresh QA verdict rather than
+ *     an inherited claim that somebody tested it;
+ *   - the retired `stepsToReproduce` / `expectedResult` / `actualResult`
+ *     columns, which no form writes and no page shows;
+ *   - personal bookmarks (favourites, pins, recents) and organisation-wide
+ *     settings, neither of which is project configuration.
+ *
+ * Statuses, priorities, issue types and the Flow Board's columns are Prisma
+ * enums and module constants, shared by the whole installation rather than
+ * configured per project. There is nothing project-scoped to copy for them,
+ * and inventing per-project rows would be duplicating global configuration —
+ * so the clone inherits them exactly as a project created from scratch does.
+ *
+ * The two choices, both on by default so an ordinary duplicate is a complete
+ * one, and both honoured exactly as ticked:
  *
  *   - **links** — parent/child hierarchy and `IssueLink` relationships,
  *     re-pointed at the cloned counterparts. Relationships are re-pointed and
  *     never re-used: nothing in the clone links back into the original, and a
  *     link whose other end was not copied is dropped rather than left dangling.
- *   - **attachments** — the project's own files and its issues' files, copied
- *     byte for byte into new storage objects.
+ *   - **attachments** — the project's own files, its issues' files and its
+ *     comments' files, copied byte for byte into new storage objects.
+ *
+ * Every row is written inside one transaction, so a clone that fails partway
+ * leaves nothing behind to tidy up and nothing that could be mistaken for a
+ * finished copy. Files are copied afterwards, because a filesystem cannot be
+ * rolled back by a database.
  *
  * Gated the same way `createProject` is — creating a project, in whatever
  * form, is an administrator action.
@@ -146,6 +175,7 @@ export async function duplicateProject(
     id: string;
     key: string;
     copiedIssues: number;
+    copiedComments: number;
     copiedLinks: number;
     copiedAttachments: number;
   }>
@@ -183,37 +213,72 @@ export async function duplicateProject(
       return { ok: false, error: "This project no longer exists." };
     }
 
+    /* Probing for a free key is a read loop, and belongs outside the
+       transaction that then holds a write lock on nothing else. */
     const key = await deriveCopyKey(source.name, projectId);
     const memberIds = new Set([user.id, ...source.members.map((m) => m.userId)]);
 
-    const project = await prisma.project.create({
-      data: {
-        name: `${source.name} (Copy)`,
-        key,
-        description: source.description,
-        createdById: user.id,
-        members: {
-          createMany: { data: [...memberIds].map((userId) => ({ userId })) },
-        },
-        labels: {
-          createMany: {
-            data: source.labels.map((l) => ({ name: l.name, color: l.color })),
+    /*
+     * One transaction for the whole structure. A large project is a lot of
+     * rows — the timeout is raised to match, rather than the five seconds a
+     * short interactive transaction assumes — and the point of the boundary is
+     * that there is no state in between: either the clone exists complete, or
+     * it does not exist at all.
+     */
+    const written = await prisma.$transaction(
+      async (tx) => {
+        const project = await tx.project.create({
+          data: {
+            name: `${source.name} (Copy)`,
+            key,
+            description: source.description,
+            createdById: user.id,
+            /* `isDefaultProject` is deliberately absent: it defaults to false,
+               so a copy of the default project does not quietly become a
+               second one and start enrolling every new account. */
+            members: {
+              createMany: {
+                data: [...memberIds].map((userId) => ({ userId })),
+              },
+            },
+            labels: {
+              createMany: {
+                data: source.labels.map((l) => ({
+                  name: l.name,
+                  color: l.color,
+                })),
+              },
+            },
           },
-        },
+          select: { id: true, key: true },
+        });
+
+        const copied = await copyProjectIssues(
+          tx,
+          project.id,
+          project.key,
+          projectId,
+          { copyLinks, memberIds },
+        );
+
+        return { project, copied };
       },
-      select: { id: true, key: true },
-    });
+      { maxWait: 20_000, timeout: 180_000 },
+    );
 
-    const copied = await copyProjectIssues(project.id, project.key, projectId, {
-      copyLinks,
-      memberIds,
-    });
+    const { project, copied } = written;
 
+    /*
+     * Files last, and outside the transaction: copying bytes is not something
+     * the database can undo, so it must not be able to roll the structure back
+     * either. Each file is copied independently and a failure is logged and
+     * counted out, so one unreadable object cannot cost the clone its issues.
+     */
     let copiedAttachments = 0;
     if (copyAttachments) {
       copiedAttachments =
         (await copyProjectFiles(source.attachments, project.id, user.id)) +
-        (await copyIssueFiles(copied.idByOldId, user.id));
+        (await copyIssueFiles(copied.idByOldId, copied.commentIdByOldId, user.id));
     }
 
     revalidatePath("/projects");
@@ -225,6 +290,7 @@ export async function duplicateProject(
         id: project.id,
         key: project.key,
         copiedIssues: copied.count,
+        copiedComments: copied.comments,
         copiedLinks: copied.links,
         copiedAttachments,
       },
@@ -234,8 +300,12 @@ export async function duplicateProject(
   }
 }
 
+/** The transaction handle `copyProjectIssues` and its helpers write through. */
+type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
+
 /**
- * Re-creates one project's issues inside another, and reports the mapping.
+ * Re-creates one project's issues — and the conversations on them — inside
+ * another, and reports the mappings.
  *
  * Keys come from the destination project's own `issueSequence`, taken in one
  * increment so the numbers are contiguous and no other create can interleave
@@ -243,16 +313,29 @@ export async function duplicateProject(
  * becomes `INTCOPY-4` because it is the fourth issue *there*, not because it
  * was the fourth issue anywhere else.
  *
- * The old-id → new-id map is what makes relationships copyable at all, and is
- * returned so attachments can be copied against it afterwards.
+ * The old-id → new-id maps are what make relationships, threads and files
+ * copyable at all, and are returned so attachments can be copied against them
+ * afterwards.
+ *
+ * Everything is written in bulk. A project with several hundred issues is the
+ * case this has to survive, so the only per-row work left is re-pointing a
+ * parent — and even that is batched by parent rather than issued one row at a
+ * time.
  */
 async function copyProjectIssues(
+  tx: Tx,
   targetProjectId: string,
   targetProjectKey: string,
   sourceProjectId: string,
   options: { copyLinks: boolean; memberIds: Set<string> },
-): Promise<{ count: number; links: number; idByOldId: Map<string, string> }> {
-  const issues = await prisma.issue.findMany({
+): Promise<{
+  count: number;
+  comments: number;
+  links: number;
+  idByOldId: Map<string, string>;
+  commentIdByOldId: Map<string, string>;
+}> {
+  const issues = await tx.issue.findMany({
     where: { projectId: sourceProjectId },
     orderBy: { number: "asc" },
     select: {
@@ -279,16 +362,19 @@ async function copyProjectIssues(
   });
 
   const idByOldId = new Map<string, string>();
-  if (issues.length === 0) return { count: 0, links: 0, idByOldId };
+  const commentIdByOldId = new Map<string, string>();
+  if (issues.length === 0) {
+    return { count: 0, comments: 0, links: 0, idByOldId, commentIdByOldId };
+  }
 
-  const sequence = await prisma.project.update({
+  const sequence = await tx.project.update({
     where: { id: targetProjectId },
     data: { issueSequence: { increment: issues.length } },
     select: { issueSequence: true },
   });
   const firstNumber = sequence.issueSequence - issues.length + 1;
 
-  await prisma.issue.createMany({
+  await tx.issue.createMany({
     data: issues.map((issue, index) => ({
       key: `${targetProjectKey}-${firstNumber + index}`,
       number: firstNumber + index,
@@ -319,7 +405,7 @@ async function copyProjectIssues(
     })),
   });
 
-  const created = await prisma.issue.findMany({
+  const created = await tx.issue.findMany({
     where: { projectId: targetProjectId },
     orderBy: { number: "asc" },
     select: { id: true, number: true },
@@ -331,7 +417,7 @@ async function copyProjectIssues(
   });
 
   // Labels, matched by name — the clone has its own label rows.
-  const labels = await prisma.label.findMany({
+  const labels = await tx.label.findMany({
     where: { projectId: targetProjectId },
     select: { id: true, name: true },
   });
@@ -346,25 +432,35 @@ async function copyProjectIssues(
     });
   });
   if (issueLabels.length > 0) {
-    await prisma.issueLabel.createMany({
+    await tx.issueLabel.createMany({
       data: issueLabels,
       skipDuplicates: true,
     });
   }
 
+  const comments = await copyIssueComments(tx, idByOldId, commentIdByOldId);
+
   let links = 0;
   if (options.copyLinks) {
-    // Hierarchy, re-pointed at the cloned parent — never at the original's.
+    /* Hierarchy, re-pointed at the cloned parent — never at the original's.
+       Grouped by parent so a project with hundreds of children costs one
+       statement per parent rather than one per child. */
+    const childrenByParent = new Map<string, string[]>();
     for (const issue of issues) {
       const child = idByOldId.get(issue.id);
       const parent = issue.parentId ? idByOldId.get(issue.parentId) : undefined;
-      if (child && parent) {
-        await prisma.issue.update({
-          where: { id: child },
-          data: { parentId: parent },
-        });
-        links += 1;
-      }
+      if (!child || !parent) continue;
+      const siblings = childrenByParent.get(parent);
+      if (siblings) siblings.push(child);
+      else childrenByParent.set(parent, [child]);
+    }
+
+    for (const [parentId, children] of childrenByParent) {
+      const updated = await tx.issue.updateMany({
+        where: { id: { in: children } },
+        data: { parentId },
+      });
+      links += updated.count;
     }
 
     /*
@@ -373,7 +469,7 @@ async function copyProjectIssues(
      * counterpart here, and pointing the clone back at the original's issues
      * would tie the two projects together — the opposite of a clone.
      */
-    const sourceLinks = await prisma.issueLink.findMany({
+    const sourceLinks = await tx.issueLink.findMany({
       where: {
         source: { projectId: sourceProjectId },
         target: { projectId: sourceProjectId },
@@ -391,7 +487,7 @@ async function copyProjectIssues(
     });
 
     if (mapped.length > 0) {
-      const written = await prisma.issueLink.createMany({
+      const written = await tx.issueLink.createMany({
         data: mapped,
         skipDuplicates: true,
       });
@@ -399,7 +495,129 @@ async function copyProjectIssues(
     }
   }
 
-  return { count: issues.length, links, idByOldId };
+  return { count: issues.length, comments, links, idByOldId, commentIdByOldId };
+}
+
+/**
+ * The conversations on the copied issues, with their threads intact.
+ *
+ * Comments travel because a duplicated project is meant to be a working copy,
+ * and a working copy of an issue whose discussion has been deleted is not one.
+ * They are copied as *content*: the author is preserved, because who said a
+ * thing is part of what was said, while the ids and the timestamps are new.
+ *
+ * Timestamps are re-stamped one millisecond apart in the source's own
+ * chronological order. That serves two purposes: the thread still reads in the
+ * order it was written, and — because every copied comment therefore has a
+ * distinct `createdAt` — reading the rows back in that order maps each new id
+ * onto the comment it came from without needing the database to hand ids back
+ * from a bulk insert.
+ *
+ * Replies are re-pointed at the copied parent in a second pass, batched by
+ * parent. A reply whose parent somehow did not travel is promoted to the top
+ * level rather than left pointing into the original project, which is the one
+ * outcome that would tie the two conversations together.
+ */
+async function copyIssueComments(
+  tx: Tx,
+  idByOldId: Map<string, string>,
+  commentIdByOldId: Map<string, string>,
+): Promise<number> {
+  const sources = await tx.comment.findMany({
+    where: { issueId: { in: [...idByOldId.keys()] } },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: {
+      id: true,
+      issueId: true,
+      authorId: true,
+      body: true,
+      parentId: true,
+      editedAt: true,
+      reactions: { select: { userId: true, emoji: true } },
+    },
+  });
+  if (sources.length === 0) return 0;
+
+  /* A fixed base, so the whole clone's comments occupy one contiguous, unique
+     range of timestamps that nothing else in the table shares. */
+  const base = Date.now();
+  const stampFor = (index: number) => new Date(base + index);
+
+  const rows = sources.flatMap((comment, index) => {
+    const issueId = idByOldId.get(comment.issueId);
+    if (!issueId) return [];
+    return [
+      {
+        issueId,
+        authorId: comment.authorId,
+        body: comment.body,
+        // Parents are re-pointed below, once the new ids are known.
+        parentId: null,
+        editedAt: comment.editedAt,
+        createdAt: stampFor(index),
+      },
+    ];
+  });
+  if (rows.length === 0) return 0;
+
+  await tx.comment.createMany({ data: rows });
+
+  /* Read back through the timestamps just written. They are unique and
+     strictly increasing, so this order is exactly the order the rows were
+     built in — which is the order `sources` is in. */
+  const createdRows = await tx.comment.findMany({
+    where: {
+      issueId: { in: [...idByOldId.values()] },
+      createdAt: { gte: stampFor(0), lte: stampFor(sources.length) },
+    },
+    orderBy: { createdAt: "asc" },
+    select: { id: true },
+  });
+
+  const copyable = sources.filter((comment) => idByOldId.has(comment.issueId));
+  copyable.forEach((comment, index) => {
+    const created = createdRows[index];
+    if (created) commentIdByOldId.set(comment.id, created.id);
+  });
+
+  // Threads, re-pointed at the copied parent, batched by parent.
+  const repliesByParent = new Map<string, string[]>();
+  for (const comment of copyable) {
+    if (!comment.parentId) continue;
+    const child = commentIdByOldId.get(comment.id);
+    const parent = commentIdByOldId.get(comment.parentId);
+    if (!child || !parent) continue;
+    const siblings = repliesByParent.get(parent);
+    if (siblings) siblings.push(child);
+    else repliesByParent.set(parent, [child]);
+  }
+
+  for (const [parentId, children] of repliesByParent) {
+    await tx.comment.updateMany({
+      where: { id: { in: children } },
+      data: { parentId },
+    });
+  }
+
+  /* Reactions belong to the copied comment alone: same person, same emoji,
+     a new row. Reacting on the copy can never touch the original's count. */
+  const reactions = copyable.flatMap((comment) => {
+    const commentId = commentIdByOldId.get(comment.id);
+    if (!commentId) return [];
+    return comment.reactions.map((reaction) => ({
+      commentId,
+      userId: reaction.userId,
+      emoji: reaction.emoji,
+    }));
+  });
+  if (reactions.length > 0) {
+    await tx.commentReaction.createMany({
+      data: reactions,
+      skipDuplicates: true,
+    });
+  }
+
+  return commentIdByOldId.size;
 }
 
 /** The project's own files, copied onto the clone. */
@@ -449,22 +667,31 @@ async function copyProjectFiles(
 }
 
 /**
- * Each copied issue's own files.
+ * Each copied issue's own files, and the files on its copied comments.
  *
- * Comment attachments are deliberately left behind: comments are not cloned,
- * so a comment's file would arrive with nothing to belong to.
+ * A comment attachment carries both an `issueId` and a `commentId`, so one
+ * query finds every file on the copied issues and the `commentId` decides
+ * which of the two it belongs to. A file whose comment did not travel is
+ * skipped rather than re-attached to the issue, where it would appear as
+ * something nobody attached there.
+ *
+ * Every copy is a new storage object as well as a new row. Sharing the bytes
+ * would be safe while nothing deletes them, and that is exactly the assumption
+ * that breaks the first time somebody removes a file from the copy.
  */
 async function copyIssueFiles(
   idByOldId: Map<string, string>,
+  commentIdByOldId: Map<string, string>,
   uploadedById: string,
 ): Promise<number> {
   if (idByOldId.size === 0) return 0;
 
   const attachments = await prisma.attachment.findMany({
-    where: { issueId: { in: [...idByOldId.keys()] }, commentId: null },
+    where: { issueId: { in: [...idByOldId.keys()] } },
     orderBy: { createdAt: "asc" },
     select: {
       issueId: true,
+      commentId: true,
       filename: true,
       storageKey: true,
       mimeType: true,
@@ -482,6 +709,11 @@ async function copyIssueFiles(
     const issueId = source.issueId ? idByOldId.get(source.issueId) : undefined;
     if (!issueId) continue;
 
+    const commentId = source.commentId
+      ? commentIdByOldId.get(source.commentId)
+      : null;
+    if (source.commentId && !commentId) continue;
+
     try {
       if ((await provider.size(source.storageKey)) === null) continue;
       const extension = /\.[A-Za-z0-9]{1,8}$/.exec(source.filename)?.[0] ?? "";
@@ -491,6 +723,7 @@ async function copyIssueFiles(
       await prisma.attachment.create({
         data: {
           issueId,
+          commentId,
           uploadedById,
           filename: source.filename,
           storageKey: stored.key,
