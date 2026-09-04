@@ -429,259 +429,6 @@ export function CreateIssueDialog({
 
   const invalid = (field: string) => (errors[field] ? true : undefined);
 
-  /*
-   * The fields beyond the four an issue actually needs, and the three that
-   * used to live in the dialog's right-hand column.
-   *
-   * Declared once and rendered in whichever place the layout calls for:
-   * the simplified popup folds both groups into one disclosure, the full
-   * form keeps them where they have always been. Extracting them is what
-   * stops that choice duplicating a hundred lines of form — a field added
-   * later is added here, once, and appears in both.
-   */
-  const moreFields = (
-    <>
-              <FieldRow label="Priority" htmlFor="create-priority">
-                <select
-                  id="create-priority"
-                  className="prio-select"
-                  value={form.priority}
-                  onChange={(e) => set("priority", e.target.value as Priority)}
-                >
-                  {PRIORITIES.map((p) => (
-                    <option key={p} value={p}>
-                      {PRIORITY_LABEL[p]}
-                    </option>
-                  ))}
-                </select>
-              </FieldRow>
-
-              <FieldRow label="Assignee" htmlFor="create-assignee">
-                <select
-                  id="create-assignee"
-                  className="prio-select"
-                  value={form.assigneeId}
-                  onChange={(e) => set("assigneeId", e.target.value)}
-                  disabled={!projectId}
-                  aria-invalid={invalid("assigneeId")}
-                >
-                  <option value="">Unassigned</option>
-                  {members.map((member) => (
-                    <option key={member.id} value={member.id}>
-                      {member.name}
-                    </option>
-                  ))}
-                </select>
-                {/*
-                 * Offered only when the signed-in person is actually a member of
-                 * this project — the same list the select is built from. Someone
-                 * who could not be chosen from the dropdown cannot be assigned by
-                 * this shortcut either, and the server checks again regardless.
-                 */}
-                {viewerId && members.some((m) => m.id === viewerId) ? (
-                  <button
-                    type="button"
-                    className="prio-assignself"
-                    onClick={() => set("assigneeId", viewerId)}
-                    disabled={form.assigneeId === viewerId}
-                  >
-                    {form.assigneeId === viewerId ? "Assigned to you" : "Assign to me"}
-                  </button>
-                ) : null}
-                <FieldError errors={errors} field="assigneeId" />
-              </FieldRow>
-
-              {projectId ? (
-                <FieldRow label="Labels" labelledById="create-labels-label">
-                  {/*
-                   * Selected labels only.
-                   *
-                   * Every label the project owns used to be rendered as a chip
-                   * to toggle, which put a wall of vocabulary in front of a
-                   * form whose job is to file one issue. What is on an issue is
-                   * a short list; what a project could use is a search.
-                   */}
-                  {labelIds.length > 0 ? (
-                    <div
-                      className="prio-chipset"
-                      role="group"
-                      aria-labelledby="create-labels-label"
-                    >
-                      {labelIds.map((id) => {
-                        const label = labels.find((l) => l.id === id);
-                        if (!label) return null;
-                        return (
-                          <button
-                            key={label.id}
-                            type="button"
-                            className="prio-chipset__chip"
-                            data-selected
-                            aria-label={`Remove ${label.name}`}
-                            onClick={() =>
-                              setLabelIds((prev) =>
-                                prev.filter((x) => x !== label.id),
-                              )
-                            }
-                          >
-                            <span
-                              className="prio-label-chip__swatch"
-                              style={{ background: label.color }}
-                              aria-hidden
-                            />
-                            {label.name}
-                            <span aria-hidden>&times;</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ) : null}
-
-                  <LabelPicker
-                    labels={labels}
-                    selectedIds={labelIds}
-                    disabled={!projectId || addingLabel}
-                    busy={addingLabel}
-                    onSelect={(id) =>
-                      setLabelIds((prev) =>
-                        prev.includes(id) ? prev : [...prev, id],
-                      )
-                    }
-                    onCreate={addLabel}
-                  />
-                </FieldRow>
-              ) : null}
-
-              <FieldRow label="Due date" htmlFor="create-due">
-                <input
-                  id="create-due"
-                  type="date"
-                  className="prio-input"
-                  value={form.dueDate}
-                  onChange={(e) => set("dueDate", e.target.value)}
-                />
-              </FieldRow>
-
-              {/*
-               * Files span the full width of the column rather than sitting in a
-               * label/control row: the field brings its own label, its own drop
-               * zone and its own thumbnail grid, and squeezing that into the
-               * narrow control cell would cost the drop target most of its area.
-               * The component itself is untouched — this is only where it sits.
-               */}
-              <ScreenshotAttachmentField
-                label="Attachments"
-                value={screenshots}
-                onChange={setScreenshots}
-              />
-    </>
-  );
-
-  const sideFields = (
-    <>
-      <div className="prio-field">
-        <label className="prio-label" htmlFor="create-status">
-          Status
-        </label>
-        <select
-          id="create-status"
-          className="prio-select"
-          value={form.status}
-          onChange={(e) => set("status", e.target.value as IssueStatus)}
-        >
-          {ISSUE_STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {STATUS_LABEL[s]}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {/*
-       * Severity, for every type.
-       *
-       * It used to appear only when the type picker said "Bug", which
-       * made the form a different shape for a bug than for a task. It is
-       * a standard field now, defaulting to "Not set" for everything
-       * except a bug — so an issue created without touching it still
-       * stores `null`, exactly as a non-bug always did.
-       */}
-      <div className="prio-field">
-        <label className="prio-label" htmlFor="create-severity">
-          Severity
-        </label>
-        <select
-          id="create-severity"
-          className="prio-select"
-          value={form.severity}
-          onChange={(e) =>
-            set("severity", e.target.value as Severity | "")
-          }
-        >
-          <option value="">Not set</option>
-          {SEVERITIES.map((s) => (
-            <option key={s} value={s}>
-              {SEVERITY_LABEL[s]}
-            </option>
-          ))}
-        </select>
-        <span className="prio-hint">
-          {form.severity
-            ? SEVERITY_DESCRIPTION[form.severity]
-            : "Impact if this goes wrong. Priority is how soon it is worked on — the two are independent."}
-        </span>
-      </div>
-
-      <div className="prio-field">
-        <label className="prio-label" htmlFor="create-parent">
-          Parent issue
-        </label>
-        {/*
-         * A search box with a datalist rather than a plain select: the
-         * server returns at most twenty candidates, so the browser never
-         * holds a project's whole issue list, and typing narrows against
-         * the database instead of against whatever happened to arrive.
-         * `list` keeps it a native control — no bespoke popup to trap
-         * focus or fight a screen reader.
-         */}
-        <input
-          id="create-parent"
-          className="prio-input"
-          list="create-parent-options"
-          value={parentQuery}
-          placeholder="Search by key or title"
-          disabled={!projectId}
-          aria-invalid={invalid("parentId")}
-          onChange={(event) => {
-            const text = event.target.value;
-            setParentQuery(text);
-            /* The datalist gives back the option's value, so an exact
-               hit selects; anything else clears, which is what makes
-               half-typed text mean "no parent" rather than the last
-               thing that matched. */
-            const hit = parents.find(
-              (parent) => `${parent.key} — ${parent.title}` === text,
-            );
-            set("parentId", hit ? hit.id : "");
-          }}
-        />
-        <datalist id="create-parent-options">
-          {parents.map((parent) => (
-            <option
-              key={parent.id}
-              value={`${parent.key} — ${parent.title}`}
-            />
-          ))}
-        </datalist>
-        <FieldError errors={errors} field="parentId" />
-        <span className="prio-hint">
-          {form.parentId
-            ? "This issue will be filed under the selected parent."
-            : "Optional. Search an existing issue by key or title to file this one under it."}
-        </span>
-      </div>
-    </>
-  );
-
   return (
     <Dialog
       open={open}
@@ -853,12 +600,243 @@ export function CreateIssueDialog({
               <FieldError errors={errors} field="description" />
             </FieldRow>
 
-            {moreFields}
+            <FieldRow label="Priority" htmlFor="create-priority">
+              <select
+                id="create-priority"
+                className="prio-select"
+                value={form.priority}
+                onChange={(e) => set("priority", e.target.value as Priority)}
+              >
+                {PRIORITIES.map((p) => (
+                  <option key={p} value={p}>
+                    {PRIORITY_LABEL[p]}
+                  </option>
+                ))}
+              </select>
+            </FieldRow>
+
+            <FieldRow label="Assignee" htmlFor="create-assignee">
+              <select
+                id="create-assignee"
+                className="prio-select"
+                value={form.assigneeId}
+                onChange={(e) => set("assigneeId", e.target.value)}
+                disabled={!projectId}
+                aria-invalid={invalid("assigneeId")}
+              >
+                <option value="">Unassigned</option>
+                {members.map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.name}
+                  </option>
+                ))}
+              </select>
+              {/*
+               * Offered only when the signed-in person is actually a member of
+               * this project — the same list the select is built from. Someone
+               * who could not be chosen from the dropdown cannot be assigned by
+               * this shortcut either, and the server checks again regardless.
+               */}
+              {viewerId && members.some((m) => m.id === viewerId) ? (
+                <button
+                  type="button"
+                  className="prio-assignself"
+                  onClick={() => set("assigneeId", viewerId)}
+                  disabled={form.assigneeId === viewerId}
+                >
+                  {form.assigneeId === viewerId ? "Assigned to you" : "Assign to me"}
+                </button>
+              ) : null}
+              <FieldError errors={errors} field="assigneeId" />
+            </FieldRow>
+
+            {projectId ? (
+              <FieldRow label="Labels" labelledById="create-labels-label">
+                {/*
+                 * Selected labels only.
+                 *
+                 * Every label the project owns used to be rendered as a chip
+                 * to toggle, which put a wall of vocabulary in front of a
+                 * form whose job is to file one issue. What is on an issue is
+                 * a short list; what a project could use is a search.
+                 */}
+                {labelIds.length > 0 ? (
+                  <div
+                    className="prio-chipset"
+                    role="group"
+                    aria-labelledby="create-labels-label"
+                  >
+                    {labelIds.map((id) => {
+                      const label = labels.find((l) => l.id === id);
+                      if (!label) return null;
+                      return (
+                        <button
+                          key={label.id}
+                          type="button"
+                          className="prio-chipset__chip"
+                          data-selected
+                          aria-label={`Remove ${label.name}`}
+                          onClick={() =>
+                            setLabelIds((prev) =>
+                              prev.filter((x) => x !== label.id),
+                            )
+                          }
+                        >
+                          <span
+                            className="prio-label-chip__swatch"
+                            style={{ background: label.color }}
+                            aria-hidden
+                          />
+                          {label.name}
+                          <span aria-hidden>&times;</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+
+                <LabelPicker
+                  labels={labels}
+                  selectedIds={labelIds}
+                  disabled={!projectId || addingLabel}
+                  busy={addingLabel}
+                  onSelect={(id) =>
+                    setLabelIds((prev) =>
+                      prev.includes(id) ? prev : [...prev, id],
+                    )
+                  }
+                  onCreate={addLabel}
+                />
+              </FieldRow>
+            ) : null}
+
+            <FieldRow label="Due date" htmlFor="create-due">
+              <input
+                id="create-due"
+                type="date"
+                className="prio-input"
+                value={form.dueDate}
+                onChange={(e) => set("dueDate", e.target.value)}
+              />
+            </FieldRow>
+
+            {/*
+             * Files span the full width of the column rather than sitting in a
+             * label/control row: the field brings its own label, its own drop
+             * zone and its own thumbnail grid, and squeezing that into the
+             * narrow control cell would cost the drop target most of its area.
+             * The component itself is untouched — this is only where it sits.
+             */}
+            <ScreenshotAttachmentField
+              label="Attachments"
+              value={screenshots}
+              onChange={setScreenshots}
+            />
           </div>
 
           {/* ----------------------------------------------------- sidebar */}
           <aside className="prio-createissue__side" aria-label="Issue details">
-            {sideFields}
+            <div className="prio-field">
+              <label className="prio-label" htmlFor="create-status">
+                Status
+              </label>
+              <select
+                id="create-status"
+                className="prio-select"
+                value={form.status}
+                onChange={(e) => set("status", e.target.value as IssueStatus)}
+              >
+                {ISSUE_STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {STATUS_LABEL[s]}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/*
+             * Severity, for every type.
+             *
+             * It used to appear only when the type picker said "Bug", which
+             * made the form a different shape for a bug than for a task. It is
+             * a standard field now, defaulting to "Not set" for everything
+             * except a bug — so an issue created without touching it still
+             * stores `null`, exactly as a non-bug always did.
+             */}
+            <div className="prio-field">
+              <label className="prio-label" htmlFor="create-severity">
+                Severity
+              </label>
+              <select
+                id="create-severity"
+                className="prio-select"
+                value={form.severity}
+                onChange={(e) =>
+                  set("severity", e.target.value as Severity | "")
+                }
+              >
+                <option value="">Not set</option>
+                {SEVERITIES.map((s) => (
+                  <option key={s} value={s}>
+                    {SEVERITY_LABEL[s]}
+                  </option>
+                ))}
+              </select>
+              <span className="prio-hint">
+                {form.severity
+                  ? SEVERITY_DESCRIPTION[form.severity]
+                  : "Impact if this goes wrong. Priority is how soon it is worked on — the two are independent."}
+              </span>
+            </div>
+
+            <div className="prio-field">
+              <label className="prio-label" htmlFor="create-parent">
+                Parent issue
+              </label>
+              {/*
+               * A search box with a datalist rather than a plain select: the
+               * server returns at most twenty candidates, so the browser never
+               * holds a project's whole issue list, and typing narrows against
+               * the database instead of against whatever happened to arrive.
+               * `list` keeps it a native control — no bespoke popup to trap
+               * focus or fight a screen reader.
+               */}
+              <input
+                id="create-parent"
+                className="prio-input"
+                list="create-parent-options"
+                value={parentQuery}
+                placeholder="Search by key or title"
+                disabled={!projectId}
+                aria-invalid={invalid("parentId")}
+                onChange={(event) => {
+                  const text = event.target.value;
+                  setParentQuery(text);
+                  /* The datalist gives back the option's value, so an exact
+                     hit selects; anything else clears, which is what makes
+                     half-typed text mean "no parent" rather than the last
+                     thing that matched. */
+                  const hit = parents.find(
+                    (parent) => `${parent.key} — ${parent.title}` === text,
+                  );
+                  set("parentId", hit ? hit.id : "");
+                }}
+              />
+              <datalist id="create-parent-options">
+                {parents.map((parent) => (
+                  <option
+                    key={parent.id}
+                    value={`${parent.key} — ${parent.title}`}
+                  />
+                ))}
+              </datalist>
+              <FieldError errors={errors} field="parentId" />
+              <span className="prio-hint">
+                {form.parentId
+                  ? "This issue will be filed under the selected parent."
+                  : "Optional. Search an existing issue by key or title to file this one under it."}
+              </span>
+            </div>
           </aside>
         </div>
       </form>
