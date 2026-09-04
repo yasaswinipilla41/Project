@@ -226,8 +226,9 @@ test.describe("Sidebar project rows", () => {
   }) => {
     const { pinned, recent } = await withBothSections(page);
 
-    /* Recents: name -> Pin -> Favorite -> "...". Read as x positions, which is
-       what the requirement is actually about. */
+    /* Recents: name -> Pin -> Favorite. Read as x positions, which is what
+       the requirement is actually about. The row's "..." menu was removed,
+       so Favorite is the last control on the row. */
     await recent.hover();
     const recentPin = await recent
       .getByRole("button", { name: /^Pin / })
@@ -235,44 +236,79 @@ test.describe("Sidebar project rows", () => {
     const recentFav = await recent
       .locator(".prio-sidebar__project-fav")
       .boundingBox();
-    const recentMore = await recent
-      .getByRole("button", { name: /^More actions/ })
-      .boundingBox();
 
     expect(recentPin!.x).toBeLessThan(recentFav!.x);
-    expect(recentFav!.x).toBeLessThan(recentMore!.x);
 
-    // Pinned: name -> Favorite -> "...".
+    // Pinned: name -> Favorite, with the Pin's space still held open.
     await pinned.hover();
     const pinnedFav = await pinned
       .locator(".prio-sidebar__project-fav")
       .boundingBox();
-    const pinnedMore = await pinned
-      .getByRole("button", { name: /^More actions/ })
-      .boundingBox();
-    expect(pinnedFav!.x).toBeLessThan(pinnedMore!.x);
 
-    /* And the two sections line up: Favorite and "..." sit at the same x in
-       Pinned as in Recents, so neither shifts as the eye crosses a section. */
+    /* And the two sections line up: Favorite sits at the same x in Pinned as
+       in Recents, so it does not shift as the eye crosses a section. */
     expect(Math.abs(pinnedFav!.x - recentFav!.x)).toBeLessThanOrEqual(1);
-    expect(Math.abs(pinnedMore!.x - recentMore!.x)).toBeLessThanOrEqual(1);
   });
 
-  test("the three-dots menu offers Favorite, Pin and Share", async ({ page }) => {
+  /*
+   * The row's "..." menu is gone, from the markup and not merely from view.
+   *
+   * It used to sit at the end of every project row, invisible until hover,
+   * holding Favorite, Pin and Share. Favorite and Pin are buttons on the row
+   * itself and do the same job in one click; the menu is not hidden, it is
+   * not rendered, which is what this asserts — a `toBeHidden` would pass just
+   * as well against `opacity: 0`.
+   */
+  test("no project row renders a three-dots menu at all", async ({ page }) => {
     await page.goto("/");
-    const row = page.locator(".prio-sidebar__project-row").first();
+    const rows = page.locator(".prio-sidebar__project-row");
+    await expect(rows.first()).toBeVisible();
+
+    expect(await rows.count()).toBeGreaterThan(0);
+
+    // Nowhere in the sidebar, hovered or not.
+    await expect(
+      page.locator(".prio-sidebar").getByRole("button", { name: /More actions/ }),
+    ).toHaveCount(0);
+
+    for (let i = 0; i < (await rows.count()); i += 1) {
+      const row = rows.nth(i);
+      await row.hover();
+      await expect(
+        row.getByRole("button", { name: /More actions/ }),
+        "a hovered row must not reveal a menu either",
+      ).toHaveCount(0);
+      // The controls that remain, and nothing else.
+      await expect(row.locator(".prio-sidebar__project-fav")).toHaveCount(1);
+      expect(await row.getByRole("button").count()).toBeLessThanOrEqual(2);
+    }
+  });
+
+  test("Pin and Favorite still work from the row itself", async ({ page }) => {
+    await page.goto("/");
+    const recent = recentsSection(page).locator(".prio-sidebar__project-row");
+    test.skip((await recent.count()) === 0, "needs a project in Recents");
+
+    const row = recent.first();
+    const name = await row.locator(".prio-navitem__label").innerText();
+
+    // Favourite it from the row, and read the state back from the database.
     await row.hover();
-    await row.getByRole("button", { name: /^More actions/ }).click();
+    await row.locator(".prio-sidebar__project-fav").click();
+    await expect
+      .poll(async () =>
+        prisma.projectFavorite.count({ where: { project: { name } } }),
+      )
+      .toBeGreaterThan(0);
 
-    const menu = page.getByRole("menu").first();
-    await menu.waitFor();
-    const items = (await menu.locator('[role="menuitem"]').allInnerTexts()).map(
-      (t) => t.replace(/\s+/g, " ").trim(),
-    );
-
-    expect(items.some((t) => /favorites$/i.test(t))).toBe(true);
-    expect(items.some((t) => /^(Pin|Unpin)$/i.test(t))).toBe(true);
-    expect(items).toContain("Share");
+    // And unfavourite it again, leaving the fixture as it was found.
+    await row.hover();
+    await row.locator(".prio-sidebar__project-fav").click();
+    await expect
+      .poll(async () =>
+        prisma.projectFavorite.count({ where: { project: { name } } }),
+      )
+      .toBe(0);
   });
 
   test("a project favorited from the Flow Board is starred in the sidebar", async ({

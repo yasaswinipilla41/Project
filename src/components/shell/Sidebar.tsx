@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { PrioLogo } from "@/components/brand/PrioLogo";
-import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/Menu";
 import { useToast } from "@/components/ui/Toast";
 import {
   IconAdmin,
@@ -13,10 +12,8 @@ import {
   IconChevronDown,
   IconChevronLeft,
   IconChevronRight,
-  IconExternal,
   IconHome,
   IconIssues,
-  IconMore,
   IconMyWork,
   IconPin,
   IconProjects,
@@ -101,16 +98,6 @@ export function Sidebar({
       return;
     }
     router.refresh();
-  }
-
-  async function handleShare(project: SidebarProject) {
-    const url = `${window.location.origin}/projects/${project.key.toLowerCase()}/board`;
-    try {
-      await navigator.clipboard.writeText(url);
-      toast("Board link copied to clipboard");
-    } catch {
-      toast("Couldn't copy the link — copy it from the address bar instead.", "error");
-    }
   }
 
   const entries: NavEntry[] = [
@@ -210,15 +197,22 @@ export function Sidebar({
 
         {!collapsed ? (
           /*
-           * Name -> Pin -> Favourite -> "...", in that order.
+           * Name -> Pin -> Favourite.
+           *
+           * There is no "..." menu here any more. It held Favorite, Pin and
+           * Share; the first two are the buttons beside this comment, which
+           * do the same job in one click instead of two, and Share was the
+           * only thing it carried that has no button of its own -- a board
+           * link is still copyable from the address bar, or from the board's
+           * own actions menu.
            *
            * A pinned project has no Pin control -- the section it is in
-           * already says it is pinned, and unpinning is in the "..." menu --
-           * but it keeps the *space* the control would occupy. That empty
-           * slot is the whole reason Favourite and "..." land on the same two
-           * x-positions in Pinned as they do in Recents: without it the two
-           * sections' icons sit a control apart and the eye has to re-find
-           * them on every section boundary.
+           * already says it is pinned, and it is unpinned from the Flow
+           * Board's own actions -- but it keeps the *space* the control would
+           * occupy. That empty slot is what puts Favourite on the same x in
+           * Pinned as in Recents: without it the two sections' stars sit a
+           * control apart and the eye has to re-find them at every section
+           * boundary.
            */
           <div className="prio-sidebar__project-actions">
             {project.isPinned ? (
@@ -260,39 +254,6 @@ export function Sidebar({
               <IconStar size={13} fill={project.isFavorite ? "currentColor" : "none"} />
             </button>
 
-            <Menu
-              align="end"
-              width={200}
-              label={`More actions for ${project.name}`}
-              trigger={(props) => (
-                <button
-                  type="button"
-                  className="prio-sidebar__project-menu-trigger"
-                  aria-label={`More actions for ${project.name}`}
-                  {...props}
-                >
-                  <IconMore size={14} />
-                </button>
-              )}
-            >
-              <MenuLabel>{project.name}</MenuLabel>
-              <MenuSeparator />
-              <MenuItem
-                icon={<IconStar fill={project.isFavorite ? "currentColor" : "none"} />}
-                onSelect={() => handleFavorite(project)}
-              >
-                {project.isFavorite ? "Remove from Favorites" : "Add to Favorites"}
-              </MenuItem>
-              <MenuItem
-                icon={<IconPin fill={project.isPinned ? "currentColor" : "none"} />}
-                onSelect={() => handlePin(project)}
-              >
-                {project.isPinned ? "Unpin" : "Pin"}
-              </MenuItem>
-              <MenuItem icon={<IconExternal />} onSelect={() => handleShare(project)}>
-                Share
-              </MenuItem>
-            </Menu>
           </div>
         ) : null}
       </div>
