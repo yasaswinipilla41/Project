@@ -3,9 +3,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Card, CardBody, EmptyState } from "@/components/ui/primitives";
 import { IconEmptyBox } from "@/components/ui/Icon";
-import { IssueKey, IssueTypeIcon, StatusPill } from "@/components/ui/Indicators";
+import {
+  ProjectCalendarGrid,
+  type CalendarIssue,
+} from "@/components/projects/ProjectCalendarGrid";
 import { projectScope } from "@/lib/authz";
-import { isClosedStatus } from "@/lib/domain";
 import { prisma } from "@/lib/prisma";
 import { recordProjectVisit } from "@/lib/recents";
 import { requireUser, type CurrentUser } from "@/lib/session";
@@ -23,12 +25,32 @@ export const dynamic = "force-dynamic";
  * Scoped to the project in the URL and to what the viewer may see, like every
  * other project view. Navigating months is a plain link, so a particular month
  * is a URL you can share.
+ *
+ * **A day is a date, not an instant.** Everything below works in UTC —
+ * the month's bounds, the day an issue is bucketed into, the leading blank
+ * cells and which cell is today. A due date arrives from an
+ * `<input type="date">` as `YYYY-MM-DD`, which `new Date()` reads as UTC
+ * midnight, so reading it back with `getUTCDate()` returns the day that was
+ * typed on any server, in any timezone. Mixing the two — storing UTC midnight
+ * and bucketing by the server's local date — is what puts an issue on the day
+ * before or after, and it is the one bug this view cannot afford.
  */
 
 async function loadProject(rawKey: string, user: CurrentUser) {
   return prisma.project.findFirst({
     where: { key: rawKey.toUpperCase(), ...projectScope(user) },
-    select: { id: true, key: true, name: true },
+    select: {
+      id: true,
+      key: true,
+      name: true,
+      /* Who the composer may assign work to. The same rule `createIssue`
+         enforces server-side — an assignee must be a member of the project —
+         so the control cannot offer somebody the write would refuse. */
+      members: {
+        orderBy: { user: { name: "asc" } },
+        select: { user: { select: { id: true, name: true } } },
+      },
+    },
   });
 }
 
@@ -77,8 +99,8 @@ export default async function ProjectCalendarPage({
   recordProjectVisit(user.id, project.id);
 
   const { year, month } = resolveMonth(query.month);
-  const start = new Date(year, month, 1);
-  const end = new Date(year, month + 1, 1);
+  const start = new Date(Date.UTC(year, month, 1));
+  const end = new Date(Date.UTC(year, month + 1, 1));
 
   const issues = await prisma.issue.findMany({
     where: {
@@ -96,26 +118,34 @@ export default async function ProjectCalendarPage({
     },
   });
 
-  /* Bucketed by day-of-month once, rather than filtering the list inside every
-     one of the ~35 cells below. */
-  const byDay = new Map<number, typeof issues>();
-  for (const issue of issues) {
-    if (!issue.dueDate) continue;
-    const day = issue.dueDate.getDate();
-    const bucket = byDay.get(day);
-    if (bucket) bucket.push(issue);
-    else byDay.set(day, [issue]);
-  }
+  /* Each issue's day, resolved once here in UTC and handed to the grid
+     already decided — so the client never re-derives a date and the two can
+     never disagree about which cell an issue belongs in. */
+  const calendarIssues: CalendarIssue[] = issues.flatMap((issue) =>
+    issue.dueDate
+      ? [
+          {
+            id: issue.id,
+            key: issue.key,
+            title: issue.title,
+            type: issue.type,
+            status: issue.status,
+            day: issue.dueDate.getUTCDate(),
+          },
+        ]
+      : [],
+  );
 
   const monthLabel = new Intl.DateTimeFormat("en-GB", {
     month: "long",
     year: "numeric",
+    timeZone: "UTC",
   }).format(start);
 
-  /* Monday-first, matching the rest of Prio's date formatting. `getDay()` is
-     Sunday-first, so Sunday becomes the 7th column rather than the 1st. */
-  const leading = (start.getDay() + 6) % 7;
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  /* Monday-first, matching the rest of Prio's date formatting. `getUTCDay()`
+     is Sunday-first, so Sunday becomes the 7th column rather than the 1st. */
+  const leading = (start.getUTCDay() + 6) % 7;
+  const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
   const cells: (number | null)[] = [
     ...Array.from({ length: leading }, () => null),
     ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
@@ -124,7 +154,8 @@ export default async function ProjectCalendarPage({
 
   const today = new Date();
   const isCurrentMonth =
-    today.getFullYear() === year && today.getMonth() === month;
+    today.getUTCFullYear() === year && today.getUTCMonth() === month;
+  const todayDay = isCurrentMonth ? today.getUTCDate() : null;
 
   const base = `/projects/${project.key.toLowerCase()}/calendar`;
   const prev = new Date(year, month - 1, 1);
@@ -159,45 +190,16 @@ export default async function ProjectCalendarPage({
             />
           ) : null}
 
-          <div className="prio-calendar" role="grid" aria-label={monthLabel}>
-            {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => (
-              <div key={day} className="prio-calendar__weekday" role="columnheader">
-                {day}
-              </div>
-            ))}
-
-            {cells.map((day, index) => (
-              <div
-                key={day ?? `pad-${index}`}
-                className="prio-calendar__cell"
-                data-empty={day === null || undefined}
-                data-today={
-                  (isCurrentMonth && day === today.getDate()) || undefined
-                }
-                role="gridcell"
-              >
-                {day === null ? null : (
-                  <>
-                    <span className="prio-calendar__day">{day}</span>
-                    {(byDay.get(day) ?? []).map((issue) => (
-                      <Link
-                        key={issue.id}
-                        href={`/issues/${issue.key.toLowerCase()}`}
-                        className="prio-calendar__issue"
-                        data-done={isClosedStatus(issue.status) || undefined}
-                        title={`${issue.key} — ${issue.title}`}
-                      >
-                        <IssueTypeIcon type={issue.type} size={12} />
-                        <IssueKey issueKey={issue.key} />
-                        <span className="prio-truncate">{issue.title}</span>
-                        <StatusPill status={issue.status} />
-                      </Link>
-                    ))}
-                  </>
-                )}
-              </div>
-            ))}
-          </div>
+          <ProjectCalendarGrid
+            projectId={project.id}
+            monthLabel={monthLabel}
+            year={year}
+            month={month}
+            cells={cells}
+            issues={calendarIssues}
+            members={project.members.map(({ user: member }) => member)}
+            todayDay={todayDay}
+          />
         </CardBody>
       </Card>
     </>

@@ -2324,6 +2324,131 @@ a.prio-stat:focus-visible {
   opacity: 0.6;
 }
 
+/*
+ * Creating work on the day it is due.
+ *
+ * The cell is the anchor, so it has to establish a containing block for the
+ * composer; the add button then takes whatever height the day's issues left
+ * over, which is what makes "click the empty part of a day" a real target
+ * without stealing clicks from the issue links above it.
+ */
+.prio-calendar__cell {
+  position: relative;
+}
+
+.prio-calendar__add {
+  display: grid;
+  place-items: center;
+  flex: 1;
+  min-height: 20px;
+  width: 100%;
+  padding: 0;
+  border: 1px dashed transparent;
+  border-radius: var(--prio-radius-sm);
+  background: none;
+  color: var(--prio-text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity var(--prio-duration-fast) var(--prio-ease),
+    border-color var(--prio-duration-fast) var(--prio-ease),
+    background var(--prio-duration-fast) var(--prio-ease);
+}
+
+/* Invisible until the day is hovered or the control has focus, so a month at
+   rest reads as a calendar rather than as a grid of buttons. */
+.prio-calendar__cell:hover .prio-calendar__add,
+.prio-calendar__add:focus-visible,
+.prio-calendar__add[aria-expanded="true"] {
+  opacity: 1;
+  border-color: var(--prio-border);
+}
+
+.prio-calendar__add:hover {
+  background: var(--prio-bg-subtle);
+  color: var(--prio-text-primary);
+}
+
+/* The open day sits above its neighbours so the composer is not clipped by
+   the cell after it. */
+.prio-calendar__cell[data-composing] {
+  z-index: 2;
+}
+
+.prio-calendar__composer {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: var(--prio-z-dropdown);
+  width: 264px;
+  max-width: calc(100vw - var(--prio-space-6));
+  padding: var(--prio-space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-2);
+  background: var(--prio-bg-surface-raised);
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-md);
+  box-shadow: var(--prio-shadow-lg);
+  text-align: left;
+}
+
+/* The last two columns open leftwards, so the panel cannot run off the grid. */
+.prio-calendar__composer[data-align="end"] {
+  left: auto;
+  right: 0;
+}
+
+.prio-calendar__composer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--prio-space-2);
+}
+
+.prio-calendar__composer-date {
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-semibold);
+  letter-spacing: var(--prio-tracking-caps);
+  text-transform: uppercase;
+  color: var(--prio-text-muted);
+}
+
+.prio-calendar__composer-close {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: var(--prio-radius-sm);
+  background: none;
+  color: var(--prio-text-muted);
+  cursor: pointer;
+}
+
+.prio-calendar__composer-close:hover {
+  background: var(--prio-bg-subtle);
+  color: var(--prio-text-primary);
+}
+
+.prio-calendar__composer form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-2);
+}
+
+.prio-calendar__composer-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--prio-space-2);
+}
+
+.prio-calendar__composer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--prio-space-2);
+}
+
 /* ---------------------------------------------------- project access reqs */
 
 .prio-accessreq {
