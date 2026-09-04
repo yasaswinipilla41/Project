@@ -140,10 +140,8 @@
 /* Insights, shown in place of the columns. Bounded the same way so opening it
    does not hand the page a scrollbar the board never had. */
 .prio-board__insights {
-  height: calc(100dvh - var(--prio-board-top, 300px) - var(--prio-space-6));
-  min-height: 260px;
-  overflow-y: auto;
-  padding-right: var(--prio-space-2);
+    min-height: 260px;
+    padding-right: var(--prio-space-2);
 }
 
 .prio-board__column {
@@ -380,6 +378,52 @@
   min-width: 0;
   color: var(--prio-text-secondary);
 }
+
+/* The card's status, and the control that changes it.
+   "Reject / Not an Issue" is the longest label in the set and still fits a
+   card's footer beside the key and an avatar with room to spare — measured,
+   not assumed. `min-width: 0` and the `overflow` below are the safety net for
+   a narrower column, where the pill gives way rather than pushing the avatar
+   off the end. */
+.prio-board__card-status {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.prio-board__card-statustrigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--prio-space-1);
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  border-radius: var(--prio-radius-sm);
+  color: var(--prio-text-muted);
+  cursor: pointer;
+}
+
+.prio-board__card-statustrigger .prio-status {
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* The chevron is the only part that says "this opens" — kept quiet until the
+   card is hovered or the control has focus, so a board at rest reads as
+   status labels rather than as a grid of dropdowns. */
+.prio-board__card-statustrigger > svg {
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-board__card:hover .prio-board__card-statustrigger > svg,
+.prio-board__card-statustrigger:focus-visible > svg,
+.prio-board__card-statustrigger[aria-expanded="true"] > svg {
+  opacity: 1;
+}
+
 
 @media (max-width: 1366px) {
   .prio-board__column-body {

@@ -1,5 +1,5 @@
 import type { IssueStatus } from "@prisma/client";
-import { ISSUE_STATUSES } from "@/lib/domain";
+import { canTransition, ISSUE_STATUSES } from "@/lib/domain";
 
 /**
  * The Flow Board's columns, in board order.
@@ -12,8 +12,9 @@ import { ISSUE_STATUSES } from "@/lib/domain";
  * Reopened and Rejected are deliberately absent. They are statuses an issue
  * can hold, and they appear in every status menu, but they are not places on
  * the board: reopened work belongs with the rest of the work waiting to be
- * picked up, and a rejected issue is finished with. `boardColumnFor` below is
- * what puts them there.
+ * picked up, and a rejected issue is finished with. `COLUMN_ALSO_HOLDS` below
+ * is what puts them in New and Done respectively -- a status is not a column,
+ * and adding one of these to this list would make it one.
  *
  * The column is a column and nothing more. What may leave it, and where for,
  * comes from `STATUS_TRANSITIONS` in `lib/domain` exactly as it does for every
@@ -38,22 +39,78 @@ export const BOARD_STATUSES: IssueStatus[] = [
 ];
 
 /**
+ * The statuses a column holds besides the one it is named for.
+ *
+ * This is the single table behind everything a shared column has to do:
+ * grouping a card into it, deciding what a drop onto it means, and listing what
+ * the column can hold. Two columns carry a second status:
+ *
+ *   New  also holds Reopen                  work that has come back is work to
+ *                                           be picked up again
+ *   Done also holds Reject / Not an Issue   it is closed; why is on the issue,
+ *                                           not on the board
+ *
+ * Order matters: a drop prefers the column's own status and falls back to what
+ * follows, so nothing about the existing columns changes for the statuses that
+ * were already theirs.
+ */
+export const COLUMN_ALSO_HOLDS: Partial<Record<IssueStatus, readonly IssueStatus[]>> = {
+  TODO: ["REOPENED"],
+  DONE: ["REJECTED"],
+};
+
+/** Every status drawn in this column, its own first. */
+export function statusesInColumn(column: IssueStatus): IssueStatus[] {
+  return [column, ...(COLUMN_ALSO_HOLDS[column] ?? [])];
+}
+
+/**
  * Which column an issue of this status is drawn in.
  *
  * Every status the project has maps onto one of the columns above, so nothing
- * an issue can be is invisible on the board. Two of them are not columns of
- * their own:
- *
- *   Reopened -> New   work that has come back is work to be picked up again
- *   Rejected -> Done  it is closed; the reason is on the issue, not the board
+ * an issue can be is invisible on the board. Derived from `COLUMN_ALSO_HOLDS`
+ * rather than restating it, so a status cannot be grouped into one column and
+ * dropped into another.
  *
  * One function, used by the page that queries and by the board that groups, so
  * the two cannot disagree about where an issue belongs.
  */
 export function boardColumnFor(status: IssueStatus): IssueStatus {
-  if (status === "REOPENED") return "TODO";
-  if (status === "REJECTED") return "DONE";
+  for (const [column, also] of Object.entries(COLUMN_ALSO_HOLDS)) {
+    if (also?.includes(status)) return column as IssueStatus;
+  }
   return status;
+}
+
+/**
+ * What dropping an issue onto a column means, or `null` if it may not land.
+ *
+ * A column named for a status can still hold another, so "where does this card
+ * go" is not always the column's own name. The rule is: **the column's own
+ * status when the workflow allows it, and only otherwise the status it also
+ * holds.** That ordering is what keeps every drop that already worked working
+ * exactly as it did -- Backlog to New is still New, Ready for QA to Done is
+ * still Done -- while giving the drops that were simply refused a meaning:
+ *
+ *   Done -> New     Done cannot become New, but it can be Reopened, and Reopen
+ *                   is drawn in New. Dragging finished work back onto the board
+ *                   is how it is reopened.
+ *   Todo -> Done    unstarted work cannot be Done -- nothing was reviewed --
+ *                   but it can be Rejected, which is what dragging it to the
+ *                   end of the board actually means: it was not work.
+ *
+ * The workflow itself is untouched: every candidate is still checked against
+ * `canTransition`, so this can only ever choose between moves the rules
+ * already permit.
+ */
+export function dropStatusFor(
+  from: IssueStatus,
+  column: IssueStatus,
+): IssueStatus | null {
+  for (const candidate of statusesInColumn(column)) {
+    if (canTransition(from, candidate)) return candidate;
+  }
+  return null;
 }
 
 /**

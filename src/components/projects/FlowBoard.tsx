@@ -32,9 +32,9 @@ import {
   IconSearch,
 } from "@/components/ui/Icon";
 import { IssueRowActions } from "@/components/issues/IssueRowActions";
-import { BOARD_STATUSES, boardColumnFor } from "@/lib/board";
+import { BOARD_STATUSES, boardColumnFor, dropStatusFor } from "@/lib/board";
 import {
-  canTransition,
+  ISSUE_STATUSES,
   PRIORITIES,
   PRIORITY_LABEL,
   STATUS_LABEL,
@@ -349,9 +349,16 @@ export function FlowBoard({
     /* Filtered by column, not by raw status: the Status menu offers the
        board's columns, so picking New must keep the reopened issues drawn in
        New rather than hiding them. */
+    /* Filtered by column *or* by the issue's own status. A column's name still
+       selects everything drawn in it -- picking New keeps the reopened issues
+       drawn in New, which is what it always did -- and Reopen and Reject can
+       now be asked for on their own, which a column-only match could never
+       express because neither is a column. */
     if (
       statusFilter.length &&
-      !statusFilter.includes(boardColumnFor(issue.status))
+      !statusFilter.some(
+        (value) => value === issue.status || value === boardColumnFor(issue.status),
+      )
     ) {
       return false;
     }
@@ -461,12 +468,22 @@ export function FlowBoard({
    * `updateIssue` is what writes the activity entry and the notification for
    * that issue; batching them into one call would collapse several distinct
    * events into one and lose that history.
+   *
+   * `resolve` decides, per issue, what the move actually means. A drop asks
+   * the column what it does with a card coming from that status; a pick from a
+   * card's own status menu asks for one status exactly. Resolving per issue
+   * rather than once for the whole batch is what lets a mixed selection land
+   * correctly — dragging a Done card and an In Progress card onto New reopens
+   * the first and moves the second, which is what each of them means.
    */
-  function move(issueIds: string[], status: IssueStatus) {
+  function applyStatus(
+    issueIds: string[],
+    resolve: (from: IssueStatus) => IssueStatus | null,
+    destination: string,
+  ) {
     const candidates = issueIds
       .map((id) => issues.find((i) => i.id === id))
-      .filter((issue): issue is (typeof issues)[number] => Boolean(issue))
-      .filter((issue) => issue.status !== status);
+      .filter((issue): issue is (typeof issues)[number] => Boolean(issue));
 
     /*
      * The workflow decides what may land here, using the same rules as the
@@ -474,19 +491,23 @@ export function FlowBoard({
      * better than moving the card optimistically and watching it spring back
      * when `updateIssue` says no.
      */
-    const moving = candidates
-      .filter((issue) => canTransition(issue.status, status))
-      .map((issue) => issue.id);
+    const planned = candidates.map((issue) => ({
+      issue,
+      to: resolve(issue.status),
+    }));
 
-    const refused = candidates.filter(
-      (issue) => !canTransition(issue.status, status),
+    const moving = planned.filter(
+      (plan): plan is { issue: (typeof candidates)[number]; to: IssueStatus } =>
+        plan.to !== null && plan.to !== plan.issue.status,
     );
+
+    const refused = planned.filter((plan) => plan.to === null);
     if (refused.length > 0) {
       const first = refused[0];
       toast(
         refused.length === 1 && first
-          ? `${first.key} cannot move straight from ${STATUS_LABEL[first.status]} to ${STATUS_LABEL[status]}.`
-          : `${refused.length} issues cannot move to ${STATUS_LABEL[status]} from where they are.`,
+          ? `${first.issue.key} cannot move straight from ${STATUS_LABEL[first.issue.status]} to ${destination}.`
+          : `${refused.length} issues cannot move to ${destination} from where they are.`,
         "error",
       );
     }
@@ -494,10 +515,12 @@ export function FlowBoard({
     if (moving.length === 0) return;
 
     startTransition(async () => {
-      for (const issueId of moving) moveIssue({ issueId, status });
+      for (const { issue, to } of moving) {
+        moveIssue({ issueId: issue.id, status: to });
+      }
 
       const results = await Promise.all(
-        moving.map((issueId) => updateIssue({ issueId, status })),
+        moving.map(({ issue, to }) => updateIssue({ issueId: issue.id, status: to })),
       );
       const errors = results.flatMap((r) => (r.ok ? [] : [r.error]));
       if (errors.length > 0) {
@@ -513,6 +536,27 @@ export function FlowBoard({
     });
   }
 
+  /** A drop onto a column: the column decides what it means. */
+  function move(issueIds: string[], column: IssueStatus) {
+    applyStatus(
+      issueIds,
+      (from) => dropStatusFor(from, column),
+      STATUS_LABEL[column],
+    );
+  }
+
+  /**
+   * A pick from a card's own status menu: exactly the status chosen.
+   *
+   * No workflow gate, deliberately — this is the same contract the issue
+   * page's status menu has. `STATUS_TRANSITIONS` describes the ordinary path
+   * and is what drag and drop follows, but choosing a status outright is a
+   * decision a person is allowed to make, and the server accepts it.
+   */
+  function setCardStatus(issueId: string, status: IssueStatus) {
+    applyStatus([issueId], () => status, STATUS_LABEL[status]);
+  }
+
   /*
    * While a card is in the air, which columns will take it. Only the dragged
    * card is considered when it sits outside the selection, matching what the
@@ -526,9 +570,12 @@ export function FlowBoard({
       .filter((s): s is IssueStatus => Boolean(s));
   })();
 
-  const columnAccepts = (status: IssueStatus): boolean =>
+  /* Asks exactly what the drop will ask, so the no-entry cursor and the drop
+     can never disagree: a column takes a card if it has *any* status it can
+     put it in, its own or the one it also holds. */
+  const columnAccepts = (column: IssueStatus): boolean =>
     draggingStatuses.length === 0 ||
-    draggingStatuses.some((from) => canTransition(from, status));
+    draggingStatuses.some((from) => dropStatusFor(from, column) !== null);
 
   function handleDrop(event: DragEvent<HTMLDivElement>, status: IssueStatus) {
     event.preventDefault();
@@ -603,8 +650,13 @@ export function FlowBoard({
               ))}
             </ToolbarMenu>
 
+            {/* Every status, not only the seven that are columns. Picking a
+                column's name still selects everything drawn in that column,
+                exactly as before; Reopen and Reject are additionally
+                selectable on their own, which naming a column could never
+                do. */}
             <ToolbarMenu label="Status" count={statusFilter.length}>
-              {BOARD_STATUSES.map((status) => (
+              {ISSUE_STATUSES.map((status) => (
                 <MenuItem
                   key={status}
                   keepOpen
@@ -893,7 +945,7 @@ export function FlowBoard({
                       key={issue.id}
                       issue={issue}
                       draggable={status !== null}
-                      showStatus={status === null}
+                      onStatusChange={(next) => setCardStatus(issue.id, next)}
                       currentUserId={currentUserId}
                       isAdmin={isAdmin}
                       dragging={
@@ -929,7 +981,7 @@ export function FlowBoard({
 function BoardCard({
   issue,
   draggable,
-  showStatus,
+  onStatusChange,
   currentUserId,
   isAdmin,
   dragging,
@@ -942,8 +994,8 @@ function BoardCard({
   /** False whenever the column isn't a status — a group like "Assignee" has
    *  no matching drop target for a dragged card to land in. */
   draggable: boolean;
-  /** True once the column no longer encodes the issue's status by itself. */
-  showStatus: boolean;
+  /** Sets this issue's status outright, without moving it by hand. */
+  onStatusChange: (status: IssueStatus) => void;
   currentUserId: string;
   isAdmin: boolean;
   dragging: boolean;
@@ -1042,7 +1094,60 @@ function BoardCard({
           <IssueKey issueKey={issue.key} />
         </Link>
 
-        {showStatus ? <StatusPill status={issue.status} /> : null}
+        {/*
+         * The card's own status, and the way to change it.
+         *
+         * It used to appear only when the grouping was something other than
+         * status, on the reasoning that a column already says what its cards
+         * are. That holds only while a column has one status in it: New also
+         * holds Reopen and Done also holds Reject / Not an Issue, so a card in
+         * either column said nothing about which of the two it was. Showing it
+         * always is what makes a reopened issue recognisable as reopened
+         * rather than merely as something in New.
+         *
+         * The same guards the card menu above uses -- `draggable={false}` and
+         * a stopped propagation -- so reaching for the status never starts a
+         * drag.
+         */}
+        <div
+          className="prio-board__card-status"
+          draggable={false}
+          onClick={(event) => event.stopPropagation()}
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          <Menu
+            align="end"
+            width={210}
+            label={`Change status of ${issue.key}`}
+            trigger={(props) => (
+              <button
+                type="button"
+                className="prio-board__card-statustrigger"
+                draggable={false}
+                {...props}
+              >
+                <StatusPill status={issue.status} />
+                <IconChevronDown size={11} />
+              </button>
+            )}
+          >
+            <MenuLabel>Move to</MenuLabel>
+            {/* The whole vocabulary, the same set and the same order the issue
+                page's own status menu offers -- Reopen and Reject / Not an
+                Issue included, because both are statuses an issue may hold. */}
+            {ISSUE_STATUSES.map((option) => (
+              <MenuItem
+                key={option}
+                selected={option === issue.status}
+                onSelect={() =>
+                  option !== issue.status && onStatusChange(option)
+                }
+              >
+                <StatusPill status={option} />
+              </MenuItem>
+            ))}
+          </Menu>
+        </div>
 
         {issue.assignee ? (
           <Avatar name={issue.assignee.name} image={issue.assignee.image} />
