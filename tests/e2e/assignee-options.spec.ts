@@ -222,20 +222,43 @@ test.describe("Assignee options come from project membership", () => {
     const members = await projectMembers("ENG");
     const idle = await membersWithNothingAssigned("ENG");
 
+    /* The viewer is offered as "Assigned to me" rather than by name — the
+       Issues bar's own convention, now shared by the board. Their own name is
+       therefore absent, and that absence is the point: it would be the same
+       filter twice, once under a label and once under a name. */
+    const me = await prisma.user.findFirstOrThrow({
+      where: { email: "admin@symbiosystech.com" },
+      select: { id: true, name: true },
+    });
+
     await page.goto("/projects/eng/board");
     await page.locator(".prio-board__assignee-trigger").click();
     const items = await openMenuItems(page);
 
+    expect(items.some((t) => t.includes("Assigned to me"))).toBe(true);
     expect(items.some((t) => t.includes("Unassigned"))).toBe(true);
+
     for (const member of members) {
-      expect(
-        items.some((t) => t.includes(member.name)),
-        `${member.name} must appear in the board's assignee filter`,
-      ).toBe(true);
+      const named = items.some((t) => t.includes(member.name));
+      if (member.id === me.id) {
+        expect(
+          named,
+          "the viewer's own name must not be offered as well as Assigned to me",
+        ).toBe(false);
+      } else {
+        expect(
+          named,
+          `${member.name} must appear in the board's assignee filter`,
+        ).toBe(true);
+      }
     }
+
+    /* Assigned to me + Unassigned + everyone except the viewer — the same
+       number of rows the roster produced before, with one relabelled. */
     expect(items.length).toBe(members.length + 1);
 
     for (const member of idle) {
+      if (member.id === me.id) continue; // Offered as "Assigned to me" above.
       expect(
         items.some((t) => t.includes(member.name)),
         `${member.name} has nothing assigned and must still be filterable`,
@@ -243,8 +266,13 @@ test.describe("Assignee options come from project membership", () => {
     }
 
     /* Listing everyone must not have cost the filter its job: picking a member
-       who does have work narrows the board to exactly their cards. */
-    const busy = members.find((m) => !idle.some((i) => i.id === m.id));
+       who does have work narrows the board to exactly their cards. The viewer
+       is excluded from the search because they are offered under a label
+       rather than a name — "Assigned to me" carries the same id and is
+       exercised by the member-account tests below. */
+    const busy = members.find(
+      (m) => m.id !== me.id && !idle.some((i) => i.id === m.id),
+    );
     expect(busy, "the fixture needs a member with work").toBeTruthy();
 
     await page

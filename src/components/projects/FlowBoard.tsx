@@ -695,24 +695,33 @@ export function FlowBoard({
               <MenuLabel>Filter by assignee</MenuLabel>
 
               {/*
-               * A member sees roles, not colleagues: Assigned to me,
-               * Unassigned, and Admin. An administrator sees the roster, as
-               * before. Only the options differ — the trigger, the panel, the
-               * ticks and the multi-select behaviour are the same control in
-               * both cases.
+               * "Assigned to me" leads the list, for everybody.
+               *
+               * This is the Issues bar's own convention, reused rather than
+               * re-invented: `IssueFilters` offers `{ value: currentUserId,
+               * node: "Assigned to me" }` first, then Unassigned, then
+               * everyone *except* the viewer by name. The label is the only
+               * thing that differs from a person's entry — the value carried
+               * is `currentUserId`, the same id their name would have carried,
+               * so filtering, multi-select and the tick are untouched. There
+               * is no second current-user mechanism here and no name is
+               * hard-coded: `currentUserId` is the session's own id, handed
+               * down by the board's page.
+               *
+               * A member sees roles rather than colleagues below this —
+               * Unassigned and Admin — while an administrator sees the roster.
+               * Only the options differ; the control is the same in both.
                */}
-              {isAdmin ? null : (
-                <MenuItem
-                  keepOpen
-                  selected={assigneeFilter.includes(currentUserId)}
-                  onSelect={() =>
-                    setAssigneeFilter((prev) => toggleValue(prev, currentUserId))
-                  }
-                  icon={<Avatar name={null} empty size="xs" />}
-                >
-                  Assigned to me
-                </MenuItem>
-              )}
+              <MenuItem
+                keepOpen
+                selected={assigneeFilter.includes(currentUserId)}
+                onSelect={() =>
+                  setAssigneeFilter((prev) => toggleValue(prev, currentUserId))
+                }
+                icon={<Avatar name={null} empty size="xs" />}
+              >
+                Assigned to me
+              </MenuItem>
 
               <MenuItem
                 keepOpen
@@ -739,20 +748,26 @@ export function FlowBoard({
                 </MenuItem>
               ) : null}
 
+              {/* Everyone else by name. The viewer is filtered out because
+                  "Assigned to me" above already carries their id — listing
+                  them again would put the same filter on the menu twice, once
+                  under a label and once under a name. */}
               {isAdmin
-                ? members.map((member) => (
-                    <MenuItem
-                      key={member.id}
-                      keepOpen
-                      selected={assigneeFilter.includes(member.id)}
-                      onSelect={() =>
-                        setAssigneeFilter((prev) => toggleValue(prev, member.id))
-                      }
-                      icon={<Avatar name={member.name} image={member.image} size="xs" />}
-                    >
-                      {member.name}
-                    </MenuItem>
-                  ))
+                ? members
+                    .filter((member) => member.id !== currentUserId)
+                    .map((member) => (
+                      <MenuItem
+                        key={member.id}
+                        keepOpen
+                        selected={assigneeFilter.includes(member.id)}
+                        onSelect={() =>
+                          setAssigneeFilter((prev) => toggleValue(prev, member.id))
+                        }
+                        icon={<Avatar name={member.name} image={member.image} size="xs" />}
+                      >
+                        {member.name}
+                      </MenuItem>
+                    ))
                 : null}
             </Menu>
 
