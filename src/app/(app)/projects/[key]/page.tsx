@@ -17,10 +17,16 @@ import {
 } from "@/components/ui/Indicators";
 import {
   IconBug,
+  IconCalendar,
+  IconCheck,
+  IconClock,
   IconEmptyBox,
   IconIssues,
+  IconReports,
   IconUsers,
+  IconWarning,
 } from "@/components/ui/Icon";
+import { StatusDonut } from "@/components/reports/StatusDonut";
 import { projectScope } from "@/lib/authz";
 import {
   AssignmentActivityList,
@@ -30,13 +36,15 @@ import { ProjectAttachments } from "@/components/projects/ProjectAttachments";
 import { ProjectMembers } from "@/components/projects/ProjectMembers";
 import { ProjectAccess } from "@/components/projects/ProjectAccess";
 import {
-  CLOSED_STATUSES,
   ISSUE_STATUSES,
+  ISSUE_TYPES,
+  ISSUE_TYPE_LABEL,
   OPEN_STATUSES,
   PRIORITIES,
+  PRIORITY_LABEL,
   SEVERITIES,
 } from "@/lib/domain";
-import { barWidth, formatRelative } from "@/lib/format";
+import { barWidth, dueWindow, formatRelative, percent } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { recordProjectVisit } from "@/lib/recents";
 import { requireUser, type CurrentUser } from "@/lib/session";
@@ -44,8 +52,23 @@ import { requireUser, type CurrentUser } from "@/lib/session";
 export const dynamic = "force-dynamic";
 
 /**
- * Project overview (§21). Board, list, backlog, timeline and reports arrive in
- * later checkpoints; this page shows the project's real composition today.
+ * Project overview: what this project is made of, and where it stands.
+ *
+ * Every figure on this page is **this project's**. Each query below carries
+ * `projectId: project.id` — there is no global count anywhere on it, and no
+ * number is derived from anything but the rows the database returns, so a
+ * second project's summary can only ever describe that project.
+ *
+ * The date buckets read `dueWindow()` from `lib/format`, which is the same
+ * definition Home and the issue list use. That matters more than it looks:
+ * "due this week" means the current calendar week starting today, so overdue
+ * work is never counted as due-this-week, and a second calculation here would
+ * be free to disagree with the rest of Prio about what a week is.
+ *
+ * "Completed" means `DONE` and nothing else. Cancelled and Rejected are closed
+ * too, but closing an issue because it was abandoned or because it turned out
+ * not to be a defect is not the same as finishing it, and counting them
+ * together would flatter the completion rate.
  */
 
 async function loadProject(rawKey: string, user: CurrentUser) {
@@ -143,8 +166,23 @@ export default async function ProjectOverviewPage({
 
   recordProjectVisit(user.id, project.id);
 
-  const [byStatus, byPriority, bySeverity, recentIssues, recentBugs, assignmentEntries] =
-    await Promise.all([
+  /* One window for every date bucket below, read once so the cards, the
+     "due" breakdown and the issue list can never be cut on different days. */
+  const { startOfToday, endOfToday, endOfWeek } = dueWindow();
+  const openStatuses = { in: [...OPEN_STATUSES] };
+
+  const [
+    byStatus,
+    byPriority,
+    bySeverity,
+    byType,
+    byAssignee,
+    unassignedOpen,
+    dueCounts,
+    recentIssues,
+    recentBugs,
+    assignmentEntries,
+  ] = await Promise.all([
       prisma.issue.groupBy({
         by: ["status"],
         where: { projectId: project.id },
@@ -160,6 +198,67 @@ export default async function ProjectOverviewPage({
         where: { projectId: project.id, type: "BUG" },
         _count: { _all: true },
       }),
+      prisma.issue.groupBy({
+        by: ["type"],
+        where: { projectId: project.id },
+        _count: { _all: true },
+      }),
+      /* Open work per person, so the workload answers "who is carrying what
+         right now" rather than "who has ever been given anything". Only
+         assignees that appear on this project's issues — nobody from another
+         project can reach this list. */
+      prisma.issue.groupBy({
+        by: ["assigneeId"],
+        where: {
+          projectId: project.id,
+          status: openStatuses,
+          assigneeId: { not: null },
+        },
+        _count: { _all: true },
+        orderBy: { _count: { id: "desc" } },
+      }),
+      prisma.issue.count({
+        where: {
+          projectId: project.id,
+          status: openStatuses,
+          assigneeId: null,
+        },
+      }),
+      /* The date buckets, in one round trip. Overdue and due-today/this-week
+         are cut on the same boundaries the rest of Prio uses. */
+      Promise.all([
+        prisma.issue.count({
+          where: {
+            projectId: project.id,
+            status: openStatuses,
+            dueDate: { lt: startOfToday },
+          },
+        }),
+        prisma.issue.count({
+          where: {
+            projectId: project.id,
+            status: openStatuses,
+            dueDate: { gte: startOfToday, lt: endOfToday },
+          },
+        }),
+        prisma.issue.count({
+          where: {
+            projectId: project.id,
+            status: openStatuses,
+            dueDate: { gte: startOfToday, lt: endOfWeek },
+          },
+        }),
+        prisma.issue.count({
+          where: {
+            projectId: project.id,
+            status: openStatuses,
+            dueDate: { gte: endOfWeek },
+          },
+        }),
+        prisma.issue.count({
+          where: { projectId: project.id, dueDate: null },
+        }),
+      ]),
       prisma.issue.findMany({
         where: { projectId: project.id },
         orderBy: { updatedAt: "desc" },
@@ -304,23 +403,133 @@ export default async function ProjectOverviewPage({
   const open = byStatus
     .filter((r) => (OPEN_STATUSES as readonly string[]).includes(r.status))
     .reduce((sum, r) => sum + r._count._all, 0);
-  const done = byStatus
-    .filter((r) => (CLOSED_STATUSES as readonly string[]).includes(r.status))
-    .reduce((sum, r) => sum + r._count._all, 0);
+
+  /*
+   * Completed means DONE.
+   *
+   * This used to sum `CLOSED_STATUSES`, which also holds Cancelled and
+   * Rejected — so abandoning work or deciding it was never a defect counted
+   * towards the completion rate. Closed and completed are different questions
+   * and are answered separately below.
+   */
+  const done = statusCount("DONE");
+  const cancelled = statusCount("CANCELLED");
+  const rejected = statusCount("REJECTED");
+  const reopened = statusCount("REOPENED");
+  const readyForQa = statusCount("IN_REVIEW");
+  const inQa = statusCount("IN_QA");
+  const inProgress = statusCount("IN_PROGRESS");
+  const remaining = total - done;
+
   const bugTotal = bySeverity.reduce((sum, r) => sum + r._count._all, 0);
+
+  const [overdue, dueToday, dueThisWeek, upcoming, noDueDate] = dueCounts;
+
+  const typeCount = (type: string) =>
+    byType.find((r) => r.type === type)?._count._all ?? 0;
+  const priorityCount = (priority: string) =>
+    byPriority.find((r) => r.priority === priority)?._count._all ?? 0;
+
+  /* Names for the workload rows, resolved in one query rather than per row.
+     Only ids this project's own issues produced are looked up. */
+  const workloadIds = byAssignee
+    .map((row) => row.assigneeId)
+    .filter((id): id is string => id !== null);
+  const workloadPeople =
+    workloadIds.length > 0
+      ? await prisma.user.findMany({
+          where: { id: { in: workloadIds } },
+          select: { id: true, name: true, image: true },
+        })
+      : [];
+  const workloadById = new Map(workloadPeople.map((person) => [person.id, person]));
+
+  const workload = [
+    ...byAssignee.flatMap((row) => {
+      const person = row.assigneeId ? workloadById.get(row.assigneeId) : undefined;
+      return person
+        ? [{ id: person.id, name: person.name, image: person.image, count: row._count._all }]
+        : [];
+    }),
+    ...(unassignedOpen > 0
+      ? [{ id: "unassigned", name: "Unassigned", image: null, count: unassignedOpen }]
+      : []),
+  ];
+  const workloadMax = Math.max(1, ...workload.map((row) => row.count));
+
+  const dueBuckets = [
+    { key: "overdue", label: "Overdue", count: overdue },
+    { key: "today", label: "Due today", count: dueToday },
+    { key: "week", label: "Due this week", count: dueThisWeek },
+    { key: "upcoming", label: "Upcoming", count: upcoming },
+    { key: "none", label: "No due date", count: noDueDate },
+  ];
+  const dueMax = Math.max(1, ...dueBuckets.map((row) => row.count));
 
   return (
     <>
 
-      <div className="row g-3" style={{ marginBottom: "var(--prio-space-6)" }}>
-        <div className="col-12 col-sm-6 col-xl-3">
+      {/* --------------------------------------------------------- cards */}
+      {/* Every figure here is this project's, and every one of them is a
+          count the database returned rather than anything derived from a
+          label or a guess. */}
+      <div className="row g-3" style={{ marginBottom: "var(--prio-space-4)" }}>
+        <div className="col-6 col-lg-4 col-xl-2">
           <Stat
             label="Total issues"
             value={total}
             icon={<IconIssues size={13} />}
-            hint={`${done} completed`}
+            hint={total === 0 ? "Nothing filed yet" : `${open} still open`}
           />
         </div>
+        <div className="col-6 col-lg-4 col-xl-2">
+          <Stat
+            label="Completed"
+            value={done}
+            icon={<IconCheck size={13} />}
+            tone="success"
+            hint={`${percent(done, total)}% of all work`}
+          />
+        </div>
+        <div className="col-6 col-lg-4 col-xl-2">
+          <Stat
+            label="In Progress"
+            value={inProgress}
+            icon={<IconClock size={13} />}
+            tone={inProgress > 0 ? "brand" : "default"}
+            hint="Being worked on"
+          />
+        </div>
+        <div className="col-6 col-lg-4 col-xl-2">
+          <Stat
+            label="Ready for QA"
+            value={readyForQa}
+            icon={<IconReports size={13} />}
+            tone={readyForQa > 0 ? "warning" : "default"}
+            hint={`${inQa} in QA`}
+          />
+        </div>
+        <div className="col-6 col-lg-4 col-xl-2">
+          <Stat
+            label="Due this week"
+            value={dueThisWeek}
+            icon={<IconCalendar size={13} />}
+            tone={dueThisWeek > 0 ? "warning" : "default"}
+            hint={`${dueToday} due today`}
+          />
+        </div>
+        <div className="col-6 col-lg-4 col-xl-2">
+          <Stat
+            label="Overdue"
+            value={overdue}
+            icon={<IconWarning size={13} />}
+            tone={overdue > 0 ? "danger" : "default"}
+            hint="Past their due date"
+          />
+        </div>
+      </div>
+
+      <div className="row g-3" style={{ marginBottom: "var(--prio-space-6)" }}>
         <div className="col-12 col-sm-6 col-xl-3">
           <Stat label="Open" value={open} tone="brand" hint="Not yet resolved" />
         </div>
@@ -331,6 +540,13 @@ export default async function ProjectOverviewPage({
             icon={<IconBug size={13} />}
             tone={bugTotal > 0 ? "danger" : "default"}
             hint="All severities"
+          />
+        </div>
+        <div className="col-12 col-sm-6 col-xl-3">
+          <Stat
+            label="Closed, not completed"
+            value={cancelled + rejected}
+            hint={`${cancelled} cancelled · ${rejected} rejected`}
           />
         </div>
         <div className="col-12 col-sm-6 col-xl-3">
@@ -346,6 +562,205 @@ export default async function ProjectOverviewPage({
       <div className="row g-4">
         {/* ------------------------------------------------ distributions */}
         <div className="col-12 col-xl-8">
+          {/* ------------------------------------------ status overview */}
+          <Card className="prio-issue__section">
+            <CardBody>
+              <h2 className="prio-issue__section-title">Status overview</h2>
+              <StatusDonut
+                total={total}
+                label={`Issues in ${project.name} by status`}
+                data={ISSUE_STATUSES.map((status) => ({
+                  status,
+                  count: statusCount(status),
+                }))}
+              />
+            </CardBody>
+          </Card>
+
+          {/* ---------------------------------------- completion and QA */}
+          <div className="row g-4 prio-issue__section">
+            <div className="col-12 col-md-6">
+              <Card style={{ height: "100%" }}>
+                <CardBody>
+                  <h2 className="prio-issue__section-title">Completion</h2>
+                  {total === 0 ? (
+                    <p className="prio-text-muted">No issues yet.</p>
+                  ) : (
+                    <>
+                      <div className="prio-progress" aria-hidden>
+                        <div
+                          className="prio-progress__bar"
+                          style={{ width: `${percent(done, total)}%` }}
+                        />
+                      </div>
+                      <p className="prio-summary__caption">
+                        {percent(done, total)}% completed
+                      </p>
+                      <ul className="prio-breakdown">
+                        <li className="prio-breakdown__row">
+                          <span className="prio-breakdown__label">Total</span>
+                          <span />
+                          <span className="prio-breakdown__value">{total}</span>
+                        </li>
+                        <li className="prio-breakdown__row">
+                          <span className="prio-breakdown__label">Completed</span>
+                          <span />
+                          <span className="prio-breakdown__value">{done}</span>
+                        </li>
+                        <li className="prio-breakdown__row">
+                          <span className="prio-breakdown__label">Remaining</span>
+                          <span />
+                          <span className="prio-breakdown__value">{remaining}</span>
+                        </li>
+                        {/* Closed but not finished, kept apart from Completed
+                            so the rate above cannot be inflated by them. */}
+                        <li className="prio-breakdown__row">
+                          <span className="prio-breakdown__label">Cancelled</span>
+                          <span />
+                          <span className="prio-breakdown__value">{cancelled}</span>
+                        </li>
+                        <li className="prio-breakdown__row">
+                          <span className="prio-breakdown__label">
+                            Reject / Not an Issue
+                          </span>
+                          <span />
+                          <span className="prio-breakdown__value">{rejected}</span>
+                        </li>
+                      </ul>
+                    </>
+                  )}
+                </CardBody>
+              </Card>
+            </div>
+
+            <div className="col-12 col-md-6">
+              <Card style={{ height: "100%" }}>
+                <CardBody>
+                  <h2 className="prio-issue__section-title">QA</h2>
+                  {total === 0 ? (
+                    <p className="prio-text-muted">No issues yet.</p>
+                  ) : (
+                    <ul className="prio-breakdown">
+                      {[
+                        { label: "Ready for QA", count: readyForQa },
+                        { label: "In QA", count: inQa },
+                        { label: "Completed after QA", count: done },
+                        { label: "Reopened", count: reopened },
+                      ].map((row) => (
+                        <li key={row.label} className="prio-breakdown__row">
+                          <span className="prio-breakdown__label">{row.label}</span>
+                          <span className="prio-breakdown__track" aria-hidden>
+                            <span
+                              className="prio-breakdown__bar"
+                              style={{ width: barWidth(row.count, total) }}
+                            />
+                          </span>
+                          <span className="prio-breakdown__value">{row.count}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </CardBody>
+              </Card>
+            </div>
+          </div>
+
+          {/* --------------------------------------------- issue types */}
+          <Card className="prio-issue__section">
+            <CardBody>
+              <h2 className="prio-issue__section-title">Issue types</h2>
+              {total === 0 ? (
+                <p className="prio-text-muted">No issues yet.</p>
+              ) : (
+                <ul className="prio-breakdown">
+                  {ISSUE_TYPES.map((type) => {
+                    const count = typeCount(type);
+                    return (
+                      <li key={type} className="prio-breakdown__row">
+                        <span className="prio-breakdown__label">
+                          <IssueTypeIcon type={type} size={15} />
+                          {ISSUE_TYPE_LABEL[type]}
+                        </span>
+                        <span className="prio-breakdown__track" aria-hidden>
+                          <span
+                            className="prio-breakdown__bar"
+                            style={{ width: barWidth(count, total) }}
+                          />
+                        </span>
+                        <span className="prio-breakdown__value">
+                          {count}
+                          <span className="prio-breakdown__share">
+                            {percent(count, total)}%
+                          </span>
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </CardBody>
+          </Card>
+
+          {/* ------------------------------------------------- workload */}
+          <Card className="prio-issue__section">
+            <CardBody>
+              <h2 className="prio-issue__section-title">Open work by assignee</h2>
+              {workload.length === 0 ? (
+                <p className="prio-text-muted">
+                  No open work is assigned in this project.
+                </p>
+              ) : (
+                <ul className="prio-breakdown">
+                  {workload.map((row) => (
+                    <li key={row.id} className="prio-breakdown__row">
+                      <span className="prio-breakdown__label">
+                        <Avatar
+                          name={row.id === "unassigned" ? null : row.name}
+                          image={row.image}
+                          size="xs"
+                          empty={row.id === "unassigned"}
+                        />
+                        <span className="prio-truncate">{row.name}</span>
+                      </span>
+                      <span className="prio-breakdown__track" aria-hidden>
+                        <span
+                          className="prio-breakdown__bar"
+                          style={{ width: barWidth(row.count, workloadMax) }}
+                        />
+                      </span>
+                      <span className="prio-breakdown__value">{row.count}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardBody>
+          </Card>
+
+          {/* ------------------------------------------------- due dates */}
+          <Card className="prio-issue__section">
+            <CardBody>
+              <h2 className="prio-issue__section-title">Due dates</h2>
+              {total === 0 ? (
+                <p className="prio-text-muted">No issues yet.</p>
+              ) : (
+                <ul className="prio-breakdown">
+                  {dueBuckets.map((row) => (
+                    <li key={row.key} className="prio-breakdown__row">
+                      <span className="prio-breakdown__label">{row.label}</span>
+                      <span className="prio-breakdown__track" aria-hidden>
+                        <span
+                          className="prio-breakdown__bar"
+                          style={{ width: barWidth(row.count, dueMax) }}
+                        />
+                      </span>
+                      <span className="prio-breakdown__value">{row.count}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardBody>
+          </Card>
+
           <Card className="prio-issue__section">
             <CardBody>
               <h2 className="prio-issue__section-title">Status distribution</h2>
@@ -386,18 +801,33 @@ export default async function ProjectOverviewPage({
                   {total === 0 ? (
                     <p className="prio-text-muted">No issues yet.</p>
                   ) : (
-                    <ul className="prio-distribution">
+                    /* Bars rather than bare counts: priority is the one
+                       breakdown people read comparatively — "is most of this
+                       urgent?" — and four numbers in a column do not answer
+                       that at a glance. */
+                    <ul className="prio-breakdown">
                       {PRIORITIES.map((priority) => {
-                        const count =
-                          byPriority.find((r) => r.priority === priority)?._count
-                            ._all ?? 0;
+                        const count = priorityCount(priority);
                         return (
-                          <li key={priority} className="prio-distribution__row">
-                            <span className="prio-distribution__label">
-                              <PriorityIndicator priority={priority} />
+                          <li key={priority} className="prio-breakdown__row">
+                            <span className="prio-breakdown__label">
+                              <PriorityIndicator
+                                priority={priority}
+                                showLabel={false}
+                              />
+                              {PRIORITY_LABEL[priority]}
                             </span>
-                            <span className="prio-distribution__value">
+                            <span className="prio-breakdown__track" aria-hidden>
+                              <span
+                                className="prio-breakdown__bar"
+                                style={{ width: barWidth(count, total) }}
+                              />
+                            </span>
+                            <span className="prio-breakdown__value">
                               {count}
+                              <span className="prio-breakdown__share">
+                                {percent(count, total)}%
+                              </span>
                             </span>
                           </li>
                         );

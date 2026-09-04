@@ -382,6 +382,204 @@
 .prio-distribution__bar[data-status="CANCELLED"] {
   background: var(--prio-status-cancelled-dot);
 }
+/* Reopen and Reject were missing here, so their bars drew with no fill at all
+   — a real count with an invisible bar. They take the same colours their
+   status pills already use. */
+.prio-distribution__bar[data-status="REOPENED"] {
+  background: var(--prio-status-progress-dot);
+}
+.prio-distribution__bar[data-status="REJECTED"] {
+  background: var(--prio-status-cancelled-dot);
+}
+
+/* ------------------------------------------------------------ status ring */
+/*
+ * The Summary's status donut. One colour table, shared with the bars above and
+ * with the status pills, addressed by `data-status` on both the ring segments
+ * and the legend swatches.
+ */
+.prio-donut {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-5);
+  flex-wrap: wrap;
+}
+
+.prio-donut__figure {
+  position: relative;
+  flex-shrink: 0;
+  width: 168px;
+  height: 168px;
+  margin: 0;
+}
+
+.prio-donut__figure svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.prio-donut__track,
+.prio-donut__seg {
+  fill: none;
+  stroke-width: 5;
+}
+
+.prio-donut__track {
+  stroke: var(--prio-border);
+}
+
+.prio-donut__centre {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  pointer-events: none;
+}
+
+.prio-donut__total {
+  font-size: var(--prio-text-xl);
+  font-weight: var(--prio-weight-bold);
+  color: var(--prio-text-primary);
+  line-height: 1;
+}
+
+.prio-donut__totallabel {
+  font-size: var(--prio-text-2xs);
+  letter-spacing: var(--prio-tracking-caps);
+  text-transform: uppercase;
+  color: var(--prio-text-muted);
+}
+
+.prio-donut__legend {
+  flex: 1;
+  min-width: 180px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-2);
+}
+
+.prio-donut__legenditem {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-secondary);
+}
+
+.prio-donut__swatch {
+  flex-shrink: 0;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+}
+
+.prio-donut__legendlabel {
+  flex: 1;
+  min-width: 0;
+}
+
+.prio-donut__legendvalue {
+  display: flex;
+  align-items: baseline;
+  gap: var(--prio-space-2);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--prio-weight-semibold);
+  color: var(--prio-text-primary);
+}
+
+.prio-donut__legendshare {
+  font-weight: var(--prio-weight-regular);
+  color: var(--prio-text-muted);
+}
+
+.prio-donut__seg[data-status="BACKLOG"] { stroke: var(--prio-status-backlog-dot); }
+.prio-donut__seg[data-status="TODO"] { stroke: var(--prio-status-todo-dot); }
+.prio-donut__seg[data-status="IN_PROGRESS"] { stroke: var(--prio-status-progress-dot); }
+.prio-donut__seg[data-status="IN_REVIEW"] { stroke: var(--prio-status-review-dot); }
+.prio-donut__seg[data-status="IN_QA"] { stroke: var(--prio-status-qa-dot); }
+.prio-donut__seg[data-status="DONE"] { stroke: var(--prio-status-done-dot); }
+.prio-donut__seg[data-status="REOPENED"] { stroke: var(--prio-status-progress-dot); }
+.prio-donut__seg[data-status="REJECTED"] { stroke: var(--prio-status-cancelled-dot); }
+.prio-donut__seg[data-status="CANCELLED"] { stroke: var(--prio-status-cancelled-dot); }
+
+.prio-donut__swatch[data-status="BACKLOG"] { background: var(--prio-status-backlog-dot); }
+.prio-donut__swatch[data-status="TODO"] { background: var(--prio-status-todo-dot); }
+.prio-donut__swatch[data-status="IN_PROGRESS"] { background: var(--prio-status-progress-dot); }
+.prio-donut__swatch[data-status="IN_REVIEW"] { background: var(--prio-status-review-dot); }
+.prio-donut__swatch[data-status="IN_QA"] { background: var(--prio-status-qa-dot); }
+.prio-donut__swatch[data-status="DONE"] { background: var(--prio-status-done-dot); }
+.prio-donut__swatch[data-status="REOPENED"] { background: var(--prio-status-progress-dot); }
+.prio-donut__swatch[data-status="REJECTED"] { background: var(--prio-status-cancelled-dot); }
+.prio-donut__swatch[data-status="CANCELLED"] { background: var(--prio-status-cancelled-dot); }
+
+/* ------------------------------------------------------- summary breakdown */
+/* A labelled bar row, used by the type, priority and workload breakdowns. */
+.prio-breakdown {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-3);
+}
+
+.prio-breakdown__row {
+  display: grid;
+  grid-template-columns: minmax(96px, auto) 1fr auto;
+  align-items: center;
+  gap: var(--prio-space-3);
+  font-size: var(--prio-text-xs);
+}
+
+.prio-breakdown__label {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  min-width: 0;
+  color: var(--prio-text-secondary);
+}
+
+.prio-breakdown__track {
+  height: 8px;
+  border-radius: var(--prio-radius-pill);
+  background: var(--prio-neutral-100);
+  overflow: hidden;
+}
+
+.prio-breakdown__bar {
+  display: block;
+  height: 100%;
+  border-radius: var(--prio-radius-pill);
+  background: var(--prio-gradient-brand);
+}
+
+.prio-breakdown__value {
+  display: flex;
+  align-items: baseline;
+  gap: var(--prio-space-2);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--prio-weight-semibold);
+  color: var(--prio-text-primary);
+}
+
+.prio-breakdown__share {
+  font-weight: var(--prio-weight-regular);
+  color: var(--prio-text-muted);
+}
+
+/* The line under a summary progress bar, e.g. "62% completed". */
+.prio-summary__caption {
+  margin: var(--prio-space-2) 0 var(--prio-space-3);
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-muted);
+}
 
 .prio-distribution__value {
   flex-shrink: 0;
