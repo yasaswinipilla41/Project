@@ -31,8 +31,18 @@ export interface StorageProvider {
   readonly name: string;
   /** Streams `body` into storage and returns the key it was stored under. */
   put(body: ReadableStream<Uint8Array>, hint: { extension: string }): Promise<StoredObject>;
-  /** Opens the stored object for streaming back to a client. */
-  read(key: string): Promise<ReadableStream<Uint8Array>>;
+  /**
+   * Opens the stored object for streaming back to a client.
+   *
+   * `range` asks for a byte span, inclusive at both ends, which is what an
+   * HTTP `Range` request means. Without it the whole object is streamed. A
+   * provider that cannot seek may ignore it, but the local one does not: a
+   * browser will not play a video it cannot request pieces of.
+   */
+  read(
+    key: string,
+    range?: { start: number; end: number },
+  ): Promise<ReadableStream<Uint8Array>>;
   /** Size in bytes, or null when the object is gone. */
   size(key: string): Promise<number | null>;
   remove(key: string): Promise<void>;
@@ -118,8 +128,14 @@ export class LocalStorageProvider implements StorageProvider {
     return { key, byteSize, digest: hash.digest("hex") };
   }
 
-  async read(key: string): Promise<ReadableStream<Uint8Array>> {
-    const stream = createReadStream(this.resolve(key));
+  async read(
+    key: string,
+    range?: { start: number; end: number },
+  ): Promise<ReadableStream<Uint8Array>> {
+    /* `createReadStream` takes the same inclusive bounds an HTTP range does,
+       so the span passes straight through and only the requested bytes are
+       ever read from disk. */
+    const stream = createReadStream(this.resolve(key), range);
     return Readable.toWeb(stream) as ReadableStream<Uint8Array>;
   }
 

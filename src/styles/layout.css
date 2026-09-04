@@ -246,16 +246,6 @@
   flex-shrink: 0;
 }
 
-/* The width of one action, holding a Pinned row's missing Pin control open so
-   Favourite lines up with the Recents rows below. Matches
-   `.prio-sidebar__project-menu-trigger` exactly; if that size changes, this
-   follows it. */
-.prio-sidebar__project-slot {
-  flex-shrink: 0;
-  width: 22px;
-  height: 22px;
-}
-
 /* Pin and Favourite stay invisible until the row is hovered or one of them
    has keyboard focus — kept out of the way at rest, same as the card-level
    menu on the Flow Board, so the list reads clean by default.

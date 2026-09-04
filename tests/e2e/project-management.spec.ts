@@ -146,14 +146,27 @@ test.describe("As a member of someone else's project", () => {
     // They can read the project and work in it…
     await expect(page.getByRole("link", { name: "Issues" }).first()).toBeVisible();
 
-    // …but it is not theirs to change or destroy.
-    await expect(
-      page.getByRole("button", { name: "Edit project" }),
-    ).toHaveCount(0);
-    await expect(
-      page.getByRole("button", { name: "More project actions" }),
-    ).toHaveCount(0);
-    await expect(page.getByText("Delete project")).toHaveCount(0);
+    // …and Settings, which is an administrator's, is not offered.
+    await expect(page.getByRole("link", { name: "Settings" })).toHaveCount(0);
+
+    /*
+     * The actions menu is theirs now, because Clone is: copying a project you
+     * can already read is not an administrator's privilege. What must not be
+     * in it is anything that changes or destroys the project — so the check is
+     * on the menu's contents rather than on whether the menu exists.
+     */
+    await page.getByRole("button", { name: "More project actions" }).click();
+    const menu = page.getByRole("menu").first();
+    await menu.waitFor();
+
+    const items = (await menu.getByRole("menuitem").allInnerTexts()).map((t) =>
+      t.replace(/\s+/g, " ").trim(),
+    );
+    expect(items).toContain("Clone project");
+    expect(items).not.toContain("Edit project");
+    expect(items).not.toContain("Delete project");
+
+    await page.keyboard.press("Escape");
 
     expect(consoleErrors).toEqual([]);
     expect(failedRequests).toEqual([]);

@@ -57,6 +57,15 @@ export interface MarkdownEditorHandle {
   /** Replace `back` characters before the caret with `text`. */
   replaceBeforeCaret: (back: number, text: string) => void;
   focus: () => void;
+  /**
+   * The editable element itself.
+   *
+   * The toolbar needs it to answer one question: is the caret in *this*
+   * editor? A page can hold two composers — the one at the foot of the
+   * conversation and an open reply — and a selection in one must not light up
+   * the other's buttons.
+   */
+  element: () => HTMLDivElement | null;
 }
 
 export interface MarkdownEditorProps {
@@ -122,6 +131,7 @@ export const MarkdownEditor = forwardRef<
   }, [onChange]);
 
   useImperativeHandle(ref, () => ({
+    element: () => host.current,
     textBeforeCaret() {
       const selection = window.getSelection();
       if (!selection || selection.rangeCount === 0) return "";
@@ -264,6 +274,10 @@ export type FormatCommand =
   | "quote"
   | "paragraph";
 
+/** Everything the toolbar can light up, including controls that are not
+ *  formatting commands — a link and a mention are places the caret can be. */
+export type ToolbarState = FormatCommand | "link" | "mention";
+
 /** Whether the caret currently sits inside this formatting. */
 export function isFormatActive(command: FormatCommand): boolean {
   try {
@@ -284,4 +298,96 @@ export function isFormatActive(command: FormatCommand): boolean {
     // `queryCommandState` throws in some browsers when there is no selection.
     return false;
   }
+}
+
+/** Is the selection inside `root`? Both ends, so a selection that starts in
+ *  one editor and ends outside it lights up neither. */
+function selectionWithin(root: HTMLElement): boolean {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) return false;
+  const range = selection.getRangeAt(0);
+  return (
+    root.contains(range.startContainer) && root.contains(range.endContainer)
+  );
+}
+
+/**
+ * Does an element matching `test` enclose the caret, at or below `root`?
+ *
+ * `queryCommandState` answers for bold, italic and the lists, and nothing
+ * else: there is no command state for "inside a heading" or "inside a link".
+ * Those are read from the document itself, by walking up from where the
+ * selection starts — which is the real editor state, not a copy of it kept
+ * alongside.
+ */
+function enclosing(root: HTMLElement, test: (el: Element) => boolean): boolean {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) return false;
+
+  let node: Node | null = selection.getRangeAt(0).startContainer;
+  while (node && node !== root) {
+    if (node.nodeType === Node.ELEMENT_NODE && test(node as Element)) {
+      return true;
+    }
+    node = node.parentNode;
+  }
+  return false;
+}
+
+/**
+ * What the caret is sitting in, right now, for every toolbar control.
+ *
+ * Read from the browser's own selection each time it is asked, rather than
+ * tracked as the user types: a state kept alongside the document drifts the
+ * moment anything changes it that the toolbar did not do — an undo, a paste,
+ * a keyboard shortcut, or simply moving the caret into text that was already
+ * bold.
+ *
+ * Returns everything false when the selection is not in this editor, so a
+ * second composer on the page cannot light up this one's buttons.
+ */
+export function readToolbarState(
+  root: HTMLElement | null,
+): Record<ToolbarState, boolean> {
+  const off: Record<ToolbarState, boolean> = {
+    bold: false,
+    italic: false,
+    underline: false,
+    strikeThrough: false,
+    ul: false,
+    ol: false,
+    heading: false,
+    quote: false,
+    paragraph: false,
+    link: false,
+    mention: false,
+  };
+
+  if (!root || !selectionWithin(root)) return off;
+
+  const tag = (...names: string[]) => (el: Element) =>
+    names.includes(el.tagName);
+
+  return {
+    bold: isFormatActive("bold"),
+    italic: isFormatActive("italic"),
+    underline: isFormatActive("underline"),
+    strikeThrough: isFormatActive("strikeThrough"),
+    ul: isFormatActive("ul"),
+    ol: isFormatActive("ol"),
+    /* `applyFormat` writes an `h3` for a heading, so that is what is looked
+       for — but any heading level counts, because pasted content can carry
+       one and the button should say so. */
+    heading: enclosing(root, tag("H1", "H2", "H3", "H4", "H5", "H6")),
+    quote: enclosing(root, tag("BLOCKQUOTE")),
+    link: enclosing(root, tag("A")),
+    mention: enclosing(
+      root,
+      (el) => el instanceof HTMLElement && el.dataset.rt === "mention",
+    ),
+    /* Paragraph is the absence of the block formats above rather than a
+       state of its own; it has no toolbar button, and saying "active" for
+       ordinary text would light up a control nobody pressed. */
+    paragraph: false,
+  };
 }

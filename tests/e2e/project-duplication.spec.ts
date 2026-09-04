@@ -382,7 +382,8 @@ test.describe("Duplicating a project through the interface", () => {
     const replyComposer = root.locator(".prio-composer").last();
     await replyComposer.getByRole("textbox").first().click();
     await page.keyboard.type(answer);
-    await replyComposer.getByRole("button", { name: /^Reply$/ }).click();
+    // The inline reply editor posts with Save, beside Cancel.
+    await replyComposer.getByRole("button", { name: /^Save$/ }).click();
 
     await expect(
       root.locator(".prio-comment__replies .prio-comment").filter({ hasText: answer }),

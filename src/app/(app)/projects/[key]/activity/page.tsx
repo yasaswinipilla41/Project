@@ -84,6 +84,9 @@ export default async function ProjectActivityPage({
     <>
       <ActivityFilters
         projects={options.projects}
+        /* The project is fixed by the route, so the bar does not offer one to
+           choose. Search, user and type are untouched. */
+        showProjectFilter={false}
         people={options.people}
         total={result.total}
       />

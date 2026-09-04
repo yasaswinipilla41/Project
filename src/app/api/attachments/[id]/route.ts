@@ -28,6 +28,51 @@ async function assertAttachmentAccess(
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/**
+ * The byte span a `Range` header asks for, or `null` for the whole object.
+ *
+ * Only the single-span form browsers actually send is honoured — `bytes=0-`,
+ * `bytes=500-999`, `bytes=-500`. A multi-part range would need a multipart
+ * body to answer it, and nothing that plays media asks for one; anything not
+ * understood is treated as no range at all, which is a legal answer.
+ *
+ * Returns `"unsatisfiable"` when the span is well-formed but starts past the
+ * end of the object, which has its own status code and is how a player
+ * discovers it has asked for something impossible.
+ */
+function parseRange(
+  header: string | null,
+  size: number,
+): { start: number; end: number } | null | "unsatisfiable" {
+  if (!header) return null;
+
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
+  if (!match) return null;
+
+  const [, rawStart, rawEnd] = match;
+  if (rawStart === "" && rawEnd === "") return null;
+
+  let start: number;
+  let end: number;
+
+  if (rawStart === "") {
+    /* A suffix range: the *last* N bytes. `bytes=-500` is the final 500. */
+    const length = Number(rawEnd);
+    if (!Number.isFinite(length) || length <= 0) return null;
+    start = Math.max(0, size - length);
+    end = size - 1;
+  } else {
+    start = Number(rawStart);
+    end = rawEnd === "" ? size - 1 : Number(rawEnd);
+    if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+    // A range that runs past the end is clamped, not refused.
+    end = Math.min(end, size - 1);
+  }
+
+  if (start >= size || start > end) return "unsatisfiable";
+  return { start, end };
+}
+
 /** Types the browser may render in place. Everything else is downloaded. */
 const INLINE_TYPES = new Set([
   "image/png",
@@ -41,7 +86,7 @@ const INLINE_TYPES = new Set([
 ]);
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
@@ -73,9 +118,43 @@ export async function GET(
     return NextResponse.json({ error: "Not found." }, { status: 404 });
   }
 
+  /*
+   * Range requests, which is what makes a video playable.
+   *
+   * A `<video>` element — including the one a browser creates when a video URL
+   * is opened directly in a tab, such as an attachment link out of the Excel
+   * export — does not fetch the file in one piece. It asks for a span, reads
+   * the container's index, then asks for more. This route used to answer
+   * `Accept-Ranges: none` and always send the whole body with a 200, so the
+   * player could not seek and, for an MP4 or QuickTime file whose `moov` atom
+   * sits at the end, could not begin playback at all: the bytes it needed
+   * first were the ones it had no way to ask for. The file downloaded fine and
+   * simply never played.
+   *
+   * Answering properly costs one header and one status code, and only the
+   * requested bytes are read from disk.
+   */
+  const range = parseRange(
+    request.headers.get("range"),
+    attachment.byteSize,
+  );
+
+  if (range === "unsatisfiable") {
+    return new NextResponse(null, {
+      status: 416,
+      headers: {
+        "Content-Range": `bytes */${attachment.byteSize}`,
+        "Accept-Ranges": "bytes",
+      },
+    });
+  }
+
   let body: ReadableStream<Uint8Array>;
   try {
-    body = await storage().read(attachment.storageKey);
+    body = await storage().read(
+      attachment.storageKey,
+      range ?? undefined,
+    );
   } catch {
     return NextResponse.json(
       { error: "That file is no longer available." },
@@ -84,11 +163,18 @@ export async function GET(
   }
 
   const inline = INLINE_TYPES.has(attachment.mimeType);
+  const length = range ? range.end - range.start + 1 : attachment.byteSize;
 
   return new NextResponse(body, {
+    status: range ? 206 : 200,
     headers: {
+      ...(range
+        ? {
+            "Content-Range": `bytes ${range.start}-${range.end}/${attachment.byteSize}`,
+          }
+        : {}),
       "Content-Type": attachment.mimeType,
-      "Content-Length": String(attachment.byteSize),
+      "Content-Length": String(length),
       /* The filename is quoted and has already had quotes and control
          characters stripped, so it cannot break out of the header. */
       "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${attachment.filename}"`,
@@ -103,7 +189,8 @@ export async function GET(
       // Attachments are immutable once written, but they are private, so the
       // cache must be the user's own.
       "Cache-Control": "private, max-age=31536000, immutable",
-      "Accept-Ranges": "none",
+      // Advertised, and honoured above. A player checks this before it seeks.
+      "Accept-Ranges": "bytes",
     },
   });
 }

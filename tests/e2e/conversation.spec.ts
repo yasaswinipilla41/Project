@@ -477,12 +477,15 @@ test.describe("Threading", () => {
     const rootCard = page.locator(".prio-comment").filter({ hasText: root }).first();
     await expect(rootCard).toBeVisible({ timeout: 20000 });
 
-    // A reply to it.
+    /* A reply to it. The action that opens the editor is still "Reply"; the
+       button that posts it is "Save", beside Cancel, under a "Replying to …"
+       line naming the comment being answered. */
     await rootCard.getByRole("button", { name: /^Reply$/ }).first().click();
+    await expect(rootCard.locator(".prio-comment__replyto").first()).toBeVisible();
     const rootComposer = rootCard.locator(".prio-composer").last();
     await rootComposer.getByRole("textbox").first().click();
     await page.keyboard.type(reply);
-    await rootComposer.getByRole("button", { name: /^Reply$/ }).click();
+    await rootComposer.getByRole("button", { name: /^Save$/ }).click();
 
     const replyCard = page
       .locator(".prio-comment__replies .prio-comment")
@@ -495,7 +498,7 @@ test.describe("Threading", () => {
     const replyComposer = replyCard.locator(".prio-composer").last();
     await replyComposer.getByRole("textbox").first().click();
     await page.keyboard.type(answer);
-    await replyComposer.getByRole("button", { name: /^Reply$/ }).click();
+    await replyComposer.getByRole("button", { name: /^Save$/ }).click();
     await expect(
       page.locator(".prio-comment").filter({ hasText: answer }).first(),
     ).toBeVisible({ timeout: 20000 });

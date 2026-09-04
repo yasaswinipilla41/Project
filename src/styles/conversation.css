@@ -212,6 +212,23 @@
   color: var(--prio-text-primary);
 }
 
+/*
+ * Lit while the caret is inside this formatting.
+ *
+ * Distinct from `:hover`, which is about the pointer rather than the
+ * document: a bold button under the cursor and a bold button describing bold
+ * text have to look different, or the toolbar says nothing.
+ */
+.prio-composer__tool[data-active] {
+  background: var(--prio-primary-50);
+  color: var(--prio-primary-700);
+}
+
+.prio-composer__tool[data-active]:hover {
+  background: var(--prio-primary-100);
+  color: var(--prio-primary-700);
+}
+
 .prio-composer__tool:focus-visible {
   outline: none;
   box-shadow: var(--prio-shadow-focus);
@@ -565,6 +582,29 @@
  * second, lesser kind of comment. The rail down the left is what ties a thread
  * together once it has more than one answer in it.
  */
+/*
+ * The inline reply editor, under the comment it answers.
+ *
+ * Indented and rule-marked like a reply itself, so before a word is typed the
+ * editor already sits where the reply will land.
+ */
+.prio-comment__reply {
+  margin-top: var(--prio-space-4);
+  padding-left: var(--prio-space-4);
+  border-left: 2px solid var(--prio-border-subtle);
+}
+
+.prio-comment__replyto {
+  margin: 0 0 var(--prio-space-2);
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-muted);
+}
+
+.prio-comment__replyto strong {
+  color: var(--prio-text-secondary);
+  font-weight: var(--prio-weight-semibold);
+}
+
 .prio-comment__replies {
   list-style: none;
   margin: var(--prio-space-4) 0 0;

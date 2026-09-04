@@ -6,8 +6,8 @@ import { prisma } from "@/lib/prisma";
  *
  *   - the Create dialog's label control, which now shows the project's own
  *     vocabulary instead of waiting to be guessed at;
- *   - the sidebar's project rows, whose hover controls have a fixed order and
- *     a fixed alignment across Pinned and Recents;
+ *   - the sidebar's single Projects section, which no longer has a Pinned
+ *     section above it or any pin control on a row;
  *   - a project's List tab, which no longer offers a Project filter it cannot
  *     act on.
  */
@@ -168,131 +168,115 @@ test.describe("The Create dialog's label control", () => {
 });
 
 test.describe("Sidebar project rows", () => {
-  /** The Recents section, which is the one that is not the Pinned toggle. */
-  function recentsSection(page: Page) {
-    return page
-      .locator(".prio-sidebar__section")
-      .filter({ has: page.getByText("Recents", { exact: true }) });
+  /**
+   * The one project section the sidebar has, now that Pinned is gone.
+   *
+   * Located by its section *label*, not by the text "Projects" anywhere in the
+   * section: the navigation block above also contains a "Projects" link, and
+   * matching on that would silently point every assertion below at the wrong
+   * section. Case-insensitive because the stylesheet uppercases the label.
+   */
+  function projectsSection(page: Page) {
+    return page.locator(".prio-sidebar__section").filter({
+      has: page.locator(".prio-sidebar__section-label", {
+        hasText: /^projects$/i,
+      }),
+    });
   }
 
-  function pinnedSection(page: Page) {
-    return page.locator(
-      ".prio-sidebar__section:has(.prio-sidebar__section-label--toggle)",
-    );
-  }
-
-  /** Makes sure there is one pinned row and one unpinned row to compare. */
-  async function withBothSections(page: Page) {
+  test("has one Projects section and no Pinned section", async ({ page }) => {
     await page.goto("/");
-    const rows = page.locator(".prio-sidebar__project-row");
-    test.skip((await rows.count()) < 2, "needs at least two sidebar projects");
+    await expect(page.locator(".prio-sidebar__project-row").first()).toBeVisible();
 
-    const pinned = pinnedSection(page).locator(".prio-sidebar__project-row");
-    if ((await pinned.count()) === 0) {
-      const first = rows.first();
-      await first.hover();
-      await first.getByRole("button", { name: /^Pin / }).click();
-      await expect(pinned).toHaveCount(1, { timeout: 20_000 });
-    }
+    const sidebar = page.locator(".prio-sidebar");
+    const headings = (
+      await sidebar.locator(".prio-sidebar__section-label").allInnerTexts()
+    ).map((t) => t.trim());
 
-    const recent = recentsSection(page).locator(".prio-sidebar__project-row");
-    test.skip((await recent.count()) === 0, "needs a project in Recents");
+    /* Read as rendered — the stylesheet uppercases section labels. */
+    const folded = headings.map((h) => h.toLowerCase());
+    expect(folded).toContain("projects");
+    expect(folded).not.toContain("pinned");
+    expect(folded).not.toContain("recents");
 
-    return { pinned: pinned.first(), recent: recent.first() };
-  }
-
-  test("shows Pin only on hover, and never on a pinned row", async ({ page }) => {
-    const { pinned, recent } = await withBothSections(page);
-
-    // At rest the Pin is present but invisible — it does not occupy the row.
-    const pin = recent.getByRole("button", { name: /^Pin / });
-    await page.mouse.move(0, 0);
-    await expect
-      .poll(async () => pin.evaluate((el) => getComputedStyle(el).opacity))
-      .toBe("0");
-
-    await recent.hover();
-    await expect
-      .poll(async () => pin.evaluate((el) => getComputedStyle(el).opacity))
-      .toBe("1");
-
-    // A pinned row carries no Pin at all; the section it is in already says so.
-    await pinned.hover();
-    await expect(pinned.getByRole("button", { name: /^Pin / })).toHaveCount(0);
-  });
-
-  test("orders the hover controls, and aligns them across both sections", async ({
-    page,
-  }) => {
-    const { pinned, recent } = await withBothSections(page);
-
-    /* Recents: name -> Pin -> Favorite. Read as x positions, which is what
-       the requirement is actually about. The row's "..." menu was removed,
-       so Favorite is the last control on the row. */
-    await recent.hover();
-    const recentPin = await recent
-      .getByRole("button", { name: /^Pin / })
-      .boundingBox();
-    const recentFav = await recent
-      .locator(".prio-sidebar__project-fav")
-      .boundingBox();
-
-    expect(recentPin!.x).toBeLessThan(recentFav!.x);
-
-    // Pinned: name -> Favorite, with the Pin's space still held open.
-    await pinned.hover();
-    const pinnedFav = await pinned
-      .locator(".prio-sidebar__project-fav")
-      .boundingBox();
-
-    /* And the two sections line up: Favorite sits at the same x in Pinned as
-       in Recents, so it does not shift as the eye crosses a section. */
-    expect(Math.abs(pinnedFav!.x - recentFav!.x)).toBeLessThanOrEqual(1);
+    // Exactly one section holds the project rows.
+    await expect(projectsSection(page)).toHaveCount(1);
   });
 
   /*
-   * The row's "..." menu is gone, from the markup and not merely from view.
-   *
-   * It used to sit at the end of every project row, invisible until hover,
-   * holding Favorite, Pin and Share. Favorite and Pin are buttons on the row
-   * itself and do the same job in one click; the menu is not hidden, it is
-   * not rendered, which is what this asserts — a `toBeHidden` would pass just
-   * as well against `opacity: 0`.
+   * Pinning is gone from the markup, not merely from view. Counting elements
+   * rather than checking visibility is the point: a `toBeHidden` would pass
+   * against a button that is still there behind `opacity: 0`.
    */
-  test("no project row renders a three-dots menu at all", async ({ page }) => {
+  test("renders no pin control anywhere in the sidebar", async ({ page }) => {
     await page.goto("/");
-    const rows = page.locator(".prio-sidebar__project-row");
+    const sidebar = page.locator(".prio-sidebar");
+    const rows = sidebar.locator(".prio-sidebar__project-row");
     await expect(rows.first()).toBeVisible();
 
-    expect(await rows.count()).toBeGreaterThan(0);
-
-    // Nowhere in the sidebar, hovered or not.
+    await expect(sidebar.getByRole("button", { name: /^Pin / })).toHaveCount(0);
+    await expect(sidebar.getByRole("button", { name: /Unpin/i })).toHaveCount(0);
+    // The "..." menu that used to hold Pin is gone too.
     await expect(
-      page.locator(".prio-sidebar").getByRole("button", { name: /More actions/ }),
+      sidebar.getByRole("button", { name: /More actions/ }),
     ).toHaveCount(0);
 
     for (let i = 0; i < (await rows.count()); i += 1) {
       const row = rows.nth(i);
       await row.hover();
       await expect(
-        row.getByRole("button", { name: /More actions/ }),
-        "a hovered row must not reveal a menu either",
+        row.getByRole("button", { name: /^Pin |Unpin/i }),
+        "a hovered row must not reveal a pin control either",
       ).toHaveCount(0);
-      // The controls that remain, and nothing else.
-      await expect(row.locator(".prio-sidebar__project-fav")).toHaveCount(1);
-      expect(await row.getByRole("button").count()).toBeLessThanOrEqual(2);
     }
   });
 
-  test("Pin and Favorite still work from the row itself", async ({ page }) => {
+  test("keeps the project rows themselves unchanged", async ({ page }) => {
+    /* The rows are the sidebar's own list, in most-recently-opened order.
+       What matters after removing a section is that the same projects are
+       still listed, still named, still linked. */
+    const projects = await prisma.project.findMany({
+      where: { isArchived: false },
+      select: { name: true, key: true },
+    });
+    const names = new Set(projects.map((p) => p.name));
+
     await page.goto("/");
-    const recent = recentsSection(page).locator(".prio-sidebar__project-row");
-    test.skip((await recent.count()) === 0, "needs a project in Recents");
+    const rows = projectsSection(page).locator(".prio-sidebar__project-row");
+    await expect(rows.first()).toBeVisible();
 
-    const row = recent.first();
-    const name = await row.locator(".prio-navitem__label").innerText();
+    expect(await rows.count()).toBeGreaterThan(0);
 
-    // Favourite it from the row, and read the state back from the database.
+    for (let i = 0; i < (await rows.count()); i += 1) {
+      const row = rows.nth(i);
+      const name = (await row.locator(".prio-navitem__label").innerText()).trim();
+      expect(names.has(name), `${name} is a real project`).toBe(true);
+      // Its chip and its link both survive.
+      await expect(row.locator(".prio-project-chip")).toHaveCount(1);
+      await expect(row.locator("a.prio-sidebar__project-link")).toHaveCount(1);
+    }
+  });
+
+  test("navigating from a project row still works", async ({ page }) => {
+    await page.goto("/");
+    const row = projectsSection(page).locator(".prio-sidebar__project-row").first();
+    const name = (await row.locator(".prio-navitem__label").innerText()).trim();
+    const project = await prisma.project.findFirstOrThrow({
+      where: { name },
+      select: { key: true },
+    });
+
+    await row.locator("a.prio-sidebar__project-link").click();
+    await expect(page).toHaveURL(
+      new RegExp(`/projects/${project.key.toLowerCase()}$`),
+    );
+  });
+
+  test("Favorite still works from the row itself", async ({ page }) => {
+    await page.goto("/");
+    const row = projectsSection(page).locator(".prio-sidebar__project-row").first();
+    const name = (await row.locator(".prio-navitem__label").innerText()).trim();
+
     await row.hover();
     await row.locator(".prio-sidebar__project-fav").click();
     await expect
@@ -301,7 +285,7 @@ test.describe("Sidebar project rows", () => {
       )
       .toBeGreaterThan(0);
 
-    // And unfavourite it again, leaving the fixture as it was found.
+    // And back, leaving the fixture as it was found.
     await row.hover();
     await row.locator(".prio-sidebar__project-fav").click();
     await expect

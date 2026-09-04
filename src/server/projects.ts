@@ -165,8 +165,10 @@ export async function createProject(
  * finished copy. Files are copied afterwards, because a filesystem cannot be
  * rolled back by a database.
  *
- * Gated the same way `createProject` is — creating a project, in whatever
- * form, is an administrator action.
+ * Gated by the project's own access rule: whoever may open the source may
+ * copy it, administrator or not. Creating a project from nothing remains an
+ * administrator action — this creates one from work the caller can already
+ * read, which is a different question.
  */
 export async function duplicateProject(
   raw: unknown,
@@ -182,13 +184,31 @@ export async function duplicateProject(
 > {
   try {
     const user = await requireUser();
-    assertAdmin(user);
 
     const parsed = cloneProjectSchema.safeParse(raw);
     if (!parsed.success) {
       return { ok: false, error: "Choose a project to duplicate." };
     }
     const { projectId, copyLinks, copyAttachments } = parsed.data;
+
+    /*
+     * Anyone who may open the project may copy it.
+     *
+     * This used to require an administrator, on the reasoning that creating a
+     * project is an administrator's job. Copying one is a different act: what
+     * it produces is a working copy of work the caller can already read, for
+     * their own use. The check is therefore the project's own access rule —
+     * the same `assertProjectAccess` the board, the issue list and the
+     * attachment route use — and it is what makes the source readable in the
+     * first place, so nothing is exposed that was not already.
+     *
+     * It is a real server-side check, not a hidden menu item: a member with no
+     * access to `projectId` gets the same "no longer exists" answer as for an
+     * id that does not exist, so this cannot be used to discover projects.
+     * Creating a project from scratch stays an administrator action, and no
+     * other permission changes.
+     */
+    await assertProjectAccess(user, projectId);
 
     const source = await prisma.project.findUnique({
       where: { id: projectId },
@@ -804,50 +824,6 @@ export async function toggleProjectFavorite(
       data: { projectId: parsed.data.projectId, userId: user.id },
     });
     return { ok: true, data: { isFavorite: true } };
-  } catch (error) {
-    return failure(error);
-  }
-}
-
-/**
- * Toggle whether the caller has pinned this project to the top of their
- * sidebar. Same access rule as favoriting — anyone who can see the project
- * may pin it — and a separate table from `ProjectFavorite` because the two
- * are independent states, not two names for the same fact.
- */
-export async function toggleProjectPin(
-  raw: unknown,
-): Promise<ProjectActionResult<{ isPinned: boolean }>> {
-  try {
-    const user = await requireUser();
-
-    const parsed = projectIdSchema.safeParse(raw);
-    if (!parsed.success) {
-      return { ok: false, error: "Choose a project to pin." };
-    }
-
-    await assertProjectAccess(user, parsed.data.projectId);
-
-    const existing = await prisma.projectPin.findUnique({
-      where: {
-        projectId_userId: { projectId: parsed.data.projectId, userId: user.id },
-      },
-      select: { projectId: true },
-    });
-
-    if (existing) {
-      await prisma.projectPin.delete({
-        where: {
-          projectId_userId: { projectId: parsed.data.projectId, userId: user.id },
-        },
-      });
-      return { ok: true, data: { isPinned: false } };
-    }
-
-    await prisma.projectPin.create({
-      data: { projectId: parsed.data.projectId, userId: user.id },
-    });
-    return { ok: true, data: { isPinned: true } };
   } catch (error) {
     return failure(error);
   }

@@ -87,22 +87,26 @@ export default async function ProjectLayout({
           ) : null}
 
           {/*
-           * Edit and Delete appear for an administrator or for the person who
-           * created this project — never for another member of it. The server
-           * enforces the same rule inside `updateProject` and `deleteProject`,
-           * so this only decides what is worth showing.
+           * The menu itself is for everyone who can open the project, because
+           * Clone is theirs: copying work you can already read is not an
+           * administrator's privilege, and `duplicateProject` checks project
+           * access on the server.
+           *
+           * Edit and Delete inside it stay with an administrator or the person
+           * who created this project — never another member of it. The server
+           * enforces that same rule inside `updateProject` and `deleteProject`,
+           * so `canManage` only decides what is worth showing.
            */}
-          {canManageProject(user, project) ? (
-            <ProjectActions
-              project={{
-                id: project.id,
-                key: project.key,
-                name: project.name,
-                description: project.description,
-              }}
-              issueCount={project._count.issues}
-            />
-          ) : null}
+          <ProjectActions
+            project={{
+              id: project.id,
+              key: project.key,
+              name: project.name,
+              description: project.description,
+            }}
+            issueCount={project._count.issues}
+            canManage={canManageProject(user, project)}
+          />
         </div>
       </div>
 

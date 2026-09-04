@@ -14,6 +14,8 @@ import { RichText } from "@/components/richtext/RichText";
 import {
   applyFormat,
   MarkdownEditor,
+  readToolbarState,
+  type ToolbarState,
   type FormatCommand,
   type MarkdownEditorHandle,
 } from "@/components/richtext/MarkdownEditor";
@@ -129,6 +131,19 @@ export function CommentComposer({
 }: CommentComposerProps) {
   const textareaId = useId();
   const editor = useRef<MarkdownEditorHandle>(null);
+
+  /**
+   * What the caret is sitting in, so the toolbar can say so.
+   *
+   * Read from the editor's own selection rather than tracked as commands are
+   * issued: the toolbar is not the only thing that changes formatting — a
+   * keyboard shortcut, a paste, an undo, or simply moving the caret into text
+   * that was already bold all change the answer, and a state maintained
+   * alongside the document would be wrong after every one of them.
+   */
+  const [active, setActive] = useState<Record<ToolbarState, boolean>>(() =>
+    readToolbarState(null),
+  );
   const fileInput = useRef<HTMLInputElement>(null);
 
   const [body, setBody] = useState(initialBody);
@@ -243,11 +258,35 @@ export function CommentComposer({
    * step over — the browser applies the formatting to the selection, and the
    * Markdown is produced from the result when it is serialised.
    */
+  /** Re-read the editor's state. Cheap, and the only source of truth. */
+  const syncToolbar = useCallback(() => {
+    setActive(readToolbarState(editor.current?.element() ?? null));
+  }, []);
+
+  /*
+   * `selectionchange` is the one event that fires for every way a caret can
+   * move — typing, clicking, arrow keys, a shortcut, a paste, an undo — and it
+   * is only available on `document`, so it is listened for there and filtered
+   * by whether the selection is in this editor. `readToolbarState` does that
+   * filtering, which is what stops an open reply's toolbar lighting up from a
+   * selection in the composer at the foot of the page.
+   */
+  useEffect(() => {
+    document.addEventListener("selectionchange", syncToolbar);
+    return () => document.removeEventListener("selectionchange", syncToolbar);
+  }, [syncToolbar]);
+
   function format_(command: FormatCommand) {
     editor.current?.focus();
     applyFormat(command);
     // execCommand does not fire `input`, so the value is read back by hand.
-    requestAnimationFrame(() => editor.current?.syncNow());
+    requestAnimationFrame(() => {
+      editor.current?.syncNow();
+      /* Applying a command can leave the selection where it was, in which case
+         `selectionchange` never fires — so the toolbar is refreshed here too,
+         after the command has landed. */
+      syncToolbar();
+    });
   }
 
   /** Wrap the selection in a link, asking only for the address. */
@@ -511,6 +550,8 @@ export function CommentComposer({
                 onMouseDown={(event) => event.preventDefault()}
                 title={`${format.label} (${format.hint})`}
                 aria-label={format.label}
+                data-active={active[format.command] || undefined}
+                aria-pressed={active[format.command]}
                 onClick={() => format_(format.command)}
               >
                 <span data-format={format.key}>
@@ -538,6 +579,8 @@ export function CommentComposer({
                 onMouseDown={(event) => event.preventDefault()}
                 title={block.label}
                 aria-label={block.label}
+                data-active={active[block.command] || undefined}
+                aria-pressed={active[block.command]}
                 onClick={() => format_(block.command)}
               >
                 <span data-format={block.key}>
@@ -558,6 +601,8 @@ export function CommentComposer({
               onMouseDown={(event) => event.preventDefault()}
               title="Link"
               aria-label="Link"
+              data-active={active.link || undefined}
+              aria-pressed={active.link}
               onClick={insertLink}
             >
               <IconLink size={14} />
@@ -571,6 +616,8 @@ export function CommentComposer({
               onMouseDown={(event) => event.preventDefault()}
               title="Mention someone"
               aria-label="Mention someone"
+              data-active={active.mention || undefined}
+              aria-pressed={active.mention}
               onClick={() => {
                 /* Type the `@` into the document and let the same detection
                    that watches the keyboard open the picker, rather than

@@ -8,20 +8,26 @@ import { Menu, MenuItem, MenuSeparator } from "@/components/ui/Menu";
 import { useToast } from "@/components/ui/Toast";
 import {
   IconChevronDown,
+  IconCopy,
   IconEdit,
   IconTrash,
   IconWarning,
 } from "@/components/ui/Icon";
+import { CloneProjectDialog } from "@/components/projects/CloneProjectDialog";
 import { deleteProject, updateProject } from "@/server/projects";
 import type { FieldErrors } from "@/server/schemas";
 
 /**
- * Edit and Delete for a project.
+ * The project's own actions menu, beside Settings.
  *
- * This component is only rendered for someone allowed to use it, but that is
- * presentation. `updateProject` and `deleteProject` each re-derive the caller
- * and re-read `createdById` from the database, so hiding these buttons is a
- * courtesy and never the control.
+ * Two audiences share one menu. Clone is offered to anyone who can open the
+ * project, because copying work you can already read is not an administrator's
+ * privilege; Edit and Delete stay with the administrator or the person who
+ * created it, exactly as before.
+ *
+ * All of that is presentation. `updateProject`, `deleteProject` and
+ * `duplicateProject` each re-derive the caller and re-check access on the
+ * server, so hiding an item here is a courtesy and never the control.
  */
 
 export interface ProjectActionsProps {
@@ -33,11 +39,22 @@ export interface ProjectActionsProps {
   };
   /** Issue count, shown in the delete dialog so the cost is stated plainly. */
   issueCount: number;
+  /**
+   * Whether this person may rename or delete the project — an administrator,
+   * or whoever created it. Everyone who can see the project still gets the
+   * menu, because Clone is theirs.
+   */
+  canManage: boolean;
 }
 
-export function ProjectActions({ project, issueCount }: ProjectActionsProps) {
+export function ProjectActions({
+  project,
+  issueCount,
+  canManage,
+}: ProjectActionsProps) {
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [cloning, setCloning] = useState(false);
 
   return (
     <>
@@ -56,14 +73,31 @@ export function ProjectActions({ project, issueCount }: ProjectActionsProps) {
           </button>
         )}
       >
-        <MenuItem icon={<IconEdit />} onSelect={() => setEditing(true)}>
-          Edit project
+        <MenuItem icon={<IconCopy />} onSelect={() => setCloning(true)}>
+          Clone project
         </MenuItem>
-        <MenuSeparator />
-        <MenuItem danger icon={<IconTrash />} onSelect={() => setDeleting(true)}>
-          Delete project
-        </MenuItem>
+
+        {canManage ? (
+          <>
+            <MenuSeparator />
+            <MenuItem icon={<IconEdit />} onSelect={() => setEditing(true)}>
+              Edit project
+            </MenuItem>
+            <MenuSeparator />
+            <MenuItem
+              danger
+              icon={<IconTrash />}
+              onSelect={() => setDeleting(true)}
+            >
+              Delete project
+            </MenuItem>
+          </>
+        ) : null}
       </Menu>
+
+      {cloning ? (
+        <CloneProjectDialog project={project} onClose={() => setCloning(false)} />
+      ) : null}
 
       {/* Mounted only while open, so each open starts from the saved values. */}
       {editing ? (

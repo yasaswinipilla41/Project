@@ -618,18 +618,37 @@ function CommentCard({
               onReact={(emoji) => onReact(comment.id, emoji)}
             />
 
+            {/*
+             * The reply editor, directly under the comment it answers.
+             *
+             * It sits inside this comment's own card rather than beside it or
+             * in a panel of its own, so the thing being replied to is still on
+             * screen and directly above what is being typed. `Replying to
+             * <name>` says which comment that is — a card can be several
+             * replies deep in a long thread, and the editor on its own does
+             * not say whose words it is answering.
+             *
+             * Same composer as the one at the foot of the page: same toolbar,
+             * same mentions, same attachments, same validation. There is no
+             * second editor.
+             */}
             {replyingTo === comment.id ? (
-              <CommentComposer
-                issueId={issueId}
-                author={currentUser}
-                mentionable={mentionable}
-                submitLabel="Reply"
-                autoFocus
-                onCancel={() => setReplyingTo(null)}
-                onSubmit={(body, attachmentIds) =>
-                  onPostReply(comment.id, body, attachmentIds)
-                }
-              />
+              <div className="prio-comment__reply">
+                <p className="prio-comment__replyto">
+                  Replying to <strong>{comment.author.name}</strong>
+                </p>
+                <CommentComposer
+                  issueId={issueId}
+                  author={currentUser}
+                  mentionable={mentionable}
+                  submitLabel="Save"
+                  autoFocus
+                  onCancel={() => setReplyingTo(null)}
+                  onSubmit={(body, attachmentIds) =>
+                    onPostReply(comment.id, body, attachmentIds)
+                  }
+                />
+              </div>
             ) : null}
           </>
         )}

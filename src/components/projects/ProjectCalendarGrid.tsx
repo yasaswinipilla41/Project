@@ -49,6 +49,14 @@ export interface CalendarMember {
   name: string;
 }
 
+/**
+ * Roughly how tall the composer is, used only to place it on the first paint
+ * before it can be measured. Over-estimating is the safe direction: it flips
+ * the panel above a fraction earlier than strictly needed, where the effect
+ * below then confirms or corrects it against the real height.
+ */
+const ESTIMATED_COMPOSER_HEIGHT = 240;
+
 /** `2026-09-03` for the given year/month/day, without touching local time. */
 function isoDate(year: number, month: number, day: number): string {
   return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
@@ -82,6 +90,16 @@ export function ProjectCalendarGrid({
 
   /** The day whose composer is open, or `null`. */
   const [openDay, setOpenDay] = useState<number | null>(null);
+  /**
+   * Which side of the day the composer opens on.
+   *
+   * A day near the foot of the calendar has no room below it, and a panel
+   * anchored to `top: 100%` there runs off the bottom of the window — the
+   * fields and the Create button end up somewhere nobody can reach. The side
+   * is therefore measured rather than assumed: below when it fits, above when
+   * it does not.
+   */
+  const [place, setPlace] = useState<"below" | "above">("below");
   const [title, setTitle] = useState("");
   const [type, setType] = useState<IssueType>("TASK");
   const [assigneeId, setAssigneeId] = useState("");
@@ -90,6 +108,27 @@ export function ProjectCalendarGrid({
 
   const gridRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
+  const composerRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * Which side a composer anchored to this cell should open on.
+   *
+   * `height` is the panel's real height once it has been rendered, and a
+   * conservative estimate before that — enough to place it correctly on the
+   * very first paint, so it never appears below and then jumps above.
+   *
+   * Below is preferred: it is where a panel anchored to a control is expected.
+   * Above is used only when below would be clipped *and* above actually has
+   * the room, so a window too short for either still shows the panel where it
+   * can at least be scrolled to.
+   */
+  const sideFor = useCallback((cell: Element, height: number) => {
+    const rect = cell.getBoundingClientRect();
+    const gap = 8;
+    const fitsBelow = rect.bottom + height + gap <= window.innerHeight;
+    const fitsAbove = rect.top - height - gap >= 0;
+    return !fitsBelow && fitsAbove ? "above" : "below";
+  }, []);
 
   const close = useCallback(() => {
     setOpenDay(null);
@@ -127,6 +166,33 @@ export function ProjectCalendarGrid({
   useEffect(() => {
     if (openDay !== null) titleRef.current?.focus();
   }, [openDay]);
+
+  /*
+   * Correct the side against the panel's real height, and keep it right while
+   * the window changes. The click-time estimate places it; this is what makes
+   * the placement true for a composer that grew — an error message under the
+   * title adds a line — or a window that was resized while it is open.
+   */
+  useEffect(() => {
+    if (openDay === null) return;
+
+    const settle = () => {
+      const composer = composerRef.current;
+      const cell = composer?.closest(".prio-calendar__cell");
+      if (!composer || !cell) return;
+      setPlace(sideFor(cell, composer.offsetHeight));
+    };
+
+    settle();
+    window.addEventListener("resize", settle);
+    /* The calendar scrolls with the page, so the room below a day changes
+       without the window changing size. */
+    window.addEventListener("scroll", settle, true);
+    return () => {
+      window.removeEventListener("resize", settle);
+      window.removeEventListener("scroll", settle, true);
+    };
+  }, [openDay, error, sideFor]);
 
   async function submit(day: number) {
     if (saving) return; // A second click while the first is in flight is not a second issue.
@@ -235,13 +301,21 @@ export function ProjectCalendarGrid({
                   className="prio-calendar__add"
                   aria-label={`Add an issue due ${day} ${monthLabel}`}
                   aria-expanded={composing}
-                  onClick={() => {
+                  onClick={(event) => {
                     if (composing) close();
                     else {
                       setTitle("");
                       setType("TASK");
                       setAssigneeId("");
                       setError(null);
+                      /* Placed before it is rendered, from the day's own box
+                         and a conservative height, so the first paint is
+                         already on the right side. The effect above then
+                         corrects it against the real height. */
+                      const cell = event.currentTarget.closest(
+                        ".prio-calendar__cell",
+                      );
+                      if (cell) setPlace(sideFor(cell, ESTIMATED_COMPOSER_HEIGHT));
                       setOpenDay(day);
                     }
                   }}
@@ -251,8 +325,10 @@ export function ProjectCalendarGrid({
 
                 {composing ? (
                   <div
+                    ref={composerRef}
                     className="prio-calendar__composer"
                     data-align={column >= 5 ? "end" : undefined}
+                    data-place={place}
                     role="dialog"
                     aria-label={`New issue due ${day} ${monthLabel}`}
                   >

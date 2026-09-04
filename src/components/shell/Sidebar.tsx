@@ -9,27 +9,24 @@ import {
   IconAdmin,
   IconBell,
   IconBoard,
-  IconChevronDown,
   IconChevronLeft,
   IconChevronRight,
   IconHome,
   IconIssues,
   IconMyWork,
-  IconPin,
   IconProjects,
   IconReports,
   IconSearch,
   IconStar,
 } from "@/components/ui/Icon";
 import type { IconProps } from "@/components/ui/Icon";
-import { toggleProjectFavorite, toggleProjectPin } from "@/server/projects";
+import { toggleProjectFavorite } from "@/server/projects";
 
 export interface SidebarProject {
   id: string;
   name: string;
   key: string;
   isFavorite: boolean;
-  isPinned: boolean;
 }
 
 export interface SidebarProps {
@@ -80,19 +77,9 @@ export function Sidebar({
   const pathname = usePathname();
   const router = useRouter();
   const { toast } = useToast();
-  const [pinnedExpanded, setPinnedExpanded] = useState(true);
 
   async function handleFavorite(project: SidebarProject) {
     const result = await toggleProjectFavorite({ projectId: project.id });
-    if (!result.ok) {
-      toast(result.error, "error");
-      return;
-    }
-    router.refresh();
-  }
-
-  async function handlePin(project: SidebarProject) {
-    const result = await toggleProjectPin({ projectId: project.id });
     if (!result.ok) {
       toast(result.error, "error");
       return;
@@ -197,38 +184,14 @@ export function Sidebar({
 
         {!collapsed ? (
           /*
-           * Name -> Pin -> Favourite.
+           * Name -> Favourite.
            *
-           * There is no "..." menu here any more. It held Favorite, Pin and
-           * Share; the first two are the buttons beside this comment, which
-           * do the same job in one click instead of two, and Share was the
-           * only thing it carried that has no button of its own -- a board
-           * link is still copyable from the address bar, or from the board's
-           * own actions menu.
-           *
-           * A pinned project has no Pin control -- the section it is in
-           * already says it is pinned, and it is unpinned from the Flow
-           * Board's own actions -- but it keeps the *space* the control would
-           * occupy. That empty slot is what puts Favourite on the same x in
-           * Pinned as in Recents: without it the two sections' stars sit a
-           * control apart and the eye has to re-find them at every section
-           * boundary.
+           * Pinning is gone, and with it the Pin button and the empty slot
+           * that reserved its width so two sections could line up -- there is
+           * one section now. The "..." menu went earlier; Favorite is the one
+           * control left, and it does its job in a single click.
            */
           <div className="prio-sidebar__project-actions">
-            {project.isPinned ? (
-              <span className="prio-sidebar__project-slot" aria-hidden />
-            ) : (
-              <button
-                type="button"
-                className="prio-sidebar__project-menu-trigger"
-                aria-label={`Pin ${project.name}`}
-                title="Pin"
-                onClick={() => handlePin(project)}
-              >
-                <IconPin size={13} fill="none" />
-              </button>
-            )}
-
             {/*
              * One star, doing both jobs. Favourited, it stays lit whether or
              * not the row is hovered -- that is the badge beside the project
@@ -259,9 +222,6 @@ export function Sidebar({
       </div>
     );
   }
-
-  const pinnedProjects = projects.filter((p) => p.isPinned);
-  const recentProjects = projects.filter((p) => !p.isPinned);
 
   return (
     <>
@@ -322,41 +282,18 @@ export function Sidebar({
             ))}
           </div>
 
+          {/*
+           * One list, named Projects.
+           *
+           * There were two sections, Pinned above Recents, and pinning is
+           * gone -- so is the split it existed to create. The rows themselves
+           * are unchanged: same order (the layout still sorts by most
+           * recently opened), same names, same icons, same navigation.
+           */}
           {projects.length > 0 ? (
             <div className="prio-sidebar__section">
-              <button
-                type="button"
-                className="prio-sidebar__section-label prio-sidebar__section-label--toggle"
-                onClick={() => setPinnedExpanded((v) => !v)}
-                aria-expanded={pinnedExpanded}
-                title={collapsed ? "Pinned" : undefined}
-              >
-                {!collapsed ? (
-                  <IconChevronDown
-                    size={12}
-                    className="prio-sidebar__section-chevron"
-                    style={{ transform: pinnedExpanded ? undefined : "rotate(-90deg)" }}
-                  />
-                ) : null}
-                <span>Pinned</span>
-              </button>
-
-              {pinnedExpanded ? (
-                pinnedProjects.length > 0 ? (
-                  pinnedProjects.map(renderProjectRow)
-                ) : !collapsed ? (
-                  <p className="prio-sidebar__empty">
-                    Pin a project to keep it here.
-                  </p>
-                ) : null
-              ) : null}
-            </div>
-          ) : null}
-
-          {recentProjects.length > 0 ? (
-            <div className="prio-sidebar__section">
-              <p className="prio-sidebar__section-label">Recents</p>
-              {recentProjects.map(renderProjectRow)}
+              <p className="prio-sidebar__section-label">Projects</p>
+              {projects.map(renderProjectRow)}
             </div>
           ) : null}
 

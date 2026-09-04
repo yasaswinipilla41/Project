@@ -32,6 +32,13 @@ export interface ActivityFiltersProps {
   projects: FilterOption[];
   people: FilterOption[];
   total: number;
+  /**
+   * Hides the Project dropdown on a feed that is already one project's — a
+   * project's own Activity tab, where the route fixes the project and the
+   * control could only ever confirm what the page already says. Every other
+   * filter on the bar is unaffected.
+   */
+  showProjectFilter?: boolean;
 }
 
 /** Declared at module scope so an open menu survives a keystroke elsewhere in the bar. */
@@ -68,7 +75,12 @@ function SingleSelectMenu({
   );
 }
 
-export function ActivityFilters({ projects, people, total }: ActivityFiltersProps) {
+export function ActivityFilters({
+  projects,
+  people,
+  total,
+  showProjectFilter = true,
+}: ActivityFiltersProps) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
@@ -127,6 +139,7 @@ export function ActivityFilters({ projects, people, total }: ActivityFiltersProp
       </form>
 
       <div className="prio-filters__chips">
+        {showProjectFilter ? (
         <SingleSelectMenu
           label="Project"
           active={Boolean(projectId)}
@@ -149,6 +162,7 @@ export function ActivityFilters({ projects, people, total }: ActivityFiltersProp
             </MenuItem>
           ))}
         </SingleSelectMenu>
+        ) : null}
 
         <SingleSelectMenu
           label="User"

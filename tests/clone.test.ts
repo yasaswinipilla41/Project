@@ -690,9 +690,23 @@ describe("who may clone", () => {
     ).toBe(0);
   });
 
-  it("keeps project cloning an administrator action", async () => {
-    await actAs(MEMBER);
+  /*
+   * Cloning follows the project's own access rule rather than the caller's
+   * role. Copying work you can already read produces a private copy of what
+   * you could already see, so it is not an administrator's privilege — but it
+   * is still a real server-side check, and the two tests below are the pair
+   * that matters: a member of the project may, a stranger to it may not.
+   */
+  it("lets a member of the project clone it", async () => {
+    const member = await actAs(MEMBER);
     const project = await projectByKey("ENG");
+
+    // The fixture only means anything if this person really is a member.
+    expect(
+      await prisma.projectMember.count({
+        where: { projectId: project.id, userId: member.id },
+      }),
+    ).toBe(1);
 
     const result = await duplicateProject({
       projectId: project.id,
@@ -700,10 +714,35 @@ describe("who may clone", () => {
       copyAttachments: false,
     });
 
-    expect(result.ok).toBe(false);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    createdProjects.push(result.data.id);
+
+    // A new project of their own, and the original untouched.
+    expect(result.data.id).not.toBe(project.id);
     expect(
-      await prisma.project.count({ where: { name: "Engineering (Copy)" } }),
-    ).toBe(0);
+      await prisma.project.findUniqueOrThrow({
+        where: { id: project.id },
+        select: { name: true },
+      }),
+    ).toMatchObject({ name: "Engineering" });
+  });
+
+  it("refuses someone with no access to the project", async () => {
+    /* `MEMBER` is outside Testing, which is the administrator's own project —
+       the same "outsider" the issue-clone tests above use. */
+    await actAs(MEMBER);
+    const testing = await projectByKey("TES");
+
+    const before = await prisma.project.count();
+    const result = await duplicateProject({
+      projectId: testing.id,
+      copyLinks: false,
+      copyAttachments: false,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(await prisma.project.count()).toBe(before);
   });
 });
 

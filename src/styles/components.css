@@ -2399,6 +2399,17 @@ a.prio-stat:focus-visible {
   right: 0;
 }
 
+/*
+ * A day with no room beneath it opens the panel upwards instead. Which side
+ * is decided by measurement in the component, not by which row the day is in:
+ * rows grow with the issues on them, so the last row is not reliably the only
+ * one that runs out of space.
+ */
+.prio-calendar__composer[data-place="above"] {
+  top: auto;
+  bottom: 100%;
+}
+
 .prio-calendar__composer-head {
   display: flex;
   align-items: center;
