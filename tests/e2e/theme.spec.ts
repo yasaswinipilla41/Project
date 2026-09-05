@@ -216,7 +216,17 @@ test.describe("Theme persistence and system mode", () => {
       await page.goto("/");
       await expect(page.locator(".prio-sidebar")).toBeVisible();
 
-      // No explicit choice stored: the media query decides.
+      /*
+       * System is chosen here rather than assumed. It is no longer what an
+       * account starts on — a brand-new one opens on Light, so that somebody
+       * arriving on a dark laptop is not handed a dark application they never
+       * asked for — but it is still a first-class choice, and choosing it must
+       * still hand the decision back to the machine.
+       */
+      await page.getByRole("button", { name: /^Theme: / }).click();
+      await page.getByRole("menuitemradio", { name: "System" }).click();
+
+      // "System" is the absence of the attribute: the media query decides.
       await expect(page.locator("html")).not.toHaveAttribute("data-theme", /.*/);
 
       const sidebar = await page
@@ -228,6 +238,49 @@ test.describe("Theme persistence and system mode", () => {
       } else {
         expect(luminance(sidebar)).toBeGreaterThan(0.7);
       }
+
+      // And it survives a full document load, through the pre-paint script.
+      await page.reload();
+      await expect(page.locator("html")).not.toHaveAttribute("data-theme", /.*/);
+
+      await context.close();
+    }
+  });
+
+  test("a brand-new account opens on Light, whatever the machine is set to", async ({
+    browser,
+  }) => {
+    /*
+     * The default, asserted on a machine set to dark — which is the only case
+     * where the old behaviour and this one differ, and the reason it changed.
+     * Nothing is stored: this is a first visit.
+     */
+    for (const scheme of ["light", "dark"] as const) {
+      const context = await browser.newContext({ colorScheme: scheme });
+      const page = await context.newPage();
+
+      await page.goto("/");
+      await expect(page.locator(".prio-sidebar")).toBeVisible();
+
+      await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+      await expect(
+        page.getByRole("button", { name: "Theme: Light" }),
+      ).toBeVisible();
+
+      const sidebar = await page
+        .locator(".prio-sidebar")
+        .evaluate((el) => getComputedStyle(el).backgroundColor);
+      expect(
+        luminance(sidebar),
+        `a first visit on a ${scheme} machine must still be light`,
+      ).toBeGreaterThan(0.7);
+
+      // Storage held no preference before the visit and still holds none after
+      // it: the default is a fallback, not a silent write.
+      const stored = await page.evaluate(() =>
+        localStorage.getItem("prio-theme"),
+      );
+      expect(stored).toBeNull();
 
       await context.close();
     }

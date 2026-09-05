@@ -434,6 +434,28 @@
   stroke-width: 5;
 }
 
+/*
+ * The hovered slice thickens slightly and the others fade back, so one status
+ * is picked out of the ring without the ring moving. Only `stroke-width` and
+ * `opacity` change — the radius, the dash geometry and therefore every slice's
+ * position and size are untouched, so nothing shifts under the pointer and the
+ * chart cannot mislead. 7 on a 15.915 radius stays well inside the 42-unit
+ * viewBox, so a thickened slice is never clipped.
+ */
+.prio-donut__seg {
+  transition:
+    stroke-width var(--prio-duration-fast) var(--prio-ease),
+    opacity var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-donut__seg[data-hover] {
+  stroke-width: 7;
+}
+
+.prio-donut__seg[data-dimmed] {
+  opacity: 0.45;
+}
+
 .prio-donut__track {
   stroke: var(--prio-border);
 }
@@ -499,20 +521,29 @@
    status colour and the count and share beside it turn solid. The values are
    already there and stay there; hover makes plain which ones belong to the
    status under the pointer, which is what a legend of nine rows otherwise
-   leaves to careful reading. */
+   leaves to careful reading.
+
+   `[data-hover]` is the same treatment driven from the component's shared
+   state, which is what lights this row when the pointer is on its slice in the
+   ring rather than on the row itself. It sits alongside `:hover` rather than
+   replacing it so the row still responds on its own if scripting has not
+   settled. */
 .prio-donut__legenditem:hover,
-.prio-donut__legenditem:focus-within {
+.prio-donut__legenditem:focus-within,
+.prio-donut__legenditem[data-hover] {
   box-shadow: inset 0 0 0 1px var(--prio-border);
 }
 
 .prio-donut__legenditem:hover .prio-donut__legendlabel,
-.prio-donut__legenditem:focus-within .prio-donut__legendlabel {
+.prio-donut__legenditem:focus-within .prio-donut__legendlabel,
+.prio-donut__legenditem[data-hover] .prio-donut__legendlabel {
   color: var(--prio-text-primary);
   font-weight: var(--prio-weight-semibold);
 }
 
 .prio-donut__legenditem:hover .prio-donut__legendshare,
-.prio-donut__legenditem:focus-within .prio-donut__legendshare {
+.prio-donut__legenditem:focus-within .prio-donut__legendshare,
+.prio-donut__legenditem[data-hover] .prio-donut__legendshare {
   color: var(--prio-text-primary);
   font-weight: var(--prio-weight-semibold);
 }

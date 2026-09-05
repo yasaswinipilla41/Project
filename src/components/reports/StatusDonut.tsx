@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import type { IssueStatus } from "@prisma/client";
 import { STATUS_LABEL } from "@/lib/domain";
 import { percent } from "@/lib/format";
@@ -20,6 +23,14 @@ import { percent } from "@/lib/format";
  * Accessible as a figure with a real caption, and the legend beside it carries
  * every status, count and share as text — the ring is the quick read, the
  * legend is the answer. A screen reader gets the numbers either way.
+ *
+ * The ring and the legend are two views of one row, so hovering either lights
+ * both. That needs a client component: the segment lives inside the <figure>
+ * and its row inside the <ul> after it, and no CSS selector reaches from one
+ * to the other. A single `hovered` status — the same `IssueStatus` key the
+ * colours are already addressed by — is what both read, so they cannot
+ * disagree about which slice is which, and there is no second mapping to keep
+ * in step.
  */
 export function StatusDonut({
   data,
@@ -43,12 +54,36 @@ export function StatusDonut({
      compiler rightly refuses: a value that changes while a component renders
      is a value that can differ between two renders of the same data. Nine
      statuses at most, so the copy per step costs nothing. */
-  type Slice = { status: IssueStatus; count: number; share: number; offset: number };
   const slices = present.reduce<Slice[]>((acc, entry) => {
     const previous = acc[acc.length - 1];
     const offset = previous ? previous.offset + previous.share : 0;
     return [...acc, { ...entry, share: (entry.count / total) * 100, offset }];
   }, []);
+
+  /* Declared after the early return above, which is safe because that return
+     is taken on the data rather than conditionally around a hook — `total` and
+     `present` do not change between renders of the same chart. */
+  return <Ring slices={slices} total={total} label={label} />;
+}
+
+interface Slice {
+  status: IssueStatus;
+  count: number;
+  share: number;
+  offset: number;
+}
+
+function Ring({
+  slices,
+  total,
+  label,
+}: {
+  slices: Slice[];
+  total: number;
+  label: string;
+}) {
+  /** The status the pointer is on, from either the ring or the legend. */
+  const [hovered, setHovered] = useState<IssueStatus | null>(null);
 
   return (
     <div className="prio-donut">
@@ -60,6 +95,14 @@ export function StatusDonut({
               key={slice.status}
               className="prio-donut__seg"
               data-status={slice.status}
+              /* Only the hovered slice is marked; the rest are dimmed, so one
+                 status stands out rather than every one competing. Both are
+                 absent when nothing is hovered, which is what returns the ring
+                 to its resting state with no stale mark left behind. */
+              data-hover={hovered === slice.status || undefined}
+              data-dimmed={
+                (hovered !== null && hovered !== slice.status) || undefined
+              }
               cx="21"
               cy="21"
               r="15.915"
@@ -68,6 +111,11 @@ export function StatusDonut({
               /* 25 puts the first slice at twelve o'clock; the negative offset
                  walks each following slice clockwise by what precedes it. */
               strokeDashoffset={25 - slice.offset}
+              /* The gaps in the dash array are unpainted, so `visiblePainted`
+                 hit-testing means only this slice's own arc responds — the
+                 circles overlap as elements but never as targets. */
+              onMouseEnter={() => setHovered(slice.status)}
+              onMouseLeave={() => setHovered(null)}
             >
               <title>{`${STATUS_LABEL[slice.status]}: ${slice.count}`}</title>
             </circle>
@@ -90,6 +138,11 @@ export function StatusDonut({
                the whole row carries that status's colour rather than only the
                9px square in front of it. */
             data-status={slice.status}
+            /* Set whether the pointer is on this row or on its slice in the
+               ring — one state, so the pair always light together. */
+            data-hover={hovered === slice.status || undefined}
+            onMouseEnter={() => setHovered(slice.status)}
+            onMouseLeave={() => setHovered(null)}
           >
             <span
               className="prio-donut__swatch"

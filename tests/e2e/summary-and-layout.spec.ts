@@ -155,6 +155,148 @@ test.describe("Status overview", () => {
     await expect(share).toBeVisible();
     await expect(row.locator(".prio-donut__legendvalue")).toBeVisible();
   });
+
+  /**
+   * A real screen point on one segment's painted arc.
+   *
+   * Playwright hovers an element's bounding-box centre, and a `<circle>`'s
+   * centre is the middle of the donut — the hole, where nothing is painted. So
+   * the ring is probed instead: walk the circumference until `elementFromPoint`
+   * answers with this status's segment. That both locates a hoverable point and
+   * proves the browser's own hit-testing puts it on the right slice, which is
+   * the thing a synthetic event would quietly skip.
+   */
+  async function pointOnSegment(page: Page, status: string) {
+    return page.evaluate((wanted) => {
+      const svg = document.querySelector(".prio-donut__figure svg")!;
+      const box = svg.getBoundingClientRect();
+      const cx = box.x + box.width / 2;
+      const cy = box.y + box.height / 2;
+      // r=15.915 within a 42-unit viewBox, scaled to however wide it is drawn.
+      const radius = (box.width * 15.915) / 42;
+
+      for (let deg = 0; deg < 360; deg += 0.5) {
+        const angle = (deg * Math.PI) / 180;
+        const x = cx + radius * Math.cos(angle);
+        const y = cy + radius * Math.sin(angle);
+        const el = document.elementFromPoint(x, y);
+        if (
+          el instanceof Element &&
+          el.classList.contains("prio-donut__seg") &&
+          el.getAttribute("data-status") === wanted
+        ) {
+          return { x, y };
+        }
+      }
+      return null;
+    }, status);
+  }
+
+  test("hovering a ring segment lights its own row, and the reverse", async ({
+    page,
+  }) => {
+    /*
+     * The ring and the legend are two views of one row, so the pair has to
+     * light together whichever of them the pointer is on. Both directions are
+     * checked for *every* status the chart is showing, not just the first — a
+     * mapping that is off by one would pass a single-row check.
+     */
+    await page.goto("/projects/eng");
+
+    const segments = page.locator(".prio-donut__seg");
+    const rows = page.locator(".prio-donut__legenditem");
+    await expect(rows.first()).toBeVisible();
+
+    const count = await segments.count();
+    expect(count).toBeGreaterThan(0);
+    expect(await rows.count()).toBe(count);
+
+    for (let i = 0; i < count; i += 1) {
+      const segment = segments.nth(i);
+      const status = (await segment.getAttribute("data-status"))!;
+      const row = page.locator(
+        `.prio-donut__legenditem[data-status="${status}"]`,
+      );
+      await expect(row, `${status}: has exactly one legend row`).toHaveCount(1);
+
+      // --- segment -> row
+      const point = await pointOnSegment(page, status);
+      expect(point, `${status}: found a point on its arc`).not.toBeNull();
+      await page.mouse.move(point!.x, point!.y);
+
+      await expect(segment, `${status}: segment marks itself`).toHaveAttribute(
+        "data-hover",
+        "true",
+      );
+      await expect(row, `${status}: its row lights too`).toHaveAttribute(
+        "data-hover",
+        "true",
+      );
+      // Only that one row, and every other segment stands back.
+      await expect(
+        page.locator(".prio-donut__legenditem[data-hover]"),
+      ).toHaveCount(1);
+      await expect(page.locator(".prio-donut__seg[data-dimmed]")).toHaveCount(
+        count - 1,
+      );
+
+      // --- row -> segment
+      await row.hover();
+      await expect(segment, `${status}: its segment lights`).toHaveAttribute(
+        "data-hover",
+        "true",
+      );
+      await expect(row).toHaveAttribute("data-hover", "true");
+      await expect(page.locator(".prio-donut__seg[data-hover]")).toHaveCount(1);
+    }
+
+    /* Pointer away: nothing stays lit and nothing stays dimmed. A stale mark
+       here is the failure this last part exists for. */
+    await page.mouse.move(5, 5);
+    await expect(page.locator(".prio-donut__seg[data-hover]")).toHaveCount(0);
+    await expect(page.locator(".prio-donut__seg[data-dimmed]")).toHaveCount(0);
+    await expect(
+      page.locator(".prio-donut__legenditem[data-hover]"),
+    ).toHaveCount(0);
+  });
+
+  test("keeps the chart's data and dimensions unchanged while hovering", async ({
+    page,
+  }) => {
+    /* The highlight must not move the chart: thickening a slice changes how it
+       is drawn, never where any slice starts or how long it is. */
+    await page.goto("/projects/eng");
+    const segments = page.locator(".prio-donut__seg");
+    await expect(segments.first()).toBeVisible();
+
+    const geometry = () =>
+      segments.evaluateAll((nodes) =>
+        nodes.map((n) => ({
+          status: n.getAttribute("data-status"),
+          dash: n.getAttribute("stroke-dasharray"),
+          offset: n.getAttribute("stroke-dashoffset"),
+          r: n.getAttribute("r"),
+        })),
+      );
+
+    const before = await geometry();
+    const figureBefore = await page
+      .locator(".prio-donut__figure")
+      .evaluate((el) => el.getBoundingClientRect().width);
+
+    const status = (await segments.first().getAttribute("data-status"))!;
+    const point = await pointOnSegment(page, status);
+    expect(point).not.toBeNull();
+    await page.mouse.move(point!.x, point!.y);
+    await expect(segments.first()).toHaveAttribute("data-hover", "true");
+
+    expect(await geometry()).toEqual(before);
+    expect(
+      await page
+        .locator(".prio-donut__figure")
+        .evaluate((el) => el.getBoundingClientRect().width),
+    ).toBe(figureBefore);
+  });
 });
 
 /* ------------------------------------------------------ calendar clipping */
@@ -321,7 +463,9 @@ test.describe("The Flow Board's own styling", () => {
 /* ------------------------------------------------------------------ theme */
 
 test.describe("Theme", () => {
-  test("starts on System, which follows the browser", async ({ browser }) => {
+  test("starts on Light, on a light machine and a dark one alike", async ({
+    browser,
+  }) => {
     for (const scheme of ["light", "dark"] as const) {
       const context = await browser.newContext({ colorScheme: scheme });
       const page = await context.newPage();
@@ -329,12 +473,13 @@ test.describe("Theme", () => {
       await page.goto("/");
       await expect(page.locator(".prio-sidebar")).toBeVisible();
 
-      /* No stored choice, so no `data-theme` attribute — which is exactly what
-         "System" is, and what the media query in `theme-dark.css` is written
-         against. Nothing forces dark. */
-      await expect(page.locator("html")).not.toHaveAttribute("data-theme", /.*/);
+      /* Nothing stored, so the pre-paint script falls back to Light — rather
+         than following the machine, which handed somebody on a dark laptop a
+         dark application on their very first visit. Dark is still one menu
+         click away; it simply has to be asked for. */
+      await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
       await expect(
-        page.getByRole("button", { name: "Theme: System" }),
+        page.getByRole("button", { name: "Theme: Light" }),
       ).toBeVisible();
 
       const background = await page
@@ -342,7 +487,7 @@ test.describe("Theme", () => {
         .evaluate((el) => getComputedStyle(el).backgroundColor);
       const rgb = background.match(/\d+/g)!.map(Number);
       const light = (rgb[0]! + rgb[1]! + rgb[2]!) / 3 > 128;
-      expect(light, `${scheme} scheme`).toBe(scheme === "light");
+      expect(light, `first visit on a ${scheme} machine`).toBe(true);
 
       await context.close();
     }

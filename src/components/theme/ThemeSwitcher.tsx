@@ -42,10 +42,15 @@ function readChoice(): ThemeChoice {
   return isThemeChoice(attribute) ? attribute : "system";
 }
 
-/* Rendered on the server and for the first hydration pass. "system" is the
-   honest answer there: the server cannot know what the browser stored. */
+/* Rendered on the server and for the first hydration pass. The server cannot
+   know what the browser stored, so it answers with the default a browser that
+   stored nothing will resolve to — Light. That is the common first render, so
+   the control usually hydrates to the same value it was drawn with instead of
+   swapping its icon on the first frame; anyone with a stored preference still
+   has it applied by `readChoice` on the first client render, exactly as
+   before. */
 function serverChoice(): ThemeChoice {
-  return "system";
+  return "light";
 }
 
 const LABEL: Record<ThemeChoice, string> = {
