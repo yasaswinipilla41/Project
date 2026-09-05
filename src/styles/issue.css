@@ -173,6 +173,15 @@
   color: var(--prio-text-primary);
 }
 
+/* Completed work, marked so it is recognisable at a glance in a list that
+   mixes it with everything else. A left rail in the same green the Done pill
+   and the Done ring segment already use — no new colour, and the row keeps its
+   hover, its spacing and its layout. */
+.prio-relatedrow[data-completed] {
+  box-shadow: inset 3px 0 0 var(--prio-status-done-dot);
+  background: var(--prio-status-done-bg);
+}
+
 .prio-relatedrow__title {
   flex: 1;
   min-width: 0;
@@ -465,13 +474,58 @@
   gap: var(--prio-space-2);
 }
 
+/*
+ * A legend row is a status and its figures, and it is read as one thing — so
+ * it is drawn as one: a tinted plate in that status's own colour, with the
+ * swatch, the name and the numbers on the same line. That tint is the whole
+ * of the "highlight the status data" requirement; the colours are the ones
+ * `--prio-status-*-bg` already defines, so nothing new is invented and the
+ * dark theme comes along for free.
+ */
 .prio-donut__legenditem {
   display: flex;
   align-items: center;
   gap: var(--prio-space-2);
+  padding: 3px var(--prio-space-2);
+  border-radius: var(--prio-radius-sm);
   font-size: var(--prio-text-xs);
   color: var(--prio-text-secondary);
+  transition:
+    background var(--prio-duration-fast) var(--prio-ease),
+    box-shadow var(--prio-duration-fast) var(--prio-ease);
 }
+
+/* Hovering a status brings its own figures forward — the row lifts onto its
+   status colour and the count and share beside it turn solid. The values are
+   already there and stay there; hover makes plain which ones belong to the
+   status under the pointer, which is what a legend of nine rows otherwise
+   leaves to careful reading. */
+.prio-donut__legenditem:hover,
+.prio-donut__legenditem:focus-within {
+  box-shadow: inset 0 0 0 1px var(--prio-border);
+}
+
+.prio-donut__legenditem:hover .prio-donut__legendlabel,
+.prio-donut__legenditem:focus-within .prio-donut__legendlabel {
+  color: var(--prio-text-primary);
+  font-weight: var(--prio-weight-semibold);
+}
+
+.prio-donut__legenditem:hover .prio-donut__legendshare,
+.prio-donut__legenditem:focus-within .prio-donut__legendshare {
+  color: var(--prio-text-primary);
+  font-weight: var(--prio-weight-semibold);
+}
+
+.prio-donut__legenditem[data-status="BACKLOG"] { background: var(--prio-status-backlog-bg); }
+.prio-donut__legenditem[data-status="TODO"] { background: var(--prio-status-todo-bg); }
+.prio-donut__legenditem[data-status="IN_PROGRESS"] { background: var(--prio-status-progress-bg); }
+.prio-donut__legenditem[data-status="IN_REVIEW"] { background: var(--prio-status-review-bg); }
+.prio-donut__legenditem[data-status="IN_QA"] { background: var(--prio-status-qa-bg); }
+.prio-donut__legenditem[data-status="DONE"] { background: var(--prio-status-done-bg); }
+.prio-donut__legenditem[data-status="REOPENED"] { background: var(--prio-status-progress-bg); }
+.prio-donut__legenditem[data-status="REJECTED"] { background: var(--prio-status-cancelled-bg); }
+.prio-donut__legenditem[data-status="CANCELLED"] { background: var(--prio-status-cancelled-bg); }
 
 .prio-donut__swatch {
   flex-shrink: 0;
@@ -485,17 +539,126 @@
   min-width: 0;
 }
 
+/*
+ * The count and the share sit together on one line — "23  45%" — and are kept
+ * there: `flex-shrink: 0` and `nowrap` mean the label truncates before either
+ * figure does, so compressing the section can never be what makes a number
+ * wrap, overlap or disappear. Tabular figures keep the column straight down
+ * the legend.
+ */
 .prio-donut__legendvalue {
   display: flex;
   align-items: baseline;
   gap: var(--prio-space-2);
+  flex-shrink: 0;
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
   font-weight: var(--prio-weight-semibold);
   color: var(--prio-text-primary);
 }
 
 .prio-donut__legendshare {
+  /* Fixed width so every share lines up under the one above it, which is what
+     lets the pair read as a small table rather than as ragged text. */
+  min-width: 34px;
+  text-align: right;
   font-weight: var(--prio-weight-regular);
+  color: var(--prio-text-muted);
+}
+
+/*
+ * Compressed Status overview.
+ *
+ * The ring is 168px and its legend asks for 180px, so the section needs about
+ * 430px and was being stretched to the full width of a `col-xl-8` column —
+ * hundreds of pixels of gap between a status and the figures belonging to it.
+ * Capping the card is enough: nothing inside it is made smaller, so the
+ * numbers stay exactly as legible as they were, and below the cap the card is
+ * fluid as before.
+ */
+.prio-summary__statuscard {
+  max-width: 560px;
+}
+
+/* ------------------------------------------------------ completed work */
+/*
+ * Completed issues, grouped under the person who completed them. Built from
+ * the same avatar/name/count vocabulary as the workload list directly above
+ * it, so the pair read as two halves of one question.
+ */
+.prio-completed {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-4);
+}
+
+.prio-completed__person {
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-2);
+}
+
+.prio-completed__head {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  font-size: var(--prio-text-sm);
+}
+
+.prio-completed__name {
+  flex: 1;
+  min-width: 0;
+  font-weight: var(--prio-weight-medium);
+}
+
+.prio-completed__count,
+.prio-completed__total {
+  padding: 1px var(--prio-space-2);
+  border-radius: var(--prio-radius-pill);
+  background: var(--prio-status-done-bg);
+  color: var(--prio-status-done-dot);
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.prio-completed__issues {
+  list-style: none;
+  margin: 0;
+  /* Indented under the person, so the keys read as theirs. */
+  padding: 0 0 0 calc(var(--prio-space-5) + var(--prio-space-2));
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--prio-space-2);
+}
+
+.prio-completed__issue {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--prio-space-1);
+  padding: 2px var(--prio-space-2);
+  border-radius: var(--prio-radius-sm);
+  background: var(--prio-bg-subtle);
+  border: 1px solid var(--prio-border-subtle);
+  color: var(--prio-text-secondary);
+  transition:
+    background var(--prio-duration-fast) var(--prio-ease),
+    border-color var(--prio-duration-fast) var(--prio-ease);
+}
+
+a.prio-completed__issue:hover {
+  background: var(--prio-status-done-bg);
+  border-color: var(--prio-status-done-dot);
+  color: var(--prio-text-primary);
+  text-decoration: none;
+}
+
+.prio-completed__more {
+  align-self: center;
+  font-size: var(--prio-text-2xs);
   color: var(--prio-text-muted);
 }
 

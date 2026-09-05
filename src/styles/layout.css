@@ -383,6 +383,30 @@
   max-width: var(--prio-content-max);
   margin: 0 auto;
   width: 100%;
+  /* In step with `.prio-main`'s margin, so collapsing the sidebar is one
+     movement rather than the frame sliding and the content jumping after it. */
+  transition: max-width var(--prio-duration) var(--prio-ease);
+}
+
+/*
+ * Collapsing the sidebar hands its width to the content.
+ *
+ * `.prio-main` already gives up the margin, but the content inside it is
+ * capped at `--prio-content-max` and centred — so on a wide screen the freed
+ * 188px turned into gutter and nothing actually got wider. The Flow Board is
+ * where that shows most, because its columns scroll horizontally and it is
+ * the view people collapse the sidebar *for*.
+ *
+ * The cap is raised by exactly what the sidebar gave up, so the content grows
+ * by the freed width and no more. The expanded layout is untouched: this rule
+ * only applies while `data-collapsed` is true, and below the mobile
+ * breakpoint the sidebar is an overlay, so there is nothing to hand over.
+ */
+.prio-main[data-collapsed="true"] .prio-content__inner {
+  max-width: calc(
+    var(--prio-content-max) + var(--prio-sidebar-width) -
+      var(--prio-sidebar-width-collapsed)
+  );
 }
 
 /* ------------------------------------------------------------ page header */
@@ -476,6 +500,12 @@
   .prio-main,
   .prio-main[data-collapsed="true"] {
     margin-left: 0;
+  }
+
+  /* The sidebar is an overlay here, so it never occupies width and has none
+     to hand back. Both states share the one cap again. */
+  .prio-main[data-collapsed="true"] .prio-content__inner {
+    max-width: var(--prio-content-max);
   }
 
   .prio-sidebar__scrim {

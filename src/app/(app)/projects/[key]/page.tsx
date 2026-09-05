@@ -32,6 +32,7 @@ import {
   AssignmentActivityList,
   type AssignmentActivityEntry,
 } from "@/components/projects/AssignmentActivity";
+import { CompletedWork } from "@/components/projects/CompletedWork";
 import { ProjectAttachments } from "@/components/projects/ProjectAttachments";
 import { ProjectMembers } from "@/components/projects/ProjectMembers";
 import { ProjectAccess } from "@/components/projects/ProjectAccess";
@@ -45,6 +46,7 @@ import {
   SEVERITIES,
 } from "@/lib/domain";
 import { barWidth, dueWindow, formatRelative, percent } from "@/lib/format";
+import { loadCompletedByPerson } from "@/server/queries/completedWork";
 import { prisma } from "@/lib/prisma";
 import { recordProjectVisit } from "@/lib/recents";
 import { requireUser, type CurrentUser } from "@/lib/session";
@@ -182,6 +184,7 @@ export default async function ProjectOverviewPage({
     recentIssues,
     recentBugs,
     assignmentEntries,
+    completedByPerson,
   ] = await Promise.all([
       prisma.issue.groupBy({
         by: ["status"],
@@ -306,6 +309,9 @@ export default async function ProjectOverviewPage({
         orderBy: { createdAt: "desc" },
         take: 8,
       }),
+      /* Completed work grouped by whoever actually completed it — read from
+         the activity trail, not from the assignee. See the query for why. */
+      loadCompletedByPerson(project.id),
     ]);
 
   // `newValue` on an assigneeId change is the raw new assignee's user id, not
@@ -563,7 +569,10 @@ export default async function ProjectOverviewPage({
         {/* ------------------------------------------------ distributions */}
         <div className="col-12 col-xl-8">
           {/* ------------------------------------------ status overview */}
-          <Card className="prio-issue__section">
+          {/* Capped rather than full-width: the ring and its legend need about
+              430px, and the rest was gap between a status and its own
+              figures. Nothing inside is scaled down. */}
+          <Card className="prio-issue__section prio-summary__statuscard">
             <CardBody>
               <h2 className="prio-issue__section-title">Status overview</h2>
               <StatusDonut
@@ -736,6 +745,28 @@ export default async function ProjectOverviewPage({
             </CardBody>
           </Card>
 
+          {/* ------------------------------------------------ completed */}
+          {/*
+            * Directly below the workload, and its counterpart: that section
+            * answers "who is carrying what", this one answers "who finished
+            * what". Neither changes the other — the workload is still open
+            * work by assignee, unchanged.
+            */}
+          <Card className="prio-issue__section">
+            <CardBody>
+              <h2 className="prio-issue__section-title">
+                <IconCheck size={15} /> Completed
+                {done > 0 ? (
+                  <span className="prio-completed__total">{done}</span>
+                ) : null}
+              </h2>
+              <CompletedWork
+                people={completedByPerson}
+                projectKey={project.key}
+              />
+            </CardBody>
+          </Card>
+
           {/* ------------------------------------------------- due dates */}
           <Card className="prio-issue__section">
             <CardBody>
@@ -887,6 +918,10 @@ export default async function ProjectOverviewPage({
                       key={issue.key}
                       href={`/issues/${issue.key.toLowerCase()}`}
                       className="prio-relatedrow"
+                      /* Finished work is marked here as well as counted in
+                         Completed below, so a completed issue is recognisable
+                         wherever this page lists one. */
+                      data-completed={issue.status === "DONE" || undefined}
                     >
                       <IssueTypeIcon type={issue.type} size={17} />
                       <IssueKey issueKey={issue.key} />

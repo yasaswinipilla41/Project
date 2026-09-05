@@ -98,6 +98,18 @@ enum AccessRequestStatus {
   REJECTED
 }
 
+/// Where a sprint is in its life.
+///
+/// A sprint only moves forwards: planned while it is being filled, active
+/// while it is being worked, completed once it has been closed out. There is
+/// no "cancelled" and no way back — a completed sprint is a record of what
+/// happened, and rewinding one would be rewriting that record.
+enum SprintStatus {
+  PLANNED
+  ACTIVE
+  COMPLETED
+}
+
 // ------------------------------------------------- better-auth + people
 
 model User {
@@ -143,6 +155,7 @@ model User {
   createdSheetShares IssueSheetShare[]  @relation("IssueSheetShareCreatedBy")
   sheetShareGrants   IssueSheetShareMember[] @relation("IssueSheetShareMemberUser")
   sheetSharesGranted IssueSheetShareMember[] @relation("IssueSheetShareMemberAddedBy")
+  createdSprints     Sprint[]           @relation("SprintCreatedBy")
 
   @@index([role])
   @@map("user")
@@ -246,6 +259,7 @@ model Project {
   recentlyVisitedBy ProjectRecent[]
   accessRequests    ProjectAccessRequest[]
   notifications     Notification[]
+  sprints           Sprint[]
 
   @@index([isArchived])
   @@map("project")
@@ -394,6 +408,12 @@ model Issue {
   parent   Issue?  @relation("IssueHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
   children Issue[] @relation("IssueHierarchy")
 
+  /// The sprint this issue is currently in, or null for the project backlog.
+  /// Nullable and `SetNull` on delete: an issue outlives any sprint it was
+  /// part of, and deleting a sprint must never take work with it.
+  sprintId String?
+  sprint   Sprint? @relation(fields: [sprintId], references: [id], onDelete: SetNull)
+
   // --- bug-specific (nullable for TASK / STORY) ---
   severity         Severity?
   stepsToReproduce String?
@@ -425,6 +445,8 @@ model Issue {
   linksFrom     IssueLink[]        @relation("IssueLinkSource")
   /// Relationships pointing at this issue, written automatically as inverses.
   linksTo       IssueLink[]        @relation("IssueLinkTarget")
+  /// How this issue ended in each sprint it was closed out of.
+  sprintOutcomes SprintIssueOutcome[]
 
   @@unique([projectId, number])
   @@index([projectId, status])
@@ -437,6 +459,7 @@ model Issue {
   @@index([severity])
   @@index([dueDate])
   @@index([parentId])
+  @@index([sprintId])
   @@index([updatedAt])
   @@index([testResult])
   @@index([projectId, status, sortIndex])
@@ -710,4 +733,76 @@ model Notification {
   @@index([userId, readAt, createdAt])
   @@index([userId, createdAt])
   @@map("notification")
+}
+
+// ---------------------------------------------------------------- sprints
+
+/// A fixed period during which one project's team works a chosen set of its
+/// issues.
+///
+/// A sprint belongs to exactly one project, and so does every issue in it:
+/// `Issue.sprintId` points here, and the server refuses an issue whose
+/// `projectId` is not this project's. There is no cross-project sprint and no
+/// way to make one.
+///
+/// A sprint holds no status of its own for the work inside it. Whether an
+/// issue is finished is `Issue.status`, the same field the board, the list and
+/// the detail page all read — so a sprint's progress moves the moment anybody
+/// moves a card, and there is no second copy of the truth to fall out of step.
+model Sprint {
+  id        String       @id @default(cuid())
+  projectId String
+  project   Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name      String
+  goal      String?
+  startDate DateTime
+  endDate   DateTime
+  status    SprintStatus @default(PLANNED)
+
+  /// When it was actually started and completed, as distinct from the dates
+  /// it was planned for — a sprint is rarely started at midnight on its start
+  /// date, and the difference is worth keeping.
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  createdById String
+  createdBy   User     @relation("SprintCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  /// The issues in it right now. Empty for a completed sprint whose work all
+  /// moved on — which is why the outcome rows below exist.
+  issues   Issue[]
+  outcomes SprintIssueOutcome[]
+
+  @@index([projectId, status])
+  @@index([projectId, startDate])
+  @@map("sprint")
+}
+
+/// What a sprint held when it was completed, and how each of those ended.
+///
+/// Written once, by `completeSprint`, for every issue in the sprint at that
+/// moment. It exists because completing a sprint moves the unfinished work out
+/// of it — to the backlog or to the next sprint — and without a record of its
+/// own a completed sprint would quietly lose exactly the issues its report is
+/// about. These rows are the sprint's permanent history: they are never
+/// rewritten when the issue moves on afterwards, and never deleted while the
+/// sprint exists.
+model SprintIssueOutcome {
+  id       String @id @default(cuid())
+  sprintId String
+  sprint   Sprint @relation(fields: [sprintId], references: [id], onDelete: Cascade)
+  issueId  String
+  issue    Issue  @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  /// Whether the issue was finished by the time the sprint closed, decided by
+  /// `Issue.status` at that moment against the same `CLOSED_STATUSES` the rest
+  /// of Prio uses.
+  completed Boolean
+
+  createdAt DateTime @default(now())
+
+  @@unique([sprintId, issueId])
+  @@index([issueId])
+  @@map("sprint_issue_outcome")
 }

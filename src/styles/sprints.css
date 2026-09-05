@@ -1,0 +1,387 @@
+/* ============================================================================
+   Prio — sprints.
+
+   The project's Sprints view: one card per sprint, showing whichever of its
+   three stages it is in. Built from the design tokens and the same vocabulary
+   the rest of Prio uses — cards, status pills, breakdown counts — so a sprint
+   reads as part of the project rather than as a separate product bolted on.
+   ========================================================================= */
+
+.prio-sprints__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--prio-space-4);
+  flex-wrap: wrap;
+  margin-bottom: var(--prio-space-5);
+}
+
+.prio-sprints {
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-5);
+}
+
+.prio-sprints__history {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  margin: var(--prio-space-4) 0 0;
+  font-size: var(--prio-text-xs);
+  font-weight: var(--prio-weight-semibold);
+  letter-spacing: var(--prio-tracking-caps);
+  text-transform: uppercase;
+  color: var(--prio-text-muted);
+}
+
+.prio-sprints__historycount,
+.prio-sprint__columncount,
+.prio-sprintclose__count {
+  padding: 1px var(--prio-space-2);
+  border-radius: var(--prio-radius-pill);
+  background: var(--prio-neutral-200);
+  color: var(--prio-text-secondary);
+  font-size: var(--prio-text-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------- the card */
+
+/* The running sprint is the one being worked, so it carries a brand rail
+   down its edge. A completed one recedes. */
+.prio-sprint[data-status="ACTIVE"] {
+  border-color: var(--prio-primary-500);
+  box-shadow: inset 3px 0 0 var(--prio-primary-500), var(--prio-shadow-xs);
+}
+
+.prio-sprint[data-status="COMPLETED"] {
+  background: var(--prio-bg-subtle);
+}
+
+.prio-sprint__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--prio-space-4);
+  flex-wrap: wrap;
+  margin-bottom: var(--prio-space-4);
+}
+
+.prio-sprint__identity {
+  min-width: 0;
+  flex: 1;
+}
+
+.prio-sprint__name {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-3);
+  flex-wrap: wrap;
+  margin: 0;
+  font-size: var(--prio-text-md);
+  font-weight: var(--prio-weight-semibold);
+}
+
+.prio-sprint__status {
+  padding: 1px var(--prio-space-2);
+  border-radius: var(--prio-radius-pill);
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-semibold);
+  letter-spacing: var(--prio-tracking-caps);
+  text-transform: uppercase;
+  background: var(--prio-neutral-100);
+  color: var(--prio-text-secondary);
+}
+
+.prio-sprint__status[data-status="ACTIVE"] {
+  background: var(--prio-primary-50);
+  color: var(--prio-primary-700);
+}
+
+.prio-sprint__status[data-status="COMPLETED"] {
+  background: var(--prio-status-done-bg);
+  color: var(--prio-status-done-dot);
+}
+
+.prio-sprint__goal {
+  margin: var(--prio-space-2) 0 0;
+  font-size: var(--prio-text-sm);
+  color: var(--prio-text-secondary);
+}
+
+.prio-sprint__dates {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  flex-wrap: wrap;
+  margin: var(--prio-space-2) 0 0;
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-muted);
+}
+
+.prio-sprint__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  flex-wrap: wrap;
+}
+
+/* ---------------------------------------------------------- the figures */
+
+.prio-sprint__summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--prio-space-3) var(--prio-space-6);
+  padding: var(--prio-space-3) 0;
+  margin-bottom: var(--prio-space-3);
+  border-top: 1px solid var(--prio-border-subtle);
+  border-bottom: 1px solid var(--prio-border-subtle);
+}
+
+.prio-sprint__stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.prio-sprint__statvalue {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-1);
+  font-size: var(--prio-text-lg);
+  font-weight: var(--prio-weight-bold);
+  font-variant-numeric: tabular-nums;
+  color: var(--prio-text-primary);
+  line-height: 1.1;
+}
+
+.prio-sprint__stat[data-tone="success"] .prio-sprint__statvalue {
+  color: var(--prio-status-done-dot);
+}
+
+.prio-sprint__statlabel {
+  font-size: var(--prio-text-2xs);
+  letter-spacing: var(--prio-tracking-caps);
+  text-transform: uppercase;
+  color: var(--prio-text-muted);
+}
+
+.prio-sprint__empty {
+  margin-top: var(--prio-space-4);
+}
+
+/* ------------------------------------------------------------ the work */
+
+.prio-sprint__issues {
+  list-style: none;
+  margin: var(--prio-space-3) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-1);
+}
+
+.prio-sprint__issue {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  padding: var(--prio-space-1) var(--prio-space-2);
+  border-radius: var(--prio-radius-sm);
+  transition: background var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-sprint__issue:hover {
+  background: var(--prio-bg-hover);
+}
+
+.prio-sprint__issuelink {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  flex: 1;
+  min-width: 0;
+  color: var(--prio-text-primary);
+}
+
+.prio-sprint__issuelink:hover {
+  text-decoration: none;
+}
+
+.prio-sprint__issuetitle {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--prio-text-sm);
+}
+
+/*
+ * The active sprint's board. Bootstrap's grid does not own this: the number of
+ * columns follows how many statuses the sprint's work is actually in, so it is
+ * an auto-fit grid that reflows on its own rather than a fixed set of spans.
+ */
+.prio-sprint__board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--prio-space-4);
+  margin-top: var(--prio-space-3);
+}
+
+.prio-sprint__column {
+  min-width: 0;
+  padding: var(--prio-space-3);
+  border-radius: var(--prio-radius-md);
+  background: var(--prio-bg-subtle);
+}
+
+.prio-sprint__columnhead,
+.prio-sprint__recordhead {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  margin: 0;
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-semibold);
+  letter-spacing: var(--prio-tracking-caps);
+  text-transform: uppercase;
+  color: var(--prio-text-muted);
+}
+
+/* A completed sprint's record: what was finished, and what was not. */
+.prio-sprint__record {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--prio-space-5);
+  margin-top: var(--prio-space-3);
+}
+
+/* --------------------------------------------------- the backlog picker */
+
+.prio-sprintpicker {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-1);
+  max-height: 46vh;
+  overflow-y: auto;
+}
+
+.prio-sprintpicker__row {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  padding: var(--prio-space-2);
+  border-radius: var(--prio-radius-sm);
+  cursor: pointer;
+  transition: background var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-sprintpicker__row:hover {
+  background: var(--prio-bg-hover);
+}
+
+.prio-sprintpicker__title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--prio-text-sm);
+}
+
+/* ------------------------------------------------- completing a sprint */
+
+.prio-sprintclose {
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-5);
+}
+
+.prio-sprintclose__heading {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  margin: 0 0 var(--prio-space-2);
+  font-size: var(--prio-text-xs);
+  font-weight: var(--prio-weight-semibold);
+  letter-spacing: var(--prio-tracking-caps);
+  text-transform: uppercase;
+  color: var(--prio-text-muted);
+}
+
+.prio-sprintclose__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-1);
+  max-height: 26vh;
+  overflow-y: auto;
+}
+
+.prio-sprintclose__item {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  font-size: var(--prio-text-sm);
+  color: var(--prio-status-done-dot);
+}
+
+.prio-sprintclose__item span.prio-truncate {
+  flex: 1;
+  min-width: 0;
+  color: var(--prio-text-primary);
+}
+
+.prio-sprintclose__item[data-incomplete] {
+  color: var(--prio-text-muted);
+}
+
+/* The hollow ring against the completed rows' tick — "still open". */
+.prio-sprintclose__dot {
+  width: 11px;
+  height: 11px;
+  flex-shrink: 0;
+  border: 1.5px solid currentcolor;
+  border-radius: 50%;
+}
+
+.prio-sprintclose__destination {
+  margin: var(--prio-space-4) 0 0;
+  padding: var(--prio-space-4);
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-md);
+  background: var(--prio-bg-subtle);
+}
+
+.prio-sprintclose__choice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--prio-space-3);
+  margin-top: var(--prio-space-3);
+  font-size: var(--prio-text-sm);
+  cursor: pointer;
+}
+
+.prio-sprintclose__choice > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.prio-sprintclose__choice[data-disabled] {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.prio-sprintclose__destination .prio-select {
+  margin-top: var(--prio-space-3);
+}
+
+@media (max-width: 640px) {
+  .prio-sprint__summary {
+    gap: var(--prio-space-3) var(--prio-space-4);
+  }
+
+  .prio-sprint__actions {
+    width: 100%;
+  }
+}

@@ -282,6 +282,77 @@ export type ReportBugInput = z.infer<typeof reportBugSchema>;
 
 
 
+/* ---------------------------------------------------------------- sprints */
+
+/**
+ * A sprint's own fields.
+ *
+ * The dates arrive as `YYYY-MM-DD` from a plain `<input type="date">`, the
+ * same shape the Create Issue dialog already sends for a due date, and are
+ * read back as UTC midnight so a day boundary can never move a sprint into
+ * the day before. `endDate` is checked against `startDate` here rather than in
+ * the browser — a disabled button is a courtesy, the refinement is the rule.
+ */
+const sprintDate = z
+  .string()
+  .trim()
+  .min(1, "Choose a date.")
+  .refine((v) => !Number.isNaN(Date.parse(v)), "Enter a valid date.")
+  .transform((v) => new Date(v));
+
+const sprintFields = {
+  name: trimmed(80).min(2, "Give the sprint a name."),
+  goal: optionalText(500),
+  startDate: sprintDate,
+  endDate: sprintDate,
+};
+
+/** Start must not be after end. Equal is allowed: a one-day sprint is a sprint. */
+const datesInOrder = <T extends { startDate: Date; endDate: Date }>(
+  schema: z.ZodType<T>,
+) =>
+  schema.refine((v) => v.startDate.getTime() <= v.endDate.getTime(), {
+    message: "The end date cannot be before the start date.",
+    path: ["endDate"],
+  });
+
+export const createSprintSchema = datesInOrder(
+  z.object({ projectId: z.string().min(1), ...sprintFields }),
+);
+
+export const updateSprintSchema = datesInOrder(
+  z.object({ sprintId: z.string().min(1), ...sprintFields }),
+);
+
+export const sprintIdSchema = z.object({ sprintId: z.string().min(1) });
+
+export const sprintIssuesSchema = z.object({
+  sprintId: z.string().min(1),
+  issueIds: z.array(z.string().min(1)).min(1, "Choose at least one issue."),
+});
+
+export const sprintIssueSchema = z.object({
+  sprintId: z.string().min(1),
+  issueId: z.string().min(1),
+});
+
+/**
+ * Completing a sprint has to say where its unfinished work goes — that is the
+ * decision the dialog exists to take, so it is required rather than defaulted.
+ * `NEXT_SPRINT` carries the sprint to move it into; the server still checks
+ * that sprint belongs to the same project.
+ */
+export const completeSprintSchema = z
+  .object({
+    sprintId: z.string().min(1),
+    moveIncompleteTo: z.enum(["BACKLOG", "NEXT_SPRINT"]),
+    nextSprintId: optionalId,
+  })
+  .refine((v) => v.moveIncompleteTo !== "NEXT_SPRINT" || Boolean(v.nextSprintId), {
+    message: "Choose the sprint to move them into.",
+    path: ["nextSprintId"],
+  });
+
 /* ------------------------------------------------------------ form errors */
 
 export type FieldErrors = Record<string, string>;

@@ -21,11 +21,13 @@ import {
   IconClose,
   IconPlus,
   IconProjects,
+  IconTimeline,
   IconSearch,
   IconUser,
 } from "@/components/ui/Icon";
 import { IssueTypeIcon } from "@/components/ui/Indicators";
 import { CreateIssueDialog } from "@/components/create/CreateIssueDialog";
+import { SprintFormDialog } from "@/components/sprints/SprintFormDialog";
 import { ThemeSwitcher } from "@/components/theme/ThemeSwitcher";
 import { ISSUE_TYPES, ISSUE_TYPE_LABEL, ROLE_LABEL } from "@/lib/domain";
 import type { IssueType, Role } from "@prisma/client";
@@ -126,6 +128,7 @@ export function Topbar({
   const [signingOut, setSigningOut] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [createType, setCreateType] = useState<IssueType>("TASK");
+  const [sprintOpen, setSprintOpen] = useState(false);
   const searchInput = useRef<HTMLInputElement>(null);
 
   function openCreate(type: IssueType) {
@@ -309,6 +312,20 @@ export function Topbar({
                 {ISSUE_TYPE_LABEL[type]}
               </MenuItem>
             ))}
+
+            {/*
+              * Below the issue types, because a sprint is not one: it is a
+              * period of work that issues go into. The dialog it opens fixes
+              * the sprint to the project being looked at when there is one,
+              * and otherwise asks which project it belongs to.
+              */}
+            <MenuSeparator />
+            <MenuItem
+              icon={<IconTimeline size={16} />}
+              onSelect={() => setSprintOpen(true)}
+            >
+              Sprint
+            </MenuItem>
           </Menu>
         </div>
 
@@ -320,6 +337,17 @@ export function Topbar({
             defaultType={createType}
             showTypeSelector
             defaultProjectId={currentProject?.id ?? null}
+          />
+        ) : null}
+
+        {sprintOpen ? (
+          <SprintFormDialog
+            /* Inside a project, that project; otherwise the person picks one
+               from the projects they can already see. `createSprint` then
+               checks they may manage whichever arrives. */
+            projectId={currentProject?.id}
+            projects={currentProject ? undefined : projects}
+            onClose={() => setSprintOpen(false)}
           />
         ) : null}
 

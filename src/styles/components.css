@@ -2259,6 +2259,19 @@ a.prio-stat:focus-visible {
   font-weight: var(--prio-weight-semibold);
 }
 
+/*
+ * `overflow: hidden` used to round the grid's corners by clipping the square
+ * cells inside it — and clipped the day composer with them. A panel opened on
+ * a day in the last row was cut off at the calendar's border however correctly
+ * it had been placed, which is the whole of the "popup is hidden behind the
+ * border" fault: the placement was right, the container was eating it.
+ *
+ * The rounding is done by the four corner children instead (below), so the
+ * grid keeps exactly the shape it had and nothing crops what escapes it. The
+ * grid is always seven columns wide and the page pads the cells to a whole
+ * number of rows, so `:nth-last-child(7)` is reliably the last row's first
+ * cell.
+ */
 .prio-calendar {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -2266,7 +2279,22 @@ a.prio-stat:focus-visible {
   background: var(--prio-border);
   border: 1px solid var(--prio-border);
   border-radius: var(--prio-radius-md);
-  overflow: hidden;
+}
+
+.prio-calendar > :first-child {
+  border-top-left-radius: calc(var(--prio-radius-md) - 1px);
+}
+
+.prio-calendar > :nth-child(7) {
+  border-top-right-radius: calc(var(--prio-radius-md) - 1px);
+}
+
+.prio-calendar > :nth-last-child(7) {
+  border-bottom-left-radius: calc(var(--prio-radius-md) - 1px);
+}
+
+.prio-calendar > :last-child {
+  border-bottom-right-radius: calc(var(--prio-radius-md) - 1px);
 }
 
 .prio-calendar__weekday {

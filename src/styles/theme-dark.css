@@ -368,3 +368,22 @@
     filter: brightness(0.94);
   }
 }
+
+/* --------------------------------------------------------- flow board */
+
+/*
+ * A cancelled board card is painted a literal white in `board.css`, which is
+ * the light theme's answer and only ever that one. Written here as the pair
+ * of selectors this file uses everywhere else — the explicit choice, and the
+ * media query guarded so an explicit light choice still wins — so a cancelled
+ * card stays a card on a dark page instead of a white plate.
+ */
+:root[data-theme="dark"] .prio-board__card[data-cancelled="true"] {
+  background: var(--prio-bg-subtle);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .prio-board__card[data-cancelled="true"] {
+    background: var(--prio-bg-subtle);
+  }
+}

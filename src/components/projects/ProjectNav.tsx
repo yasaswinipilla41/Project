@@ -7,6 +7,7 @@ export type ProjectTab =
   | "summary"
   | "list"
   | "board"
+  | "sprints"
   | "calendar"
   | "activity";
 
@@ -57,6 +58,7 @@ export function ProjectNav({
     { id: "summary", label: "Summary", href: base },
     { id: "list", label: "List", href: `${base}/list` },
     { id: "board", label: "Flow Board", href: `${base}/board` },
+    { id: "sprints", label: "Sprints", href: `${base}/sprints` },
     { id: "calendar", label: "Calendar", href: `${base}/calendar` },
     { id: "activity", label: "Activity", href: `${base}/activity` },
   ];

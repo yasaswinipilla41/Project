@@ -314,12 +314,17 @@
   cursor: grabbing;
 }
 
-/* Cancelled cards read as abandoned — dimmed and struck through. Done cards
-   stay fully normal (matching the reference design): completing an issue
-   isn't the same as cancelling it, and only the latter reads as "never
-   mind". */
+/* Cancelled cards read as abandoned — struck through, and set on plain white
+   so they sit flat against the column's tinted ground rather than picking up
+   its shade. Done cards stay fully normal (matching the reference design):
+   completing an issue isn't the same as cancelling it, and only the latter
+   reads as "never mind".
+
+   The dark theme restores a dark surface for this same rule — see
+   `theme-dark.css`. A literal white here is correct for the light theme the
+   value was chosen against, and would be a hole in the dark one. */
 .prio-board__card[data-cancelled="true"] {
-  background: var(--prio-bg-subtle);
+  background: #fff;
   opacity: 0.72;
 }
 
@@ -425,9 +430,18 @@
 }
 
 
+/*
+ * The 1366px step is deliberately taller than the window it is measured
+ * against: at this width the board's header and toolbar wrap onto more rows
+ * than the constant above them allows for, and capping the column at what is
+ * strictly visible left the last card of a full column unreachable. 112vh
+ * gives the column body the extra tenth it needs; the column still scrolls
+ * its own cards, and `contain: paint` on the rule above still keeps that
+ * overflow out of the document's height.
+ */
 @media (max-width: 1366px) {
   .prio-board__column-body {
-    max-height: calc(100vh - 415px);
+    max-height: calc(112vh - 415px);
   }
 }
 

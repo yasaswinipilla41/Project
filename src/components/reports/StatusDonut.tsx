@@ -83,7 +83,14 @@ export function StatusDonut({
 
       <ul className="prio-donut__legend">
         {slices.map((slice) => (
-          <li key={slice.status} className="prio-donut__legenditem">
+          <li
+            key={slice.status}
+            className="prio-donut__legenditem"
+            /* The same key the swatch and the ring segment are coloured by, so
+               the whole row carries that status's colour rather than only the
+               9px square in front of it. */
+            data-status={slice.status}
+          >
             <span
               className="prio-donut__swatch"
               data-status={slice.status}
