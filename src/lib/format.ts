@@ -238,3 +238,30 @@ export function dueWindow(now: Date = new Date()): {
 
   return { now, startOfToday, endOfToday, endOfWeek };
 }
+
+/**
+ * The current and previous calendar months, as half-open ranges.
+ *
+ * Shared by the dashboard's "completed this month" count and by the issue
+ * list's `completedWithin` filter, for the same reason `dueWindow` is shared:
+ * the number on a card and the list that opens when it is clicked must be cut
+ * on exactly the same boundaries, and two calculations are free to disagree.
+ *
+ * Local-time boundaries, matching `dueWindow` and the rest of Prio. Every
+ * month bound is therefore read the same way a due date is, so there is no
+ * mixed convention to reason about.
+ */
+export function monthWindow(now: Date = new Date()): {
+  /** Inclusive lower bound for "this month". */
+  startOfMonth: Date;
+  /** Exclusive upper bound for "this month" — the start of the next one. */
+  startOfNextMonth: Date;
+  /** Inclusive lower bound for "last month"; its upper bound is `startOfMonth`. */
+  startOfLastMonth: Date;
+} {
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const startOfNextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+
+  return { startOfMonth, startOfNextMonth, startOfLastMonth };
+}

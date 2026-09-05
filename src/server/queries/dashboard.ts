@@ -1,6 +1,6 @@
 import type { IssueStatus, IssueType, Priority, Role, Severity } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { dueWindow } from "@/lib/format";
+import { dueWindow, monthWindow } from "@/lib/format";
 import { accessibleProjectIds } from "@/lib/authz";
 import { CLOSED_STATUSES, OPEN_STATUSES } from "@/lib/domain";
 import type { CurrentUser } from "@/lib/session";
@@ -181,8 +181,9 @@ function windows() {
      one is clicked are cut on the same boundaries. */
   const { startOfToday, endOfToday, endOfWeek } = dueWindow(now);
 
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  /* Shared with the issue list's `completedWithin` filter, so the figure on
+     the card and the list it opens are cut on the same boundaries. */
+  const { startOfMonth, startOfNextMonth, startOfLastMonth } = monthWindow(now);
 
   const weekAgo = new Date(now.getTime() - 7 * 86_400_000);
 
@@ -192,6 +193,7 @@ function windows() {
     endOfToday,
     endOfWeek,
     startOfMonth,
+    startOfNextMonth,
     startOfLastMonth,
     weekAgo,
   };
@@ -657,12 +659,31 @@ async function countBundle(
     prisma.issue.count({
       where: { ...scope, createdAt: { gte: w.startOfMonth } },
     }),
+    /*
+     * Completed means DONE, and nothing else.
+     *
+     * These used to count every issue with a `completedAt` in range, whatever
+     * its status — and `updateIssue` writes `completedAt` for CANCELLED as
+     * well as for DONE. Cancelling an issue therefore raised "completed this
+     * month" while the "N completed in total" beneath it, which counts
+     * `status: DONE`, did not move: one card, two different definitions of
+     * completed, disagreeing with each other. This is the definition the
+     * project summary already uses — abandoning work is not finishing it.
+     *
+     * The upper bound matters too: without it a `completedAt` in the future
+     * counted as this month's.
+     */
     prisma.issue.count({
-      where: { ...scope, completedAt: { gte: w.startOfMonth } },
+      where: {
+        ...scope,
+        status: "DONE",
+        completedAt: { gte: w.startOfMonth, lt: w.startOfNextMonth },
+      },
     }),
     prisma.issue.count({
       where: {
         ...scope,
+        status: "DONE",
         completedAt: { gte: w.startOfLastMonth, lt: w.startOfMonth },
       },
     }),

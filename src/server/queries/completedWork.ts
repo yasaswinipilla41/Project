@@ -2,6 +2,54 @@ import { prisma } from "@/lib/prisma";
 import type { CompletedByPerson } from "@/components/projects/CompletedWork";
 
 /**
+ * Who completed the work — read from the activity trail, never from
+ * `assigneeId`. `completersFor` is the shared lookup; `loadCompletedByPerson`
+ * is the project summary's grouped view built on top of it.
+ */
+
+export interface Completer {
+  id: string;
+  name: string;
+  image: string | null;
+}
+
+/**
+ * Who actually completed each of the given issues, by issue id.
+ *
+ * The single place that answers that question, so the project summary's
+ * Completed section and the issue list's "Completed by" column cannot drift
+ * apart. It reads the activity trail — `updateIssue` writes an
+ * `ActivityLogEntry` with `field: "status"` and `newValue: "DONE"` naming the
+ * actor — and never `assigneeId`, which only says who holds the issue now.
+ *
+ * The most recent Done wins: work that was completed, reopened and completed
+ * again was last finished by whoever finished it last. An issue with no such
+ * entry is simply absent from the map — unknown, rather than attributed to
+ * whoever happens to hold it.
+ */
+export async function completersFor(
+  issueIds: string[],
+): Promise<Map<string, Completer>> {
+  const byIssue = new Map<string, Completer>();
+  if (issueIds.length === 0) return byIssue;
+
+  const entries = await prisma.activityLogEntry.findMany({
+    where: { field: "status", newValue: "DONE", issueId: { in: issueIds } },
+    select: {
+      issueId: true,
+      actor: { select: { id: true, name: true, image: true } },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  for (const entry of entries) {
+    // Newest first, so the first one seen for an issue is the one that counts.
+    if (!byIssue.has(entry.issueId)) byIssue.set(entry.issueId, entry.actor);
+  }
+  return byIssue;
+}
+
+/**
  * A project's completed work, grouped by the person who actually completed it.
  *
  * The distinction the whole query exists for: **the assignee is not
@@ -42,26 +90,9 @@ export async function loadCompletedByPerson(
 
   if (doneIssues.length === 0) return [];
 
-  const entries = await prisma.activityLogEntry.findMany({
-    where: {
-      field: "status",
-      newValue: "DONE",
-      issueId: { in: doneIssues.map((issue) => issue.id) },
-    },
-    select: {
-      issueId: true,
-      actor: { select: { id: true, name: true, image: true } },
-    },
-    orderBy: { createdAt: "desc" },
-  });
-
-  const completerByIssue = new Map<string, (typeof entries)[number]["actor"]>();
-  for (const entry of entries) {
-    // Newest first, so the first one seen for an issue is the one that counts.
-    if (!completerByIssue.has(entry.issueId)) {
-      completerByIssue.set(entry.issueId, entry.actor);
-    }
-  }
+  const completerByIssue = await completersFor(
+    doneIssues.map((issue) => issue.id),
+  );
 
   const people: CompletedByPerson[] = [];
   const indexByPerson = new Map<string, number>();

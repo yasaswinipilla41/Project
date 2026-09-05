@@ -558,6 +558,35 @@
 .prio-donut__legenditem[data-status="REJECTED"] { background: var(--prio-status-cancelled-bg); }
 .prio-donut__legenditem[data-status="CANCELLED"] { background: var(--prio-status-cancelled-bg); }
 
+/*
+ * A legend row that leads somewhere. The row itself stays the `<li>` — it
+ * keeps the status tint, the hover treatment and the spacing — and this
+ * re-establishes the same flex layout inside it, exactly as
+ * `.prio-distribution__link` does for the dashboard's distribution rows.
+ * Nothing about a legend without links changes.
+ */
+.prio-donut__legendlink {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.prio-donut__legendlink:hover {
+  color: inherit;
+  text-decoration: none;
+}
+
+.prio-donut__legendlink:focus-visible {
+  outline: none;
+  border-radius: var(--prio-radius-sm);
+  box-shadow: var(--prio-shadow-focus);
+}
+
 .prio-donut__swatch {
   flex-shrink: 0;
   width: 9px;

@@ -135,11 +135,17 @@ test.describe("Issue sheet export", () => {
   test("refuses to export for a signed-out visitor", async ({ browser }) => {
     /*
      * A fresh context with no session. Two independent guards stand in the
-     * way — `proxy.ts` bounces unauthenticated requests to sign-in, and the
-     * route itself re-resolves the caller and answers 401 — so this asserts
-     * the outcome that actually reaches a browser: a redirect to sign-in,
-     * never a spreadsheet. `maxRedirects: 0` is what makes the redirect
-     * itself observable rather than being followed to a 200 sign-in page.
+     * way — `proxy.ts` refuses unauthenticated requests, and the route itself
+     * re-resolves the caller and answers 401 — and what this asserts is the
+     * outcome that matters: never a spreadsheet.
+     *
+     * The guard used to answer an API request by redirecting to the sign-in
+     * page, so this expected a 307. It now answers 401 for anything under
+     * `/api/`, which is what an API caller can actually act on: a `fetch`
+     * received a success status and HTML where it expected data, and a
+     * `<video src="/api/attachments/...">` followed the redirect and failed to
+     * load with nothing to explain why. The refusal is unchanged and is still
+     * asserted below; only the language it is expressed in has.
      */
     const context = await browser.newContext({
       storageState: { cookies: [], origins: [] },
@@ -149,11 +155,13 @@ test.describe("Issue sheet export", () => {
       maxRedirects: 0,
     });
 
-    expect(response.status()).toBe(307);
-    expect(response.headers()["location"]).toContain("/sign-in");
+    expect(response.status()).toBe(401);
+    expect(response.headers()["content-type"]).toContain("application/json");
     expect(response.headers()["content-type"] ?? "").not.toContain(
       "spreadsheetml",
     );
+    // And no workbook came back under any content type.
+    expect((await response.body()).length).toBeLessThan(200);
 
     await context.close();
   });

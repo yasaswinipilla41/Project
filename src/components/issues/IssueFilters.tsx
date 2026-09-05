@@ -241,6 +241,11 @@ export function IssueFilters({
     values("label").length +
     (params.get("resolution") ? 1 : 0) +
     (params.get("overdue") ? 1 : 0) +
+    /* Arrived at from the dashboard's "completed this month". It has no chip of
+       its own, so counting it is what tells the reader the list is narrowed by
+       something more than the chips show — and `clearAll` drops every param, so
+       Clear removes it along with the rest. */
+    (params.get("completedWithin") ? 1 : 0) +
     (params.get("q") ? 1 : 0);
 
   const clearAll = () => {

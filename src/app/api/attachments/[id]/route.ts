@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { assertIssueAccess, assertProjectAccess } from "@/lib/authz";
+import {
+  assertIssueAccess,
+  assertProjectAccess,
+  AuthorizationError,
+} from "@/lib/authz";
 import { getCurrentUser } from "@/lib/session";
 import { storage } from "@/server/storage";
 
@@ -13,7 +17,19 @@ async function assertAttachmentAccess(
     await assertIssueAccess(user, attachment.issueId);
     return;
   }
-  await assertProjectAccess(user, attachment.projectId!);
+  /*
+   * Both columns are nullable, so "belongs to neither" is a shape the database
+   * permits even though nothing writes it. Refusing explicitly is the safe
+   * reading of an unowned file: there is no project whose membership could
+   * grant it, so nobody may have it. Asserting non-null here instead would
+   * have asked the authorization layer about `null`, which answers "no
+   * access" for everyone — the same outcome, reached by accident rather than
+   * on purpose, and reported as a mysterious 404 to administrators.
+   */
+  if (!attachment.projectId) {
+    throw new AuthorizationError("This file has no owner.");
+  }
+  await assertProjectAccess(user, attachment.projectId);
 }
 
 /**
@@ -155,7 +171,14 @@ export async function GET(
       attachment.storageKey,
       range ?? undefined,
     );
-  } catch {
+  } catch (error) {
+    /* The row says the file exists and storage disagrees, which is a fault
+       worth seeing in the logs rather than only as a 410 in someone's browser.
+       The key is safe to log — it is an opaque generated id, not a filename. */
+    console.error(
+      `[prio] attachment ${attachment.id}: storage could not read ${attachment.storageKey}:`,
+      error,
+    );
     return NextResponse.json(
       { error: "That file is no longer available." },
       { status: 410 },

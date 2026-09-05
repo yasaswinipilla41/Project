@@ -582,6 +582,17 @@ export default async function ProjectOverviewPage({
                   status,
                   count: statusCount(status),
                 }))}
+                /*
+                 * Clicking a status opens this project's own issue list with
+                 * that status applied — the existing List view, the existing
+                 * `?status=` filter, and the existing filter bar, which then
+                 * shows the filter and lets it be changed or cleared as usual.
+                 *
+                 * The project's list rather than the global one because these
+                 * counts are this project's: `/issues?status=X` would open a
+                 * list wider than the number that was clicked.
+                 */
+                statusListPath={`/projects/${project.key.toLowerCase()}/list`}
               />
             </CardBody>
           </Card>

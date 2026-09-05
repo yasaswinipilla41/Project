@@ -1,8 +1,9 @@
 import type { Prisma } from "@prisma/client";
 import type { IssueType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { completersFor } from "@/server/queries/completedWork";
 import { issueScope } from "@/lib/authz";
-import { dueWindow } from "@/lib/format";
+import { dueWindow, monthWindow } from "@/lib/format";
 import type { CurrentUser } from "@/lib/session";
 import {
   CLOSED_STATUSES,
@@ -55,6 +56,13 @@ export interface IssueFilters {
   overdue?: boolean;
   /** Restricts to items due between the end of today and the end of the week. */
   dueWeek?: boolean;
+  /**
+   * Restricts to work *completed* within a calendar month — "month" for the
+   * current one, "lastMonth" for the one before. Completed means DONE, the
+   * same definition the dashboard counts, so the metric and this list cannot
+   * disagree about what was finished.
+   */
+  completedWithin?: "month" | "lastMonth";
   environment?: string;
   affectedModule?: string;
   /** Forces a single type, e.g. the /bugs surface. */
@@ -79,6 +87,12 @@ export interface IssueListRow {
   project: { key: string; name: string };
   assignee: { id: string; name: string; image: string | null } | null;
   reporter: { id: string; name: string; image: string | null };
+  /**
+   * Who actually moved this issue to Done, or `null` when it is not finished
+   * or the trail does not say. Deliberately *not* the assignee: an issue is
+   * often finished by somebody other than whoever holds it now.
+   */
+  completedBy: { id: string; name: string; image: string | null } | null;
   labels: { label: { id: string; name: string; color: string } }[];
   parent: { key: string } | null;
   _count: { children: number; comments: number };
@@ -145,6 +159,19 @@ export function buildIssueWhere(
       dueDate: { lt: new Date() },
       status: { notIn: [...CLOSED_STATUSES] },
     });
+  }
+
+  if (filters.completedWithin) {
+    /* The same boundaries and the same status the dashboard's "completed this
+       month" counts on, from the one shared `monthWindow`, so clicking that
+       figure opens exactly the issues it counted. */
+    const { startOfMonth, startOfNextMonth, startOfLastMonth } = monthWindow();
+    const [gte, lt] =
+      filters.completedWithin === "month"
+        ? [startOfMonth, startOfNextMonth]
+        : [startOfLastMonth, startOfMonth];
+
+    and.push({ status: "DONE", completedAt: { gte, lt } });
   }
 
   if (filters.dueWeek) {
@@ -348,7 +375,13 @@ export async function exportIssues(
     orderBy: buildOrderBy(filters.sort ?? "updated", filters.dir ?? "desc"),
     take: EXPORT_LIMIT,
   });
-  return rows as unknown as IssueExportRow[];
+  /* The workbook has no "completed by" column, so the field is not looked up
+     for an export — stated explicitly rather than left undefined behind a
+     cast that claims otherwise. */
+  return (rows as unknown as IssueExportRow[]).map((row) => ({
+    ...row,
+    completedBy: null,
+  }));
 }
 
 export interface IssueListResult {
@@ -385,10 +418,23 @@ export async function listIssues(
     }),
   ]);
 
+  /*
+   * Who finished each of the completed rows on this page, from the shared
+   * `completersFor` — the same trail the project summary reads, so the two
+   * surfaces always name the same person. One extra query per page, bounded
+   * by the page size, and only for the rows that are actually Done.
+   */
+  const completers = await completersFor(
+    rows.filter((row) => row.status === "DONE").map((row) => row.id),
+  );
+
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
 
   return {
-    rows: rows as unknown as IssueListRow[],
+    rows: (rows as unknown as IssueListRow[]).map((row) => ({
+      ...row,
+      completedBy: completers.get(row.id) ?? null,
+    })),
     total,
     page: Math.min(page, pageCount),
     pageSize,

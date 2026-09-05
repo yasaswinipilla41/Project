@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import type { IssueStatus } from "@prisma/client";
 import { STATUS_LABEL } from "@/lib/domain";
@@ -36,10 +37,21 @@ export function StatusDonut({
   data,
   total,
   label,
+  statusListPath,
 }: {
   data: { status: IssueStatus; count: number }[];
   total: number;
   label: string;
+  /**
+   * The issue-list path a status leads to when its legend row is clicked; the
+   * status is appended as `?status=<STATUS>`. Optional — without it the legend
+   * renders exactly as it always has, as plain text.
+   *
+   * A path rather than a callback because this is a Client Component and the
+   * page rendering it is a Server Component: a function cannot cross that
+   * boundary, and a base path carries everything the link needs.
+   */
+  statusListPath?: string;
 }) {
   /* Only what is actually there. A zero-count status would contribute a
      zero-length arc and an empty legend row that says nothing. */
@@ -63,7 +75,14 @@ export function StatusDonut({
   /* Declared after the early return above, which is safe because that return
      is taken on the data rather than conditionally around a hook — `total` and
      `present` do not change between renders of the same chart. */
-  return <Ring slices={slices} total={total} label={label} />;
+  return (
+    <Ring
+      slices={slices}
+      total={total}
+      label={label}
+      statusListPath={statusListPath}
+    />
+  );
 }
 
 interface Slice {
@@ -77,10 +96,12 @@ function Ring({
   slices,
   total,
   label,
+  statusListPath,
 }: {
   slices: Slice[];
   total: number;
   label: string;
+  statusListPath?: string;
 }) {
   /** The status the pointer is on, from either the ring or the legend. */
   const [hovered, setHovered] = useState<IssueStatus | null>(null);
@@ -144,23 +165,68 @@ function Ring({
             onMouseEnter={() => setHovered(slice.status)}
             onMouseLeave={() => setHovered(null)}
           >
-            <span
-              className="prio-donut__swatch"
-              data-status={slice.status}
-              aria-hidden
+            <LegendRow
+              slice={slice}
+              total={total}
+              href={
+                statusListPath
+                  ? `${statusListPath}?status=${slice.status}`
+                  : undefined
+              }
             />
-            <span className="prio-donut__legendlabel prio-truncate">
-              {STATUS_LABEL[slice.status]}
-            </span>
-            <span className="prio-donut__legendvalue">
-              {slice.count}
-              <span className="prio-donut__legendshare">
-                {percent(slice.count, total)}%
-              </span>
-            </span>
           </li>
         ))}
       </ul>
     </div>
+  );
+}
+
+/**
+ * One legend row's contents: swatch, status, count and share.
+ *
+ * Given an `href` the whole row becomes a link to that status's issues — the
+ * same shape `Distribution` already uses on the dashboard, where the row is
+ * the `<li>` and an inner anchor re-establishes the layout so the row keeps
+ * its tint, its hover and its spacing. Without one it renders exactly as it
+ * did before, so nothing that does not ask for links is changed.
+ */
+function LegendRow({
+  slice,
+  total,
+  href,
+}: {
+  slice: Slice;
+  total: number;
+  href?: string;
+}) {
+  const content = (
+    <>
+      <span
+        className="prio-donut__swatch"
+        data-status={slice.status}
+        aria-hidden
+      />
+      <span className="prio-donut__legendlabel prio-truncate">
+        {STATUS_LABEL[slice.status]}
+      </span>
+      <span className="prio-donut__legendvalue">
+        {slice.count}
+        <span className="prio-donut__legendshare">
+          {percent(slice.count, total)}%
+        </span>
+      </span>
+    </>
+  );
+
+  if (!href) return content;
+
+  return (
+    <Link
+      href={href}
+      className="prio-donut__legendlink"
+      aria-label={`${STATUS_LABEL[slice.status]}: ${slice.count} — show these issues`}
+    >
+      {content}
+    </Link>
   );
 }

@@ -42,6 +42,9 @@ const COLUMNS: Column[] = [
   { field: "severity", label: "Severity", className: "prio-col-severity" },
   { field: null, label: "Assignee", className: "prio-col-person" },
   { field: null, label: "Reporter", className: "prio-col-person" },
+  /* Who finished it, which is not the same question as who holds it — see the
+     cell below. Empty for anything that is not Done. */
+  { field: null, label: "Completed by", className: "prio-col-person" },
   { field: "due", label: "Due", className: "prio-col-date" },
   { field: "updated", label: "Updated", className: "prio-col-date" },
   { field: null, label: "", className: "prio-col-actions" },
@@ -294,6 +297,36 @@ export function IssueTable({
                         {issue.reporter?.name ?? "Unknown"}
                       </span>
                     </span>
+                  </td>
+
+                  {/*
+                    * Who actually completed it, read from the status trail
+                    * rather than from the assignee — an issue is often
+                    * finished by somebody other than whoever holds it now, and
+                    * naming the assignee here would credit the wrong person.
+                    * Blank while the issue is unfinished; "Not recorded" when
+                    * it is done but the trail does not say who did it.
+                    */}
+                  <td className="prio-col-person">
+                    {issue.status !== "DONE" ? (
+                      <span className="prio-text-disabled">—</span>
+                    ) : issue.completedBy ? (
+                      <span className="prio-person">
+                        <Avatar
+                          name={issue.completedBy.name}
+                          image={issue.completedBy.image}
+                          size="xs"
+                        />
+                        <span className="prio-truncate">
+                          {issue.completedBy.name}
+                        </span>
+                      </span>
+                    ) : (
+                      <span className="prio-person">
+                        <Avatar name={null} size="xs" empty title="Not recorded" />
+                        <span className="prio-text-disabled">Not recorded</span>
+                      </span>
+                    )}
                   </td>
 
                   <td className="prio-col-date">

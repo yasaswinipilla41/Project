@@ -44,6 +44,14 @@ export function parseIssueParams(params: SearchParams): IssueFilters {
 
   const resolution = one(params.resolution);
 
+  /* Only the two windows the dashboard actually links to; anything else is
+     dropped like every other unrecognised value here. */
+  const completedRaw = one(params.completedWithin);
+  const completedWithin =
+    completedRaw === "month" || completedRaw === "lastMonth"
+      ? completedRaw
+      : undefined;
+
   return {
     q: one(params.q),
     projectIds: many(params.project),
@@ -58,6 +66,7 @@ export function parseIssueParams(params: SearchParams): IssueFilters {
       resolution === "open" || resolution === "closed" ? resolution : undefined,
     overdue: one(params.overdue) === "1",
     dueWeek: one(params.dueWeek) === "1",
+    completedWithin,
     environment: one(params.environment),
     affectedModule: one(params.module),
     sort,

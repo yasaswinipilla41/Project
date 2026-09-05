@@ -177,7 +177,11 @@ export default async function HomePage() {
                 icon={<IconCheck size={13} />}
                 tone="success"
                 hint={`${data.kpi.completed} completed in total`}
-                href="/issues?status=DONE"
+                /* Opens the work this figure counted, not every issue ever
+                   finished: `completedWithin=month` is cut on the same shared
+                   `monthWindow` the count uses, so the list and the number
+                   cannot disagree. */
+                href="/issues?status=DONE&completedWithin=month"
                 /* Only compared when a previous month actually exists in the
                    data — otherwise no arrow at all, rather than a fake 0%. */
                 trend={
