@@ -861,17 +861,7 @@ export function FlowBoard({
             * figures about that same project. It is a view of the board's own
             * content, so it belongs on the board.
             */}
-          {insights ? (
-            <button
-              type="button"
-              className="prio-btn prio-btn--secondary"
-              onClick={() => setShowInsights((open) => !open)}
-              aria-pressed={showInsights}
-              aria-expanded={showInsights}
-            >
-              <IconReports size={18} style={{ color: "var(--prio-primary-600)" }} />
-              {showInsights ? "Back to board" : "Insights"}
-            </button>
+            
           ) : (
             <a href="/reports" className="prio-btn prio-btn--secondary">
               <IconReports size={18} style={{ color: "var(--prio-primary-600)" }} />

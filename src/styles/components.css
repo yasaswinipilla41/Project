@@ -1007,6 +1007,19 @@ a.prio-key:hover {
 /* ----------------------------------------------------------------- table */
 .prio-table-wrap {
   overflow-x: auto;
+  /*
+   * `overflow-x: auto` scrolls the table, but on its own the overflow still
+   * counted towards the *document's* scrollable width: at 768px the issue
+   * table is wider than the page, and the page grew a horizontal scrollbar for
+   * a table that was already scrolling itself. `contain: paint` draws the
+   * boundary the overflow should already have respected — the same fix, for
+   * the same reason, as `.prio-board__column-body` in `board.css`.
+   *
+   * Safe for what lives inside: the table's sticky header still sticks to this
+   * scroll container, and every row menu is rendered through a portal, so
+   * nothing that needs to escape the table is clipped by it.
+   */
+  contain: paint;
   border: 1px solid var(--prio-border);
   border-radius: var(--prio-radius-lg);
   background: var(--prio-bg-surface);

@@ -1,5 +1,5 @@
 import writeXlsxFile, { type Cell, type Row } from "write-excel-file/node";
-import { getEnv } from "@/lib/env";
+import { publicBaseUrl } from "@/lib/env";
 import { getCurrentUser } from "@/lib/session";
 import {
   ISSUE_TYPE_LABEL,
@@ -38,6 +38,66 @@ interface Column {
   /** `origin` is the application's public base URL, so links resolve. */
   value: (row: IssueExportRow, origin: string) => string | number | Date | null;
   format?: string;
+  /**
+   * Builds the cell outright, for the few that are more than a plain value —
+   * today, the attachment links, which have to be hyperlinks rather than text.
+   * When present it replaces `value` entirely.
+   */
+  cell?: (row: IssueExportRow, origin: string) => Cell;
+}
+
+/** An Excel string literal: the only character that can break out is a quote. */
+function quoted(text: string): string {
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+/**
+ * How many attachments get a clickable column of their own.
+ *
+ * One cell holds one link, so "each file individually clickable" means one
+ * column per file. The sheet only goes as wide as the export actually needs —
+ * two columns for a set of issues carrying two files each — and this is the
+ * ceiling for the rare issue with a long tail of screenshots. Nothing is lost
+ * past it: `Attachment files` and `Attachment links` still list every file and
+ * every URL in full.
+ */
+const MAX_LINK_COLUMNS = 10;
+
+/**
+ * `Attachment 1 … n`, each the filename, each clickable.
+ *
+ * `write-excel-file` has no hyperlink API — it writes values, and the one
+ * escape hatch it offers is `type: "Formula"`. So the link is a `HYPERLINK()`
+ * formula, which Excel, LibreOffice and Google Sheets all render as an
+ * ordinary blue clickable filename. Nobody has to write a formula or convert
+ * anything; the export writes it, the reader clicks it.
+ *
+ * Switching libraries to get a relationship-backed hyperlink would mean
+ * rewriting every column, its widths and its date formats, which is a great
+ * deal of risk for a link that already opens.
+ */
+function attachmentLinkColumns(count: number): Column[] {
+  return Array.from({ length: count }, (_, index) => ({
+    header: `Attachment ${index + 1}`,
+    width: 34,
+    value: () => null,
+    cell: (row: IssueExportRow, origin: string): Cell => {
+      const file = row.attachments[index];
+      if (!file) return { type: String, value: "" };
+
+      const url = `${origin}/api/attachments/${file.id}`;
+      return {
+        type: "Formula",
+        /* No leading "=": the OOXML `<f>` element holds the formula without
+           it, and writing one in produces a workbook Excel offers to repair.
+           Verified by generating a sheet and reading its XML. */
+        value: `HYPERLINK(${quoted(url)},${quoted(file.filename)})`,
+        // Excel's own link styling, so it reads as a link before it is clicked.
+        textColor: "#0563C1",
+        textDecoration: { underline: true },
+      };
+    },
+  }));
 }
 
 /*
@@ -139,25 +199,36 @@ export async function GET(request: Request) {
   }
 
   /*
-   * The application's public base URL, not the request's.
-   *
-   * Inside a container the request reports the address the server bound
-   * to -- `http://0.0.0.0:3000` -- and a spreadsheet full of links to
-   * 0.0.0.0 opens nowhere. `BASE_URL` is what the notification emails and
-   * the share links already use for exactly this reason.
+   * The application's public base URL, never the request's -- inside a
+   * container the request reports the address the server bound to
+   * (`0.0.0.0:3000`), and `Host` is caller-controlled. See `publicBaseUrl`
+   * for why it does not fall back to localhost.
    */
-  const origin = getEnv().BASE_URL.replace(/[/]+$/, "");
+  const origin = publicBaseUrl();
 
   try {
     const rows = await exportIssues(user, parseIssueParams(params));
 
-    const header: Row = COLUMNS.map((column) => ({
+    /*
+     * One clickable column per attachment, as wide as this export actually
+     * needs and no wider: a set of issues with nothing attached grows no extra
+     * columns at all.
+     */
+    const linkColumns = Math.min(
+      MAX_LINK_COLUMNS,
+      rows.reduce((most, row) => Math.max(most, row.attachments.length), 0),
+    );
+    const columns = [...COLUMNS, ...attachmentLinkColumns(linkColumns)];
+
+    const header: Row = columns.map((column) => ({
       value: column.header,
       fontWeight: "bold",
     }));
 
     const body: Row[] = rows.map((row) =>
-      COLUMNS.map((column): Cell => {
+      columns.map((column): Cell => {
+        if (column.cell) return column.cell(row, origin);
+
         const value = column.value(row, origin);
         // A typed cell, so Excel sorts and filters dates and counts as dates
         // and numbers rather than as text that merely looks like them.
@@ -175,7 +246,7 @@ export async function GET(request: Request) {
     );
 
     const file = writeXlsxFile([header, ...body], {
-      columns: COLUMNS.map((column) => ({ width: column.width })),
+      columns: columns.map((column) => ({ width: column.width })),
       sheet: "Issues",
     });
     const buffer = await file.toBuffer();

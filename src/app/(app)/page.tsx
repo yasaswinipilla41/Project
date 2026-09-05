@@ -171,28 +171,30 @@ export default async function HomePage() {
               />
             </div>
             <div className="col-12 col-sm-6 col-xl-3">
+              {/*
+                * One metric, said four times: the title, the number, the line
+                * under it and the list it opens are all "issues at status
+                * DONE, in the projects this person can see".
+                *
+                * It used to be "Completed this month" over the monthly count
+                * with "N completed in total" beneath it — two different
+                * figures on one card, which is how it could read 0 above 3.
+                * A card whose parts disagree is worse than either figure
+                * alone, so the card now answers one question.
+                *
+                * `completed` is scoped by `accessibleProjectIds`, and the
+                * `/issues` list it opens is scoped by `issueScope` — the same
+                * projects either way, so an administrator and a member each
+                * see their own count and their own list, and clicking through
+                * lands on exactly the issues that were counted.
+                */}
               <KpiCard
-                label="Completed this month"
-                value={data.kpi.completedThisMonth}
+                label="Completed issues"
+                value={data.kpi.completed}
                 icon={<IconCheck size={13} />}
                 tone="success"
                 hint={`${data.kpi.completed} completed in total`}
-                /* Opens the work this figure counted, not every issue ever
-                   finished: `completedWithin=month` is cut on the same shared
-                   `monthWindow` the count uses, so the list and the number
-                   cannot disagree. */
-                href="/issues?status=DONE&completedWithin=month"
-                /* Only compared when a previous month actually exists in the
-                   data — otherwise no arrow at all, rather than a fake 0%. */
-                trend={
-                  data.kpi.completedLastMonth > 0
-                    ? {
-                        current: data.kpi.completedThisMonth,
-                        previous: data.kpi.completedLastMonth,
-                        label: "vs last month",
-                      }
-                    : null
-                }
+                href="/issues?status=DONE"
               />
             </div>
           </div>

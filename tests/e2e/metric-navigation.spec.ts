@@ -33,43 +33,39 @@ const STATUS_LABELS: Record<string, string> = {
   CANCELLED: "Cancelled",
 };
 
-/* ------------------------------------------------ completed this month */
+/* ------------------------------------------------ completed-work filter */
 
-test.describe("The Completed this month metric", () => {
-  test("opens the issues finished this month, not every finished issue", async ({
-    page,
-  }) => {
-    await page.goto("/");
+/*
+ * The Home card this used to drive is gone: it was "Completed this month" over
+ * the monthly count with "N completed in total" underneath, and it now reads
+ * "Completed issues" over the DONE total — one metric said four ways, covered
+ * in `completed-and-export.spec.ts` for both an administrator and a member.
+ *
+ * The `completedWithin` filter it linked to is a capability in its own right
+ * and outlived the card, so it keeps its coverage here.
+ */
+test.describe("The completedWithin filter", () => {
+  test("narrows the issue list to work finished this month", async ({ page }) => {
+    await page.goto("/issues?status=DONE&completedWithin=month");
+    await page.waitForSelector("table.prio-table, .prio-empty");
 
-    const card = page
-      .locator(".prio-kpi, .prio-stat, a")
-      .filter({ hasText: "Completed this month" })
-      .first();
-    await expect(card).toBeVisible();
-
-    const value = Number(
-      (await card.innerText()).match(/\d+/)?.[0] ?? "-1",
-    );
-    expect(value).toBeGreaterThanOrEqual(0);
-
-    await card.click();
-    await page.waitForURL(/\/issues\?/);
-
-    /* The month filter travels with the status filter — a bare `?status=DONE`
-       would open a wider list than the figure that was clicked. */
-    expect(page.url()).toContain("status=DONE");
-    expect(page.url()).toContain("completedWithin=month");
-
-    // Every row that came back really is Done.
     const rows = page.locator("table.prio-table tbody tr");
-    if ((await rows.count()) > 0) {
-      const statuses = await rows
-        .locator(".prio-status")
-        .allInnerTexts();
-      for (const text of statuses) {
-        expect(text.trim().toLowerCase()).toBe("done");
-      }
+    for (const text of await rows.locator(".prio-status").allInnerTexts()) {
+      expect(text.trim().toLowerCase()).toBe("done");
     }
+
+    // It genuinely narrows: never more than the unfiltered DONE list.
+    const narrowed = Number(
+      /(\d+)/.exec(await page.locator(".prio-filters__total").innerText())![1],
+    );
+
+    await page.goto("/issues?status=DONE");
+    await page.waitForSelector("table.prio-table, .prio-empty");
+    const all = Number(
+      /(\d+)/.exec(await page.locator(".prio-filters__total").innerText())![1],
+    );
+
+    expect(narrowed).toBeLessThanOrEqual(all);
   });
 });
 
