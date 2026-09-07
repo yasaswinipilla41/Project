@@ -860,8 +860,23 @@ export function FlowBoard({
             * its scroll position and the project it was showing -- to read
             * figures about that same project. It is a view of the board's own
             * content, so it belongs on the board.
+            *
+            * Only when the board's page actually handed the panel over. There
+            * is nothing to toggle otherwise, so the control stays the link to
+            * /reports it used to be rather than a button that opens an empty
+            * area.
             */}
-            
+          {insights ? (
+            <button
+              type="button"
+              className="prio-btn prio-btn--secondary"
+              onClick={() => setShowInsights((open) => !open)}
+              data-active={showInsights || undefined}
+              aria-pressed={showInsights}
+            >
+              <IconReports size={18} style={{ color: "var(--prio-primary-600)" }} />
+              {showInsights ? "Back to board" : "Insights"}
+            </button>
           ) : (
             <a href="/reports" className="prio-btn prio-btn--secondary">
               <IconReports size={18} style={{ color: "var(--prio-primary-600)" }} />
