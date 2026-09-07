@@ -126,8 +126,12 @@ test.describe("Deleting from the issue's own page", () => {
     const dialog = page.getByRole("dialog");
     await dialog.getByRole("button", { name: "Delete issue" }).click();
 
-    // Sent back to the project, since the issue it was looking at is gone.
-    await expect(page).toHaveURL(/\/projects\/eng$/, { timeout: 15_000 });
+    /* Sent back to the project, since the issue it was looking at is gone.
+       The action pushes the project's base path, which redirects into its
+       workspace — so the reader lands on the project either way. */
+    await expect(page).toHaveURL(/\/projects\/eng(\/summary)?$/, {
+      timeout: 15_000,
+    });
 
     await page.goto(`/issues/${key.toLowerCase()}`);
     await expect(page.locator(".prio-notfound")).toBeVisible();

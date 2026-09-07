@@ -339,6 +339,29 @@
   --prio-status-reopened-bg: var(--prio-red-50);
   --prio-status-reopened-dot: var(--prio-red-500);
 
+  /*
+   * Reject / Not an Issue is yellow, and its own colour.
+   *
+   * It used to share Cancelled's grey on the argument that both close an
+   * issue. That is true of the workflow and useless on a chart: the two sat
+   * beside each other in the status ring as one indistinguishable grey, so
+   * "we looked and it is not a defect" and "we abandoned it" could not be told
+   * apart — and those are different answers a reader is specifically looking
+   * for. Cancelled keeps the grey; Reject takes yellow, which nothing else
+   * uses and which reads as a verdict rather than as a failure.
+   *
+   * `#f5f5dc` is the yellow this status was given, and it sits in the tint
+   * role — the same very pale family as every other `-bg` here (`#fff8ed`,
+   * `#edfaf3`, `#fef2f3`). The dot is its saturated sibling, because a mark
+   * that pale is invisible on a white card and the ring segment, the legend
+   * swatch and the pill's dot are all marks. Both are the one status colour,
+   * read from these three tokens by every surface, so the legend swatch and
+   * the ring segment can never disagree.
+   */
+  --prio-status-rejected-fg: #7a6410;
+  --prio-status-rejected-bg: #f5f5dc;
+  --prio-status-rejected-dot: #d4b106;
+
   --prio-status-cancelled-fg: var(--prio-neutral-500);
   --prio-status-cancelled-bg: var(--prio-neutral-100);
   --prio-status-cancelled-dot: var(--prio-neutral-400);

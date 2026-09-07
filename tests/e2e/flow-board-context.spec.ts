@@ -110,8 +110,11 @@ test.describe("Flow Board from inside a project", () => {
     await expect(back).toHaveText(new RegExp(`Back to ${project.name}`));
 
     await back.click();
+    /* Back to the project. The link points at the project's base path, which
+       redirects into its workspace, so both spellings are the same place —
+       what matters is that it is *this* project and not the board. */
     await expect(page).toHaveURL(
-      new RegExp(`/projects/${project.key.toLowerCase()}$`),
+      new RegExp(`/projects/${project.key.toLowerCase()}(/summary)?$`),
     );
   });
 

@@ -588,16 +588,19 @@
 .prio-status[data-status="REOPENED"] .prio-status__dot {
   background: var(--prio-status-reopened-dot);
 }
-/* Rejected closes an issue, like Cancelled, and reads the same way -- struck
-   through, so a closed issue is recognisable without reading the word. */
+/* Rejected closes an issue, like Cancelled, and is struck through the same way
+   -- a closed issue is recognisable without reading the word. It no longer
+   borrows Cancelled's grey, though: it has a yellow of its own, so two
+   outcomes that are both closed but mean different things are told apart at a
+   glance rather than only by reading the label. */
 .prio-status[data-status="REJECTED"] {
-  background: var(--prio-status-cancelled-bg);
-  color: var(--prio-status-cancelled-fg);
+  background: var(--prio-status-rejected-bg);
+  color: var(--prio-status-rejected-fg);
   text-decoration: line-through;
   text-decoration-thickness: 1px;
 }
 .prio-status[data-status="REJECTED"] .prio-status__dot {
-  background: var(--prio-status-cancelled-dot);
+  background: var(--prio-status-rejected-dot);
 }
 .prio-status[data-status="CANCELLED"] {
   background: var(--prio-status-cancelled-bg);

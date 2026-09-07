@@ -398,7 +398,7 @@
   background: var(--prio-status-reopened-dot);
 }
 .prio-distribution__bar[data-status="REJECTED"] {
-  background: var(--prio-status-cancelled-dot);
+  background: var(--prio-status-rejected-dot);
 }
 
 /* ------------------------------------------------------------ status ring */
@@ -555,7 +555,7 @@
 .prio-donut__legenditem[data-status="IN_QA"] { background: var(--prio-status-qa-bg); }
 .prio-donut__legenditem[data-status="DONE"] { background: var(--prio-status-done-bg); }
 .prio-donut__legenditem[data-status="REOPENED"] { background: var(--prio-status-reopened-bg); }
-.prio-donut__legenditem[data-status="REJECTED"] { background: var(--prio-status-cancelled-bg); }
+.prio-donut__legenditem[data-status="REJECTED"] { background: var(--prio-status-rejected-bg); }
 .prio-donut__legenditem[data-status="CANCELLED"] { background: var(--prio-status-cancelled-bg); }
 
 /*
@@ -728,7 +728,7 @@ a.prio-completed__issue:hover {
 .prio-donut__seg[data-status="IN_QA"] { stroke: var(--prio-status-qa-dot); }
 .prio-donut__seg[data-status="DONE"] { stroke: var(--prio-status-done-dot); }
 .prio-donut__seg[data-status="REOPENED"] { stroke: var(--prio-status-reopened-dot); }
-.prio-donut__seg[data-status="REJECTED"] { stroke: var(--prio-status-cancelled-dot); }
+.prio-donut__seg[data-status="REJECTED"] { stroke: var(--prio-status-rejected-dot); }
 .prio-donut__seg[data-status="CANCELLED"] { stroke: var(--prio-status-cancelled-dot); }
 
 .prio-donut__swatch[data-status="BACKLOG"] { background: var(--prio-status-backlog-dot); }
@@ -738,7 +738,7 @@ a.prio-completed__issue:hover {
 .prio-donut__swatch[data-status="IN_QA"] { background: var(--prio-status-qa-dot); }
 .prio-donut__swatch[data-status="DONE"] { background: var(--prio-status-done-dot); }
 .prio-donut__swatch[data-status="REOPENED"] { background: var(--prio-status-reopened-dot); }
-.prio-donut__swatch[data-status="REJECTED"] { background: var(--prio-status-cancelled-dot); }
+.prio-donut__swatch[data-status="REJECTED"] { background: var(--prio-status-rejected-dot); }
 .prio-donut__swatch[data-status="CANCELLED"] { background: var(--prio-status-cancelled-dot); }
 
 /* ------------------------------------------------------- summary breakdown */

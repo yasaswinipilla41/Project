@@ -185,6 +185,12 @@
      are hand-tuned rather than a ramp step; each needs its dark counterpart. */
   --prio-status-todo-fg: var(--prio-info-700);
   --prio-status-progress-fg: #f7c37a;
+  /* Reject / Not an Issue keeps its yellow here, inverted the way every other
+     status is: the tint becomes a deep wash, the label becomes light, and the
+     mark becomes a brighter yellow so it still reads against a dark card. */
+  --prio-status-rejected-fg: #eae59a;
+  --prio-status-rejected-bg: #2b2a0c;
+  --prio-status-rejected-dot: #e8d44a;
   --prio-priority-high: #f5a63a;
   --prio-severity-critical: #ffb3b6;
   --prio-severity-major: #ffd79a;
@@ -338,6 +344,9 @@
 
     --prio-status-todo-fg: var(--prio-info-700);
     --prio-status-progress-fg: #f7c37a;
+    --prio-status-rejected-fg: #eae59a;
+    --prio-status-rejected-bg: #2b2a0c;
+    --prio-status-rejected-dot: #e8d44a;
     --prio-priority-high: #f5a63a;
     --prio-severity-critical: #ffb3b6;
     --prio-severity-major: #ffd79a;

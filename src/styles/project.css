@@ -653,7 +653,10 @@ a.prio-timeline__label:focus-visible {
   background: var(--prio-status-reopened-dot);
 }
 
-.prio-timeline__bar[data-status="REJECTED"],
+.prio-timeline__bar[data-status="REJECTED"] {
+  background: var(--prio-status-rejected-dot);
+}
+
 .prio-timeline__bar[data-status="CANCELLED"] {
   background: var(--prio-status-cancelled-dot);
 }

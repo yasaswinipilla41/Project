@@ -216,7 +216,9 @@ test.describe("Screenshot attachments in Create flows", () => {
 
       await dialog.getByRole("button", { name: "Create project" }).click();
       await expect(dialog).toBeHidden();
-      await expect(page).toHaveURL(/\/projects\/[a-z0-9]+$/i);
+      /* On the new project — the dialog pushes its base path, which redirects
+         into the workspace, so both spellings mean the same page. */
+      await expect(page).toHaveURL(/\/projects\/[a-z0-9]+(\/summary)?$/i);
       await expect(page.getByRole("heading", { name })).toBeVisible();
 
       const attachment = page.locator(".prio-attachment").first();
