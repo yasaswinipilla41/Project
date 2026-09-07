@@ -20,6 +20,8 @@ import { requireUser } from "@/lib/session";
 import { ISSUE_TYPE_LABEL, isClosedStatus } from "@/lib/domain";
 import {
   addWatchers,
+  assignmentMessage,
+  isTester,
   notify,
   recordFieldChanges,
   recordIssueCreated,
@@ -279,7 +281,12 @@ export async function createIssue(
           actorId: user.id,
           userIds: [input.assigneeId],
           type: "ISSUE_ASSIGNED",
-          message: `assigned ${ISSUE_TYPE_LABEL[input.type].toLowerCase()} ${issue.key} to you`,
+          message: assignmentMessage({
+            issueKey: issue.key,
+            issueTitle: issue.title,
+            typeLabel: ISSUE_TYPE_LABEL[input.type].toLowerCase(),
+            tester: await isTester(tx, input.assigneeId),
+          }),
         });
       }
 
@@ -488,6 +495,20 @@ export async function updateIssue(
         changes,
       });
 
+      /*
+       * Assignment, and the tester case of it.
+       *
+       * `changes` only holds fields that actually moved, so re-saving an issue
+       * without touching the assignee produces nothing here, and assigning
+       * somebody to the person who already holds it is not a change at all --
+       * neither can raise a second notification. `newValue` being null is an
+       * unassignment: there is nobody to tell, so nothing is written. A
+       * reassignment carries only the new holder, so the person who lost the
+       * work is not notified they were given it.
+       *
+       * When that new holder is on the Testing team the wording says so; the
+       * row, its type, its actor and where it opens are identical either way.
+       */
       const assigneeChange = changes.find((c) => c.field === "assigneeId");
       if (assigneeChange?.newValue) {
         await addWatchers(tx, issueId, [assigneeChange.newValue]);
@@ -496,7 +517,12 @@ export async function updateIssue(
           actorId: user.id,
           userIds: [assigneeChange.newValue],
           type: "ISSUE_ASSIGNED",
-          message: `assigned ${existing.key} to you`,
+          message: assignmentMessage({
+            issueKey: existing.key,
+            issueTitle: existing.title,
+            typeLabel: ISSUE_TYPE_LABEL[existing.type].toLowerCase(),
+            tester: await isTester(tx, assigneeChange.newValue),
+          }),
         });
       }
 

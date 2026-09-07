@@ -3,6 +3,7 @@ import { NotificationList } from "@/components/notifications/NotificationList";
 import { IconBell } from "@/components/ui/Icon";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
+import { sharedSheetPathFor } from "@/server/shares";
 
 export const metadata: Metadata = { title: "Notifications" };
 export const dynamic = "force-dynamic";
@@ -44,6 +45,21 @@ export default async function NotificationsPage() {
     prisma.notification.count({ where: { userId: user.id, readAt: null } }),
   ]);
 
+  /*
+   * Where an Issues Sheet notification opens.
+   *
+   * A sheet share hangs off no issue and no project — it is the whole sheet —
+   * so unlike every other notification its destination cannot be read from the
+   * row. It is the same place for all of them, and it is this reader's own
+   * share link, so it is resolved once here and handed to the list rather than
+   * stored on each row. Null when nothing is shared with them, which is what
+   * leaves a revoked share's notification without a link instead of pointing
+   * at a page that would turn them away.
+   */
+  const sharedSheetPath = notifications.some((n) => n.type === "INVITED")
+    ? await sharedSheetPathFor(user.id)
+    : null;
+
   return (
     <>
       <div className="prio-page-header">
@@ -59,6 +75,7 @@ export default async function NotificationsPage() {
       </div>
 
       <NotificationList
+        sharedSheetPath={sharedSheetPath}
         notifications={notifications}
         unreadCount={unreadCount}
       />

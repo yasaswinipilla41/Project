@@ -14,15 +14,35 @@ import { ADMIN_EMAIL, ADMIN_PASSWORD, MEMBER_EMAIL, MEMBER_PASSWORD } from "./su
  * signed-in state would carry a preference in with it and prove nothing.
  */
 
+/**
+ * The nine statuses and the nine colours that are theirs, in the order the
+ * Status Overview lists them. These are the authoritative values: the ring
+ * segment, the legend swatch, the distribution bar and the pill's dot all read
+ * one token per status, so asserting the token asserts every surface at once.
+ */
 const STATUS_HEX: Record<string, string> = {
-  BACKLOG: "#506078",
-  TODO: "#609ffa",
-  IN_PROGRESS: "#f0961f",
-  IN_REVIEW: "#8b5cf6",
-  IN_QA: "#0d9488",
-  DONE: "#0f8b5f",
-  REOPENED: "#e5484d",
-  CANCELLED: "#94a3bb",
+  BACKLOG: "#1f3c6e",
+  TODO: "#009698",
+  IN_PROGRESS: "#dca537",
+  IN_REVIEW: "#f198ad",
+  IN_QA: "#a3b85e",
+  DONE: "#3cb371",
+  REOPENED: "#c05d43",
+  REJECTED: "#886bc0",
+  CANCELLED: "#5c1228",
+};
+
+/** The token each status's primary colour is published under. */
+const TOKEN_OF: Record<string, string> = {
+  BACKLOG: "backlog",
+  TODO: "todo",
+  IN_PROGRESS: "progress",
+  IN_REVIEW: "review",
+  IN_QA: "qa",
+  DONE: "done",
+  REOPENED: "reopened",
+  REJECTED: "rejected",
+  CANCELLED: "cancelled",
 };
 
 function rgbToHex(rgb: string): string {
@@ -130,27 +150,17 @@ test.describe("The nine status colours", () => {
       }, theme);
 
       const dots: Record<string, string> = {};
-      for (const status of [...Object.keys(STATUS_HEX), "REJECTED"]) {
-        const name =
-          status === "IN_PROGRESS"
-            ? "progress"
-            : status === "IN_REVIEW"
-              ? "review"
-              : status === "IN_QA"
-                ? "qa"
-                : status.toLowerCase();
+      for (const [status, name] of Object.entries(TOKEN_OF)) {
         dots[status] = await token(page, `--prio-status-${name}-dot`);
       }
 
-      // Reject is not Cancelled's grey any more, and Cancelled still is grey.
-      expect(dots.REJECTED).not.toBe(dots.CANCELLED);
-      if (theme === "light") {
-        // The eight unchanged statuses keep exactly the values they had.
-        for (const [status, hex] of Object.entries(STATUS_HEX)) {
-          expect(dots[status], `${status} is unchanged`).toBe(hex);
-        }
-        // Yellow: more yellow than the In Progress orange, and clearly not it.
-        expect(dots.REJECTED).toBe("#d4b106");
+      /*
+       * Exactly the assigned value, in *both* themes. A status's colour
+       * identifies it; going dark changes the tint behind the label and the
+       * label itself, never the mark — so there is no light-only branch here.
+       */
+      for (const [status, hex] of Object.entries(STATUS_HEX)) {
+        expect(dots[status], `${status} is exactly ${hex}`).toBe(hex);
       }
 
       // Nine marks, and no two of them close enough to be confused.
@@ -167,12 +177,57 @@ test.describe("The nine status colours", () => {
         }
       }
 
-      // The label stays readable on its own tint.
-      const fg = await token(page, "--prio-status-rejected-fg");
-      const bg = await token(page, "--prio-status-rejected-bg");
-      expect(distance(fg, bg)).toBeGreaterThan(150);
+      // Every label stays readable on its own tint, in this theme.
+      for (const [status, name] of Object.entries(TOKEN_OF)) {
+        const fg = await token(page, `--prio-status-${name}-fg`);
+        const bg = await token(page, `--prio-status-${name}-bg`);
+        expect(
+          distance(fg, bg),
+          `${status}: ${fg} on ${bg} must be readable`,
+        ).toBeGreaterThan(150);
+      }
     });
   }
+
+  test("the pie chart draws each status in its own exact colour", async ({
+    page,
+  }) => {
+    /*
+     * The chart itself, not the token behind it: every segment the ring is
+     * showing is read off the painted SVG and compared with the assigned
+     * value. This is what rules out a generic chart palette or an
+     * index-based assignment quietly colouring the ring while the tokens say
+     * something else.
+     */
+    await page.goto("/projects/eng/summary");
+    const segments = page.locator(".prio-donut__seg");
+    await expect(segments.first()).toBeVisible();
+
+    const seen: string[] = [];
+    for (let i = 0; i < (await segments.count()); i += 1) {
+      const segment = segments.nth(i);
+      const status = (await segment.getAttribute("data-status"))!;
+      const painted = rgbToHex(
+        await segment.evaluate((el) => getComputedStyle(el).stroke),
+      );
+      expect(painted, `${status} segment`).toBe(STATUS_HEX[status]);
+      seen.push(status);
+    }
+
+    // The two the mapping calls out by name, whenever the ring shows them.
+    for (const [status, hex] of [
+      ["IN_QA", "#a3b85e"],
+      ["DONE", "#3cb371"],
+    ] as const) {
+      if (!seen.includes(status)) continue;
+      const painted = rgbToHex(
+        await page
+          .locator(`.prio-donut__seg[data-status="${status}"]`)
+          .evaluate((el) => getComputedStyle(el).stroke),
+      );
+      expect(painted, `${status} pie segment`).toBe(hex);
+    }
+  });
 
   test("the legend swatch and the ring segment are the same colour", async ({
     page,
@@ -198,7 +253,7 @@ test.describe("The nine status colours", () => {
     }
   });
 
-  test("a rejected issue's pill carries the yellow, in both themes", async ({
+  test("a rejected issue's pill carries its own colour, in both themes", async ({
     page,
   }) => {
     /* The Summary's status distribution lists every status, whatever its

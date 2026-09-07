@@ -6,8 +6,16 @@ import { Avatar } from "@/components/ui/primitives";
 import { Menu, MenuItem, MenuSeparator } from "@/components/ui/Menu";
 import { RichText } from "@/components/richtext/RichText";
 import { useToast } from "@/components/ui/Toast";
-import { IconEdit, IconMore, IconTrash } from "@/components/ui/Icon";
+import {
+  IconClose,
+  IconComment,
+  IconEdit,
+  IconMore,
+  IconPlus,
+  IconTrash,
+} from "@/components/ui/Icon";
 import { formatDateTime, formatRelative } from "@/lib/format";
+import { richTextToPlain } from "@/lib/richtext";
 import { toggleCommentReaction, createComment, deleteComment, updateComment } from "@/server/comments";
 import {
   ActivityFeedItem,
@@ -342,28 +350,36 @@ const LIKE = "\u{1F44D}";
 const REACTIONS = ["\u{1F44D}", "\u{1F389}", "\u{1F440}", "\u2705", "\u2764\uFE0F"];
 
 /**
- * Reply, Like and Add reaction, under each comment.
+ * The reactions a comment has actually collected, under its body.
+ *
+ * Reply, Like and Add reaction used to sit here too, as three buttons on every
+ * comment whether or not anyone had touched it — three controls competing with
+ * the comment on every card in a long thread. They live in the ⋯ menu now, and
+ * what is left here is the *record* rather than the offer: a chip per reaction
+ * somebody has left, with its count.
+ *
+ * The chips stay clickable, because that is what a reaction chip is everywhere
+ * — clicking one adds yours to it, clicking your own takes it back, which is
+ * the same `onReact` the menu calls. Nothing is reachable only from here: Like
+ * is in the menu whether or not a 👍 chip exists yet.
  *
  * Like is not stored differently from any other reaction — it is a thumbs up
- * with its own button, because it is the one people reach for most and should
- * not cost two clicks. Counts and "have I already reacted" come from the same
- * rows either way, so the two can never disagree.
+ * that gets its own menu item, because it is the one people reach for most and
+ * should not cost two clicks. Counts and "have I already reacted" come from the
+ * same rows either way, so the two can never disagree.
+ *
+ * With no reactions and the picker closed this renders nothing at all, so an
+ * untouched comment carries no row under it.
  */
 function CommentActions({
   comment,
   currentUserId,
-  replying,
   picking,
-  onReply,
-  onPick,
   onReact,
 }: {
   comment: CommentView;
   currentUserId: string;
-  replying: boolean;
   picking: boolean;
-  onReply: () => void;
-  onPick: () => void;
   onReact: (emoji: string) => void;
 }) {
   const counts = new Map<string, number>();
@@ -373,54 +389,37 @@ function CommentActions({
     if (reaction.userId === currentUserId) mine.add(reaction.emoji);
   }
 
-  const likes = counts.get(LIKE) ?? 0;
-  const others = [...counts.entries()].filter(([emoji]) => emoji !== LIKE);
+  /* Thumbs up first when it is there, then everything else in the order it
+     was reacted with, so the row does not reshuffle as counts change. */
+  const chips = [...counts.entries()].sort(([a], [b]) =>
+    a === LIKE ? -1 : b === LIKE ? 1 : 0,
+  );
+
+  if (chips.length === 0 && !picking) return null;
 
   return (
     <div className="prio-comment__actions">
-      <button
-        type="button"
-        className="prio-comment__action"
-        data-active={replying || undefined}
-        onClick={onReply}
-      >
-        Reply
-      </button>
-
-      <button
-        type="button"
-        className="prio-comment__action"
-        data-active={mine.has(LIKE) || undefined}
-        aria-pressed={mine.has(LIKE)}
-        onClick={() => onReact(LIKE)}
-      >
-        {LIKE} Like{likes > 0 ? ` ${likes}` : ""}
-      </button>
-
-      {others.map(([emoji, count]) => (
+      {chips.map(([emoji, count]) => (
         <button
           key={emoji}
           type="button"
           className="prio-comment__action"
           data-active={mine.has(emoji) || undefined}
           aria-pressed={mine.has(emoji)}
+          aria-label={`${
+            mine.has(emoji) ? "Remove your" : "Add a"
+          } ${emoji} reaction`}
           onClick={() => onReact(emoji)}
         >
           {emoji} {count}
         </button>
       ))}
 
-      <span className="prio-comment__react">
-        <button
-          type="button"
-          className="prio-comment__action"
-          aria-expanded={picking}
-          onClick={onPick}
-        >
-          Add reaction
-        </button>
-
-        {picking ? (
+      {/* Opened from the ⋯ menu's "Add reaction", and anchored here so the
+          emoji land beside the reactions they join rather than over the
+          comment above them. */}
+      {picking ? (
+        <span className="prio-comment__react">
           <span className="prio-comment__react-menu" role="menu">
             {REACTIONS.map((emoji) => (
               <button
@@ -435,8 +434,8 @@ function CommentActions({
               </button>
             ))}
           </span>
-        ) : null}
-      </span>
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -495,6 +494,22 @@ function CommentCard({
     attachmentIds: string[],
   ) => Promise<string | null>;
 }) {
+  /* The same two rules the menu used to be shown or hidden by, named so the
+     items can carry them individually now that the menu itself is for
+     everyone. `updateComment` and `deleteComment` assert both server-side. */
+  const canEdit = comment.author.id === currentUser.id;
+  const canDelete = canEdit || currentUser.role === "ADMIN";
+
+  const likedByMe = comment.reactions.some(
+    (reaction) =>
+      reaction.emoji === LIKE && reaction.userId === currentUser.id,
+  );
+
+  const replying = replyingTo === comment.id;
+  const onReply = () => setReplyingTo(replying ? null : comment.id);
+  const onPickReaction = () =>
+    setReactingTo(reactingTo === comment.id ? null : comment.id);
+
   return (
     <li
       key={`c-${comment.id}`}
@@ -533,35 +548,64 @@ function CommentCard({
             </span>
           ) : null}
 
-          {/* Authors edit their own; administrators can remove any. */}
-          {comment.author.id === currentUser.id ||
-          currentUser.role === "ADMIN" ? (
-            <Menu
-              align="end"
-              width={188}
-              label="Comment actions"
-              trigger={(props) => (
-                <button
-                  type="button"
-                  className="prio-comment__menu"
-                  aria-label="Comment actions"
-                  {...props}
-                >
-                  <IconMore size={14} />
-                </button>
-              )}
+          {/*
+           * Everything you can do to a comment, in one menu.
+           *
+           * Reply, Like and Add reaction were three standing buttons under
+           * every comment; they are menu items now, so a thread of twenty
+           * comments carries twenty quiet ⋯ triggers rather than sixty
+           * controls. Which is also why this menu is no longer conditional:
+           * it used to appear only for the author or an administrator, because
+           * Edit and Delete were all it held. Those two keep exactly the
+           * permissions they had — Edit for the author, Delete for the author
+           * or an administrator, and `updateComment`/`deleteComment` enforce
+           * both on the server regardless of what is rendered here. What
+           * changed is that everyone who can read a comment can now open the
+           * menu, because replying and reacting were always everyone's.
+           */}
+          <Menu
+            align="end"
+            width={200}
+            label="Comment actions"
+            trigger={(props) => (
+              <button
+                type="button"
+                className="prio-comment__menu"
+                aria-label="Comment actions"
+                {...props}
+              >
+                <IconMore size={14} />
+              </button>
+            )}
+          >
+            <MenuItem icon={<IconComment />} onSelect={onReply}>
+              Reply
+            </MenuItem>
+            {/* The label carries the state rather than a tick: `selected`
+                would make this a `menuitemradio`, and Like is a toggle of its
+                own, not one option out of a set. "Unlike" says the same thing
+                and says it to a screen reader too. */}
+            <MenuItem
+              icon={<span aria-hidden>{LIKE}</span>}
+              onSelect={() => onReact(comment.id, LIKE)}
             >
-              {comment.author.id === currentUser.id ? (
-                <MenuItem
-                  icon={<IconEdit />}
-                  onSelect={() => setEditing(comment.id)}
-                >
-                  Edit
-                </MenuItem>
-              ) : null}
-              {comment.author.id === currentUser.id ? (
-                <MenuSeparator />
-              ) : null}
+              {likedByMe ? "Unlike" : "Like"}
+            </MenuItem>
+            <MenuItem icon={<IconPlus />} onSelect={onPickReaction}>
+              Add reaction
+            </MenuItem>
+
+            {canEdit || canDelete ? <MenuSeparator /> : null}
+
+            {canEdit ? (
+              <MenuItem
+                icon={<IconEdit />}
+                onSelect={() => setEditing(comment.id)}
+              >
+                Edit
+              </MenuItem>
+            ) : null}
+            {canDelete ? (
               <MenuItem
                 danger
                 icon={<IconTrash />}
@@ -569,8 +613,8 @@ function CommentCard({
               >
                 Delete
               </MenuItem>
-            </Menu>
-          ) : null}
+            ) : null}
+          </Menu>
         </div>
 
         {editing === comment.id ? (
@@ -603,18 +647,7 @@ function CommentCard({
             <CommentActions
               comment={comment}
               currentUserId={currentUser.id}
-              replying={replyingTo === comment.id}
               picking={reactingTo === comment.id}
-              onReply={() =>
-                setReplyingTo(
-                  replyingTo === comment.id ? null : comment.id,
-                )
-              }
-              onPick={() =>
-                setReactingTo(
-                  reactingTo === comment.id ? null : comment.id,
-                )
-              }
               onReact={(emoji) => onReact(comment.id, emoji)}
             />
 
@@ -632,11 +665,42 @@ function CommentCard({
              * same mentions, same attachments, same validation. There is no
              * second editor.
              */}
-            {replyingTo === comment.id ? (
+            {replying ? (
               <div className="prio-comment__reply">
-                <p className="prio-comment__replyto">
-                  Replying to <strong>{comment.author.name}</strong>
-                </p>
+                {/*
+                 * What is being answered, quoted.
+                 *
+                 * The name alone was here before, which says who but not
+                 * which: a card several replies deep, or one scrolled off the
+                 * top while the composer is being typed into, leaves the
+                 * reader guessing. `richTextToPlain` is the same reader the
+                 * rest of Prio uses for excerpts — it flattens the markup, so
+                 * what lands here is a line of text rather than a nested,
+                 * clickable copy of the comment. Capped at 160 characters and
+                 * clamped to two lines by the stylesheet, so quoting a long
+                 * comment cannot push the editor down the page.
+                 */}
+                <div className="prio-comment__quote">
+                  <div className="prio-comment__quote-text">
+                    <p className="prio-comment__replyto">
+                      Replying to <strong>{comment.author.name}</strong>
+                    </p>
+                    <p className="prio-comment__quote-body">
+                      {richTextToPlain(comment.body, 160)}
+                    </p>
+                  </div>
+                  {/* Drops the quote and closes the editor, which is the same
+                      thing: the quote *is* which comment this reply answers,
+                      so there is no reply left once it is gone. */}
+                  <button
+                    type="button"
+                    className="prio-comment__quote-remove"
+                    aria-label={`Cancel replying to ${comment.author.name}`}
+                    onClick={() => setReplyingTo(null)}
+                  >
+                    <IconClose size={13} />
+                  </button>
+                </div>
                 <CommentComposer
                   issueId={issueId}
                   author={currentUser}

@@ -295,76 +295,61 @@
 
   /* ----------------------------------------- issue status semantics */
   /*
-   * Backlog is slate, Cancelled is light grey. Their dots and backgrounds used
-   * to be the same two values, so on the status ring "not started yet" and
-   * "abandoned" were one indistinguishable colour sitting next to each other
-   * in the legend. Same family, deliberately — unplanned and dismissed are
-   * both quiet states — but far enough apart in lightness to tell at a glance.
-   */
-  --prio-status-backlog-fg: var(--prio-neutral-700);
-  --prio-status-backlog-bg: var(--prio-neutral-200);
-  --prio-status-backlog-dot: var(--prio-neutral-600);
-
-  --prio-status-todo-fg: var(--prio-info-700);
-  --prio-status-todo-bg: var(--prio-info-50);
-  --prio-status-todo-dot: var(--prio-info-400);
-
-  --prio-status-progress-fg: #b06400;
-  --prio-status-progress-bg: var(--prio-amber-50);
-  --prio-status-progress-dot: var(--prio-amber-500);
-
-  --prio-status-review-fg: var(--prio-accent-700);
-  --prio-status-review-bg: var(--prio-accent-50);
-  --prio-status-review-dot: var(--prio-accent-500);
-
-  --prio-status-qa-fg: var(--prio-teal-700);
-  --prio-status-qa-bg: var(--prio-teal-50);
-  --prio-status-qa-dot: var(--prio-teal-500);
-
-  --prio-status-done-fg: var(--prio-green-700);
-  --prio-status-done-bg: var(--prio-green-50);
-  --prio-status-done-dot: var(--prio-green-600);
-
-  /*
-   * Reopen is red, and its own colour.
+   * The nine statuses, and the nine colours that are theirs.
    *
-   * It used to borrow the In Progress amber on the argument that reopened work
-   * is active work again. That reads well in prose and badly on a chart: the
-   * two sat side by side in the status ring as the same orange, so the one
-   * thing a reader wants to spot — work that came back — was the one thing
-   * they could not pick out. Red is what the rest of Prio already uses for
-   * "needs attention", which is what a reopened issue is.
-   */
-  --prio-status-reopened-fg: var(--prio-red-700);
-  --prio-status-reopened-bg: var(--prio-red-50);
-  --prio-status-reopened-dot: var(--prio-red-500);
-
-  /*
-   * Reject / Not an Issue is yellow, and its own colour.
+   * Every one is stated literally rather than read from a ramp. These are
+   * assigned colours, not steps on a scale: a ramp step means "one shade
+   * along from that", which is a relationship the palette is free to change,
+   * and twice now a status has quietly moved when a ramp was retuned. Written
+   * out, `Done` is `#3cb371` and stays `#3cb371`.
    *
-   * It used to share Cancelled's grey on the argument that both close an
-   * issue. That is true of the workflow and useless on a chart: the two sat
-   * beside each other in the status ring as one indistinguishable grey, so
-   * "we looked and it is not a defect" and "we abandoned it" could not be told
-   * apart — and those are different answers a reader is specifically looking
-   * for. Cancelled keeps the grey; Reject takes yellow, which nothing else
-   * uses and which reads as a verdict rather than as a failure.
+   * `-dot` is the status's primary colour and the only one that is
+   * authoritative. It is the mark every surface draws — the ring segment, the
+   * legend swatch, the distribution bar, the pill's dot — so the chart and its
+   * legend read the same variable and cannot disagree. It is deliberately not
+   * re-declared in `theme-dark.css`: the colour identifies the status, and a
+   * status does not become a different colour because the page went dark.
    *
-   * `#f5f5dc` is the yellow this status was given, and it sits in the tint
-   * role — the same very pale family as every other `-bg` here (`#fff8ed`,
-   * `#edfaf3`, `#fef2f3`). The dot is its saturated sibling, because a mark
-   * that pale is invisible on a white card and the ring segment, the legend
-   * swatch and the pill's dot are all marks. Both are the one status colour,
-   * read from these three tokens by every surface, so the legend swatch and
-   * the ring segment can never disagree.
+   * `-bg` and `-fg` are the pill's tint and its label. Those *are* theme
+   * business — a pale wash is unreadable on a dark card — so they are the two
+   * the dark sheet overrides, and the only two. Each `-fg` is the status's own
+   * hue taken dark enough to clear 4.5:1 on its own `-bg`.
    */
-  --prio-status-rejected-fg: #7a6410;
-  --prio-status-rejected-bg: #f5f5dc;
-  --prio-status-rejected-dot: #d4b106;
+  --prio-status-backlog-fg: #1f3c6e;
+  --prio-status-backlog-bg: #e8edf6;
+  --prio-status-backlog-dot: #1f3c6e;
 
-  --prio-status-cancelled-fg: var(--prio-neutral-500);
-  --prio-status-cancelled-bg: var(--prio-neutral-100);
-  --prio-status-cancelled-dot: var(--prio-neutral-400);
+  --prio-status-todo-fg: #00706f;
+  --prio-status-todo-bg: #e0f4f4;
+  --prio-status-todo-dot: #009698;
+
+  --prio-status-progress-fg: #8a6314;
+  --prio-status-progress-bg: #fdf4e3;
+  --prio-status-progress-dot: #dca537;
+
+  --prio-status-review-fg: #a3405a;
+  --prio-status-review-bg: #fdeef1;
+  --prio-status-review-dot: #f198ad;
+
+  --prio-status-qa-fg: #5d6b2c;
+  --prio-status-qa-bg: #f2f5e6;
+  --prio-status-qa-dot: #a3b85e;
+
+  --prio-status-done-fg: #1e6b43;
+  --prio-status-done-bg: #e6f6ed;
+  --prio-status-done-dot: #3cb371;
+
+  --prio-status-reopened-fg: #8c3d29;
+  --prio-status-reopened-bg: #fbeeea;
+  --prio-status-reopened-dot: #c05d43;
+
+  --prio-status-rejected-fg: #5a4488;
+  --prio-status-rejected-bg: #f1ecfa;
+  --prio-status-rejected-dot: #886bc0;
+
+  --prio-status-cancelled-fg: #5c1228;
+  --prio-status-cancelled-bg: #f7e9ed;
+  --prio-status-cancelled-dot: #5c1228;
 
   /* --------------------------------------------- priority semantics */
   --prio-priority-urgent: var(--prio-red-600);

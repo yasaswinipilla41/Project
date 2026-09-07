@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
+import { TESTING_TEAM_SLUG } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -124,6 +125,56 @@ export async function notify(db: Db, params: NotifyParams): Promise<void> {
       message: params.message,
     })),
   });
+}
+
+/**
+ * Is this person a tester — that is, on the Testing team?
+ *
+ * "Tester" is not a `Role` and not a field on the issue: it is membership of
+ * the team that owns the testing surfaces, which is how `authz.ts` and
+ * `/my-work` already decide it. This asks the same question of the same rows;
+ * what it adds is a `Db`, so the check can run inside the transaction that is
+ * about to write the notification rather than against a second connection
+ * that might not see the same state.
+ *
+ * A user id that is null, or belongs to nobody, is not a tester — an
+ * unassignment has no one to be one.
+ */
+export async function isTester(
+  db: Db,
+  userId: string | null | undefined,
+): Promise<boolean> {
+  if (!userId) return false;
+  const count = await db.teamMember.count({
+    where: { userId, team: { slug: TESTING_TEAM_SLUG } },
+  });
+  return count > 0;
+}
+
+/**
+ * What to tell someone who has just been given an issue.
+ *
+ * Assignment already notified whoever received the work; a tester being handed
+ * something is the same event, and gets the same row, the same type and the
+ * same destination. Only the sentence changes — "assigned you as tester for"
+ * rather than "assigned … to you" — because being asked to test a thing and
+ * being asked to build it are different jobs, and the notification is the
+ * first place that distinction is visible.
+ *
+ * Written to the existing convention: `NotificationList` renders
+ * `<strong>{actor.name}</strong> {message}`, so this is a predicate with no
+ * name of its own in front of it.
+ */
+export function assignmentMessage(params: {
+  issueKey: string;
+  issueTitle: string;
+  typeLabel: string;
+  tester: boolean;
+}): string {
+  if (params.tester) {
+    return `assigned you as tester for ${params.issueKey} — ${params.issueTitle}`;
+  }
+  return `assigned ${params.typeLabel} ${params.issueKey} to you`;
 }
 
 /** Unread notification count for the chrome badge. */

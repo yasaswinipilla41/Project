@@ -183,14 +183,45 @@
   /* ------------------------------------------------- hard-coded hues */
   /* These five were written as literal hex in the light palette because they
      are hand-tuned rather than a ramp step; each needs its dark counterpart. */
-  --prio-status-todo-fg: var(--prio-info-700);
-  --prio-status-progress-fg: #f7c37a;
-  /* Reject / Not an Issue keeps its yellow here, inverted the way every other
-     status is: the tint becomes a deep wash, the label becomes light, and the
-     mark becomes a brighter yellow so it still reads against a dark card. */
-  --prio-status-rejected-fg: #eae59a;
-  --prio-status-rejected-bg: #2b2a0c;
-  --prio-status-rejected-dot: #e8d44a;
+  /* ------------------------------------------------- status pills */
+  /*
+   * Only the pill's tint and its label.
+   *
+   * The nine `-dot` values in `tokens.css` are the statuses' own colours and
+   * are deliberately absent here: a status does not become a different colour
+   * because the page went dark, and the ring segment, the legend swatch and
+   * the dot all read that one variable. What has to change is the pair around
+   * it — a pale wash is invisible on a dark card, and dark ink on it is
+   * unreadable — so each tint becomes a deep version of the same hue and each
+   * label becomes a light one.
+   */
+  --prio-status-backlog-fg: #9db6e0;
+  --prio-status-backlog-bg: #16233d;
+
+  --prio-status-todo-fg: #6fd6d3;
+  --prio-status-todo-bg: #04302f;
+
+  --prio-status-progress-fg: #f0c977;
+  --prio-status-progress-bg: #33270d;
+
+  --prio-status-review-fg: #f5b6c4;
+  --prio-status-review-bg: #3a222a;
+
+  --prio-status-qa-fg: #c6d795;
+  --prio-status-qa-bg: #2a3117;
+
+  --prio-status-done-fg: #86d8ab;
+  --prio-status-done-bg: #10301f;
+
+  --prio-status-reopened-fg: #e39c88;
+  --prio-status-reopened-bg: #331a13;
+
+  --prio-status-rejected-fg: #bda8e4;
+  --prio-status-rejected-bg: #241d38;
+
+  --prio-status-cancelled-fg: #e0a3b4;
+  --prio-status-cancelled-bg: #2e0d17;
+
   --prio-priority-high: #f5a63a;
   --prio-severity-critical: #ffb3b6;
   --prio-severity-major: #ffd79a;
@@ -342,11 +373,44 @@
     --prio-shadow-focus: 0 0 0 3px rgba(168, 85, 247, 0.4);
     --prio-shadow-focus-danger: 0 0 0 3px rgba(242, 102, 107, 0.4);
 
-    --prio-status-todo-fg: var(--prio-info-700);
-    --prio-status-progress-fg: #f7c37a;
-    --prio-status-rejected-fg: #eae59a;
-    --prio-status-rejected-bg: #2b2a0c;
-    --prio-status-rejected-dot: #e8d44a;
+    /* ------------------------------------------------- status pills */
+    /*
+     * Only the pill's tint and its label.
+     *
+     * The nine `-dot` values in `tokens.css` are the statuses' own colours and
+     * are deliberately absent here: a status does not become a different colour
+     * because the page went dark, and the ring segment, the legend swatch and
+     * the dot all read that one variable. What has to change is the pair around
+     * it — a pale wash is invisible on a dark card, and dark ink on it is
+     * unreadable — so each tint becomes a deep version of the same hue and each
+     * label becomes a light one.
+     */
+    --prio-status-backlog-fg: #9db6e0;
+    --prio-status-backlog-bg: #16233d;
+
+    --prio-status-todo-fg: #6fd6d3;
+    --prio-status-todo-bg: #04302f;
+
+    --prio-status-progress-fg: #f0c977;
+    --prio-status-progress-bg: #33270d;
+
+    --prio-status-review-fg: #f5b6c4;
+    --prio-status-review-bg: #3a222a;
+
+    --prio-status-qa-fg: #c6d795;
+    --prio-status-qa-bg: #2a3117;
+
+    --prio-status-done-fg: #86d8ab;
+    --prio-status-done-bg: #10301f;
+
+    --prio-status-reopened-fg: #e39c88;
+    --prio-status-reopened-bg: #331a13;
+
+    --prio-status-rejected-fg: #bda8e4;
+    --prio-status-rejected-bg: #241d38;
+
+    --prio-status-cancelled-fg: #e0a3b4;
+    --prio-status-cancelled-bg: #2e0d17;
     --prio-priority-high: #f5a63a;
     --prio-severity-critical: #ffb3b6;
     --prio-severity-major: #ffd79a;

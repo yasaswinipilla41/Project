@@ -79,12 +79,28 @@ export default async function SharedIssuesPage({
         </div>
       </div>
 
+      {/*
+       * The sheet somebody was given, with the download that makes it a sheet.
+       *
+       * `enableExport` turns on the Export Excel control `/issues` already
+       * has — the same button, the same `/api/issues/export` route, the same
+       * workbook. Sharing an Issues Sheet and then offering no way to take it
+       * away was the gap; this closes it by opting in rather than by building
+       * a second export.
+       *
+       * Safe to switch on here because the route authorizes for itself: it
+       * resolves the caller server-side and builds its rows through the same
+       * `buildIssueWhere` this page's `listIssues` uses, so a recipient
+       * downloads exactly the issues they may already read on this page and
+       * nothing else. Being on the share does not widen that.
+       */}
       <IssueFilters
         projects={options.projects}
         people={options.people}
         labels={options.labels}
         currentUserId={user.id}
         total={result.total}
+        enableExport
       />
 
       <IssueTable

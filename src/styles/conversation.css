@@ -23,9 +23,25 @@
  * keeps the chronology readable; the card is what says "a person wrote this"
  * rather than "something changed".
  */
+/*
+ * A comment is an avatar beside a card, with its replies underneath.
+ *
+ * All three are children of this one flex row, so the replies list was laid
+ * out *beside* the card rather than below it: on a comment with replies the
+ * card was squeezed to 26px and its text rendered one character per line.
+ * Wrapping, with the replies claiming a whole line of their own, puts them
+ * back under the comment they belong to and gives the card its width again.
+ *
+ * `position` and `display` stay. Dropping them does clear the squeeze — there
+ * is no flex row left to squeeze — but it also stacks the avatar above the
+ * card instead of beside it, and unanchors `.prio-activity__rail`, which is
+ * absolutely positioned against this element: measured, the rail jumped from
+ * the comment's own left edge to the page's and stretched to 926px.
+ */
 .prio-comment {
   position: relative;
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   gap: var(--prio-space-4);
   padding: var(--prio-space-3) 0;
@@ -134,7 +150,13 @@
   border: 1px solid var(--prio-border);
   border-radius: var(--prio-radius-lg);
   background: var(--prio-bg-surface);
-  overflow: hidden;
+  /*
+   * Deliberately not `overflow: hidden`. It was here to keep the actions row's
+   * tinted background inside the rounded corners — which it did, along with
+   * clipping the mention suggestions the moment the list was longer than the
+   * space left below the field. The actions row rounds its own two corners
+   * instead, so the box still looks right and the list can hang past it.
+   */
   transition: border-color var(--prio-duration-fast) var(--prio-ease),
     box-shadow var(--prio-duration-fast) var(--prio-ease);
 }
@@ -296,6 +318,9 @@
   padding: var(--prio-space-3);
   border-top: 1px solid var(--prio-border-subtle);
   background: var(--prio-bg-subtle);
+  /* The composer's own bottom corners, now that `__main` no longer clips. */
+  border-bottom-left-radius: calc(var(--prio-radius-lg) - 1px);
+  border-bottom-right-radius: calc(var(--prio-radius-lg) - 1px);
 }
 
 .prio-composer__attach {
@@ -387,11 +412,29 @@
 
 /* --------------------------------------------------------- mention list */
 
+/*
+ * The suggestion list sits directly above the field it belongs to.
+ *
+ * It used to be anchored `bottom: 8px` *inside* `.prio-composer__field`, which
+ * put it on top of the text being typed: the moment `@pra` matched somebody,
+ * the list covered the very characters that produced it. Hanging it off an
+ * edge instead keeps the caret, the typed query and the matches all visible at
+ * once, which is the whole point of an autocomplete.
+ *
+ * Above rather than below, because a comment composer sits at the foot of the
+ * conversation: measured on the issue page, a list hung below it started 4px
+ * under the field and ran off the bottom of the window. Above, it opens into
+ * the conversation it is part of, which is the space that is actually there.
+ *
+ * The offsets measure from the field, not from the comment:
+ * `.prio-composer__field` is the positioned ancestor, so a reply composer
+ * nested inside a comment aligns to its own field wherever that comment sits.
+ */
 .prio-mentions {
   position: absolute;
-  left: var(--prio-space-4);
-  right: var(--prio-space-4);
-  bottom: var(--prio-space-2);
+  left: 0;
+  right: 0;
+  bottom: calc(100% + var(--prio-space-1));
   z-index: var(--prio-z-dropdown);
   list-style: none;
   max-width: 280px;
@@ -425,10 +468,11 @@
   background: var(--prio-bg-active);
 }
 
+/* The "nobody matches" note takes the same place as the list it replaces. */
 .prio-mentions__empty {
   position: absolute;
-  left: var(--prio-space-4);
-  bottom: var(--prio-space-2);
+  left: 0;
+  bottom: calc(100% + var(--prio-space-1));
   margin: 0;
   padding: var(--prio-space-2) var(--prio-space-3);
   border: 1px solid var(--prio-border);
@@ -594,8 +638,32 @@
   border-left: 2px solid var(--prio-border-subtle);
 }
 
+/*
+ * The comment being answered, quoted above the editor.
+ *
+ * A tinted block rather than a bordered card: it has to read as "this is the
+ * thing you are replying to", not as a second comment sitting in the composer.
+ */
+.prio-comment__quote {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--prio-space-2);
+  margin-bottom: var(--prio-space-3);
+  padding: var(--prio-space-2) var(--prio-space-3);
+  border-radius: var(--prio-radius-sm);
+  background: var(--prio-bg-subtle);
+}
+
+/* `min-width: 0` is what actually holds the quote inside the composer: without
+   it the flex item takes its content's width and a long unbroken line pushes
+   the remove button off the end. */
+.prio-comment__quote-text {
+  flex: 1;
+  min-width: 0;
+}
+
 .prio-comment__replyto {
-  margin: 0 0 var(--prio-space-2);
+  margin: 0;
   font-size: var(--prio-text-xs);
   color: var(--prio-text-muted);
 }
@@ -605,7 +673,50 @@
   font-weight: var(--prio-weight-semibold);
 }
 
+/* Two lines and then an ellipsis. Quoting a long comment must not push the
+   editor down the page — the quote is context, the editor is the task. */
+.prio-comment__quote-body {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin: 2px 0 0;
+  font-size: var(--prio-text-xs);
+  line-height: var(--prio-leading-snug);
+  color: var(--prio-text-secondary);
+  /* A pasted URL or a long token wraps rather than widening the row. */
+  overflow-wrap: anywhere;
+}
+
+.prio-comment__quote-remove {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--prio-radius-sm);
+  background: transparent;
+  color: var(--prio-text-muted);
+  cursor: pointer;
+}
+
+.prio-comment__quote-remove:hover {
+  background: var(--prio-bg-active);
+  color: var(--prio-text-primary);
+}
+
+.prio-comment__quote-remove:focus-visible {
+  outline: 2px solid var(--prio-border-focus);
+  outline-offset: 1px;
+}
+
 .prio-comment__replies {
+  /* A line of its own, under the avatar and card rather than alongside them. */
+  flex-basis: 100%;
   list-style: none;
   margin: var(--prio-space-4) 0 0;
   padding: 0 0 0 var(--prio-space-6);
@@ -839,9 +950,13 @@
 
 /* ---------------------------------------------------- comment actions */
 /*
- * Reply, Like and Add reaction, sitting under a comment's body. Quiet by
- * default — they are available on every comment, so they must not compete
- * with the comment itself for attention.
+ * The reactions a comment has collected, under its body.
+ *
+ * Reply, Like and Add reaction used to stand here on every comment whether or
+ * not anyone had touched it. They are in the ⋯ menu now, and this row carries
+ * only chips for reactions somebody actually left — so an untouched comment
+ * has no row at all, and the ones that do read as a record rather than as
+ * three more controls competing with the comment above them.
  */
 .prio-comment__actions {
   display: flex;
@@ -883,6 +998,7 @@
   outline-offset: 1px;
 }
 
+/* Anchors the emoji popover, which the ⋯ menu's "Add reaction" opens. */
 .prio-comment__react {
   position: relative;
   display: inline-flex;

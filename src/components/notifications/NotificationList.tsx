@@ -36,7 +36,7 @@ const TYPE_LABEL: Record<NotificationType, string> = {
   MENTIONED: "Mentioned",
   STATUS_CHANGED: "Status",
   COMMENT_ADDED: "Comment",
-  INVITED: "Invitation",
+  INVITED: "Issues Sheet",
   USER_JOINED: "New member",
   TEST_RESULT: "Test result",
   PROJECT_ACCESS_REQUEST: "Access request",
@@ -48,22 +48,32 @@ const TYPE_LABEL: Record<NotificationType, string> = {
  * Lifted out of the list so the detail view's action button and the list agree
  * by construction rather than by two copies of the same expression.
  */
-function targetOf(n: NotificationRow): string | null {
+function targetOf(
+  n: NotificationRow,
+  sharedSheetPath: string | null,
+): string | null {
   if (n.issue) {
     return `/issues/${n.issue.key.toLowerCase()}${
       n.commentId ? `#comment-${n.commentId}` : ""
     }`;
   }
   if (n.project) return `/projects/${n.project.key.toLowerCase()}`;
+  /* A shared Issues Sheet is neither an issue nor a project, so its
+     destination is passed in rather than read off the row — see the note in
+     the notifications page. */
+  if (n.type === "INVITED") return sharedSheetPath;
   return null;
 }
 
 export function NotificationList({
   notifications,
   unreadCount,
+  sharedSheetPath = null,
 }: {
   notifications: NotificationRow[];
   unreadCount: number;
+  /** Where an Issues Sheet share opens for this reader, when one is theirs. */
+  sharedSheetPath?: string | null;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -124,6 +134,7 @@ export function NotificationList({
       <NotificationDetail
         notification={opened}
         onBack={() => setOpenId(null)}
+        sharedSheetPath={sharedSheetPath}
       />
     );
   }
@@ -241,11 +252,13 @@ export function NotificationList({
 function NotificationDetail({
   notification: n,
   onBack,
+  sharedSheetPath,
 }: {
   notification: NotificationRow;
   onBack: () => void;
+  sharedSheetPath: string | null;
 }) {
-  const target = targetOf(n);
+  const target = targetOf(n, sharedSheetPath);
   const actor = n.actor?.name ?? "Prio";
 
   return (
@@ -312,7 +325,11 @@ function NotificationDetail({
       <div className="prio-notification-detail__actions">
         {target ? (
           <Link href={target} className="prio-btn prio-btn--brand">
-            {n.issue ? "Open issue" : "View content"}
+            {n.issue
+              ? "Open issue"
+              : n.type === "INVITED"
+                ? "Open the Issues Sheet"
+                : "View content"}
             <IconExternal size={14} />
           </Link>
         ) : (

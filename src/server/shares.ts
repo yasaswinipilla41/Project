@@ -193,6 +193,20 @@ export async function addShareMember(
 
     const share = await getOrCreateShare(user.id);
 
+    /*
+     * Was this person already on the share?
+     *
+     * Read before the upsert, because the upsert cannot tell us: it returns a
+     * row either way. This is what keeps re-adding somebody — or an admin
+     * changing their permission — from writing a second "shared with you"
+     * notification for access they already had. The `@@unique([shareId,
+     * userId])` the upsert keys on is the deduplication; this just reads it.
+     */
+    const alreadyShared = await prisma.issueSheetShareMember.findUnique({
+      where: { shareId_userId: { shareId: share.id, userId: target.id } },
+      select: { id: true },
+    });
+
     const member = await prisma.issueSheetShareMember.upsert({
       where: { shareId_userId: { shareId: share.id, userId: target.id } },
       update: { permission: parsed.data.permission },
@@ -204,6 +218,31 @@ export async function addShareMember(
       },
       select: { id: true, permission: true },
     });
+
+    /*
+     * Tell them, once, that the sheet is theirs to open.
+     *
+     * `INVITED` is the existing notification type for "you have been given
+     * access to something" — declared with the others and, until now, unused.
+     * The row carries no issue and no project because the sheet is neither;
+     * where it opens is resolved by the notifications page, which knows the
+     * share this reader is a member of and turns it into that share's own
+     * link. Sharing with yourself notifies nobody, which is the same rule
+     * `notify()` applies everywhere else.
+     */
+    if (!alreadyShared && target.id !== user.id) {
+      await prisma.notification.create({
+        data: {
+          userId: target.id,
+          type: "INVITED",
+          actorId: user.id,
+          /* `NotificationList` renders `<strong>{actor.name}</strong>
+             {message}`, so this is a predicate with no name in front of it. */
+          message:
+            "shared the Issues Sheet with you — open it to view or download the Excel sheet.",
+        },
+      });
+    }
 
     return {
       ok: true,
@@ -242,6 +281,29 @@ export async function removeShareMember(
   } catch (error) {
     return failure(error);
   }
+}
+
+/**
+ * Where this person's shared Issues Sheet lives, or null if none is theirs.
+ *
+ * The path rather than the absolute URL, because the only caller renders it
+ * into a `<Link>` on a page this reader is already on; `shareUrl` above is for
+ * the copyable link, where the origin matters. Both are built from the one
+ * token, so they can only ever point at the same sheet.
+ *
+ * Returns null for somebody who has not been granted access, so a stale
+ * notification — one whose access was revoked afterwards — renders without a
+ * destination rather than sending them to a page that will refuse them.
+ */
+export async function sharedSheetPathFor(
+  userId: string,
+): Promise<string | null> {
+  const member = await prisma.issueSheetShareMember.findFirst({
+    where: { userId },
+    orderBy: { createdAt: "asc" },
+    select: { share: { select: { token: true } } },
+  });
+  return member ? `/shared/issues/${member.share.token}` : null;
 }
 
 /**

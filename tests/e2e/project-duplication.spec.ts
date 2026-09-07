@@ -378,7 +378,10 @@ test.describe("Duplicating a project through the interface", () => {
       .locator(".prio-conversation__timeline > .prio-comment")
       .filter({ hasText: "Newly created video" })
       .first();
-    await root.getByRole("button", { name: /^Reply$/ }).first().click();
+    /* Reply is an item in the comment's ⋯ menu now, not a button standing
+       under it; the editor it opens is unchanged. */
+    await root.getByRole("button", { name: "Comment actions" }).first().click();
+    await page.getByRole("menuitem", { name: "Reply" }).click();
     const replyComposer = root.locator(".prio-composer").last();
     await replyComposer.getByRole("textbox").first().click();
     await page.keyboard.type(answer);

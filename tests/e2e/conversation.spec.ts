@@ -289,9 +289,21 @@ test.describe("Editing and deleting a comment", () => {
       .locator(".prio-comment")
       .filter({ hasText: marker });
     await expect(comment).toBeVisible();
-    await expect(
-      comment.getByRole("button", { name: "Comment actions" }),
-    ).toHaveCount(0);
+
+    /*
+     * The menu itself is theirs now -- Reply, Like and Add reaction live in it
+     * and are everyone's, so it opens for any reader. What a member must not
+     * be offered on somebody else's comment is Edit or Delete, so that is what
+     * is asserted: the contents, not the existence of the control.
+     */
+    await comment.getByRole("button", { name: "Comment actions" }).click();
+    const menu = memberPage.getByRole("menu", { name: "Comment actions" });
+    const offered = await menu.getByRole("menuitem").allInnerTexts();
+    const labels = offered.map((t) => t.replace(/\s+/g, " ").trim());
+
+    expect(labels.some((l) => /Reply/.test(l))).toBe(true);
+    expect(labels.some((l) => /Edit/.test(l))).toBe(false);
+    expect(labels.some((l) => /Delete/.test(l))).toBe(false);
 
     await memberContext.close();
   });
@@ -477,10 +489,15 @@ test.describe("Threading", () => {
     const rootCard = page.locator(".prio-comment").filter({ hasText: root }).first();
     await expect(rootCard).toBeVisible({ timeout: 20000 });
 
-    /* A reply to it. The action that opens the editor is still "Reply"; the
-       button that posts it is "Save", beside Cancel, under a "Replying to …"
-       line naming the comment being answered. */
-    await rootCard.getByRole("button", { name: /^Reply$/ }).first().click();
+    /* A reply to it. "Reply" is an item in the comment's ⋯ menu now rather than
+       a button standing under it; the editor it opens is unchanged, and the
+       button that posts it is still "Save", beside Cancel, under the quoted
+       comment being answered. */
+    await rootCard
+      .getByRole("button", { name: "Comment actions" })
+      .first()
+      .click();
+    await page.getByRole("menuitem", { name: "Reply" }).click();
     await expect(rootCard.locator(".prio-comment__replyto").first()).toBeVisible();
     const rootComposer = rootCard.locator(".prio-composer").last();
     await rootComposer.getByRole("textbox").first().click();
@@ -494,7 +511,11 @@ test.describe("Threading", () => {
     await expect(replyCard).toBeVisible({ timeout: 20000 });
 
     // And an answer to that reply — the case that used to disappear.
-    await replyCard.getByRole("button", { name: /^Reply$/ }).first().click();
+    await replyCard
+      .getByRole("button", { name: "Comment actions" })
+      .first()
+      .click();
+    await page.getByRole("menuitem", { name: "Reply" }).click();
     const replyComposer = replyCard.locator(".prio-composer").last();
     await replyComposer.getByRole("textbox").first().click();
     await page.keyboard.type(answer);
