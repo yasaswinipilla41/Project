@@ -157,12 +157,17 @@ export function Sidebar({
   };
 
   function renderProjectRow(project: SidebarProject) {
-    const href = `/projects/${project.key.toLowerCase()}`;
+    const base = `/projects/${project.key.toLowerCase()}`;
+    /* The sidebar is a project picker, so its rows lead to the Welcome page --
+       the step that says which project has been chosen -- rather than dropping
+       straight into that project's Summary. */
+    const href = `${base}/welcome`;
     // Same rule as the top-level Projects nav item: the project's own
     // Overview/Settings pages count as "on this project", but its Flow Board
-    // route belongs to the Flow Board nav item instead.
+    // route belongs to the Flow Board nav item instead. Tested against the
+    // project's base path, not the link, so every view under it marks the row.
     const active =
-      (pathname === href || pathname.startsWith(`${href}/`)) &&
+      (pathname === base || pathname.startsWith(`${base}/`)) &&
       !pathname.endsWith("/board");
     return (
       <div

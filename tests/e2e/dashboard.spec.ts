@@ -164,17 +164,24 @@ test.describe("Dashboard — signed in as an administrator", () => {
       expect(value).toBeLessThanOrEqual(100);
     }
 
-    /* The card is a summary, not a link: clicking it must leave you where you
-       are. It used to navigate to the project — that was removed deliberately,
-       so this now pins the opposite. The project is still reachable, just not
-       by clicking here, which the direct visit below keeps covered. */
+    /*
+     * The card is how a project is chosen from the dashboard, so it navigates
+     * — and it navigates to that project's Welcome page, not to its Summary.
+     * That is the whole shape of the flow: the global dashboard, then the step
+     * that says which project has been picked and what the reader is to it,
+     * then the workspace.
+     *
+     * It was a plain summary for a while, which left the dashboard as the one
+     * project list in Prio that a click did nothing to.
+     */
     const key = (await cards.first().locator(".prio-key").innerText()).trim();
     await cards.first().click();
-    await page.waitForTimeout(300);
-    await expect(page).toHaveURL(/localhost:3000\/$/);
+    await expect(page).toHaveURL(
+      new RegExp(`/projects/${key.toLowerCase()}/welcome$`),
+    );
 
-    await page.goto(`/projects/${key.toLowerCase()}`);
-    await expect(page).toHaveURL(/\/projects\//);
+    // And the Welcome page names that project rather than any other.
+    await expect(page.locator(".prio-welcome__card .prio-key")).toHaveText(key);
   });
 
   test("analytics bars sum to the counts beside them", async ({ page }) => {

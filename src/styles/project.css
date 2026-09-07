@@ -1,0 +1,728 @@
+/* ============================================================================
+   Prio — the project surfaces that sit outside a single view:
+
+     - the Welcome page, the step between choosing a project and working in it;
+     - the Summary's balanced two-column card grid;
+     - Epic progress, the Summary's one new list shape;
+     - the Timeline view.
+
+   Every colour, radius, space and weight below is a token. Nothing here
+   declares its own palette, so all four surfaces follow Light, Dark and System
+   through `tokens.css` and `theme-dark.css` without a second set of rules.
+   ========================================================================= */
+
+/* ==========================================================================
+   Welcome
+   ========================================================================== */
+
+/*
+ * A centred column rather than a full-width page. The Welcome page has one
+ * job — name the project, say what the reader is to it, and offer one way
+ * onward — and a card stretched across a 1560px content area would put the
+ * project's name and its CTA a screen apart.
+ */
+.prio-welcome {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--prio-space-6) 0 var(--prio-space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-6);
+}
+
+.prio-welcome__intro {
+  text-align: center;
+}
+
+.prio-welcome__eyebrow {
+  margin: 0 0 var(--prio-space-2);
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-semibold);
+  letter-spacing: var(--prio-tracking-caps);
+  text-transform: uppercase;
+  color: var(--prio-text-muted);
+}
+
+.prio-welcome__title {
+  margin: 0;
+  font-size: var(--prio-text-2xl);
+  font-weight: var(--prio-weight-bold);
+  letter-spacing: var(--prio-tracking-tight);
+  line-height: var(--prio-leading-tight);
+  color: var(--prio-text-primary);
+  /* A long project name wraps rather than widening the page. */
+  overflow-wrap: anywhere;
+}
+
+.prio-welcome__lede {
+  margin: var(--prio-space-3) auto 0;
+  max-width: 52ch;
+  font-size: var(--prio-text-sm);
+  line-height: var(--prio-leading-relaxed);
+  color: var(--prio-text-secondary);
+}
+
+/* -------------------------------------------------------- the project card */
+
+.prio-welcome__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-5);
+  padding: var(--prio-space-6);
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-xl);
+  background: var(--prio-bg-surface);
+  box-shadow: var(--prio-shadow-md);
+}
+
+.prio-welcome__identity {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-4);
+  min-width: 0;
+}
+
+/*
+ * The project's own monogram, from its key. Same two letters and the same
+ * brand gradient the directory card and the project header already use, so a
+ * project is recognisable by the same mark wherever it appears.
+ */
+.prio-welcome__badge {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--prio-radius-lg);
+  background: var(--prio-gradient-brand);
+  color: var(--prio-text-inverse);
+  font-size: var(--prio-text-md);
+  font-weight: var(--prio-weight-bold);
+  letter-spacing: var(--prio-tracking-wide);
+}
+
+.prio-welcome__identity-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-1);
+}
+
+.prio-welcome__project {
+  margin: 0;
+  font-size: var(--prio-text-lg);
+  font-weight: var(--prio-weight-semibold);
+  color: var(--prio-text-primary);
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------- the facts */
+
+.prio-welcome__facts {
+  display: grid;
+  /* Two on a desktop, one on a phone — `auto-fit` with a floor rather than a
+     breakpoint, so a narrow window collapses it without a media query. */
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--prio-space-4);
+  margin: 0;
+  padding: var(--prio-space-5) 0;
+  border-top: 1px solid var(--prio-border-subtle);
+  border-bottom: 1px solid var(--prio-border-subtle);
+}
+
+.prio-welcome__fact {
+  min-width: 0;
+}
+
+.prio-welcome__fact dt {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-semibold);
+  letter-spacing: var(--prio-tracking-caps);
+  text-transform: uppercase;
+  color: var(--prio-text-muted);
+}
+
+.prio-welcome__fact dd {
+  margin: var(--prio-space-2) 0 0;
+  font-size: var(--prio-text-lg);
+  font-weight: var(--prio-weight-semibold);
+  color: var(--prio-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.prio-welcome__lead {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  min-width: 0;
+  font-size: var(--prio-text-md);
+}
+
+.prio-welcome__facthint {
+  margin: var(--prio-space-1) 0 0;
+  font-size: var(--prio-text-xs);
+  line-height: var(--prio-leading-snug);
+  color: var(--prio-text-muted);
+}
+
+/* ----------------------------------------------------------- the members */
+
+.prio-welcome__members {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-3);
+  flex-wrap: wrap;
+}
+
+.prio-welcome__memberslabel {
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-muted);
+}
+
+/* ------------------------------------------------------------- the step */
+
+.prio-welcome__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--prio-space-3);
+}
+
+.prio-welcome__cta {
+  /* Wide enough to read as the page's one action, and full width on a phone,
+     where a centred pill button is harder to hit than a bar. */
+  min-width: 240px;
+  justify-content: center;
+}
+
+.prio-welcome__actionhint {
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-muted);
+  text-align: center;
+}
+
+/* ------------------------------------------------------ what is inside it */
+
+.prio-welcome__views {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--prio-space-3);
+}
+
+.prio-welcome__view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-1);
+  padding: var(--prio-space-4);
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-lg);
+  background: var(--prio-bg-surface);
+  color: var(--prio-text-primary);
+  text-decoration: none;
+  transition:
+    border-color var(--prio-duration-fast) var(--prio-ease),
+    box-shadow var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-welcome__view:hover {
+  border-color: var(--prio-border-strong);
+  box-shadow: var(--prio-shadow-sm);
+  text-decoration: none;
+}
+
+.prio-welcome__view:focus-visible {
+  outline: none;
+  border-color: var(--prio-border-focus);
+  box-shadow: var(--prio-shadow-focus);
+}
+
+.prio-welcome__viewname {
+  font-size: var(--prio-text-sm);
+  font-weight: var(--prio-weight-semibold);
+}
+
+.prio-welcome__viewhint {
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-muted);
+}
+
+.prio-welcome__elsewhere {
+  margin: 0;
+  text-align: center;
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-muted);
+}
+
+@media (max-width: 575.98px) {
+  .prio-welcome {
+    padding: var(--prio-space-4) 0 var(--prio-space-6);
+    gap: var(--prio-space-5);
+  }
+
+  .prio-welcome__card {
+    padding: var(--prio-space-5);
+  }
+
+  .prio-welcome__title {
+    font-size: var(--prio-text-xl);
+  }
+
+  /* One action, the full width of the card: the easiest thing on the page to
+     hit is the thing the page exists to offer. */
+  .prio-welcome__cta {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+/* ==========================================================================
+   Summary — the balanced grid
+   ========================================================================== */
+
+/*
+ * Two equal columns, one on a phone.
+ *
+ * This replaces `col-xl-8` + `col-xl-4`, where the charts had two thirds of
+ * the page and Members, Access, Attachments and Labels were squeezed into the
+ * remaining third. `minmax(0, 1fr)` rather than `1fr` on both tracks is what
+ * stops a wide child — a long issue title, a table, a chart's legend — forcing
+ * its column past its share and the page past the window: a bare `1fr` track
+ * has an automatic minimum of its content's size.
+ */
+.prio-summary__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--prio-space-4);
+  align-items: stretch;
+}
+
+/*
+ * The cards keep `prio-issue__section` for their title and their vocabulary,
+ * but not for its stacking margin: inside a grid the space between cards is
+ * the gap's job, and both together left an uneven double space between rows.
+ */
+.prio-summary__grid > .prio-issue__section {
+  margin-bottom: 0;
+  /* Paired cards match height, so a row reads as one row rather than two
+     cards that happen to be beside each other. */
+  height: 100%;
+}
+
+/*
+ * The card, not its contents, is the flex container. Making the body one too
+ * would change how everything already inside these cards stacks — margins stop
+ * collapsing between siblings in a flex column — for no gain. All that is
+ * wanted is for the body to fill the height the row gives the card.
+ */
+.prio-summary__grid > .prio-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.prio-summary__grid > .prio-card > .prio-card__body {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The line under a card's title, saying what the card answers. */
+.prio-summary__cardnote {
+  margin: calc(-1 * var(--prio-space-2)) 0 var(--prio-space-4);
+  font-size: var(--prio-text-xs);
+  line-height: var(--prio-leading-snug);
+  color: var(--prio-text-muted);
+}
+
+/* "All 42 activity entries" — the way out of a card that shows a sample. */
+.prio-summary__cardlink {
+  margin: var(--prio-space-4) 0 0;
+  font-size: var(--prio-text-xs);
+}
+
+@media (max-width: 991.98px) {
+  .prio-summary__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ==========================================================================
+   Summary — epic progress
+   ========================================================================== */
+
+.prio-epics {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-4);
+}
+
+.prio-epics__row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-2);
+  min-width: 0;
+}
+
+.prio-epics__head {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  min-width: 0;
+  color: var(--prio-text-primary);
+  text-decoration: none;
+  font-size: var(--prio-text-sm);
+}
+
+.prio-epics__head:hover .prio-epics__title {
+  text-decoration: underline;
+}
+
+.prio-epics__head:focus-visible {
+  outline: 2px solid var(--prio-border-focus);
+  outline-offset: 2px;
+  border-radius: var(--prio-radius-xs);
+}
+
+.prio-epics__title {
+  flex: 1;
+  min-width: 0;
+  font-weight: var(--prio-weight-medium);
+}
+
+.prio-epics__meter {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-3);
+}
+
+.prio-epics__meter .prio-progress {
+  flex: 1;
+  min-width: 0;
+}
+
+/*
+ * Both elements are spans here rather than divs — the meter is a
+ * `role="progressbar"` inside a list row, and a div inside the flow of one
+ * would be invalid where the fill sits. An inline box ignores height, so the
+ * track (a flex item, and therefore already blockified) is fine and the fill
+ * has to be told.
+ */
+.prio-epics__meter .prio-progress__bar {
+  display: block;
+}
+
+.prio-epics__figure {
+  display: flex;
+  align-items: baseline;
+  gap: var(--prio-space-2);
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-size: var(--prio-text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--prio-text-secondary);
+}
+
+/* A finished epic is finished — the same green the Done status uses, so the
+   bar agrees with the pill beside it. */
+.prio-progress__bar[data-complete] {
+  background: var(--prio-status-done-dot);
+}
+
+/* ==========================================================================
+   Timeline
+   ========================================================================== */
+
+.prio-timeline__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--prio-space-3);
+}
+
+.prio-timeline__range {
+  margin: 0 0 var(--prio-space-4);
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-muted);
+}
+
+.prio-timeline__count {
+  padding: 1px var(--prio-space-2);
+  border-radius: var(--prio-radius-pill);
+  background: var(--prio-bg-subtle);
+  color: var(--prio-text-secondary);
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/*
+ * The chart scrolls inside itself.
+ *
+ * A project spanning two years needs more width than a phone has, and the one
+ * thing that must never happen is the document scrolling sideways — a page
+ * that does that has a column nobody can reach. So the overflow is owned here,
+ * and the chart below it is given a minimum width rather than the page.
+ */
+.prio-timeline__scroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.prio-timeline {
+  min-width: 640px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-5);
+}
+
+.prio-timeline__axis {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-3);
+  padding-bottom: var(--prio-space-2);
+  background: var(--prio-bg-surface);
+  border-bottom: 1px solid var(--prio-border-subtle);
+}
+
+.prio-timeline__axislabel,
+.prio-timeline__label {
+  flex-shrink: 0;
+  width: 220px;
+  min-width: 0;
+}
+
+/* In the axis the lane carries the month markers rather than a bar, so it
+   drops the track's own fill and keeps only its positioning context. */
+.prio-timeline__axis .prio-timeline__track {
+  height: 20px;
+  background: none;
+}
+
+.prio-timeline__month {
+  position: absolute;
+  top: 0;
+  display: block;
+  padding-left: var(--prio-space-2);
+  border-left: 1px solid var(--prio-border-subtle);
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-semibold);
+  letter-spacing: var(--prio-tracking-caps);
+  text-transform: uppercase;
+  color: var(--prio-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* Now, as a line down the chart. */
+.prio-timeline__today {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--prio-primary-500);
+  opacity: 0.55;
+}
+
+.prio-timeline__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-2);
+}
+
+.prio-timeline__grouptitle {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  margin: 0 0 var(--prio-space-1);
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-semibold);
+  letter-spacing: var(--prio-tracking-caps);
+  text-transform: uppercase;
+  color: var(--prio-text-muted);
+}
+
+.prio-timeline__row {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-3);
+  min-height: 32px;
+}
+
+.prio-timeline__label {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  color: var(--prio-text-primary);
+  text-decoration: none;
+  font-size: var(--prio-text-xs);
+}
+
+a.prio-timeline__label:hover {
+  text-decoration: underline;
+}
+
+a.prio-timeline__label:focus-visible {
+  outline: 2px solid var(--prio-border-focus);
+  outline-offset: 2px;
+  border-radius: var(--prio-radius-xs);
+}
+
+/* The lane a bar is positioned inside. Relative, because every bar, every
+   month marker and the today line are placed against it as percentages of
+   one window computed on the server. */
+.prio-timeline__track {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  border-radius: var(--prio-radius-sm);
+  background: var(--prio-bg-subtle);
+}
+
+.prio-timeline__bar {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 var(--prio-space-2);
+  border-radius: var(--prio-radius-sm);
+  background: var(--prio-status-backlog-dot);
+  color: var(--prio-text-inverse);
+  text-decoration: none;
+  overflow: hidden;
+  transition: filter var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-timeline__bar:hover {
+  filter: brightness(1.08);
+  text-decoration: none;
+}
+
+.prio-timeline__bar:focus-visible {
+  outline: 2px solid var(--prio-border-focus);
+  outline-offset: 1px;
+}
+
+/* Colour comes from the same status table the pills, the ring and the
+   distribution bars read, so a status added to the enum arrives here with its
+   own colour and no change to this file. */
+.prio-timeline__bar[data-status="BACKLOG"],
+.prio-timeline__swatch[data-status="BACKLOG"] {
+  background: var(--prio-status-backlog-dot);
+}
+
+.prio-timeline__bar[data-status="TODO"],
+.prio-timeline__swatch[data-status="TODO"] {
+  background: var(--prio-status-todo-dot);
+}
+
+.prio-timeline__bar[data-status="IN_PROGRESS"],
+.prio-timeline__swatch[data-status="IN_PROGRESS"] {
+  background: var(--prio-status-progress-dot);
+}
+
+.prio-timeline__bar[data-status="IN_REVIEW"],
+.prio-timeline__swatch[data-status="IN_REVIEW"] {
+  background: var(--prio-status-review-dot);
+}
+
+.prio-timeline__bar[data-status="IN_QA"],
+.prio-timeline__swatch[data-status="IN_QA"] {
+  background: var(--prio-status-qa-dot);
+}
+
+.prio-timeline__bar[data-status="DONE"],
+.prio-timeline__swatch[data-status="DONE"] {
+  background: var(--prio-status-done-dot);
+}
+
+.prio-timeline__bar[data-status="REOPENED"] {
+  background: var(--prio-status-reopened-dot);
+}
+
+.prio-timeline__bar[data-status="REJECTED"],
+.prio-timeline__bar[data-status="CANCELLED"] {
+  background: var(--prio-status-cancelled-dot);
+}
+
+/* Overdue is said twice: the bar is outlined as well as tinted, so the state
+   does not depend on telling two similar colours apart. */
+.prio-timeline__bar[data-overdue] {
+  background: var(--prio-red-600);
+  outline: 2px solid var(--prio-red-600);
+  outline-offset: 1px;
+}
+
+.prio-timeline__bar--sprint {
+  background: var(--prio-accent-500);
+  opacity: 0.85;
+}
+
+.prio-timeline__barlabel {
+  font-size: var(--prio-text-2xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  /* A short bar has no room for its date; hiding the overflow rather than
+     letting it escape keeps the lane clean. */
+  overflow: hidden;
+}
+
+.prio-timeline__status {
+  flex-shrink: 0;
+  width: 120px;
+}
+
+.prio-timeline__legend {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--prio-space-4);
+  margin: var(--prio-space-5) 0 0;
+  padding: var(--prio-space-4) 0 0;
+  border-top: 1px solid var(--prio-border-subtle);
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-secondary);
+}
+
+.prio-timeline__legenditem {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+}
+
+.prio-timeline__swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: var(--prio-radius-xs);
+  background: var(--prio-status-backlog-dot);
+}
+
+.prio-timeline__swatch[data-overdue] {
+  background: var(--prio-red-600);
+}
+
+@media (max-width: 767.98px) {
+  /* The label and the status column give up their width to the bars, which
+     are the thing a timeline is for. */
+  .prio-timeline__axislabel,
+  .prio-timeline__label {
+    width: 150px;
+  }
+
+  .prio-timeline__status {
+    display: none;
+  }
+}

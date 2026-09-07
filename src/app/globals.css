@@ -20,6 +20,7 @@
 @import "../styles/sprints.css";
 @import "../styles/activity.css";
 @import "../styles/dashboard.css";
+@import "../styles/project.css";
 @import "../styles/conversation.css";
 
 /* Last, so its token re-declarations sit after the light values they replace. */

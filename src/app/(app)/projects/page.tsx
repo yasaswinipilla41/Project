@@ -150,7 +150,13 @@ export default async function ProjectsPage() {
                       </span>
                       <div style={{ minWidth: 0, flex: 1 }}>
                         <h2 className="prio-projectcard__name">
-                          <Link href={`/projects/${project.key.toLowerCase()}`}>
+                          {/* Picking a project out of the directory is
+                              exactly the choice the Welcome page introduces,
+                              so that is where it leads -- not straight into
+                              Summary. */}
+                          <Link
+                            href={`/projects/${project.key.toLowerCase()}/welcome`}
+                          >
                             {project.name}
                           </Link>
                         </h2>

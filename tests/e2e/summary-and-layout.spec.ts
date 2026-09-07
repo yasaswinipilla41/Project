@@ -5,8 +5,8 @@ import { prisma } from "@/lib/prisma";
  * Five separate fixes, each verified where it actually shows:
  *
  *   - the project summary marks completed work and says who completed it;
- *   - Status overview is compact, tinted per status, and keeps its count and
- *     share on one line;
+ *   - Overview is one of two equal columns, tinted per status, and keeps its
+ *     count and share on one line;
  *   - the calendar's day composer is no longer clipped by the calendar;
  *   - collapsing the sidebar widens the main content by what it gave up;
  *   - the Flow Board's column height and cancelled-card background.
@@ -18,10 +18,10 @@ test.describe("The project summary's Completed section", () => {
   test("sits below Open work by assignee and groups by who finished it", async ({
     page,
   }) => {
-    await page.goto("/projects/eng");
+    await page.goto("/projects/eng/summary");
 
     const workload = page
-      .locator(".prio-card", { hasText: "Open work by assignee" })
+      .locator(".prio-card", { hasText: "Team workload" })
       .first();
     const completed = page
       .locator(".prio-card", { hasText: "Completed" })
@@ -63,7 +63,7 @@ test.describe("The project summary's Completed section", () => {
     });
     test.skip(done === 0, "nothing is completed in ENG to mark");
 
-    await page.goto("/projects/eng");
+    await page.goto("/projects/eng/summary");
     const recent = page
       .locator(".prio-card", { hasText: "Recently updated" })
       .first();
@@ -89,23 +89,37 @@ test.describe("The project summary's Completed section", () => {
 
 /* --------------------------------------------------------- status overview */
 
-test.describe("Status overview", () => {
-  test("is compact, tinted per status, and keeps its figures on one line", async ({
+test.describe("Overview", () => {
+  test("is one of two equal columns, tinted per status, and keeps its figures on one line", async ({
     page,
   }) => {
     await page.setViewportSize({ width: 1600, height: 900 });
-    await page.goto("/projects/eng");
+    await page.goto("/projects/eng/summary");
 
-    const card = page
-      .locator(".prio-card", { hasText: "Status overview" })
-      .first();
+    const card = page.locator(".prio-card", { hasText: "Overview" }).first();
     await expect(card).toBeVisible();
 
-    // Compressed: it no longer stretches across the whole column.
+    /*
+     * The card used to be capped at 560px, because it sat in a `col-xl-8`
+     * column that was hundreds of pixels wider than the ring and its legend
+     * need. Summary is a grid of two equal columns now, so the cap is gone and
+     * the property that replaces it is the one that mattered all along: this
+     * card is exactly as wide as the card beside it, and wide enough for the
+     * ring and the legend to both fit.
+     */
+    const beside = page
+      .locator(".prio-card", { hasText: "Recent activity" })
+      .first();
+    await expect(beside).toBeVisible();
+
     const box = (await card.boundingBox())!;
-    expect(box.width).toBeLessThanOrEqual(560);
-    // …but not so narrow that the ring and its legend cannot both fit.
+    const other = (await beside.boundingBox())!;
+
+    expect(Math.abs(box.width - other.width)).toBeLessThanOrEqual(1);
     expect(box.width).toBeGreaterThan(400);
+    // Side by side, sharing a row — not stacked, and not one above the other.
+    expect(other.x).toBeGreaterThan(box.x);
+    expect(Math.abs(other.y - box.y)).toBeLessThan(4);
 
     const rows = card.locator(".prio-donut__legenditem");
     await expect(rows.first()).toBeVisible();
@@ -139,7 +153,7 @@ test.describe("Status overview", () => {
   });
 
   test("brings a status's own figures forward on hover", async ({ page }) => {
-    await page.goto("/projects/eng");
+    await page.goto("/projects/eng/summary");
     const row = page.locator(".prio-donut__legenditem").first();
     await expect(row).toBeVisible();
 
@@ -201,7 +215,7 @@ test.describe("Status overview", () => {
      * checked for *every* status the chart is showing, not just the first — a
      * mapping that is off by one would pass a single-row check.
      */
-    await page.goto("/projects/eng");
+    await page.goto("/projects/eng/summary");
 
     const segments = page.locator(".prio-donut__seg");
     const rows = page.locator(".prio-donut__legenditem");
@@ -265,7 +279,7 @@ test.describe("Status overview", () => {
   }) => {
     /* The highlight must not move the chart: thickening a slice changes how it
        is drawn, never where any slice starts or how long it is. */
-    await page.goto("/projects/eng");
+    await page.goto("/projects/eng/summary");
     const segments = page.locator(".prio-donut__seg");
     await expect(segments.first()).toBeVisible();
 

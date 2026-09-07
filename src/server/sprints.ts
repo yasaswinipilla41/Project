@@ -70,6 +70,8 @@ function revalidateSprintSurfaces(projectKey: string) {
   revalidatePath(`${base}/board`);
   revalidatePath(`${base}/list`);
   revalidatePath(base);
+  revalidatePath(`${base}/summary`);
+  revalidatePath(`${base}/timeline`);
 }
 
 /**

@@ -372,7 +372,9 @@ export function Topbar({
             {projects.map((project) => (
               <MenuItem
                 key={project.id}
-                href={`/projects/${project.key.toLowerCase()}`}
+                /* "Go to project" is the switcher -- choosing a project,
+                   which is what the Welcome page introduces. */
+                href={`/projects/${project.key.toLowerCase()}/welcome`}
                 icon={
                   <span className="prio-project-chip" aria-hidden>
                     {project.key.slice(0, 2)}

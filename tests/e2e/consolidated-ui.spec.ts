@@ -266,10 +266,18 @@ test.describe("Sidebar project rows", () => {
       select: { key: true },
     });
 
+    /* The sidebar is a project picker, so it lands on that project's Welcome
+       page -- the step that says which project has been chosen -- rather than
+       dropping straight into its Summary. */
     await row.locator("a.prio-sidebar__project-link").click();
     await expect(page).toHaveURL(
-      new RegExp(`/projects/${project.key.toLowerCase()}$`),
+      new RegExp(`/projects/${project.key.toLowerCase()}/welcome$`),
     );
+
+    // And the row still marks itself as the current project from there.
+    await expect(
+      page.locator(".prio-sidebar__project-row[data-active=\"true\"]"),
+    ).toHaveCount(1);
   });
 
   test("Favorite still works from the row itself", async ({ page }) => {

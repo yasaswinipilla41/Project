@@ -16,6 +16,13 @@ import type { ReactNode } from "react";
  * beneath it, `/settings` included. Opening settings therefore looked like
  * landing back on Summary with a settings form attached to it.
  *
+ * The Welcome page is the third, and for the opposite reason to settings: it
+ * is not a view of the project but the doorway to it. Its whole job is to say
+ * which project has just been chosen and offer one step onward, and a tab
+ * strip above it would offer five ways past that step -- and a second project
+ * header would say the project's name twice, immediately above a card whose
+ * first line is the project's name.
+ *
  * The Flow Board is the other. It is asked to carry none of this chrome: no
  * tab strip, no Settings, no actions dropdown, and no project summary header
  * above the board. The board brings its own controls -- favourite and its own
@@ -38,7 +45,7 @@ export function ProjectShellChrome({
   const pathname = usePathname();
   const base = `/projects/${projectKey.toLowerCase()}`;
 
-  const hidden = ["settings", "board"].some(
+  const hidden = ["settings", "board", "welcome"].some(
     (view) =>
       pathname === `${base}/${view}` || pathname.startsWith(`${base}/${view}/`),
   );

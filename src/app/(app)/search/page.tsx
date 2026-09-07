@@ -213,7 +213,7 @@ export default async function SearchPage({
               {projects.map((project) => (
                 <Link
                   key={project.id}
-                  href={`/projects/${project.key.toLowerCase()}`}
+                  href={`/projects/${project.key.toLowerCase()}/welcome`}
                   className="prio-relatedrow"
                 >
                   <span className="prio-project-chip" aria-hidden>

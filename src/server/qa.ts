@@ -199,6 +199,7 @@ export async function recordTestResult(
     revalidatePath("/my-work");
     revalidatePath(`/issues/${issue.key.toLowerCase()}`);
     revalidatePath(`/projects/${issue.project.key.toLowerCase()}`);
+    revalidatePath(`/projects/${issue.project.key.toLowerCase()}/summary`);
 
     return { ok: true, data: { key: issue.key } };
   } catch (error) {

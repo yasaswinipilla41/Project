@@ -294,9 +294,16 @@
   --prio-z-toast: 1080;
 
   /* ----------------------------------------- issue status semantics */
-  --prio-status-backlog-fg: var(--prio-neutral-600);
-  --prio-status-backlog-bg: var(--prio-neutral-100);
-  --prio-status-backlog-dot: var(--prio-neutral-400);
+  /*
+   * Backlog is slate, Cancelled is light grey. Their dots and backgrounds used
+   * to be the same two values, so on the status ring "not started yet" and
+   * "abandoned" were one indistinguishable colour sitting next to each other
+   * in the legend. Same family, deliberately — unplanned and dismissed are
+   * both quiet states — but far enough apart in lightness to tell at a glance.
+   */
+  --prio-status-backlog-fg: var(--prio-neutral-700);
+  --prio-status-backlog-bg: var(--prio-neutral-200);
+  --prio-status-backlog-dot: var(--prio-neutral-600);
 
   --prio-status-todo-fg: var(--prio-info-700);
   --prio-status-todo-bg: var(--prio-info-50);
@@ -317,6 +324,20 @@
   --prio-status-done-fg: var(--prio-green-700);
   --prio-status-done-bg: var(--prio-green-50);
   --prio-status-done-dot: var(--prio-green-600);
+
+  /*
+   * Reopen is red, and its own colour.
+   *
+   * It used to borrow the In Progress amber on the argument that reopened work
+   * is active work again. That reads well in prose and badly on a chart: the
+   * two sat side by side in the status ring as the same orange, so the one
+   * thing a reader wants to spot — work that came back — was the one thing
+   * they could not pick out. Red is what the rest of Prio already uses for
+   * "needs attention", which is what a reopened issue is.
+   */
+  --prio-status-reopened-fg: var(--prio-red-700);
+  --prio-status-reopened-bg: var(--prio-red-50);
+  --prio-status-reopened-dot: var(--prio-red-500);
 
   --prio-status-cancelled-fg: var(--prio-neutral-500);
   --prio-status-cancelled-bg: var(--prio-neutral-100);

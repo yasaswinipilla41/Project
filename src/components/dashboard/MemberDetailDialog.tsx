@@ -169,7 +169,7 @@ export function MemberDetailButton({
                     {detail.projects.map((project) => (
                       <Link
                         key={project.id}
-                        href={`/projects/${project.key.toLowerCase()}`}
+                        href={`/projects/${project.key.toLowerCase()}/welcome`}
                         className="prio-chipset__chip"
                         role="listitem"
                       >

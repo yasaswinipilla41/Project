@@ -871,6 +871,7 @@ export async function updateProject(
 
     revalidatePath("/projects");
     revalidatePath(`/projects/${project.key.toLowerCase()}`);
+    revalidatePath(`/projects/${project.key.toLowerCase()}/summary`);
     revalidatePath("/");
 
     return { ok: true, data: { key: project.key } };
@@ -968,6 +969,7 @@ export async function addProjectMember(
     });
     if (project) {
       revalidatePath(`/projects/${project.key.toLowerCase()}`);
+      revalidatePath(`/projects/${project.key.toLowerCase()}/summary`);
     }
 
     return { ok: true, data: undefined };
@@ -1003,6 +1005,7 @@ export async function removeProjectMember(
     });
     if (project) {
       revalidatePath(`/projects/${project.key.toLowerCase()}`);
+      revalidatePath(`/projects/${project.key.toLowerCase()}/summary`);
     }
 
     return { ok: true, data: undefined };
@@ -1063,6 +1066,7 @@ export async function createLabel(
     });
     if (project) {
       revalidatePath(`/projects/${project.key.toLowerCase()}`);
+      revalidatePath(`/projects/${project.key.toLowerCase()}/summary`);
     }
 
     return { ok: true, data: label };

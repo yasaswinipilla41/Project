@@ -9,6 +9,7 @@ export type ProjectTab =
   | "board"
   | "sprints"
   | "calendar"
+  | "timeline"
   | "activity";
 
 /**
@@ -55,16 +56,24 @@ export function ProjectNav({
   }
 
   const tabs: { id: ProjectTab; label: string; href: string }[] = [
-    { id: "summary", label: "Summary", href: base },
+    { id: "summary", label: "Summary", href: `${base}/summary` },
     { id: "list", label: "List", href: `${base}/list` },
     { id: "board", label: "Flow Board", href: `${base}/board` },
     { id: "sprints", label: "Sprints", href: `${base}/sprints` },
     { id: "calendar", label: "Calendar", href: `${base}/calendar` },
+    { id: "timeline", label: "Timeline", href: `${base}/timeline` },
     { id: "activity", label: "Activity", href: `${base}/activity` },
   ];
 
-  /* The longest matching href wins, so `/projects/eng/list` picks List rather
-     than Summary, whose href is a prefix of every other one. */
+  /*
+   * The longest matching href wins.
+   *
+   * Summary is a named route of its own now -- `/summary` rather than the
+   * project's base path -- so no tab's href is a prefix of another's and the
+   * rule has nothing left to disambiguate. It is kept because it is what makes
+   * that true rather than incidental: a view added later under an existing one
+   * still picks the deeper tab.
+   */
   const active = tabs.reduce<ProjectTab | null>((best, tab) => {
     const matches = pathname === tab.href || pathname.startsWith(`${tab.href}/`);
     if (!matches) return best;

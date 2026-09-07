@@ -577,14 +577,16 @@
 .prio-status[data-status="DONE"] .prio-status__dot {
   background: var(--prio-status-done-dot);
 }
-/* Reopened borrows the "in progress" palette: it is active work again, and
-   inventing a ninth colour would say something the status does not mean. */
+/* Reopened has its own red. It used to borrow the "in progress" palette on the
+   argument that reopened work is active work again — true, but it made the two
+   indistinguishable wherever they appear together, which is exactly where the
+   difference matters. See the token for the full reasoning. */
 .prio-status[data-status="REOPENED"] {
-  background: var(--prio-status-progress-bg);
-  color: var(--prio-status-progress-fg);
+  background: var(--prio-status-reopened-bg);
+  color: var(--prio-status-reopened-fg);
 }
 .prio-status[data-status="REOPENED"] .prio-status__dot {
-  background: var(--prio-status-progress-dot);
+  background: var(--prio-status-reopened-dot);
 }
 /* Rejected closes an issue, like Cancelled, and reads the same way -- struck
    through, so a closed issue is recognisable without reading the word. */
@@ -2650,4 +2652,32 @@ a.prio-stat:focus-visible {
 .prio-labelpicker__option[data-create] {
   color: var(--prio-text-link);
   font-weight: var(--prio-weight-medium);
+}
+
+/* -------------------------------------------------------- link button */
+/*
+ * A button that reads as a link, for an action offered inside a sentence
+ * rather than in a toolbar — "Create a new project" on the Welcome page. It is
+ * a real <button>, because it opens a dialog rather than going anywhere, and a
+ * link that goes nowhere is a lie to anyone navigating by keyboard or by
+ * screen reader.
+ */
+.prio-linkbutton {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--prio-text-link);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.prio-linkbutton:hover {
+  text-decoration: none;
+}
+
+.prio-linkbutton:focus-visible {
+  outline: 2px solid var(--prio-border-focus);
+  outline-offset: 2px;
+  border-radius: var(--prio-radius-xs);
 }

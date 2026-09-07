@@ -1000,6 +1000,9 @@ function revalidateIssueSurfaces(projectKey: string, issueKey: string): void {
   revalidatePath("/my-work");
   revalidatePath(`/issues/${issueKey.toLowerCase()}`);
   revalidatePath(`/projects/${projectKey.toLowerCase()}`);
+  /* Summary is a route of its own now, so the base path no longer covers it. */
+  revalidatePath(`/projects/${projectKey.toLowerCase()}/summary`);
+  revalidatePath(`/projects/${projectKey.toLowerCase()}/timeline`);
   revalidatePath(`/projects/${projectKey.toLowerCase()}/board`);
 }
 

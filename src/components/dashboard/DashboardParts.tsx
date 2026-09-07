@@ -340,11 +340,30 @@ export function TypeDistribution({
 
 /* ------------------------------------------------------------- project row */
 
+/**
+ * One project on the dashboard, and the way into it.
+ *
+ * The row is a link now. The dashboard is where somebody picks the project
+ * they are going to work in, and it was the one project list in Prio that a
+ * click did nothing to -- the name, the key, the health and the progress were
+ * all there, and following any of them meant going back to the sidebar or the
+ * directory to find the same project again.
+ *
+ * It leads to that project's Welcome page rather than its Summary, which is
+ * the whole point of the change: choosing a project from the global dashboard
+ * passes through the step that says which project has been chosen and what the
+ * reader is to it.
+ */
 export function ProjectRow({ project }: { project: DashboardProject }) {
   const complete = percent(project.done, project.total);
 
   return (
-    <div className="prio-projrow" data-health={project.health}>
+    <Link
+      href={`/projects/${project.key.toLowerCase()}/welcome`}
+      className="prio-projrow"
+      data-health={project.health}
+      aria-label={`${project.name} (${project.key}): ${complete}% complete, ${project.open} open`}
+    >
       <span className="prio-projrow__top">
         <span className="prio-project-chip" aria-hidden>
           {project.key.slice(0, 2)}
@@ -386,7 +405,7 @@ export function ProjectRow({ project }: { project: DashboardProject }) {
           <span data-tone="brand">{project.assignedToMe} assigned to me</span>
         ) : null}
       </span>
-    </div>
+    </Link>
   );
 }
 

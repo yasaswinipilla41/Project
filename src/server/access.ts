@@ -133,6 +133,7 @@ export async function requestProjectAccess(
     });
 
     revalidatePath(`/projects/${project.key.toLowerCase()}`);
+    revalidatePath(`/projects/${project.key.toLowerCase()}/summary`);
     return { ok: true, data: undefined };
   } catch (error) {
     return failure(error);
@@ -218,6 +219,9 @@ export async function decideProjectAccess(
     });
 
     revalidatePath(`/projects/${request.project.key.toLowerCase()}`);
+    revalidatePath(
+      `/projects/${request.project.key.toLowerCase()}/summary`,
+    );
     return { ok: true, data: undefined };
   } catch (error) {
     return failure(error);

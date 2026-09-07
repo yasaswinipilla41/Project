@@ -230,7 +230,7 @@ for (const key of ["ENG", "WEB"]) {
       if (truth.total === 0) return;
 
       // Types — the canonical five, each with the project's own count.
-      const types = await breakdown(page, "Issue types");
+      const types = await breakdown(page, "Types of work");
       for (const type of ISSUE_TYPES) {
         const label = type.charAt(0) + type.slice(1).toLowerCase();
         expect(types.get(label), `${label} count`).toBe(truth.byType.get(type));
@@ -281,7 +281,7 @@ for (const key of ["ENG", "WEB"]) {
       );
       allowed.add("Unassigned");
 
-      const workload = await breakdown(page, "Open work by assignee");
+      const workload = await breakdown(page, "Team workload");
       for (const name of workload.keys()) {
         expect(allowed.has(name), `${name} must hold open work here`).toBe(true);
       }

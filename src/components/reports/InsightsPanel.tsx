@@ -417,7 +417,9 @@ export async function InsightsPanel({
                       return (
                         <tr key={project.id}>
                           <td>
-                            <Link href={`/projects/${project.key.toLowerCase()}`}>
+                            <Link
+                              href={`/projects/${project.key.toLowerCase()}/welcome`}
+                            >
                               {project.name}
                             </Link>
                           </td>

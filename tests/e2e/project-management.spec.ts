@@ -92,7 +92,11 @@ test.describe("As an administrator", () => {
     // Escape without deleting — this project is the fixture everything uses.
     await page.keyboard.press("Escape");
     await expect(dialog).toBeHidden();
-    await expect(page).toHaveURL(/\/projects\/eng$/);
+    /* Still on the project, which is the point: nothing was deleted and
+       nothing navigated away. `/projects/eng` is the project's base path and
+       redirects into its workspace, so that is the URL a reader who opened it
+       ends up on — the same page, named by its own route. */
+    await expect(page).toHaveURL(/\/projects\/eng(\/summary)?$/);
   });
 
   test("deletes a project it owns, once confirmed", async ({ page }) => {

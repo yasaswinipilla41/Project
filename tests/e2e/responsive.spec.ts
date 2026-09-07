@@ -25,6 +25,13 @@ const PAGES = [
   { path: "/reports", name: "Reports" },
   { path: "/issues/eng-1", name: "Issue detail" },
   { path: "/projects/eng", name: "Project detail" },
+  /* The three routes this flow added or rebuilt: the transition into a
+     project, the two-column Summary grid, and the timeline — which is the one
+     page here that is genuinely wider than a phone and therefore has to keep
+     its own scrollbar inside itself. */
+  { path: "/projects/eng/welcome", name: "Project welcome" },
+  { path: "/projects/eng/summary", name: "Project summary" },
+  { path: "/projects/eng/timeline", name: "Project timeline" },
 ] as const;
 
 /**
