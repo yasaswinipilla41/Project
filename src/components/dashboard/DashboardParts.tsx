@@ -5,7 +5,6 @@ import {
   IssueKey,
   IssueTypeIcon,
   PriorityIndicator,
-  SeverityChip,
   StatusPill,
 } from "@/components/ui/Indicators";
 import { IconCalendar, IconClock, IconWarning } from "@/components/ui/Icon";
@@ -98,7 +97,6 @@ export function AssignedRow({
       <span className="prio-assigned__meta">
         <StatusPill status={issue.status} />
         <PriorityIndicator priority={issue.priority} />
-        {issue.severity ? <SeverityChip severity={issue.severity} /> : null}
 
         {issue.dueDate ? (
           <span className="prio-assigned__due" data-state={dueState}>
@@ -146,7 +144,6 @@ export function IssueRow({ issue }: { issue: DashboardIssue }) {
       <IssueTypeIcon type={issue.type} size={17} />
       <IssueKey issueKey={issue.key} />
       <span className="prio-relatedrow__title prio-truncate">{issue.title}</span>
-      {issue.severity ? <SeverityChip severity={issue.severity} /> : null}
       <PriorityIndicator priority={issue.priority} showLabel={false} />
       <StatusPill status={issue.status} />
       {issue.assignee ? (

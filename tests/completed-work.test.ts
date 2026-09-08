@@ -50,10 +50,13 @@ afterAll(async () => {
  * Walks an issue to Done, finishing as whoever is acting.
  *
  * The steps up to Ready for QA belong to the developer side of the workflow,
- * so they are taken by the administrator — who is unrestricted — and only the
- * last one, the one this file is about, is taken by the caller. Otherwise
- * these tests would be asserting who may move an issue rather than who gets
- * the credit for finishing it.
+ * so they are taken by the administrator — who is unrestricted — and the
+ * checking, which is what this file is about, is taken by the caller.
+ * Otherwise these tests would be asserting who may move an issue rather than
+ * who gets the credit for finishing it.
+ *
+ * The caller takes In QA as well as Done because Done is what testing
+ * concluded: a tester reaches it from In QA, never straight from Ready for QA.
  */
 async function finish(issueId: string) {
   const finisher = testHeaders.current;
@@ -65,8 +68,10 @@ async function finish(issueId: string) {
   }
 
   testHeaders.current = finisher;
-  const done = await updateIssue({ issueId, status: "DONE" });
-  if (!done.ok) throw new Error(`could not move to DONE: ${done.error}`);
+  for (const status of ["IN_QA", "DONE"] as const) {
+    const result = await updateIssue({ issueId, status });
+    if (!result.ok) throw new Error(`could not move to ${status}: ${result.error}`);
+  }
 }
 
 async function makeIssue(projectId: string, title: string) {

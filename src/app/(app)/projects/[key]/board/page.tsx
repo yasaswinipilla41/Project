@@ -5,7 +5,7 @@ import { IconBoard } from "@/components/ui/Icon";
 import { BackLink } from "@/components/shell/BackLink";
 import { FlowBoard } from "@/components/projects/FlowBoard";
 import { InsightsPanel } from "@/components/reports/InsightsPanel";
-import { canManageProject, projectScope } from "@/lib/authz";
+import { canManageProject, projectScope, workRoleOf } from "@/lib/authz";
 import {
   BOARD_STATUSES,
   BOARD_VISIBLE_STATUSES,
@@ -190,6 +190,7 @@ export default async function ProjectBoardPage({
         columns={columns}
         currentUserId={user.id}
         isAdmin={user.role === "ADMIN"}
+        workRole={await workRoleOf(user)}
         /* Scoped to this project alone, so the figures describe the board
            being looked at rather than the whole organisation. Rendered here
            on the server and handed over, so opening Insights needs no

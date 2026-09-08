@@ -8,7 +8,6 @@ import {
   IssueTypeIcon,
   LabelChip,
   PriorityIndicator,
-  SeverityChip,
   StatusPill,
 } from "@/components/ui/Indicators";
 import {
@@ -19,7 +18,7 @@ import {
 } from "@/components/ui/Icon";
 import { IssueRowActions } from "@/components/issues/IssueRowActions";
 import { formatDateCompact, formatRelative, isOverdue } from "@/lib/format";
-import { ISSUE_TYPE_LABEL, isClosedStatus } from "@/lib/domain";
+import { ISSUE_TYPE_LABEL, isClosedStatus, type WorkRole } from "@/lib/domain";
 import type { IssueListRow, SortField } from "@/server/queries/issues";
 
 export interface WorkTableRow extends IssueListRow {
@@ -89,6 +88,7 @@ export function ProjectWorkTable({
   dir,
   currentUserId,
   isAdmin,
+  workRole,
 }: {
   rows: WorkTableRow[];
   basePath: string;
@@ -97,6 +97,8 @@ export function ProjectWorkTable({
   dir: "asc" | "desc";
   currentUserId: string;
   isAdmin: boolean;
+  /** Cloning from a row files new work; the dialog follows the job. */
+  workRole: WorkRole;
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
@@ -295,6 +297,7 @@ export function ProjectWorkTable({
                       reporterId={issue.reporter.id}
                       currentUserId={currentUserId}
                       isAdmin={isAdmin}
+                      workRole={workRole}
                     />
                   </td>
                 </tr>
@@ -315,14 +318,6 @@ export function ProjectWorkTable({
                               <PriorityIndicator priority={issue.priority} />
                             </dd>
                           </div>
-                          {issue.severity ? (
-                            <div>
-                              <dt>Severity</dt>
-                              <dd>
-                                <SeverityChip severity={issue.severity} />
-                              </dd>
-                            </div>
-                          ) : null}
                           <div>
                             <dt>Reporter</dt>
                             <dd>{issue.reporter.name}</dd>

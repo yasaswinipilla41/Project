@@ -117,6 +117,21 @@
   color: var(--prio-secondary-700);
 }
 
+/*
+ * The working roles carry the same secondary tint as MEMBER, which is what
+ * they are: QA, DEVELOPER and FULLSTACK are all jobs a member holds, and only
+ * ADMIN is a different kind of claim. Naming them explicitly rather than
+ * relying on the unmatched default means a role added later gets a deliberate
+ * colour instead of an unstyled pill.
+ */
+.prio-rolebadge[data-role="QA"],
+.prio-rolebadge[data-role="DEVELOPER"],
+.prio-rolebadge[data-role="FULLSTACK"] {
+  background: var(--prio-secondary-50);
+  border-color: var(--prio-secondary-100);
+  color: var(--prio-secondary-700);
+}
+
 .prio-dash__date {
   font-size: var(--prio-text-xs);
   color: var(--prio-text-secondary);

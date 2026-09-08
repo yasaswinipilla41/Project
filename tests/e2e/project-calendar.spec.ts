@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { prisma } from "@/lib/prisma";
-import { MEMBER_STATE } from "./support";
+import { ADMIN_STATE, MEMBER_STATE } from "./support";
 import { TESTING_TEAM_SLUG } from "@/lib/authz";
 
 /**
@@ -276,14 +276,52 @@ test.describe("Creating from a calendar date", () => {
   });
 });
 
-test.describe("Creating from a calendar date as a tester", () => {
-  test.use({ storageState: MEMBER_STATE });
+test.describe("Creating from a calendar date", () => {
+  test.use({ storageState: ADMIN_STATE });
 
   /*
-   * Filing work is a tester's act, so the member is put on the Testing team
-   * for the run — the seed puts nobody on it, which makes every member a
-   * developer, and the day composer is not offered to a developer at all.
+   * Filing from a day *is* setting a due date — that is what the composer is
+   * for — so it is offered to whoever may set one. A pure tester may not: they
+   * raise work, and when it is due is decided by whoever plans it. The
+   * composer is therefore an administrator's here, and the describe below
+   * checks that a tester is not offered it at all.
    */
+  test("an administrator can file one, and it persists for everyone", async ({
+    page,
+  }) => {
+    const month = monthParam(new Date());
+    const title = `Calendar admin ${stamp()}`;
+
+    await openCalendar(page, "ENG", month);
+    await createOnDay(page, DAY_B, title);
+
+    await expect(
+      cell(page, DAY_B).locator(".prio-calendar__issue", { hasText: title }),
+    ).toBeVisible({ timeout: 20_000 });
+
+    const issue = await trackByTitle(title);
+    expect(issue.dueDate!.toISOString().slice(0, 10)).toBe(
+      `${month}-${String(DAY_B).padStart(2, "0")}`,
+    );
+
+    /* Shared, not per-viewer: it is a row in the project, so the next person
+       to open this calendar sees it. Asserted through a second browser
+       context signed in as somebody else. */
+    const member = await page.context().browser()!.newContext({
+      storageState: MEMBER_STATE,
+    });
+    const memberPage = await member.newPage();
+    await memberPage.goto(`/projects/eng/calendar?month=${month}`);
+    await expect(
+      memberPage.locator(".prio-calendar__issue", { hasText: title }),
+    ).toBeVisible({ timeout: 20_000 });
+    await member.close();
+  });
+});
+
+test.describe("The calendar composer and a tester", () => {
+  test.use({ storageState: MEMBER_STATE });
+
   let leaveTeam: (() => Promise<void>) | null = null;
 
   test.beforeAll(async () => {
@@ -318,33 +356,14 @@ test.describe("Creating from a calendar date as a tester", () => {
     if (leaveTeam) await leaveTeam();
   });
 
-  test("a tester can file one, and it persists for everyone", async ({ page }) => {
+  test("is not offered to one — filing from a day would date the work", async ({
+    page,
+  }) => {
     const month = monthParam(new Date());
-    const title = `Calendar member ${stamp()}`;
-
     await openCalendar(page, "ENG", month);
-    await createOnDay(page, DAY_B, title);
 
-    await expect(
-      cell(page, DAY_B).locator(".prio-calendar__issue", { hasText: title }),
-    ).toBeVisible({ timeout: 20_000 });
-
-    const issue = await trackByTitle(title);
-    expect(issue.dueDate!.toISOString().slice(0, 10)).toBe(
-      `${month}-${String(DAY_B).padStart(2, "0")}`,
-    );
-
-    /* Shared, not per-viewer: it is a row in the project, so the next person
-       to open this calendar sees it. Asserted through a second browser
-       context signed in as somebody else. */
-    const admin = await page.context().browser()!.newContext({
-      storageState: "test-results/.auth/admin.json",
-    });
-    const adminPage = await admin.newPage();
-    await adminPage.goto(`/projects/eng/calendar?month=${month}`);
-    await expect(
-      adminPage.locator(".prio-calendar__issue", { hasText: title }),
-    ).toBeVisible({ timeout: 20_000 });
-    await admin.close();
+    // The month reads normally; only the way to add on a day is absent.
+    await expect(page.locator(".prio-calendar")).toBeVisible();
+    await expect(page.locator(".prio-calendar__add")).toHaveCount(0);
   });
 });

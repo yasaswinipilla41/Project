@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { IconBoard } from "@/components/ui/Icon";
 import { FlowBoard } from "@/components/projects/FlowBoard";
 import { InsightsPanel } from "@/components/reports/InsightsPanel";
-import { projectScope } from "@/lib/authz";
+import { projectScope, workRoleOf } from "@/lib/authz";
 import {
   BOARD_STATUSES,
   BOARD_VISIBLE_STATUSES,
@@ -136,6 +136,7 @@ export default async function AllProjectsBoardPage() {
         columns={columns}
         currentUserId={user.id}
         isAdmin={user.role === "ADMIN"}
+        workRole={await workRoleOf(user)}
         insights={<InsightsPanel projectIds={allProjects.map((p) => p.id)} />}
       />
     </>

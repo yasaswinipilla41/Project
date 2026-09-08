@@ -1,13 +1,20 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Avatar, Button } from "@/components/ui/primitives";
 import { Dialog } from "@/components/ui/Dialog";
+import { useToast } from "@/components/ui/Toast";
+import { SearchSelect } from "@/components/admin/SearchSelect";
 import { ISSUE_TYPE_LABEL, STATUS_LABEL, WORK_ROLE_LABEL } from "@/lib/domain";
 import type { IssueStatus, IssueType } from "@prisma/client";
-import { loadRosterProfile } from "@/server/roster";
-import type { RosterProfile } from "@/server/roster";
+import {
+  listProjectIssues,
+  loadRosterProfile,
+  updateRosterAssignment,
+} from "@/server/roster";
+import type { RosterIssueOption, RosterProfile } from "@/server/roster";
 
 /**
  * One roster member, and the work that is theirs.
@@ -24,14 +31,35 @@ import type { RosterProfile } from "@/server/roster";
 export function RosterProfileDialog({
   personId,
   personName,
+  projects,
   onClose,
 }: {
   personId: string;
   personName: string;
+  /** Every live project, so Edit can move this person to a different one. */
+  projects: { id: string; key: string; name: string }[];
   onClose: () => void;
 }) {
+  const router = useRouter();
+  const { toast } = useToast();
+
   const [profile, setProfile] = useState<RosterProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  /*
+   * Editing is a mode of this dialog rather than a second one.
+   *
+   * What it edits is what the two sections below already show — the project
+   * this person is on, and the work that is theirs — so opening the editor in
+   * place, over the same values, is what makes the change obviously about the
+   * person whose profile is open. `updateRosterAssignment` re-checks all of it.
+   */
+  const [editing, setEditing] = useState(false);
+  const [projectId, setProjectId] = useState("");
+  const [issueIds, setIssueIds] = useState<string[]>([]);
+  const [options, setOptions] = useState<RosterIssueOption[] | null>(null);
+  const [loadingIssues, setLoadingIssues] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -47,16 +75,111 @@ export function RosterProfileDialog({
     };
   }, [personId]);
 
+  /** The issues of one project, and this person's among them pre-selected. */
+  async function chooseProject(nextId: string) {
+    setProjectId(nextId);
+    setIssueIds([]);
+    setOptions(null);
+    if (!nextId) return;
+
+    setLoadingIssues(true);
+    const result = await listProjectIssues(nextId);
+    setLoadingIssues(false);
+
+    if (!result.ok) {
+      toast(result.error, "error");
+      setOptions([]);
+      return;
+    }
+    setOptions(result.data);
+    /* Start from what they already hold there, so saving without touching the
+       list is a no-op rather than an unassignment. */
+    setIssueIds(
+      result.data
+        .filter((issue) => issue.assigneeName === personName)
+        .map((issue) => issue.id),
+    );
+  }
+
+  function startEditing() {
+    setEditing(true);
+    // Their current project, when it is unambiguous, is the obvious start.
+    const first = profile?.projects[0];
+    void chooseProject(first ? first.id : "");
+  }
+
+  async function save() {
+    if (!projectId) {
+      toast("Choose a project.", "error");
+      return;
+    }
+    setSaving(true);
+    const result = await updateRosterAssignment({
+      userId: personId,
+      projectId,
+      issueIds,
+    });
+    setSaving(false);
+
+    if (!result.ok) {
+      toast(result.error, "error");
+      return;
+    }
+
+    toast(
+      result.data.released > 0
+        ? `${personName} updated · ${result.data.assigned} assigned, ${result.data.released} released`
+        : `${personName} updated · ${result.data.assigned} assigned`,
+    );
+
+    // Reload the profile in place so the sections below show what was saved,
+    // and refresh the page behind so the roster blocks agree with it.
+    const reloaded = await loadRosterProfile(personId);
+    if (reloaded.ok) setProfile(reloaded.data);
+    setEditing(false);
+    router.refresh();
+  }
+
   return (
     <Dialog
       open
       onClose={onClose}
       title={personName}
       description="What this person does, what they can open, and what is assigned to them."
+      busy={saving}
       footer={
-        <Button variant="ghost" onClick={onClose}>
-          Done
-        </Button>
+        editing ? (
+          <>
+            <Button
+              variant="ghost"
+              onClick={() => setEditing(false)}
+              disabled={saving}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() => void save()}
+              loading={saving}
+              disabled={saving || !projectId}
+            >
+              Save changes
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button
+              variant="secondary"
+              onClick={startEditing}
+              disabled={!profile}
+            >
+              Edit
+            </Button>
+            <Button variant="ghost" onClick={onClose}>
+              Done
+            </Button>
+          </>
+        )
       }
     >
       {error ? (
@@ -80,7 +203,21 @@ export function RosterProfileDialog({
 
           <div className="prio-field" style={{ marginTop: "var(--prio-space-4)" }}>
             <span className="prio-label">Assigned project</span>
-            {profile.projects.length === 0 ? (
+            {editing ? (
+              <SearchSelect
+                id="roster-edit-project"
+                ariaLabel="Search projects"
+                placeholder="Search projects…"
+                options={projects.map((project) => ({
+                  id: project.id,
+                  label: project.name,
+                  meta: project.key,
+                }))}
+                selected={projectId ? [projectId] : []}
+                onChange={(next) => void chooseProject(next[0] ?? "")}
+                disabled={saving}
+              />
+            ) : profile.projects.length === 0 ? (
               <p className="prio-text-muted">
                 Not a member of any project yet.
               </p>
@@ -109,9 +246,42 @@ export function RosterProfileDialog({
 
           <div className="prio-field" style={{ marginTop: "var(--prio-space-4)" }}>
             <span className="prio-label">
-              Assigned work · {profile.issues.length}
+              Assigned work · {editing ? issueIds.length : profile.issues.length}
             </span>
-            {profile.issues.length === 0 ? (
+            {editing ? (
+              !projectId ? (
+                <p className="prio-text-muted">
+                  Choose a project first — work is that project&rsquo;s only.
+                </p>
+              ) : loadingIssues ? (
+                <p className="prio-text-muted">Loading issues…</p>
+              ) : (
+                <>
+                  <SearchSelect
+                    id="roster-edit-issues"
+                    multiple
+                    ariaLabel="Search issues in the chosen project"
+                    placeholder="Search issues by key or summary…"
+                    emptyHint="This project has no issues yet."
+                    options={(options ?? []).map((issue) => ({
+                      id: issue.id,
+                      label: `${issue.key} — ${issue.title}`,
+                      meta: issue.assigneeName
+                        ? `Assigned to ${issue.assigneeName}`
+                        : "Unassigned",
+                    }))}
+                    selected={issueIds}
+                    onChange={setIssueIds}
+                    disabled={saving}
+                  />
+                  <p className="prio-hint">
+                    What {personName.split(" ")[0]} should be holding in this
+                    project. Anything of theirs here that is taken off the list
+                    is put down; their work in other projects is untouched.
+                  </p>
+                </>
+              )
+            ) : profile.issues.length === 0 ? (
               <p className="prio-text-muted">Nothing is assigned right now.</p>
             ) : (
               <div className="prio-memberpicker">

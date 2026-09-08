@@ -3,6 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useMemo, useRef, useState } from "react";
 import { Avatar, Button, Card, CardBody } from "@/components/ui/primitives";
+import { SearchSelect } from "@/components/admin/SearchSelect";
+import { ROLE_DESCRIPTION, ROLE_LABEL, ROLES } from "@/lib/domain";
+import type { Role } from "@prisma/client";
 import { Dialog } from "@/components/ui/Dialog";
 import { useToast } from "@/components/ui/Toast";
 import { IconPlus, IconUser } from "@/components/ui/Icon";
@@ -21,6 +24,8 @@ export interface TeamPerson {
   email: string;
   image: string | null;
   jobTitle: string | null;
+  /** The account role the People screen grants — what Role filters on. */
+  role?: Role;
 }
 
 export interface TeamProject {
@@ -75,7 +80,6 @@ export function TeamAdmin({
   const { toast } = useToast();
 
   const [addingTo, setAddingTo] = useState<AdminTeam | null>(null);
-  const [query, setQuery] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [profileFor, setProfileFor] = useState<TeamPerson | null>(null);
@@ -142,7 +146,6 @@ export function TeamAdmin({
 
   function openDialog(team: AdminTeam) {
     latestProject.current = "";
-    setQuery("");
     setProjectId("");
     setChosen([]);
     setChosenIssues([]);
@@ -155,23 +158,28 @@ export function TeamAdmin({
     setAddingTo(null);
   }
 
+  /*
+   * Who may still be added: everybody not already on this team, narrowed by
+   * the Role above when the dialog offers one.
+   *
+   * Role filtering the member list is what makes the two fields read as one
+   * decision — "add these Members, as this Role" — rather than two unrelated
+   * dropdowns. It applies only where Role is asked for, which is Development;
+   * the plain dialog has no Role and offers everybody.
+   *
+   * Searching is the field's own now, so nothing filters by `query` here.
+   */
   const candidates = useMemo(() => {
     if (!addingTo) return [];
     const already = new Set(addingTo.members.map((m) => m.id));
-    const q = query.trim().toLowerCase();
+    const filtersByRole = addingTo.slug === DEVELOPMENT_SLUG;
     return everyone
       .filter((person) => !already.has(person.id) || chosen.includes(person.id))
       .filter(
         (person) =>
-          !q ||
-          person.name.toLowerCase().includes(q) ||
-          person.email.toLowerCase().includes(q),
+          !filtersByRole || person.role === undefined || person.role === role,
       );
-  }, [addingTo, everyone, query, chosen]);
-
-  function toggle(list: string[], id: string): string[] {
-    return list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
-  }
+  }, [addingTo, everyone, chosen, role]);
 
   async function submit() {
     if (!addingTo) return;
@@ -233,8 +241,21 @@ export function TeamAdmin({
 
   return (
     <>
-      {teams.map((team) => (
-        <Card key={team.id} className="prio-issue__section">
+      {/*
+       * The teams side by side rather than stacked.
+       *
+       * Development and Testing are two halves of the same question — who
+       * builds and who checks — and reading one under the other made the page
+       * scroll for no reason. Bootstrap's own grid, the one the rest of
+       * Administration uses, so the pair drops back to full width on a narrow
+       * screen with nothing extra written for it. `h-100` is what keeps the
+       * two cards the same height when one team has more people than the
+       * other.
+       */}
+      <div className="row g-3">
+        {teams.map((team) => (
+          <div key={team.id} className="col-12 col-lg-6">
+        <Card className="prio-issue__section h-100">
           <CardBody>
             <div className="prio-projectmembers__head">
               <h2 className="prio-issue__section-title">
@@ -297,7 +318,9 @@ export function TeamAdmin({
             )}
           </CardBody>
         </Card>
-      ))}
+          </div>
+        ))}
+      </div>
 
       {addingTo ? (
         <Dialog
@@ -330,27 +353,30 @@ export function TeamAdmin({
             <label className="prio-label" htmlFor="roster-project">
               Project
             </label>
-            <select
+            {/* Typed into and picked from, like every field in this dialog.
+                Choosing one still reloads the issues below and drops whatever
+                was chosen from the previous project — `chooseProject` is
+                unchanged, it is only reached a different way. */}
+            <SearchSelect
               id="roster-project"
-              className="prio-input"
-              value={projectId}
-              onChange={(event) => void chooseProject(event.target.value)}
-            >
-              <option value="">Choose a project…</option>
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.key} — {project.name}
-                </option>
-              ))}
-            </select>
+              ariaLabel="Search projects"
+              placeholder="Search projects…"
+              options={projects.map((project) => ({
+                id: project.id,
+                label: project.name,
+                meta: project.key,
+              }))}
+              selected={projectId ? [projectId] : []}
+              onChange={(next) => void chooseProject(next[0] ?? "")}
+            />
           </div>
 
           {isDeveloperTeam ? (
             <>
               <div className="prio-field">
-                <span className="prio-label">
+                <label className="prio-label" htmlFor="roster-issues">
                   Issues{chosenIssues.length > 0 ? ` · ${chosenIssues.length}` : ""}
-                </span>
+                </label>
                 {!projectId ? (
                   <p className="prio-text-muted">
                     Choose a project first — issues are this project&rsquo;s
@@ -358,41 +384,23 @@ export function TeamAdmin({
                   </p>
                 ) : loadingIssues ? (
                   <p className="prio-text-muted">Loading issues…</p>
-                ) : !issues || issues.length === 0 ? (
-                  <p className="prio-text-muted">
-                    This project has no issues yet. Members can still be added
-                    without any.
-                  </p>
                 ) : (
-                  <div className="prio-memberpicker">
-                    {issues.map((issue) => (
-                      <button
-                        key={issue.id}
-                        type="button"
-                        className="prio-memberrow"
-                        data-selected={
-                          chosenIssues.includes(issue.id) || undefined
-                        }
-                        onClick={() =>
-                          setChosenIssues((prev) => toggle(prev, issue.id))
-                        }
-                      >
-                        <span className="prio-memberpicker__text">
-                          <span className="prio-memberpicker__name">
-                            {issue.key} — {issue.title}
-                          </span>
-                          <span className="prio-memberpicker__meta">
-                            {issue.assigneeName
-                              ? `Assigned to ${issue.assigneeName}`
-                              : "Unassigned"}
-                          </span>
-                        </span>
-                        {chosenIssues.includes(issue.id) ? (
-                          <span className="prio-hint">Selected</span>
-                        ) : null}
-                      </button>
-                    ))}
-                  </div>
+                  <SearchSelect
+                    id="roster-issues"
+                    multiple
+                    ariaLabel="Search issues in the chosen project"
+                    placeholder="Search issues by key or summary…"
+                    emptyHint="This project has no issues yet. Members can still be added without any."
+                    options={(issues ?? []).map((issue) => ({
+                      id: issue.id,
+                      label: `${issue.key} — ${issue.title}`,
+                      meta: issue.assigneeName
+                        ? `Assigned to ${issue.assigneeName}`
+                        : "Unassigned",
+                    }))}
+                    selected={chosenIssues}
+                    onChange={setChosenIssues}
+                  />
                 )}
               </div>
 
@@ -400,20 +408,40 @@ export function TeamAdmin({
                 <label className="prio-label" htmlFor="roster-role">
                   Role
                 </label>
-                <select
+                <SearchSelect
                   id="roster-role"
-                  className="prio-input"
-                  value={role}
-                  onChange={(event) =>
-                    setRole(event.target.value === "ADMIN" ? "ADMIN" : "MEMBER")
-                  }
-                >
-                  <option value="MEMBER">Member</option>
-                  <option value="ADMIN">Admin</option>
-                </select>
+                  ariaLabel="Search roles"
+                  placeholder="Search roles…"
+                  options={ROLES.map((option) => ({
+                    id: option,
+                    label: ROLE_LABEL[option],
+                    meta: ROLE_DESCRIPTION[option],
+                  }))}
+                  selected={[role]}
+                  onChange={(next) => {
+                    const picked = next[0] === "ADMIN" ? "ADMIN" : "MEMBER";
+                    setRole(picked);
+                    /* The people below are the ones this role can name, so a
+                       different role means a different list — and anybody
+                       chosen from the old one is no longer on it. Dropping
+                       them is the same rule the project field follows with
+                       issues: a selection that is no longer offered is not
+                       quietly kept. */
+                    setChosen((prev) =>
+                      prev.filter((id) =>
+                        everyone.some(
+                          (person) =>
+                            person.id === id &&
+                            (person.role === undefined || person.role === picked),
+                        ),
+                      ),
+                    );
+                  }}
+                />
                 <p className="prio-hint">
-                  The account role the People screen grants. Whether a member
-                  tests or builds is still their team.
+                  The account role the People screen grants, and what the
+                  Members list below is narrowed to. Whether a member tests or
+                  builds is still their team.
                 </p>
               </div>
             </>
@@ -423,48 +451,29 @@ export function TeamAdmin({
             <label className="prio-label" htmlFor="team-search">
               Members{chosen.length > 0 ? ` · ${chosen.length}` : ""}
             </label>
-            <input
+            <SearchSelect
               id="team-search"
-              type="search"
-              className="prio-input"
-              placeholder="Name or email"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              multiple
+              ariaLabel="Search people by name or email"
+              placeholder="Search by name or email…"
+              emptyHint={
+                isDeveloperTeam
+                  ? "Nobody with that role is left to add."
+                  : "Everybody is already on this team."
+              }
+              options={candidates.map((person) => ({
+                id: person.id,
+                label: person.name,
+                meta: person.jobTitle ?? person.email,
+                adornment: (
+                  <Avatar name={person.name} image={person.image} size="sm" />
+                ),
+              }))}
+              selected={chosen}
+              onChange={setChosen}
             />
           </div>
 
-          {candidates.length === 0 ? (
-            <p className="prio-text-muted">
-              {query
-                ? `Nobody matches “${query}”.`
-                : "Everybody is already on this team."}
-            </p>
-          ) : (
-            <div className="prio-memberpicker">
-              {candidates.map((person) => (
-                <button
-                  key={person.id}
-                  type="button"
-                  className="prio-memberrow"
-                  data-selected={chosen.includes(person.id) || undefined}
-                  onClick={() => setChosen((prev) => toggle(prev, person.id))}
-                >
-                  <Avatar name={person.name} image={person.image} size="md" />
-                  <span className="prio-memberpicker__text">
-                    <span className="prio-memberpicker__name">
-                      {person.name}
-                    </span>
-                    <span className="prio-memberpicker__meta">
-                      {person.jobTitle ?? person.email}
-                    </span>
-                  </span>
-                  {chosen.includes(person.id) ? (
-                    <span className="prio-hint">Selected</span>
-                  ) : null}
-                </button>
-              ))}
-            </div>
-          )}
         </Dialog>
       ) : null}
 
@@ -472,6 +481,7 @@ export function TeamAdmin({
         <RosterProfileDialog
           personId={profileFor.id}
           personName={profileFor.name}
+          projects={projects}
           onClose={() => setProfileFor(null)}
         />
       ) : null}

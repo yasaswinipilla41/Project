@@ -35,6 +35,9 @@ import { IssueRowActions } from "@/components/issues/IssueRowActions";
 import { BOARD_STATUSES, boardColumnFor, dropStatusFor } from "@/lib/board";
 import {
   ISSUE_STATUSES,
+  allowedStatusesFor,
+  canSetStatus,
+  type WorkRole,
   PRIORITIES,
   PRIORITY_LABEL,
   STATUS_LABEL,
@@ -205,6 +208,7 @@ export function FlowBoard({
   columns,
   currentUserId,
   isAdmin,
+  workRole,
   insights,
 }: {
   /**
@@ -220,6 +224,13 @@ export function FlowBoard({
   columns: BoardColumn[];
   currentUserId: string;
   isAdmin: boolean;
+  /**
+   * What the person looking at the board does — which decides the statuses
+   * they may move a card into, here exactly as on the issue page. The server
+   * refuses the rest whatever the board offers; this keeps the board from
+   * offering a move that would only bounce back.
+   */
+  workRole: WorkRole;
   /**
    * This project's Insights, rendered on the server by the board's page and
    * handed over as content. Passing the finished element rather than fetching
@@ -491,10 +502,16 @@ export function FlowBoard({
      * better than moving the card optimistically and watching it spring back
      * when `updateIssue` says no.
      */
-    const planned = candidates.map((issue) => ({
-      issue,
-      to: resolve(issue.status),
-    }));
+    const planned = candidates.map((issue) => {
+      const to = resolve(issue.status);
+      /* Their half of the job, asked the same way the server asks it. A
+         status somebody else owns is refused here rather than moved and
+         sprung back. */
+      return {
+        issue,
+        to: to !== null && canSetStatus(workRole, issue.status, to) ? to : null,
+      };
+    });
 
     const moving = planned.filter(
       (plan): plan is { issue: (typeof candidates)[number]; to: IssueStatus } =>
@@ -575,7 +592,10 @@ export function FlowBoard({
      put it in, its own or the one it also holds. */
   const columnAccepts = (column: IssueStatus): boolean =>
     draggingStatuses.length === 0 ||
-    draggingStatuses.some((from) => dropStatusFor(from, column) !== null);
+    draggingStatuses.some((from) => {
+      const to = dropStatusFor(from, column);
+      return to !== null && canSetStatus(workRole, from, to);
+    });
 
   function handleDrop(event: DragEvent<HTMLDivElement>, status: IssueStatus) {
     event.preventDefault();
@@ -966,6 +986,7 @@ export function FlowBoard({
                       issue={issue}
                       draggable={status !== null}
                       onStatusChange={(next) => setCardStatus(issue.id, next)}
+                      workRole={workRole}
                       currentUserId={currentUserId}
                       isAdmin={isAdmin}
                       dragging={
@@ -1002,6 +1023,7 @@ function BoardCard({
   issue,
   draggable,
   onStatusChange,
+  workRole,
   currentUserId,
   isAdmin,
   dragging,
@@ -1016,6 +1038,9 @@ function BoardCard({
   draggable: boolean;
   /** Sets this issue's status outright, without moving it by hand. */
   onStatusChange: (status: IssueStatus) => void;
+  /** Decides what this card's status menu offers, and what a clone may be
+   *  filed as — the same table the issue page reads. */
+  workRole: WorkRole;
   currentUserId: string;
   isAdmin: boolean;
   dragging: boolean;
@@ -1084,6 +1109,7 @@ function BoardCard({
           onMouseDown={(event) => event.stopPropagation()}
         >
           <IssueRowActions
+            workRole={workRole}
             issueId={issue.id}
             issueKey={issue.key}
             reporterId={issue.reporterId}
@@ -1152,10 +1178,10 @@ function BoardCard({
             )}
           >
             <MenuLabel>Move to</MenuLabel>
-            {/* The whole vocabulary, the same set and the same order the issue
-                page's own status menu offers -- Reopen and Reject / Not an
-                Issue included, because both are statuses an issue may hold. */}
-            {ISSUE_STATUSES.map((option) => (
+            {/* The same set, in the same order, that the issue page's own
+                status menu offers this person: what their half of the job may
+                declare, and nothing that belongs to the other half. */}
+            {allowedStatusesFor(workRole, issue.status).map((option) => (
               <MenuItem
                 key={option}
                 selected={option === issue.status}

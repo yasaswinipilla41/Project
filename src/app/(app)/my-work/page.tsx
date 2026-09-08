@@ -5,7 +5,6 @@ import {
   IssueKey,
   IssueTypeIcon,
   PriorityIndicator,
-  SeverityChip,
   StatusPill,
 } from "@/components/ui/Indicators";
 import {
@@ -19,6 +18,7 @@ import {
   accessibleProjectIds,
   isTeamMember,
   issueScope,
+  workRoleOf,
   TESTING_TEAM_SLUG,
 } from "@/lib/authz";
 import {
@@ -78,6 +78,7 @@ export default async function MyWorkPage({
    * and being on the testing team are different claims.
    */
   const onTestingTeam = await isTeamMember(user, TESTING_TEAM_SLUG);
+  const workRole = await workRoleOf(user);
 
   /* Project access is still the ordinary rule. Team membership decides whether
      this view exists at all; it grants access to no project on its own, so the
@@ -163,7 +164,6 @@ export default async function MyWorkPage({
           title: true,
           status: true,
           priority: true,
-          severity: true,
           dueDate: true,
           updatedAt: true,
           project: { select: { key: true, name: true } },
@@ -361,6 +361,7 @@ export default async function MyWorkPage({
                   dir={workDir}
                   currentUserId={user.id}
                   isAdmin={user.role === "ADMIN"}
+                  workRole={workRole}
                 />
               </div>
             ) : workProjects.length > 0 ? (
@@ -516,9 +517,6 @@ export default async function MyWorkPage({
                             </span>
                           </span>
                           <span className="prio-worklink__right">
-                            {issue.severity ? (
-                              <SeverityChip severity={issue.severity} />
-                            ) : null}
                             <PriorityIndicator
                               priority={issue.priority}
                               showLabel={false}

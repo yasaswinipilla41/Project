@@ -18,7 +18,14 @@ import { IconCheck, IconProjects, IconUsers } from "@/components/ui/Icon";
  * — the server still authorizes every one of these routes on its own. Hiding a
  * link is a courtesy, never the control.
  */
-export function QuickActions({ role }: { role: WorkRole }) {
+export function QuickActions({
+  role,
+  userId,
+}: {
+  role: WorkRole;
+  /** The signed-in person, so their queue link is theirs. */
+  userId: string;
+}) {
   return (
     <div className="prio-dash__actions">
       {role === "ADMIN" ? (
@@ -37,11 +44,15 @@ export function QuickActions({ role }: { role: WorkRole }) {
           <ButtonLink href="/my-work" variant="ghost">
             My work
           </ButtonLink>
-          {/* A tester's queue is not their own assignments — it is everything a
-              developer has handed back. Their own row above still holds what
-              they were given directly. */}
-          {role === "QA" ? (
-            <ButtonLink href="/issues?status=IN_REVIEW" variant="ghost">
+          {/* A tester's queue: what has been handed to *them* for checking.
+              Offered to a full stack developer as well, who does the QA half
+              of the job. The link carries the reader's own assignee so it
+              opens the same rows the dashboard tile counted. */}
+          {role === "QA" || role === "FULLSTACK" ? (
+            <ButtonLink
+              href={`/issues?assignee=${userId}&status=IN_REVIEW`}
+              variant="ghost"
+            >
               <IconCheck size={14} />
               Ready for QA
             </ButtonLink>

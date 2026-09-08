@@ -137,7 +137,6 @@ describe("opening a clone", () => {
     const source = await makeIssue({
       description: "The original description.",
       priority: "HIGH",
-      severity: "MAJOR",
     });
 
     const before = await projectByKey("ENG");
@@ -152,7 +151,6 @@ describe("opening a clone", () => {
     expect(draft.data.title.startsWith("Clone of ")).toBe(true);
     expect(draft.data.description).toBe("The original description.");
     expect(draft.data.priority).toBe("HIGH");
-    expect(draft.data.severity).toBe("MAJOR");
 
     /*
      * The whole of §8 in two assertions: opening the draft moved neither the
@@ -178,7 +176,6 @@ describe("cloning an issue", () => {
       type: "STORY",
       description: "Carried across.",
       priority: "URGENT",
-      severity: "CRITICAL",
       parentId: parent.id,
     });
     await attach(source.id, admin.id, "evidence.txt", "original bytes");
@@ -197,7 +194,6 @@ describe("cloning an issue", () => {
       title: "Clone with nothing carried",
       description: "Carried across.",
       priority: "URGENT",
-      severity: "CRITICAL",
       copyLinks: false,
       copyAttachments: false,
     });
@@ -217,7 +213,6 @@ describe("cloning an issue", () => {
         description: true,
         type: true,
         priority: true,
-        severity: true,
         parentId: true,
         _count: { select: { linksFrom: true, attachments: true } },
       },
@@ -226,7 +221,6 @@ describe("cloning an issue", () => {
     expect(clone.description).toBe("Carried across.");
     expect(clone.type).toBe("STORY");
     expect(clone.priority).toBe("URGENT");
-    expect(clone.severity).toBe("CRITICAL");
     expect(clone.parentId).toBeNull();
     expect(clone._count.linksFrom).toBe(0);
     expect(clone._count.attachments).toBe(0);
@@ -298,7 +292,6 @@ describe("cloning an issue", () => {
       projectId: project.id,
       type: "BUG",
       title: "Clone with files",
-      severity: "MAJOR",
       copyLinks: false,
       copyAttachments: true,
     });
@@ -364,7 +357,6 @@ describe("cloning an issue", () => {
       projectId: project.id,
       type: "BUG",
       title: "Clone with everything",
-      severity: "MINOR",
       copyLinks: true,
       copyAttachments: true,
     });
@@ -441,7 +433,6 @@ describe("cloning an issue", () => {
         type: true,
         status: true,
         priority: true,
-        severity: true,
         assigneeId: true,
         updatedAt: true,
       },
@@ -479,7 +470,6 @@ describe("cloning an issue", () => {
         type: true,
         status: true,
         priority: true,
-        severity: true,
         assigneeId: true,
         updatedAt: true,
       },
@@ -786,7 +776,6 @@ describe("cloning a project", () => {
       projectId: created.data.id,
       type: "BUG",
       title: "Child bug",
-      severity: "MAJOR",
       parentId: parent.data.id,
     });
     if (!child.ok) throw new Error(child.error);
@@ -934,7 +923,6 @@ describe("cloning a project", () => {
               key: true,
               title: true,
               type: true,
-              severity: true,
               parentId: true,
               _count: { select: { linksFrom: true, attachments: true } },
             },
@@ -950,7 +938,6 @@ describe("cloning a project", () => {
         "Parent story",
         "Child bug",
       ]);
-      expect(clone.issues[1]?.severity).toBe("MAJOR");
 
       const childParent = clone.issues[1]?.parentId ?? null;
       const links = clone.issues.reduce(

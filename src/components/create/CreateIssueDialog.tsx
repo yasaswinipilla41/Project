@@ -21,15 +21,13 @@ import {
   ISSUE_TYPES,
   ISSUE_TYPE_LABEL,
   labelColourFor,
-  ISSUE_STATUSES,
   PRIORITIES,
   PRIORITY_LABEL,
-  SEVERITIES,
-  SEVERITY_DESCRIPTION,
-  SEVERITY_LABEL,
   STATUS_LABEL,
+  allowedStatusesFor,
+  type WorkRole,
 } from "@/lib/domain";
-import type { IssueStatus, IssueType, Priority, Severity } from "@prisma/client";
+import type { IssueStatus, IssueType, Priority } from "@prisma/client";
 import { createIssue } from "@/server/issues";
 import { createLabel } from "@/server/projects";
 import { LabelPicker } from "@/components/create/LabelPicker";
@@ -45,9 +43,9 @@ import type { FieldErrors } from "@/server/schemas";
  * One form, for every type.
  *
  * A Story, a Task and a Bug are the same record and are filed the same way:
- * summary, description, priority, severity, assignee, attachments, parent. The
+ * summary, description, priority, assignee, attachments, parent. The
  * type selector picks which of them this is, and changes nothing else — no
- * type-specific prompts, no bug-only Environment box, no severity that appears
+ * type-specific prompts, no bug-only Environment box, no field that appears
  * for one type and vanishes for another. Everything a bug reporter used to be
  * asked separately (steps, expected, actual) belongs in the description, which
  * every type now has.
@@ -79,6 +77,13 @@ interface OptionParent {
 export interface CreateIssueDialogProps {
   open: boolean;
   onClose: () => void;
+  /**
+   * What the person filing does here, which decides the statuses the form
+   * offers and whether it asks for an assignee and a due date at all.
+   * Resolved on the server by `workRoleOf` and handed down; the form never
+   * infers it, and `createIssue` re-derives it for itself.
+   */
+  workRole: WorkRole;
   /** Preselects a project, e.g. when opened from inside a project. */
   defaultProjectId?: string | null;
   defaultType?: IssueType;
@@ -151,12 +156,6 @@ function FieldRow({
   );
 }
 
-/*
- * Severity is a field on every type, exactly like priority. Only its *default*
- * differs: a bug opens at Major because a defect always has an impact, while
- * anything else opens unset rather than being given an opinion it has no use
- * for. That is a starting value, not a difference in the form.
- */
 const EMPTY_FORM = {
   title: "",
   description: "",
@@ -165,16 +164,12 @@ const EMPTY_FORM = {
   assigneeId: "",
   dueDate: "",
   parentId: "",
-  severity: "" as Severity | "",
 };
-
-/** New bugs open at Major; anything else opens with no severity at all. */
-const defaultSeverityFor = (type: IssueType): Severity | "" =>
-  type === "BUG" ? "MAJOR" : "";
 
 export function CreateIssueDialog({
   open,
   onClose,
+  workRole,
   defaultProjectId = null,
   defaultType = "TASK",
   showTypeSelector = false,
@@ -193,9 +188,22 @@ export function CreateIssueDialog({
   /* A project was supplied by whatever opened this, so it is context rather
      than a choice. Global surfaces pass nothing and keep the picker. */
   const lockedProject = defaultProjectId !== null;
+  /*
+   * What this person may file work as, and how much of the form they get.
+   *
+   * The statuses come from the one table in `domain.ts`, asked with no current
+   * status because creating is not a transition. A pure tester also files
+   * without an assignee or a due date: handing work out and dating it are an
+   * administrator's, and `createIssue` drops both regardless of what arrives,
+   * so leaving the fields out is the form agreeing with the server rather than
+   * the form being the rule.
+   */
+  const statusOptions = allowedStatusesFor(workRole, null);
+  const filesAsTester = workRole === "QA";
+
   const [form, setForm] = useState({
     ...EMPTY_FORM,
-    severity: defaultSeverityFor(defaultType),
+    status: statusOptions[0] ?? EMPTY_FORM.status,
   });
   const [labelIds, setLabelIds] = useState<string[]>([]);
   const [screenshots, setScreenshots] = useState<StagedScreenshot[]>([]);
@@ -385,11 +393,10 @@ export function CreateIssueDialog({
       description: form.description,
       status: form.status,
       priority: form.priority,
-      assigneeId: form.assigneeId,
+      assigneeId: filesAsTester ? null : form.assigneeId,
       labelIds,
-      dueDate: form.dueDate,
+      dueDate: filesAsTester ? null : form.dueDate,
       parentId: form.parentId,
-      severity: form.severity === "" ? null : form.severity,
     });
 
     if (!result.ok) {
@@ -540,17 +547,7 @@ export function CreateIssueDialog({
                 id="create-type"
                 className="prio-select"
                 value={type}
-                onChange={(event) => {
-                  const option = event.target.value as IssueType;
-                  setType(option);
-                  /* Carry the new type's default across, unless a severity was
-                     chosen by hand — switching type should not discard that. */
-                  setForm((prev) =>
-                    prev.severity === defaultSeverityFor(type)
-                      ? { ...prev, severity: defaultSeverityFor(option) }
-                      : prev,
-                  );
-                }}
+                onChange={(event) => setType(event.target.value as IssueType)}
               >
                 {ISSUE_TYPES.map((option) => (
                   <option key={option} value={option}>
@@ -615,6 +612,10 @@ export function CreateIssueDialog({
               </select>
             </FieldRow>
 
+            {/* Assignee and Due date, for whoever decides them. A tester
+                raising work is reporting something, not planning somebody's
+                week — see `filesAsTester` above. */}
+            {filesAsTester ? null : (
             <FieldRow label="Assignee" htmlFor="create-assignee">
               <select
                 id="create-assignee"
@@ -649,6 +650,7 @@ export function CreateIssueDialog({
               ) : null}
               <FieldError errors={errors} field="assigneeId" />
             </FieldRow>
+            )}
 
             {projectId ? (
               <FieldRow label="Labels" labelledById="create-labels-label">
@@ -710,15 +712,17 @@ export function CreateIssueDialog({
               </FieldRow>
             ) : null}
 
-            <FieldRow label="Due date" htmlFor="create-due">
-              <input
-                id="create-due"
-                type="date"
-                className="prio-input"
-                value={form.dueDate}
-                onChange={(e) => set("dueDate", e.target.value)}
-              />
-            </FieldRow>
+            {filesAsTester ? null : (
+              <FieldRow label="Due date" htmlFor="create-due">
+                <input
+                  id="create-due"
+                  type="date"
+                  className="prio-input"
+                  value={form.dueDate}
+                  onChange={(e) => set("dueDate", e.target.value)}
+                />
+              </FieldRow>
+            )}
 
             {/*
              * Files span the full width of the column rather than sitting in a
@@ -746,47 +750,12 @@ export function CreateIssueDialog({
                 value={form.status}
                 onChange={(e) => set("status", e.target.value as IssueStatus)}
               >
-                {ISSUE_STATUSES.map((s) => (
+                {statusOptions.map((s) => (
                   <option key={s} value={s}>
                     {STATUS_LABEL[s]}
                   </option>
                 ))}
               </select>
-            </div>
-
-            {/*
-             * Severity, for every type.
-             *
-             * It used to appear only when the type picker said "Bug", which
-             * made the form a different shape for a bug than for a task. It is
-             * a standard field now, defaulting to "Not set" for everything
-             * except a bug — so an issue created without touching it still
-             * stores `null`, exactly as a non-bug always did.
-             */}
-            <div className="prio-field">
-              <label className="prio-label" htmlFor="create-severity">
-                Severity
-              </label>
-              <select
-                id="create-severity"
-                className="prio-select"
-                value={form.severity}
-                onChange={(e) =>
-                  set("severity", e.target.value as Severity | "")
-                }
-              >
-                <option value="">Not set</option>
-                {SEVERITIES.map((s) => (
-                  <option key={s} value={s}>
-                    {SEVERITY_LABEL[s]}
-                  </option>
-                ))}
-              </select>
-              <span className="prio-hint">
-                {form.severity
-                  ? SEVERITY_DESCRIPTION[form.severity]
-                  : "Impact if this goes wrong. Priority is how soon it is worked on — the two are independent."}
-              </span>
             </div>
 
             <div className="prio-field">

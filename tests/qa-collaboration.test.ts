@@ -370,7 +370,6 @@ describe("reporting a bug against work under test", () => {
       title: "Login button stops responding after a failed attempt",
       affectedModule: "Login page",
       priority: "HIGH",
-      severity: "MAJOR",
     });
     expect(reported.ok).toBe(true);
     if (!reported.ok) return;
@@ -382,7 +381,6 @@ describe("reporting a bug against work under test", () => {
         type: true,
         status: true,
         priority: true,
-        severity: true,
         projectId: true,
         reporterId: true,
         assigneeId: true,
@@ -400,7 +398,6 @@ describe("reporting a bug against work under test", () => {
     // ...and what only the tester knew was stored on the existing column.
     expect(bug.affectedModule).toBe("Login page");
     expect(bug.priority).toBe("HIGH");
-    expect(bug.severity).toBe("MAJOR");
 
     // Linked both ways through the existing IssueLink table.
     const forward = await prisma.issueLink.count({

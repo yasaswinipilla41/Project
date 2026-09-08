@@ -6,7 +6,7 @@ import { MEMBER_STATE } from "./support";
  *
  * The headline one: `updateIssue` derived its schema from the create schema, so
  * Zod's defaults filled in every omitted field. Changing a bug's priority
- * silently cleared its severity and reset its status. These tests change one
+ * silently cleared its other fields and reset its status. These tests change one
  * field at a time and assert the others are untouched.
  */
 
@@ -31,19 +31,21 @@ async function openActivity(page: Page): Promise<void> {
 }
 
 test.describe("update regressions", () => {
-  test("changing only priority leaves severity and status untouched", async ({
+  test("changing only priority leaves the due date and status untouched", async ({
     page,
   }) => {
     // ENG-1 is a seeded bug: In Progress / High / Major.
     await page.goto("/issues/eng-1");
 
-    const severity = page.locator(".prio-severity").first();
     const status = page.locator(".prio-status").first();
 
-    const severityBefore = await severity.getAttribute("data-severity");
     const statusBefore = await status.getAttribute("data-status");
-    expect(severityBefore).toBe("MAJOR");
     expect(statusBefore).toBe("IN_PROGRESS");
+
+    /* Severity used to be the other field watched here. It is no longer a
+       field anybody sets, so what stands in for it is the rest of the record —
+       the title, the reporter and the panel below — which the assertions after
+       the reload already read. */
 
     const title = await page.locator(".prio-issue__title").innerText();
     const reporter = await page.locator(".prio-issue__aside").innerText();
@@ -61,10 +63,6 @@ test.describe("update regressions", () => {
       "URGENT",
     );
     // …and nothing else did.
-    await expect(page.locator(".prio-severity").first()).toHaveAttribute(
-      "data-severity",
-      severityBefore!,
-    );
     await expect(page.locator(".prio-status").first()).toHaveAttribute(
       "data-status",
       statusBefore!,
@@ -79,7 +77,7 @@ test.describe("update regressions", () => {
     await openActivity(page);
     const activity = await page.locator(".prio-activity").innerText();
     expect(activity).toContain("changed the priority");
-    expect(activity).not.toContain("changed the severity");
+    expect(activity).not.toContain("changed the status");
 
     // Restore the seeded value so the suite is re-runnable.
     await page.locator(".prio-issue__headmeta .prio-priority").first().click();
@@ -87,15 +85,11 @@ test.describe("update regressions", () => {
     await expect(page.locator(".prio-toast")).toContainText("Priority set to");
   });
 
-  test("changing only status leaves severity and priority untouched", async ({
+  test("changing only status leaves the priority untouched", async ({
     page,
   }) => {
     await page.goto("/issues/eng-2");
 
-    const severityBefore = await page
-      .locator(".prio-severity")
-      .first()
-      .getAttribute("data-severity");
     const priorityBefore = await page
       .locator(".prio-priority")
       .first()
@@ -134,10 +128,6 @@ test.describe("update regressions", () => {
       statusBefore!,
     );
     // ...and nothing else did, which is what this test is for.
-    await expect(page.locator(".prio-severity").first()).toHaveAttribute(
-      "data-severity",
-      severityBefore!,
-    );
     await expect(page.locator(".prio-priority").first()).toHaveAttribute(
       "data-priority",
       priorityBefore!,
@@ -228,10 +218,10 @@ test.describe("inline editing", () => {
 
     const before = {
       status: await page.locator(".prio-status").first().getAttribute("data-status"),
-      severity: await page
-        .locator(".prio-severity")
+      priority: await page
+        .locator(".prio-priority")
         .first()
-        .getAttribute("data-severity"),
+        .getAttribute("data-priority"),
       title: await page.locator(".prio-issue__title").innerText(),
     };
 
@@ -264,9 +254,9 @@ test.describe("inline editing", () => {
       "data-status",
       before.status!,
     );
-    await expect(page.locator(".prio-severity").first()).toHaveAttribute(
-      "data-severity",
-      before.severity!,
+    await expect(page.locator(".prio-priority").first()).toHaveAttribute(
+      "data-priority",
+      before.priority!,
     );
 
     // The trail records the rename.

@@ -473,3 +473,157 @@ export async function loadRosterProfile(
     return failure(error);
   }
 }
+
+/* ------------------------------------------------- editing one person's work */
+
+const rosterEditSchema = z.object({
+  userId: z.string().min(1),
+  projectId: z.string().min(1),
+  /** The issues in that project this person should end up holding. */
+  issueIds: z.array(z.string().min(1)),
+});
+
+/**
+ * Change what one person is on and what they are holding, from their profile.
+ *
+ * The Add dialogs onboard several people at once; this is the other half —
+ * going back to somebody already on a roster and moving them. It writes the
+ * same three facts, with the same rules, for one person:
+ *
+ *   `ProjectMember`  they are put on the project named, if they are not on it
+ *   `Issue.assignee` the issues named become theirs
+ *   `Issue.assignee` issues of that project that were theirs and are no longer
+ *                    named are put down
+ *
+ * The last line is what makes this an edit rather than another add. The dialog
+ * hands over the full set for one project, so an issue disappearing from that
+ * set is an instruction, not an omission — and scoping the unassignment to the
+ * one project is what stops an edit here silently emptying somebody's queue
+ * everywhere else.
+ *
+ * Membership of other projects is left alone. Moving somebody to a new project
+ * is adding them to it; taking their access away is a separate act, done from
+ * the project's own members list, and quietly performing it here because the
+ * field happens to be a single choice would be a surprise.
+ *
+ * Every id is re-checked: the person exists and is active, the project exists,
+ * and every issue named belongs to that project. Administrator-only, like the
+ * rest of this file.
+ */
+export async function updateRosterAssignment(
+  raw: unknown,
+): Promise<RosterActionResult<{ assigned: number; released: number }>> {
+  try {
+    const actor = await requireUser();
+    assertAdmin(actor);
+
+    const parsed = rosterEditSchema.safeParse(raw);
+    if (!parsed.success) {
+      return { ok: false, error: "Choose a project for this person." };
+    }
+    const { userId, projectId, issueIds } = parsed.data;
+
+    const [person] = await Promise.all([
+      prisma.user.findFirst({
+        where: { id: userId, isActive: true },
+        select: { id: true },
+      }),
+    ]);
+    if (!person) return { ok: false, error: "That person is not available." };
+
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+      select: { id: true, key: true },
+    });
+    if (!project) return { ok: false, error: "That project no longer exists." };
+
+    /* What they should hold, and what they hold now — both scoped to this one
+       project, which is the whole of what this edit may touch. */
+    const [named, currentlyTheirs] = await Promise.all([
+      issueIds.length > 0
+        ? prisma.issue.findMany({
+            where: { id: { in: issueIds }, projectId },
+            select: { id: true, key: true, title: true, type: true, assigneeId: true },
+          })
+        : Promise.resolve([]),
+      prisma.issue.findMany({
+        where: { projectId, assigneeId: userId },
+        select: { id: true, assigneeId: true },
+      }),
+    ]);
+
+    if (named.length !== issueIds.length) {
+      return {
+        ok: false,
+        error: "One or more of those issues do not belong to the selected project.",
+      };
+    }
+
+    const keep = new Set(named.map((issue) => issue.id));
+    const release = currentlyTheirs.filter((issue) => !keep.has(issue.id));
+
+    let assigned = 0;
+
+    await prisma.$transaction(async (tx) => {
+      // Access before assignment, the order `assignDevelopers` uses and for
+      // the same reason: an assignee must be a member of the project.
+      await tx.projectMember.upsert({
+        where: { projectId_userId: { projectId, userId } },
+        update: {},
+        create: { projectId, userId },
+      });
+
+      for (const issue of named) {
+        if (issue.assigneeId === userId) continue;
+
+        await tx.issue.update({
+          where: { id: issue.id },
+          data: { assigneeId: userId },
+        });
+        await recordFieldChanges(tx, {
+          issueId: issue.id,
+          actorId: actor.id,
+          changes: [
+            { field: "assigneeId", oldValue: issue.assigneeId, newValue: userId },
+          ],
+        });
+        await notify(tx, {
+          issueId: issue.id,
+          actorId: actor.id,
+          userIds: [userId, ...(await watcherIds(tx, issue.id))],
+          type: "ISSUE_ASSIGNED",
+          message: assignmentMessage({
+            issueKey: issue.key,
+            issueTitle: issue.title,
+            typeLabel: ISSUE_TYPE_LABEL[issue.type].toLowerCase(),
+            tester: await isTester(tx, userId),
+          }),
+        });
+        assigned += 1;
+      }
+
+      for (const issue of release) {
+        await tx.issue.update({
+          where: { id: issue.id },
+          data: { assigneeId: null },
+        });
+        await recordFieldChanges(tx, {
+          issueId: issue.id,
+          actorId: actor.id,
+          changes: [
+            { field: "assigneeId", oldValue: userId, newValue: null },
+          ],
+        });
+      }
+    });
+
+    revalidatePath("/admin");
+    revalidatePath("/my-work");
+    revalidatePath(`/projects/${project.key.toLowerCase()}`);
+    revalidatePath(`/projects/${project.key.toLowerCase()}/summary`);
+
+    return { ok: true, data: { assigned, released: release.length } };
+  } catch (error) {
+    return failure(error);
+  }
+}

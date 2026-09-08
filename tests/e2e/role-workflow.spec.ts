@@ -151,7 +151,20 @@ test.describe("A tester", () => {
       .getByRole("link", { name: "Ready for QA" });
     await expect(queue).toBeVisible();
     await queue.click();
-    await expect(page).toHaveURL(/\/issues\?status=IN_REVIEW/);
+
+    /*
+     * The tester's *own* queue.
+     *
+     * This used to open `/issues?status=IN_REVIEW` — every unchecked issue in
+     * every project they could see, whoever it belonged to. The panel's tile
+     * beside it counts only what is assigned to them, so the two disagreed
+     * about what "Ready for QA" means and the quick action opened a longer
+     * list than the figure next to it. Both now carry the reader's assignee.
+     */
+    await expect(page).toHaveURL(/\/issues\?assignee=[^&]+&status=IN_REVIEW/);
+
+    const mine = await memberId();
+    expect(page.url()).toContain(`assignee=${mine}`);
   });
 
   test("is not offered Start — verifying is the job, not building", async ({

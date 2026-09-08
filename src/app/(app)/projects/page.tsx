@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { BackLink } from "@/components/shell/BackLink";
 import { ProjectsHeaderActions } from "@/components/projects/ProjectsHeaderActions";
 import {
   AvatarStack,
@@ -21,7 +22,14 @@ export const dynamic = "force-dynamic";
  * Project directory (§19). Admins see every project and can create one;
  * members see only the projects they belong to.
  */
-export default async function ProjectsPage() {
+export default async function ProjectsPage({
+  searchParams,
+}: {
+  /* Only ever read for `from`, which Administration sets so this page knows to
+     offer the way back. The list itself takes no parameters. */
+  searchParams: Promise<{ from?: string }>;
+}) {
+  const params = await searchParams;
   const user = await requireUser();
   const isAdmin = user.role === "ADMIN";
 
@@ -106,6 +114,14 @@ export default async function ProjectsPage() {
 
   return (
     <>
+      {/* Reached from Administration's Users/Projects/Issues/Bugs blocks,
+          which say so in the query string. Shown only then: this page is
+          reached from the sidebar too, where there is no Administration to go
+          back to and a control claiming otherwise would be a lie. */}
+      {params.from === "admin" ? (
+        <BackLink href="/admin" label="Back to Administration" />
+      ) : null}
+
       <div className="prio-page-header">
         <div className="prio-page-header__text">
           <h1 className="prio-page-header__title">Projects</h1>

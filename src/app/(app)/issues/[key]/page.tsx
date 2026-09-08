@@ -9,7 +9,6 @@ import { IssueAttachments } from "@/components/issues/IssueAttachments";
 import {
   AssigneeControl,
   PriorityControl,
-  SeverityControl,
   StatusControl,
 } from "@/components/issues/IssueFieldControls";
 import {
@@ -34,7 +33,6 @@ import {
   IssueTypeIcon,
   LabelChip,
   PriorityIndicator,
-  SeverityChip,
   StatusPill,
 } from "@/components/ui/Indicators";
 import {
@@ -46,7 +44,12 @@ import {
   IconWarning,
 } from "@/components/ui/Icon";
 import { issueScope, workRoleOf } from "@/lib/authz";
-import { ISSUE_TYPE_LABEL, isClosedStatus } from "@/lib/domain";
+import {
+  ISSUE_TYPE_LABEL,
+  doesDeveloperWork,
+  doesQaWork,
+  isClosedStatus,
+} from "@/lib/domain";
 import { formatDate, formatDateTime, formatRelative, isOverdue } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { requireUser, type CurrentUser } from "@/lib/session";
@@ -57,7 +60,7 @@ export const dynamic = "force-dynamic";
  * Issue detail.
  *
  * One route, and now one *shape*, for every type. A Story, a Task and a Bug
- * are the same record — summary, description, priority, severity, assignee,
+ * are the same record — summary, description, priority, assignee,
  * attachments, parent, links — and this page renders all of them the same way.
  * There is no bug-only section any more: what a bug used to be asked for
  * separately is written in the description, which every type has.
@@ -86,7 +89,6 @@ async function loadIssue(rawKey: string, user: CurrentUser) {
       description: true,
       status: true,
       priority: true,
-      severity: true,
       dueDate: true,
       createdAt: true,
       updatedAt: true,
@@ -298,18 +300,22 @@ export default async function IssueDetailPage({
 
           <div className="prio-issue__headactions">
             {/* Filing a defect off this issue is raising work, which is a
-                tester's or an administrator's act. */}
-            {workRole === "DEVELOPER" ? null : (
+                tester's or an administrator's act — and a full stack
+                developer's, who is on Testing and does raise it. */}
+            {doesQaWork(workRole) ? (
               <ReportBugDialog
                 issueId={issue.id}
                 issueKey={issue.key}
                 assigneeId={issue.assignee?.id ?? null}
                 currentUserId={user.id}
               />
-            )}
+            ) : null}
 
-            {/* Picking the work up — for themselves, never for anyone else. */}
-            {workRole === "DEVELOPER" ? (
+            {/* Picking the work up — for themselves, never for anyone else.
+                Offered to whoever does development, so a full stack developer
+                gets it as a developer does; `claimIssue` refuses a pure tester
+                whatever is drawn here. */}
+            {doesDeveloperWork(workRole) && workRole !== "ADMIN" ? (
               <ClaimIssueButton
                 issueId={issue.id}
                 issueKey={issue.key}
@@ -329,6 +335,7 @@ export default async function IssueDetailPage({
             />
 
             <IssueDetailActions
+              workRole={workRole}
               issueId={issue.id}
               issueKey={issue.key}
               reporterId={issue.reporter.id}
@@ -345,11 +352,12 @@ export default async function IssueDetailPage({
             <IssueTypeIcon type={issue.type} size={14} />
             {ISSUE_TYPE_LABEL[issue.type]}
           </span>
-          <StatusControl issueId={issue.id} status={issue.status} />
+          <StatusControl
+            issueId={issue.id}
+            status={issue.status}
+            workRole={workRole}
+          />
           <PriorityControl issueId={issue.id} priority={issue.priority} />
-          {/* Severity is a standard field, offered for every type — the same
-              control a bug has always had, no longer hidden on the others. */}
-          <SeverityControl issueId={issue.id} severity={issue.severity} />
           <AssigneeControl
             issueId={issue.id}
             assignee={issue.assignee}
@@ -520,7 +528,7 @@ export default async function IssueDetailPage({
               {/*
                * Details reads; it does not edit.
                *
-               * Status, priority, severity, assignee and the due date are all
+               * Status, priority, assignee and the due date are all
                * changed from the header above, and every one of them used to
                * appear here a second time as a second control for the same
                * field. Two live controls for one value is how a page ends up
@@ -536,18 +544,6 @@ export default async function IssueDetailPage({
               <MetaRow label="Priority">
                 <PriorityIndicator priority={issue.priority} />
               </MetaRow>
-
-              {/*
-               * Severity, read-only here like the rest of Details, editable
-               * from the header. Shown for whatever type carries one — it is a
-               * standard field now, not a bug's field, so the row appears
-               * because a severity was set and not because of the type.
-               */}
-              {issue.severity ? (
-                <MetaRow label="Severity">
-                  <SeverityChip severity={issue.severity} />
-                </MetaRow>
-              ) : null}
 
               <MetaRow label="Assignee">
                 {issue.assignee ? (

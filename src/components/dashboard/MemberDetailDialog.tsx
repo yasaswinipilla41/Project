@@ -9,7 +9,6 @@ import {
   IssueKey,
   IssueTypeIcon,
   PriorityIndicator,
-  SeverityChip,
   StatusPill,
 } from "@/components/ui/Indicators";
 import { IconUser } from "@/components/ui/Icon";
@@ -44,7 +43,6 @@ function IssueCard({ issue }: { issue: MemberDetailIssue }) {
         <span className="prio-text-muted">{issue.project.name}</span>
         <StatusPill status={issue.status} />
         <PriorityIndicator priority={issue.priority} />
-        {issue.severity ? <SeverityChip severity={issue.severity} /> : null}
         {issue.dueDate ? (
           <span className="prio-text-muted">
             Due {formatDateCompact(issue.dueDate)}

@@ -223,8 +223,6 @@
   --prio-status-cancelled-bg: #2e0d17;
 
   --prio-priority-high: #f5a63a;
-  --prio-severity-critical: #ffb3b6;
-  --prio-severity-major: #ffd79a;
 
   /* ----------------------------------------------------------- wordmark */
   --prio-logo-text: #ffffff;
@@ -412,8 +410,6 @@
     --prio-status-cancelled-fg: #e0a3b4;
     --prio-status-cancelled-bg: #2e0d17;
     --prio-priority-high: #f5a63a;
-    --prio-severity-critical: #ffb3b6;
-    --prio-severity-major: #ffd79a;
 
     --prio-logo-text: #ffffff;
     --prio-logo-muted: var(--prio-chrome-text-muted);

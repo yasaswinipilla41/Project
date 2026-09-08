@@ -10,7 +10,7 @@ import type { IssueType } from "@prisma/client";
  * filled in the way a Task was.
  *
  * A Story, a Task and a Bug are now the same record: title, description,
- * priority, severity, assignee, attachments, parent and links. The type says
+ * priority, assignee, attachments, parent and links. The type says
  * which of the three it is and nothing else. Everything a bug reporter used to
  * be prompted for separately belongs in the description, which every type has.
  *

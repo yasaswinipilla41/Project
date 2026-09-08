@@ -4,7 +4,7 @@ import { IssueFilters } from "@/components/issues/IssueFilters";
 import { IssueTable } from "@/components/issues/IssueTable";
 import { filterOptions, listIssues } from "@/server/queries/issues";
 import { parseIssueParams, type SearchParams } from "@/server/queries/params";
-import { projectScope } from "@/lib/authz";
+import { projectScope, workRoleOf } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 
@@ -57,7 +57,7 @@ export default async function ProjectListPage({
         projects={options.projects}
         /* The project is fixed by the route, so the bar does not offer one to
            choose. Every other control on it — search, status, type, priority,
-           severity, assignee, reporter, labels, resolution — is untouched. */
+           assignee, reporter, labels, resolution — is untouched. */
         showProjectFilter={false}
         people={options.people}
         labels={options.labels}
@@ -76,7 +76,11 @@ export default async function ProjectListPage({
         dir={filters.dir ?? "desc"}
         emptyTitle="No issues found"
         emptyBody="No issue in this project matches these filters. Clear them to see everything here."
-        currentUser={{ id: user.id, isAdmin: user.role === "ADMIN" }}
+        currentUser={{
+          id: user.id,
+          isAdmin: user.role === "ADMIN",
+          workRole: await workRoleOf(user),
+        }}
       />
     </>
   );

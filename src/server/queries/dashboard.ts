@@ -1,4 +1,4 @@
-import type { IssueStatus, IssueType, Priority, Role, Severity } from "@prisma/client";
+import type { IssueStatus, IssueType, Priority, Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { dueWindow, monthWindow } from "@/lib/format";
 import { accessibleProjectIds, workRoleOf } from "@/lib/authz";
@@ -42,7 +42,6 @@ export interface DashboardIssue {
   type: IssueType;
   status: IssueStatus;
   priority: Priority;
-  severity: Severity | null;
   dueDate: Date | null;
   updatedAt: Date;
   project: { key: string; name: string };
@@ -147,7 +146,6 @@ export interface DashboardData {
   byStatus: Record<string, number>;
   byPriority: Record<string, number>;
   byType: Record<string, number>;
-  bySeverity: Record<string, number>;
   activity: DashboardActivity[];
   /** Present only for admins. */
   org: {
@@ -156,7 +154,7 @@ export interface DashboardData {
     admins: number;
     totalIssues: number;
     openBugs: number;
-    criticalOpen: number;
+    urgentOpen: number;
     unassignedOpen: number;
     workload: { id: string; name: string; image: string | null; open: number }[];
   } | null;
@@ -181,7 +179,7 @@ export interface DashboardData {
     bugsReportedByMe: number;
     awaitingVerification: number;
     readyForQa: number;
-    criticalOpen: number;
+    urgentOpen: number;
     resolvedThisWeek: number;
   } | null;
 }
@@ -222,7 +220,6 @@ const ISSUE_SELECT = {
   type: true,
   status: true,
   priority: true,
-  severity: true,
   dueDate: true,
   updatedAt: true,
   project: { select: { key: true, name: true } },
@@ -268,7 +265,6 @@ export async function loadDashboard(user: CurrentUser): Promise<DashboardData> {
     byStatusRows,
     byPriorityRows,
     byTypeRows,
-    bySeverityRows,
     projectRows,
     projectStatRows,
     assignedIssues,
@@ -292,11 +288,6 @@ export async function loadDashboard(user: CurrentUser): Promise<DashboardData> {
     prisma.issue.groupBy({
       by: ["type"],
       where: scope,
-      _count: { _all: true },
-    }),
-    prisma.issue.groupBy({
-      by: ["severity"],
-      where: { ...scope, type: "BUG" },
       _count: { _all: true },
     }),
     prisma.project.findMany({
@@ -331,14 +322,13 @@ export async function loadDashboard(user: CurrentUser): Promise<DashboardData> {
         status: open,
         /*
          * "Needs attention" means someone has to do something, so every arm
-         * here is a real workflow state rather than a severity opinion:
+         * here is a real workflow state rather than an opinion about impact:
          * overdue, blocked or failed QA, and waiting on QA. `testResult`
          * BLOCKED and FAILED are the values `TestResult` already carries —
          * no new concept was invented to fill this section.
          */
         OR: [
           { priority: { in: ["URGENT", "HIGH"] } },
-          { severity: "CRITICAL" },
           { dueDate: { lt: w.now } },
           { testResult: { in: ["BLOCKED", "FAILED"] } },
           { status: "IN_REVIEW" },
@@ -619,7 +609,6 @@ export async function loadDashboard(user: CurrentUser): Promise<DashboardData> {
     byStatus: tally(byStatusRows, "status"),
     byPriority: tally(byPriorityRows, "priority"),
     byType: tally(byTypeRows, "type"),
-    bySeverity: tally(bySeverityRows, "severity"),
     activity: activityRows,
     org,
     newUsers,
@@ -634,7 +623,6 @@ async function countBundle(
   w: ReturnType<typeof windows>,
 ) {
   const open = { in: [...OPEN_STATUSES] };
-  const closed = { in: [...CLOSED_STATUSES] };
   const mine = { ...scope, assigneeId: user.id };
 
   const [
@@ -660,7 +648,7 @@ async function countBundle(
     dueThisWeek,
     bugsReportedByMe,
     awaitingVerification,
-    criticalOpen,
+    urgentOpen,
     resolvedThisWeek,
     readyForQa,
   ] = await Promise.all([
@@ -716,7 +704,20 @@ async function countBundle(
        to them; this is what they have picked up, and a tester's own queue is
        both — so My work shows the pair rather than only the first half. */
     prisma.issue.count({ where: { ...mine, status: "IN_QA" } }),
-    prisma.issue.count({ where: { ...mine, status: closed } }),
+    /*
+     * Completed means DONE, and nothing else.
+     *
+     * This counted every closed status — DONE, REJECTED and CANCELLED — while
+     * the tile beneath it links to `status=DONE`, so anybody holding rejected
+     * or cancelled work saw a figure larger than the list it opened. Two
+     * definitions of "completed" on one tile, which is the fault
+     * `completed-metric.test.ts` already pins for the organization-wide card
+     * and for `kpi.completed`; the personal one was missed.
+     *
+     * Rejected is "not an issue" and cancelled is work abandoned. Neither was
+     * finished, and neither belongs under a heading that says it was.
+     */
+    prisma.issue.count({ where: { ...mine, status: "DONE" } }),
     prisma.issue.count({
       where: { ...mine, status: open, dueDate: { lt: w.now } },
     }),
@@ -751,7 +752,7 @@ async function countBundle(
       where: { ...scope, reporterId: user.id, type: "BUG", status: "IN_REVIEW" },
     }),
     prisma.issue.count({
-      where: { ...scope, type: "BUG", severity: "CRITICAL", status: open },
+      where: { ...scope, type: "BUG", priority: "URGENT", status: open },
     }),
     prisma.issue.count({
       where: { ...scope, type: "BUG", completedAt: { gte: w.weekAgo } },
@@ -773,7 +774,12 @@ async function countBundle(
     prisma.issue.count({ where: { ...mine, status: "IN_REVIEW" } }),
   ]);
 
-  const isTester = (await workRoleOf(user)) === "QA";
+  /* Does this person check work? A full stack developer does — they are on
+     Testing — so the panel is theirs as much as a pure tester's. An
+     administrator is not a tester; nothing is withheld from them, but their
+     dashboard is the organization's rather than a queue of their own. */
+  const role = await workRoleOf(user);
+  const isTester = role === "QA" || role === "FULLSTACK";
 
   return {
     kpi: {
@@ -814,7 +820,7 @@ async function countBundle(
             bugsReportedByMe,
             awaitingVerification,
             readyForQa,
-            criticalOpen,
+            urgentOpen,
             resolvedThisWeek,
           }
         : null,
@@ -825,7 +831,7 @@ async function countBundle(
 async function loadOrgStats() {
   const open = { in: [...OPEN_STATUSES] };
 
-  const [users, activeUsers, admins, totalIssues, openBugs, criticalOpen, unassignedOpen, workloadRows] =
+  const [users, activeUsers, admins, totalIssues, openBugs, urgentOpen, unassignedOpen, workloadRows] =
     await Promise.all([
       prisma.user.count(),
       prisma.user.count({ where: { isActive: true } }),
@@ -833,7 +839,7 @@ async function loadOrgStats() {
       prisma.issue.count(),
       prisma.issue.count({ where: { type: "BUG", status: open } }),
       prisma.issue.count({
-        where: { type: "BUG", severity: "CRITICAL", status: open },
+        where: { type: "BUG", priority: "URGENT", status: open },
       }),
       prisma.issue.count({ where: { assigneeId: null, status: open } }),
       prisma.issue.groupBy({
@@ -861,7 +867,7 @@ async function loadOrgStats() {
     admins,
     totalIssues,
     openBugs,
-    criticalOpen,
+    urgentOpen,
     unassignedOpen,
     workload: workloadRows.flatMap((row) => {
       const person = row.assigneeId ? byId.get(row.assigneeId) : undefined;
@@ -946,7 +952,6 @@ function emptyDashboard(
     byStatus: {},
     byPriority: {},
     byType: {},
-    bySeverity: {},
     activity: [],
     org: null,
     newUsers,

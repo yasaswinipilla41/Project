@@ -41,7 +41,7 @@ export default async function SignUpPage() {
               </span>
               <span>
                 Bug reports that record where the problem was found, its
-                environment and its severity — not just a coloured label.
+                environment and how soon it matters — not just a coloured label.
               </span>
             </li>
             <li className="prio-auth__point">

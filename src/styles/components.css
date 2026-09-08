@@ -612,38 +612,6 @@
   background: var(--prio-status-cancelled-dot);
 }
 
-/* Severity chips — visually distinct from priority so the two never blur. */
-.prio-severity {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--prio-space-2);
-  height: 20px;
-  padding: 0 var(--prio-space-3);
-  border-radius: var(--prio-radius-pill);
-  font-size: var(--prio-text-2xs);
-  font-weight: var(--prio-weight-bold);
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.prio-severity[data-severity="CRITICAL"] {
-  background: var(--prio-severity-critical-bg);
-  color: var(--prio-severity-critical);
-}
-.prio-severity[data-severity="MAJOR"] {
-  background: var(--prio-severity-major-bg);
-  color: var(--prio-severity-major);
-}
-.prio-severity[data-severity="MINOR"] {
-  background: var(--prio-severity-minor-bg);
-  color: var(--prio-severity-minor);
-}
-.prio-severity[data-severity="TRIVIAL"] {
-  background: var(--prio-severity-trivial-bg);
-  color: var(--prio-severity-trivial);
-}
-
 /* Priority indicator — bar glyph + label. */
 .prio-priority {
   display: inline-flex;
@@ -2655,6 +2623,45 @@ a.prio-stat:focus-visible {
 .prio-labelpicker__option[data-create] {
   color: var(--prio-text-link);
   font-weight: var(--prio-weight-medium);
+}
+
+/* ------------------------------------------------------- search select */
+/*
+ * The chip's own remove control, and the two-line option row. Everything else
+ * this control needs — the field, the floating list, the chips — is borrowed
+ * from `.prio-labelpicker` and `.prio-chipset` above rather than restated, so
+ * a searchable field in Administration looks like the one on the Create
+ * dialog because it *is* the one on the Create dialog.
+ */
+.prio-chipset__remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  margin-left: var(--prio-space-1);
+  padding: 0;
+  border: none;
+  border-radius: var(--prio-radius-pill);
+  background: none;
+  color: inherit;
+  font-size: var(--prio-text-sm);
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.65;
+}
+
+.prio-chipset__remove:hover {
+  opacity: 1;
+  background: var(--prio-bg-subtle);
+}
+
+.prio-searchselect__text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  text-align: left;
 }
 
 /* -------------------------------------------------------- link button */

@@ -4,7 +4,6 @@ import {
   IssueKey,
   IssueTypeIcon,
   PriorityIndicator,
-  SeverityChip,
   StatusPill,
 } from "@/components/ui/Indicators";
 import { IconBug, IconIssues, IconWarning } from "@/components/ui/Icon";
@@ -13,7 +12,6 @@ import {
   ISSUE_STATUSES,
   OPEN_STATUSES,
   PRIORITIES,
-  SEVERITIES,
 } from "@/lib/domain";
 import { barWidth, formatRelative, percent } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
@@ -46,7 +44,6 @@ export async function InsightsPanel({
   const [
     byStatus,
     byPriority,
-    bugsBySeverity,
     byAssignee,
     byProject,
     byLabel,
@@ -65,11 +62,6 @@ export async function InsightsPanel({
     prisma.issue.groupBy({
       by: ["priority"],
       where: scope,
-      _count: { _all: true },
-    }),
-    prisma.issue.groupBy({
-      by: ["severity"],
-      where: { ...scope, type: "BUG" },
       _count: { _all: true },
     }),
     prisma.issue.groupBy({
@@ -115,7 +107,6 @@ export async function InsightsPanel({
         title: true,
         status: true,
         priority: true,
-        severity: true,
         createdAt: true,
       },
     }),
@@ -158,7 +149,6 @@ export async function InsightsPanel({
   const done = statusCount("DONE");
   const cancelled = statusCount("CANCELLED");
 
-  const bugTotal = bugsBySeverity.reduce((sum, r) => sum + r._count._all, 0);
   const openBugs = byProject
     .filter((r) => r.type === "BUG")
     .reduce((sum, r) => sum + r._count._all, 0);
@@ -197,10 +187,10 @@ export async function InsightsPanel({
         <div className="col-6 col-xl-3">
           <Stat
             label="Bugs"
-            value={bugTotal}
+            value={openBugs}
             icon={<IconBug size={13} />}
-            tone={bugTotal > 0 ? "danger" : "default"}
-            hint={`${openBugs} tracked in total`}
+            tone={openBugs > 0 ? "danger" : "default"}
+            hint="tracked in total"
           />
         </div>
         <div className="col-6 col-xl-3">
@@ -300,43 +290,6 @@ export async function InsightsPanel({
                   );
                 })}
               </ul>
-            </CardBody>
-          </Card>
-        </div>
-
-        {/* ------------------------------------------------ bug severity */}
-        <div className="col-12 col-xl-6">
-          <Card style={{ height: "100%" }}>
-            <CardBody>
-              <h2 className="prio-issue__section-title">
-                <IconBug size={14} />
-                Bugs by severity
-              </h2>
-              {bugTotal === 0 ? (
-                <p className="prio-text-muted">No bugs reported.</p>
-              ) : (
-                <ul className="prio-distribution">
-                  {SEVERITIES.map((severity) => {
-                    const count =
-                      bugsBySeverity.find((r) => r.severity === severity)?._count
-                        ._all ?? 0;
-                    return (
-                      <li key={severity} className="prio-distribution__row">
-                        <span className="prio-distribution__label">
-                          <SeverityChip severity={severity} />
-                        </span>
-                        <span className="prio-distribution__track" aria-hidden>
-                          <span
-                            className="prio-distribution__bar"
-                            style={{ width: barWidth(count, bugTotal) }}
-                          />
-                        </span>
-                        <span className="prio-distribution__value">{count}</span>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
             </CardBody>
           </Card>
         </div>
@@ -508,7 +461,6 @@ export async function InsightsPanel({
                     <span className="prio-relatedrow__title prio-truncate">
                       {bug.title}
                     </span>
-                    {bug.severity ? <SeverityChip severity={bug.severity} /> : null}
                     <PriorityIndicator priority={bug.priority} showLabel={false} />
                     <StatusPill status={bug.status} />
                     <span className="prio-text-muted prio-searchresults__project">

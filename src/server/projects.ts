@@ -365,7 +365,6 @@ async function copyProjectIssues(
       description: true,
       status: true,
       priority: true,
-      severity: true,
       assigneeId: true,
       reporterId: true,
       dueDate: true,
@@ -404,7 +403,6 @@ async function copyProjectIssues(
       description: issue.description,
       status: issue.status,
       priority: issue.priority,
-      severity: issue.severity,
       /* Only if they can still be assigned here. Membership is copied, so in
          practice they can — but an assignee who is not a member of the project
          they are assigned in is precisely what `createIssue` refuses, and a

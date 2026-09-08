@@ -2,21 +2,20 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
-import type { IssueStatus, IssueType, Priority, Severity } from "@prisma/client";
+import type { IssueStatus, IssueType, Priority } from "@prisma/client";
 import { Dialog } from "@/components/ui/Dialog";
 import { Alert, Button } from "@/components/ui/primitives";
 import { IssueTypeIcon } from "@/components/ui/Indicators";
 import { useToast } from "@/components/ui/Toast";
 import { IconWarning } from "@/components/ui/Icon";
 import {
-  ISSUE_STATUSES,
   ISSUE_TYPES,
   ISSUE_TYPE_LABEL,
   PRIORITIES,
   PRIORITY_LABEL,
-  SEVERITIES,
-  SEVERITY_LABEL,
   STATUS_LABEL,
+  allowedStatusesFor,
+  type WorkRole,
 } from "@/lib/domain";
 import { DESCRIPTION_PLACEHOLDER } from "@/lib/issueTypeForms";
 import { cloneIssue, issueCloneDraft, type IssueCloneDraft } from "@/server/issues";
@@ -41,7 +40,7 @@ import type { FieldErrors } from "@/server/schemas";
  * and not before.
  *
  * The fields offered here are the standard ones every type shares — summary,
- * description, type, priority, severity, assignee — because a clone of a Bug
+ * description, type, priority, assignee — because a clone of a Bug
  * and a clone of a Story are the same form, exactly as creating them is.
  */
 
@@ -53,10 +52,13 @@ interface Member {
 export function CloneIssueDialog({
   issueId,
   issueKey,
+  workRole,
   onClose,
 }: {
   issueId: string;
   issueKey: string;
+  /** Cloning files new work, so it offers the statuses filing offers. */
+  workRole: WorkRole;
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -82,7 +84,6 @@ export function CloneIssueDialog({
     type: "TASK" as IssueType,
     status: "BACKLOG" as IssueStatus,
     priority: "MEDIUM" as Priority,
-    severity: "" as Severity | "",
     assigneeId: "",
   });
 
@@ -102,7 +103,6 @@ export function CloneIssueDialog({
         type: result.data.type,
         status: result.data.status,
         priority: result.data.priority,
-        severity: result.data.severity ?? "",
         assigneeId: result.data.assigneeId ?? "",
       });
     });
@@ -148,7 +148,6 @@ export function CloneIssueDialog({
       description: form.description,
       status: form.status,
       priority: form.priority,
-      severity: form.severity === "" ? null : form.severity,
       assigneeId: form.assigneeId,
       labelIds: draft.labelIds,
     });
@@ -389,7 +388,7 @@ export function CloneIssueDialog({
               }))
             }
           >
-            {ISSUE_STATUSES.map((option) => (
+            {allowedStatusesFor(workRole, null).map((option) => (
               <option key={option} value={option}>
                 {STATUS_LABEL[option]}
               </option>
@@ -415,30 +414,6 @@ export function CloneIssueDialog({
             {PRIORITIES.map((option) => (
               <option key={option} value={option}>
                 {PRIORITY_LABEL[option]}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="prio-field">
-          <label className="prio-label" htmlFor="clone-severity">
-            Severity
-          </label>
-          <select
-            id="clone-severity"
-            className="prio-select"
-            value={form.severity}
-            onChange={(event) =>
-              setForm((prev) => ({
-                ...prev,
-                severity: event.target.value as Severity | "",
-              }))
-            }
-          >
-            <option value="">Not set</option>
-            {SEVERITIES.map((option) => (
-              <option key={option} value={option}>
-                {SEVERITY_LABEL[option]}
               </option>
             ))}
           </select>

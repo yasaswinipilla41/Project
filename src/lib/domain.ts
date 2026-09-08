@@ -104,6 +104,127 @@ export const STATUS_TRANSITIONS: Record<IssueStatus, readonly IssueStatus[]> = {
   CANCELLED: ["BACKLOG", "TODO", "REOPENED"],
 };
 
+/* ------------------------------------------------ status, by who is asking */
+
+/**
+ * The statuses each half of the job may set.
+ *
+ * Two lists, not one per role name, because a Full Stack Developer holds both
+ * halves and a table keyed by name would need a fourth row that is only ever
+ * the union of two others — and a fifth the next time the combination changes.
+ * `allowedStatusesFor` composes them with `doesQaWork` / `doesDeveloperWork`,
+ * the same question the rest of the model asks.
+ *
+ *   DEVELOPMENT  Backlog, New, In Progress, Ready for QA, Reopen. Building
+ *                work and handing it over. Declaring it tested or finished
+ *                would be marking their own homework.
+ *   QA           Ready for QA, In QA, Done, Reopen. Testing work, and saying
+ *                what the testing found.
+ *
+ * Each list is what that half of the job is *for*, rather than everything
+ * except the other half's hand-off statuses. Two consequences are deliberate.
+ * Moving work back into the build — Backlog, New, In Progress — is not a
+ * tester's call: they report what they found and hand it back, and Reopen is
+ * how they say so. And neither half writes work off: Reject / Not an Issue and
+ * Cancelled are an administrator's, who has every status.
+ *
+ * This is the authorization, read by everything that offers or accepts a
+ * status — the issue page's menu, the board's columns and card menus, the
+ * create and clone forms, and `updateIssue` itself — so a control that is
+ * hidden and a request that is refused agree by construction.
+ * `STATUS_TRANSITIONS` below answers a different question, which moves make
+ * sense from where, and neither substitutes for the other.
+ */
+export const DEVELOPMENT_STATUSES = [
+  "BACKLOG",
+  "TODO",
+  "IN_PROGRESS",
+  "IN_REVIEW",
+  "REOPENED",
+] as const satisfies readonly IssueStatus[];
+
+export const QA_STATUSES = [
+  "IN_REVIEW",
+  "IN_QA",
+  "DONE",
+  "REOPENED",
+] as const satisfies readonly IssueStatus[];
+
+/**
+ * The statuses this person may put *this* issue into.
+ *
+ * The union of the halves they hold — so a Full Stack Developer, who builds
+ * and checks, gets both — plus one rule that belongs to testing alone: Done is
+ * what testing concluded, so somebody whose only claim to it is their QA half
+ * may set it from In QA and nowhere else. A tester cannot mark something done
+ * that was never tested; that is the intended workflow expressed as the one
+ * move that carries a verdict.
+ *
+ * The rule does not touch anybody who also builds, and never touches an
+ * administrator: closing work straight from Ready for QA is still open to
+ * both, which is the path several surfaces have always used.
+ *
+ * `current` is null when work is being created rather than moved. Creation is
+ * not a transition — an issue may be filed in whatever state the person filing
+ * it says it is in — so only the lists apply.
+ */
+export function allowedStatusesFor(
+  role: WorkRole,
+  current: IssueStatus | null = null,
+): readonly IssueStatus[] {
+  if (role === "ADMIN") return ISSUE_STATUSES;
+
+  const allowed = ISSUE_STATUSES.filter(
+    (status) =>
+      (doesDeveloperWork(role) &&
+        (DEVELOPMENT_STATUSES as readonly IssueStatus[]).includes(status)) ||
+      (doesQaWork(role) && (QA_STATUSES as readonly IssueStatus[]).includes(status)),
+  );
+
+  if (doesDeveloperWork(role) || current === null) return allowed;
+
+  /* Staying put is not a verdict: refusing Done on something already Done
+     would refuse every other edit to finished work. */
+  return allowed.filter(
+    (status) => status !== "DONE" || current === "IN_QA" || current === "DONE",
+  );
+}
+
+/** May this person put this issue into that status? */
+export function canSetStatus(
+  role: WorkRole,
+  current: IssueStatus | null,
+  next: IssueStatus,
+): boolean {
+  return allowedStatusesFor(role, current).includes(next);
+}
+
+/**
+ * Why a status was refused, in the words the person needs.
+ *
+ * Kept beside the rule so the sentence and the check cannot drift apart, and
+ * so the server and any interface that explains itself say the same thing.
+ * Naming the one status they were refused, and what they may say instead, is
+ * more use than "forbidden".
+ */
+export function statusRefusalReason(
+  role: WorkRole,
+  current: IssueStatus | null,
+  next: IssueStatus,
+): string {
+  if (next === "DONE" && allowedStatusesFor(role).includes("DONE")) {
+    return "Done is what testing concluded — put this into In QA first.";
+  }
+  if (next === "IN_QA" || next === "DONE") {
+    return "Only a tester or an administrator can put work into QA or mark it done.";
+  }
+
+  const names = allowedStatusesFor(role, current)
+    .map((status) => STATUS_LABEL[status])
+    .join(", ");
+  return `You can move work to ${names}. ${STATUS_LABEL[next]} is someone else's call.`;
+}
+
 /**
  * May this issue move from `from` to `to`?
  *
@@ -153,7 +274,13 @@ export const PRIORITY_WEIGHT: Record<Priority, number> = {
   NONE: 0,
 };
 
-// ---------------------------------------------------------------- severity
+/* ---------------------------------------------------------------- severity
+
+   Severity is no longer a field anybody sets: the control is gone from every
+   form, filter, table and chart. What is left here is the vocabulary needed to
+   *read* it — the activity log is append-only, so entries that recorded a
+   severity change years of work ago still have to render as "Major" rather
+   than "MAJOR". The column and its values are untouched in the database. */
 
 export const SEVERITIES = [
   "CRITICAL",
@@ -200,25 +327,6 @@ export const SEVERITY_LABEL: Record<Severity, string> = {
   MAJOR: "Major",
   MINOR: "Minor",
   TRIVIAL: "Trivial",
-};
-
-export const SEVERITY_WEIGHT: Record<Severity, number> = {
-  CRITICAL: 4,
-  MAJOR: 3,
-  MINOR: 2,
-  TRIVIAL: 1,
-};
-
-/**
- * Severity describes impact, priority describes scheduling urgency. They are
- * deliberately independent — a Critical bug can carry Low priority and vice
- * versa. Nothing in Prio derives one from the other.
- */
-export const SEVERITY_DESCRIPTION: Record<Severity, string> = {
-  CRITICAL: "Blocks core work or loses data. No workaround.",
-  MAJOR: "A key function is broken. A workaround exists.",
-  MINOR: "Limited impact on a non-critical path.",
-  TRIVIAL: "Cosmetic or very low impact.",
 };
 
 // -------------------------------------------------------------- issue type
@@ -284,6 +392,9 @@ export function isBug(type: IssueType): boolean {
 
 // -------------------------------------------------------------------- role
 
+/** The account roles, in the order a chooser should offer them. */
+export const ROLES = ["MEMBER", "ADMIN"] as const satisfies readonly Role[];
+
 export const ROLE_LABEL: Record<Role, string> = {
   ADMIN: "Admin",
   MEMBER: "Member",
@@ -298,25 +409,63 @@ export const ROLE_DESCRIPTION: Record<Role, string> = {
  * What somebody does here, as opposed to what their account is.
  *
  * `Role` is the account: ADMIN or MEMBER, and that is what the People screen
- * grants. The job is narrower — a member on the Testing team tests, a member
- * who is not builds — and it is the job that decides who may raise work, hand
- * it to QA, or call it done. `workRoleOf` in `lib/authz` is the one place that
- * derives it; the labels live here because the badges that show it are client
- * components and must not pull the database in.
+ * grants. The job is narrower, and it is the job that decides who may raise
+ * work, hand it to QA, or call it done. `workRoleOf` in `lib/authz` is the one
+ * place that derives it; the labels live here because the badges that show it
+ * are client components and must not pull the database in.
+ *
+ * Two teams answer it between them:
+ *
+ *   Testing only                 QA
+ *   Development only             DEVELOPER
+ *   both                         FULLSTACK
+ *   neither                      DEVELOPER — the long-standing default
+ *
+ * FULLSTACK is not a third kind of person. It is the two jobs held at once, so
+ * everything below asks what somebody *does* rather than which name they carry
+ * — see `doesQaWork` and `doesDeveloperWork`. Code that branches on the name
+ * would have to grow a case here every time the combination changes; code that
+ * asks about the capability does not.
  */
-export type WorkRole = "ADMIN" | "QA" | "DEVELOPER";
+export type WorkRole = "ADMIN" | "QA" | "DEVELOPER" | "FULLSTACK";
 
 export const WORK_ROLE_LABEL: Record<WorkRole, string> = {
   ADMIN: "Admin",
   QA: "QA member",
   DEVELOPER: "Developer",
+  FULLSTACK: "Full Stack Developer",
 };
 
 export const WORK_ROLE_DESCRIPTION: Record<WorkRole, string> = {
   ADMIN: "Full access. Manages projects, members, sprints and assignment.",
   QA: "Raises work, verifies what developers hand back, and closes it.",
   DEVELOPER: "Picks up work in their projects and hands it back for QA.",
+  FULLSTACK:
+    "Builds and verifies: picks work up, hands it back, and checks what comes in.",
 };
+
+/* ------------------------------------------------------------ capabilities */
+
+/**
+ * May this person raise work and verify it — the tester's half of the job?
+ *
+ * Asked instead of `role === "QA"` everywhere, because a Full Stack Developer
+ * does QA work too and a check written against the name silently excludes them.
+ * An administrator is included: nothing is withheld from them.
+ */
+export function doesQaWork(role: WorkRole): boolean {
+  return role === "ADMIN" || role === "QA" || role === "FULLSTACK";
+}
+
+/**
+ * May this person take development on — pick work up, build it, hand it back?
+ *
+ * The mirror of `doesQaWork`. A pure tester is the only working role this is
+ * false for; a Full Stack Developer builds as well as checks.
+ */
+export function doesDeveloperWork(role: WorkRole): boolean {
+  return role === "ADMIN" || role === "DEVELOPER" || role === "FULLSTACK";
+}
 
 // ------------------------------------------------------------------ guards
 

@@ -12,7 +12,6 @@ import {
   IssueKey,
   IssueTypeIcon,
   PriorityIndicator,
-  SeverityChip,
   StatusPill,
 } from "@/components/ui/Indicators";
 import {
@@ -46,7 +45,6 @@ import {
   OPEN_STATUSES,
   PRIORITIES,
   PRIORITY_LABEL,
-  SEVERITIES,
 } from "@/lib/domain";
 import { barWidth, dueWindow, formatRelative, percent } from "@/lib/format";
 import { listActivity } from "@/server/queries/activity";
@@ -189,7 +187,6 @@ export default async function ProjectOverviewPage({
   const [
     byStatus,
     byPriority,
-    bySeverity,
     byType,
     byAssignee,
     unassignedOpen,
@@ -208,11 +205,6 @@ export default async function ProjectOverviewPage({
       prisma.issue.groupBy({
         by: ["priority"],
         where: { projectId: project.id },
-        _count: { _all: true },
-      }),
-      prisma.issue.groupBy({
-        by: ["severity"],
-        where: { projectId: project.id, type: "BUG" },
         _count: { _all: true },
       }),
       prisma.issue.groupBy({
@@ -299,7 +291,6 @@ export default async function ProjectOverviewPage({
           title: true,
           status: true,
           priority: true,
-          severity: true,
           createdAt: true,
         },
       }),
@@ -470,7 +461,6 @@ export default async function ProjectOverviewPage({
   const inProgress = statusCount("IN_PROGRESS");
   const remaining = total - done;
 
-  const bugTotal = bySeverity.reduce((sum, r) => sum + r._count._all, 0);
 
   const [overdue, dueToday, dueThisWeek, upcoming, noDueDate] = dueCounts;
 
@@ -623,10 +613,10 @@ export default async function ProjectOverviewPage({
         <div className="col-12 col-sm-6 col-xl-3">
           <Stat
             label="Bugs"
-            value={bugTotal}
+            value={typeCount("BUG")}
             icon={<IconBug size={13} />}
-            tone={bugTotal > 0 ? "danger" : "default"}
-            hint="All severities"
+            tone={typeCount("BUG") > 0 ? "danger" : "default"}
+            hint="Defects in this project"
           />
         </div>
         <div className="col-12 col-sm-6 col-xl-3">
@@ -1087,34 +1077,6 @@ export default async function ProjectOverviewPage({
           </CardBody>
         </Card>
 
-        {/* -------------------------------------------------- bug severity */}
-        <Card className="prio-issue__section">
-          <CardBody>
-            <h2 className="prio-issue__section-title">
-              Bug severity distribution
-            </h2>
-            {bugTotal === 0 ? (
-              <p className="prio-text-muted">No bugs reported.</p>
-            ) : (
-              <ul className="prio-distribution">
-                {SEVERITIES.map((severity) => {
-                  const count =
-                    bySeverity.find((r) => r.severity === severity)?._count
-                      ._all ?? 0;
-                  return (
-                    <li key={severity} className="prio-distribution__row">
-                      <span className="prio-distribution__label">
-                        <SeverityChip severity={severity} />
-                      </span>
-                      <span className="prio-distribution__value">{count}</span>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </CardBody>
-        </Card>
-
         {/* ----------------------------------------------- recently updated */}
         <Card className="prio-issue__section">
           <CardBody>
@@ -1193,9 +1155,6 @@ export default async function ProjectOverviewPage({
                     </span>
                     <span className="prio-bugrow__meta">
                       <PriorityIndicator priority={bug.priority} />
-                      {bug.severity ? (
-                        <SeverityChip severity={bug.severity} />
-                      ) : null}
                       <StatusPill status={bug.status} />
                     </span>
                   </Link>

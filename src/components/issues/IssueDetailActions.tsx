@@ -8,6 +8,7 @@ import { useToast } from "@/components/ui/Toast";
 import { IconCopy, IconTrash, IconWarning } from "@/components/ui/Icon";
 import { CloneIssueDialog } from "@/components/issues/CloneIssueDialog";
 import { deleteIssue } from "@/server/issues";
+import type { WorkRole } from "@/lib/domain";
 
 /**
  * Clone and Delete, from the issue's own page.
@@ -30,12 +31,15 @@ export function IssueDetailActions({
   reporterId,
   currentUserId,
   isAdmin,
+  workRole,
 }: {
   issueId: string;
   issueKey: string;
   reporterId: string;
   currentUserId: string;
   isAdmin: boolean;
+  /** Cloning files new work; the dialog offers the statuses that allows. */
+  workRole: WorkRole;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -83,6 +87,7 @@ export function IssueDetailActions({
 
       {cloning ? (
         <CloneIssueDialog
+          workRole={workRole}
           issueId={issueId}
           issueKey={issueKey}
           onClose={() => setCloning(false)}

@@ -9,7 +9,6 @@ import { ShareSheetDialog } from "@/components/issues/ShareSheetDialog";
 import {
   IssueTypeIcon,
   PriorityIndicator,
-  SeverityChip,
   StatusPill,
 } from "@/components/ui/Indicators";
 import {
@@ -25,7 +24,6 @@ import {
   ISSUE_TYPES,
   ISSUE_TYPE_LABEL,
   PRIORITIES,
-  SEVERITIES,
 } from "@/lib/domain";
 
 /**
@@ -55,7 +53,6 @@ export interface IssueFiltersProps {
   showProjectFilter?: boolean;
   /** Hides the type filter on surfaces locked to one type, e.g. /bugs. */
   showTypeFilter?: boolean;
-  showSeverityFilter?: boolean;
   currentUserId: string;
   total: number;
   /** Shows the Export Excel button — only the main /issues surface opts in. */
@@ -139,7 +136,6 @@ export function IssueFilters({
   labels,
   showProjectFilter = true,
   showTypeFilter = true,
-  showSeverityFilter = true,
   currentUserId,
   total,
   enableExport = false,
@@ -235,7 +231,6 @@ export function IssueFilters({
     values("type").length +
     values("status").length +
     values("priority").length +
-    values("severity").length +
     values("assignee").length +
     values("reporter").length +
     values("label").length +
@@ -384,19 +379,6 @@ export function IssueFilters({
             node: <PriorityIndicator priority={p} />,
           }))}
         />
-
-        {showSeverityFilter ? (
-          <FilterMenu
-            label="Severity"
-            paramKey="severity"
-            selected={values("severity")}
-            onToggle={toggle}
-            options={SEVERITIES.map((s) => ({
-              value: s,
-              node: <SeverityChip severity={s} />,
-            }))}
-          />
-        ) : null}
 
         <FilterMenu
           label="Assignee"

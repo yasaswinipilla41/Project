@@ -6,10 +6,10 @@ import { Button } from "@/components/ui/primitives";
 import { Dialog } from "@/components/ui/Dialog";
 import { IconBug } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/Toast";
-import { PRIORITIES, PRIORITY_LABEL, SEVERITIES, SEVERITY_LABEL } from "@/lib/domain";
+import { PRIORITIES, PRIORITY_LABEL } from "@/lib/domain";
 import { reportBug } from "@/server/issues";
 import type { FieldErrors } from "@/server/schemas";
-import type { Priority, Severity } from "@prisma/client";
+import type { Priority } from "@prisma/client";
 
 /**
  * "Report a problem" — a tester filing a bug against the work under test.
@@ -43,7 +43,6 @@ export function ReportBugDialog({
   const [title, setTitle] = useState("");
   const [affectedModule, setAffectedModule] = useState("");
   const [priority, setPriority] = useState<Priority>("MEDIUM");
-  const [severity, setSeverity] = useState<Severity | "">("");
 
   if (assigneeId === currentUserId) return null;
 
@@ -51,7 +50,6 @@ export function ReportBugDialog({
     setTitle("");
     setAffectedModule("");
     setPriority("MEDIUM");
-    setSeverity("");
     setErrors({});
   }
 
@@ -65,7 +63,6 @@ export function ReportBugDialog({
       title,
       affectedModule,
       priority,
-      severity: severity === "" ? null : severity,
     });
 
     setSaving(false);
@@ -161,6 +158,9 @@ export function ReportBugDialog({
             </Field>
 
             <div className="row g-3">
+              {/* Priority alone in the row now that severity is gone; it keeps
+                  the half-width control the form was laid out around rather
+                  than stretching one select across the dialog. */}
               <div className="col-12 col-md-6">
                 <Field id="bug-priority" label="Priority">
                   <select
@@ -172,25 +172,6 @@ export function ReportBugDialog({
                     {PRIORITIES.map((p) => (
                       <option key={p} value={p}>
                         {PRIORITY_LABEL[p]}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-              </div>
-              <div className="col-12 col-md-6">
-                <Field id="bug-severity" label="Severity">
-                  <select
-                    id="bug-severity"
-                    className="prio-select"
-                    value={severity}
-                    onChange={(e) =>
-                      setSeverity(e.target.value as Severity | "")
-                    }
-                  >
-                    <option value="">Not set</option>
-                    {SEVERITIES.map((sv) => (
-                      <option key={sv} value={sv}>
-                        {SEVERITY_LABEL[sv]}
                       </option>
                     ))}
                   </select>

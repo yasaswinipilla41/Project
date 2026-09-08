@@ -48,7 +48,10 @@ afterAll(async () => {
 /** An issue in ENG, filed by the administrator, in a given state. */
 async function anIssue(
   title: string,
-  patch?: { assigneeId?: string | null; status?: "TODO" | "IN_PROGRESS" | "IN_REVIEW" },
+  patch?: {
+    assigneeId?: string | null;
+    status?: "TODO" | "IN_PROGRESS" | "IN_REVIEW" | "IN_QA";
+  },
 ): Promise<string> {
   await actAs(ADMIN);
   const project = await projectByKey("ENG");
@@ -253,14 +256,73 @@ describe("who may declare what", () => {
     expect(result.ok).toBe(true);
   });
 
-  it("refuses a tester declaring work Ready for QA", async () => {
+  it("refuses a tester the statuses of the build, and writing work off", async () => {
+    /* A tester's four are Ready for QA, In QA, Done and Reopen. Everything
+       else on the board belongs to somebody else: Backlog, New and In Progress
+       say what is being built, and Reject / Not an Issue and Cancelled write
+       work off, which is an administrator's call. */
     const issueId = await anIssue("Status — tester oversteps", {
+      status: "IN_QA",
+    });
+
+    await actAs(TESTER);
+    for (const status of [
+      "BACKLOG",
+      "TODO",
+      "IN_PROGRESS",
+      "REJECTED",
+      "CANCELLED",
+    ] as const) {
+      const result = await updateIssue({ issueId, status });
+      expect(result.ok, `${status} must be refused`).toBe(false);
+    }
+
+    const after = await prisma.issue.findUniqueOrThrow({
+      where: { id: issueId },
+      select: { status: true },
+    });
+    expect(after.status).toBe("IN_QA");
+  });
+
+  it("lets a tester ask for work to be checked", async () => {
+    // Ready for QA is theirs as well: asking for something to be looked at is
+    // not a claim about who built it.
+    const issueId = await anIssue("Status — tester asks for a check", {
       status: "IN_PROGRESS",
     });
 
     await actAs(TESTER);
     const result = await updateIssue({ issueId, status: "IN_REVIEW" });
-    expect(result.ok).toBe(false);
+    expect(result.ok).toBe(true);
+  });
+
+  it("refuses a developer writing work off", async () => {
+    const issueId = await anIssue("Status — developer writes off", {
+      status: "IN_PROGRESS",
+    });
+
+    await actAs(DEVELOPER);
+    for (const status of ["REJECTED", "CANCELLED"] as const) {
+      const result = await updateIssue({ issueId, status });
+      expect(result.ok, `${status} must be refused`).toBe(false);
+    }
+  });
+
+  it("refuses a tester marking work done that was never tested", async () => {
+    /* Done is what testing concluded, so it follows In QA. This is the rule
+       that stops the whole verification step being skipped. */
+    const issueId = await anIssue("Status — done without testing", {
+      status: "IN_REVIEW",
+    });
+
+    await actAs(TESTER);
+    const straight = await updateIssue({ issueId, status: "DONE" });
+    expect(straight.ok).toBe(false);
+    if (!straight.ok) expect(straight.error).toMatch(/in qa/i);
+
+    // …and through In QA it is allowed, which is the workflow itself.
+    expect((await updateIssue({ issueId, status: "IN_QA" })).ok).toBe(true);
+    expect((await updateIssue({ issueId, status: "DONE" })).ok).toBe(true);
   });
 });
 

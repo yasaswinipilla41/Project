@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { prisma } from "@/lib/prisma";
 import { BOARD_STATUSES } from "@/lib/board";
 import { MEMBER_STATE } from "./support";
-import { TESTING_TEAM_SLUG } from "@/lib/authz";
+import { DEVELOPMENT_TEAM_SLUG, TESTING_TEAM_SLUG } from "@/lib/authz";
 
 /**
  * Who may be picked as an assignee.
@@ -307,43 +307,58 @@ test.describe("Assignee options for a member account", () => {
   test.use({ storageState: MEMBER_STATE });
 
   /*
-   * The create dialog below belongs to whoever may raise work — an
-   * administrator or a tester — so this member is put on the Testing team for
-   * the run and taken off again. The seed puts nobody on it, which makes every
-   * member a developer, and a developer is not offered the dialog at all.
+   * This member is put on both teams for the run, and taken off again.
+   *
+   * The create dialog belongs to whoever may raise work, which is the Testing
+   * half; the Assignee field on it belongs to whoever may decide who does a
+   * piece of work, which a pure tester may not — they raise work and hand it
+   * to nobody. Somebody who builds as well as checks has both, and is still
+   * not an administrator, which is what this file is about: a non-admin sees
+   * their own project's roster and no more.
    */
-  let leaveTeam: (() => Promise<void>) | null = null;
+  let leaveTeams: (() => Promise<void>) | null = null;
 
   test.beforeAll(async () => {
     const member = await prisma.user.findUniqueOrThrow({
       where: { email: "priya.nair@symbiosystech.com" },
       select: { id: true },
     });
-    const team =
-      (await prisma.team.findUnique({
-        where: { slug: TESTING_TEAM_SLUG },
+
+    const added: string[] = [];
+    for (const [slug, name] of [
+      [TESTING_TEAM_SLUG, "Testing"],
+      [DEVELOPMENT_TEAM_SLUG, "Development"],
+    ] as const) {
+      const team =
+        (await prisma.team.findUnique({
+          where: { slug },
+          select: { id: true },
+        })) ??
+        (await prisma.team.create({
+          data: { slug, name },
+          select: { id: true },
+        }));
+      const already = await prisma.teamMember.findFirst({
+        where: { teamId: team.id, userId: member.id },
         select: { id: true },
-      })) ??
-      (await prisma.team.create({
-        data: { slug: TESTING_TEAM_SLUG, name: "Testing" },
+      });
+      if (already) continue;
+      const row = await prisma.teamMember.create({
+        data: { teamId: team.id, userId: member.id },
         select: { id: true },
-      }));
-    const already = await prisma.teamMember.findFirst({
-      where: { teamId: team.id, userId: member.id },
-      select: { id: true },
-    });
-    if (already) return;
-    const added = await prisma.teamMember.create({
-      data: { teamId: team.id, userId: member.id },
-      select: { id: true },
-    });
-    leaveTeam = async () => {
-      await prisma.teamMember.deleteMany({ where: { id: added.id } });
-    };
+      });
+      added.push(row.id);
+    }
+
+    if (added.length > 0) {
+      leaveTeams = async () => {
+        await prisma.teamMember.deleteMany({ where: { id: { in: added } } });
+      };
+    }
   });
 
   test.afterAll(async () => {
-    if (leaveTeam) await leaveTeam();
+    if (leaveTeams) await leaveTeams();
   });
 
   /*

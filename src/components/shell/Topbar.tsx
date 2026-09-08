@@ -30,7 +30,12 @@ import { IssueTypeIcon } from "@/components/ui/Indicators";
 import { CreateIssueDialog } from "@/components/create/CreateIssueDialog";
 import { SprintFormDialog } from "@/components/sprints/SprintFormDialog";
 import { ThemeSwitcher } from "@/components/theme/ThemeSwitcher";
-import { ISSUE_TYPES, ISSUE_TYPE_LABEL, ROLE_LABEL } from "@/lib/domain";
+import {
+  ISSUE_TYPES,
+  ISSUE_TYPE_LABEL,
+  ROLE_LABEL,
+  doesQaWork,
+} from "@/lib/domain";
 import type { IssueType, Role } from "@prisma/client";
 
 /** The results page. Named once so the field, the submit and the clear agree. */
@@ -283,12 +288,13 @@ export function Topbar({
         {/*
           * Split control: the button creates a Task, the caret picks the type.
           *
-          * Absent for a developer, who does not file work — it is raised for
-          * them, and a control that always answered "you may not" would be
-          * worse than no control. `createIssue` refuses the call regardless,
+          * Absent for a pure developer, who does not file work — it is raised
+          * for them, and a control that always answered "you may not" would be
+          * worse than no control. A full stack developer keeps it: they are on
+          * Testing, and raising work is that half of their job. `createIssue` refuses the call regardless,
           * so this is the offer and not the rule.
           */}
-        {workRole === "DEVELOPER" ? null : (
+        {doesQaWork(workRole) ? (
         <div className="prio-create">
           <button
             type="button"
@@ -346,12 +352,13 @@ export function Topbar({
             ) : null}
           </Menu>
         </div>
-        )}
+        ) : null}
 
         {/* Mounted only while open so every open starts from a clean form. */}
         {createOpen ? (
           <CreateIssueDialog
             open
+            workRole={workRole}
             onClose={() => setCreateOpen(false)}
             defaultType={createType}
             showTypeSelector

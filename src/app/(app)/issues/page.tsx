@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
+import { BackLink } from "@/components/shell/BackLink";
 import { IssueFilters } from "@/components/issues/IssueFilters";
 import { IssueTable } from "@/components/issues/IssueTable";
 import { filterOptions, listIssues } from "@/server/queries/issues";
 import { parseIssueParams, type SearchParams } from "@/server/queries/params";
 import { requireUser } from "@/lib/session";
+import { workRoleOf } from "@/lib/authz";
 
 export const metadata: Metadata = { title: "Issues" };
 export const dynamic = "force-dynamic";
@@ -28,6 +30,14 @@ export default async function IssuesPage({
 
   return (
     <>
+      {/* Reached from Administration's Users/Projects/Issues/Bugs blocks,
+          which say so in the query string. Shown only then: this page is
+          reached from the sidebar too, where there is no Administration to go
+          back to and a control claiming otherwise would be a lie. */}
+      {params.from === "admin" ? (
+        <BackLink href="/admin" label="Back to Administration" />
+      ) : null}
+
       <div className="prio-page-header">
         <div className="prio-page-header__text">
           <h1 className="prio-page-header__title">Issues</h1>
@@ -56,7 +66,11 @@ export default async function IssuesPage({
         dir={filters.dir ?? "desc"}
         emptyTitle="No issues found"
         emptyBody="No issue matches these filters. Clear them, or create an issue to start tracking work."
-        currentUser={{ id: user.id, isAdmin: user.role === "ADMIN" }}
+        currentUser={{
+          id: user.id,
+          isAdmin: user.role === "ADMIN",
+          workRole: await workRoleOf(user),
+        }}
       />
     </>
   );

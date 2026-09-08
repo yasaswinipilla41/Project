@@ -98,8 +98,7 @@
 }
 
 .prio-col-status,
-.prio-col-priority,
-.prio-col-severity {
+.prio-col-priority {
   width: 1%;
   white-space: nowrap;
 }
@@ -254,7 +253,6 @@
 }
 
 @media (max-width: 900px) {
-  .prio-col-severity,
   .prio-col-date:last-child {
     display: none;
   }

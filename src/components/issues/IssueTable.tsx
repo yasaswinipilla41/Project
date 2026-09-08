@@ -6,7 +6,6 @@ import {
   IssueTypeIcon,
   LabelChip,
   PriorityIndicator,
-  SeverityChip,
   StatusPill,
 } from "@/components/ui/Indicators";
 import {
@@ -17,7 +16,7 @@ import {
   IconParent,
   IconSubIssue,
 } from "@/components/ui/Icon";
-import { isClosedStatus } from "@/lib/domain";
+import { isClosedStatus, type WorkRole } from "@/lib/domain";
 import { formatDateCompact, formatRelative, isOverdue } from "@/lib/format";
 import type { IssueListResult, SortField } from "@/server/queries/issues";
 import { IssueRowActions } from "@/components/issues/IssueRowActions";
@@ -40,7 +39,6 @@ const COLUMNS: Column[] = [
   { field: "title", label: "Summary" },
   { field: "status", label: "Status", className: "prio-col-status" },
   { field: "priority", label: "Priority", className: "prio-col-priority" },
-  { field: "severity", label: "Severity", className: "prio-col-severity" },
   { field: null, label: "Assignee", className: "prio-col-person" },
   { field: null, label: "Reporter", className: "prio-col-person" },
   /* Who finished it, which is not the same question as who holds it — see the
@@ -79,8 +77,6 @@ export interface IssueTableProps {
   searchParams: Record<string, string | string[] | undefined>;
   sort: SortField;
   dir: "asc" | "desc";
-  /** Hides the severity column on surfaces with no bugs. */
-  showSeverity?: boolean;
   emptyTitle?: string;
   emptyBody?: string;
   emptyAction?: React.ReactNode;
@@ -91,7 +87,7 @@ export interface IssueTableProps {
    * that reuse this table (search results, for instance) render outside a
    * signed-in context where row actions do not apply.
    */
-  currentUser?: { id: string; isAdmin: boolean };
+  currentUser?: { id: string; isAdmin: boolean; workRole: WorkRole };
 }
 
 export function IssueTable({
@@ -100,7 +96,6 @@ export function IssueTable({
   searchParams,
   sort,
   dir,
-  showSeverity = true,
   emptyTitle = "No issues found",
   emptyBody = "Create an issue to start tracking work.",
   emptyAction,
@@ -118,10 +113,6 @@ export function IssueTable({
       </div>
     );
   }
-
-  const columns = COLUMNS.filter(
-    (c) => showSeverity || c.field !== "severity",
-  );
 
   /*
    * This list, exactly as it is being looked at — filters, search, sort, page
@@ -142,7 +133,7 @@ export function IssueTable({
         <table className="prio-table prio-table--compact">
           <thead>
             <tr>
-              {columns.map((column) => {
+              {COLUMNS.map((column) => {
                 if (!column.field) {
                   return (
                     <th key={column.label} className={column.className} scope="col">
@@ -257,16 +248,6 @@ export function IssueTable({
                     <PriorityIndicator priority={issue.priority} />
                   </td>
 
-                  {showSeverity ? (
-                    <td className="prio-col-severity">
-                      {issue.severity ? (
-                        <SeverityChip severity={issue.severity} />
-                      ) : (
-                        <span className="prio-text-disabled">—</span>
-                      )}
-                    </td>
-                  ) : null}
-
                   <td className="prio-col-person">
                     {issue.assignee ? (
                       <span className="prio-person">
@@ -365,6 +346,7 @@ export function IssueTable({
                         reporterId={issue.reporter.id}
                         currentUserId={currentUser.id}
                         isAdmin={currentUser.isAdmin}
+                        workRole={currentUser.workRole}
                       />
                     ) : null}
                   </td>

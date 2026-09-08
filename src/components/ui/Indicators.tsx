@@ -1,8 +1,7 @@
-import type { IssueStatus, IssueType, Priority, Severity } from "@prisma/client";
+import type { IssueStatus, IssueType, Priority } from "@prisma/client";
 import {
   ISSUE_TYPE_LABEL,
   PRIORITY_LABEL,
-  SEVERITY_LABEL,
   STATUS_LABEL,
 } from "@/lib/domain";
 import {
@@ -14,10 +13,10 @@ import {
 } from "@/components/ui/Icon";
 
 /**
- * Status, priority, severity and issue-type indicators.
+ * Status, priority and issue-type indicators.
  *
  * Every surface in Prio renders these components rather than its own markup,
- * so a bug looks like a bug — and a Critical severity reads as Critical —
+ * so a bug looks like a bug — and an Urgent priority reads as Urgent —
  * whether it appears on a board card, a table row or the detail header.
  */
 
@@ -99,30 +98,6 @@ export function PriorityIndicator({
           Priority {PRIORITY_LABEL[priority]}
         </span>
       )}
-    </span>
-  );
-}
-
-/* -------------------------------------------------------------- severity */
-
-/**
- * Severity is a filled uppercase capsule — deliberately a different shape from
- * the priority meter so the two concepts never blur together (§8).
- */
-export function SeverityChip({
-  severity,
-  className,
-}: {
-  severity: Severity;
-  className?: string;
-}) {
-  return (
-    <span
-      className={`prio-severity${className ? ` ${className}` : ""}`}
-      data-severity={severity}
-      title={`Severity: ${SEVERITY_LABEL[severity]}`}
-    >
-      {SEVERITY_LABEL[severity]}
     </span>
   );
 }

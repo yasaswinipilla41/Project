@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import type { CurrentUser } from "@/lib/session";
+import { doesQaWork } from "@/lib/domain";
 import type { WorkRole } from "@/lib/domain";
 
 /**
@@ -183,17 +184,21 @@ export async function accessibleProjectIds(
 export const TESTING_TEAM_SLUG = "testing";
 
 /**
- * Slug of the Development team — a roster, and nothing else.
+ * Slug of the Development team.
  *
- * `workRoleOf` does not read this and must not. A developer is a member who is
- * not on Testing, which is the absence of a row rather than the presence of
- * one, so this team grants no permission, withholds none, and changes nobody's
- * effective role. Somebody on both teams is a QA member, because Testing is
- * still what decides that.
+ * Two things at once, and it is worth being exact about which:
  *
- * What it exists for is administration: there was previously nowhere to record
- * who has actually been onboarded as a developer, so Administration had no
- * list to show and no person to hang a profile on. This is that list.
+ *  - It is the roster Administration lists — who has been deliberately
+ *    onboarded to build, which nothing recorded before.
+ *  - Held *together with* Testing, it makes somebody a Full Stack Developer.
+ *    `workRoleOf` reads it for that and only that.
+ *
+ * What it deliberately does not do is grant the developer role on its own. A
+ * developer has always been "a member who is not on Testing", and every
+ * existing account is one; requiring this row to build would have demoted
+ * everybody not yet added to it. Development-only and on-neither-team are
+ * therefore the same answer — DEVELOPER — and this team's presence only ever
+ * adds.
  */
 export const DEVELOPMENT_TEAM_SLUG = "development";
 
@@ -211,12 +216,27 @@ export const DEVELOPMENT_TEAM_SLUG = "development";
  * the testing surfaces this way.
  *
  *   ADMIN                              -> "ADMIN"
- *   MEMBER on the Testing team         -> "QA"
- *   MEMBER not on the Testing team     -> "DEVELOPER"
+ *   MEMBER on Testing and Development  -> "FULLSTACK"
+ *   MEMBER on Testing only             -> "QA"
+ *   MEMBER on Development only         -> "DEVELOPER"
+ *   MEMBER on neither                  -> "DEVELOPER"
  *
- * An administrator is an administrator whether or not they are also on the
- * team: nothing below is ever withheld from them, so the distinction between
- * "admin who tests" and "admin who does not" would decide nothing.
+ * The last two lines are the same answer for a reason. A developer has always
+ * been "a member who is not on Testing", and that is what every existing
+ * account is; making Development the thing that grants the role would have
+ * demoted everybody who has not been added to it yet. Development says who has
+ * been deliberately onboarded, and combines with Testing to make somebody full
+ * stack — it does not withdraw the default.
+ *
+ * Both memberships together are read as *both jobs*, never as one of them
+ * winning. A Full Stack Developer builds and checks; the two capabilities are
+ * asked for by name in `domain.ts` — `doesQaWork`, `doesDeveloperWork` — so
+ * nothing has to enumerate which role names happen to include which job.
+ *
+ * An administrator is an administrator whether or not they are also on a team:
+ * nothing below is ever withheld from them, so the distinction between "admin
+ * who tests" and "admin who does not" would decide nothing. Full stack is not
+ * a route to administration — it is two member jobs, and neither is ADMIN.
  *
  * Everything that gates on this calls `workRoleOf`; there is no second
  * definition of who a tester is anywhere in the codebase.
@@ -225,19 +245,31 @@ export type { WorkRole };
 
 export async function workRoleOf(user: CurrentUser): Promise<WorkRole> {
   if (user.role === "ADMIN") return "ADMIN";
-  return (await isTeamMember(user, TESTING_TEAM_SLUG)) ? "QA" : "DEVELOPER";
+
+  const [testing, development] = await Promise.all([
+    isTeamMember(user, TESTING_TEAM_SLUG),
+    isTeamMember(user, DEVELOPMENT_TEAM_SLUG),
+  ]);
+
+  if (testing && development) return "FULLSTACK";
+  if (testing) return "QA";
+  return "DEVELOPER";
 }
 
 /**
- * Who may file work: an administrator, or a tester.
+ * Who may file work: anybody who does the QA half of the job.
  *
  * Raising work is QA's job in this model — a defect found, a task that needs
- * doing — and a developer's job is to build what has been raised. A developer
- * who needs something filed asks for it; the alternative is a backlog nobody
- * has agreed to.
+ * doing — and a pure developer's job is to build what has been raised. A
+ * developer who needs something filed asks for it; the alternative is a backlog
+ * nobody has agreed to.
+ *
+ * Asked as a capability rather than `=== "DEVELOPER"`, so a Full Stack
+ * Developer — who is on Testing and therefore does raise work — is not refused
+ * by a check that only knew two role names.
  */
 export async function assertCanCreateWork(user: CurrentUser): Promise<void> {
-  if ((await workRoleOf(user)) === "DEVELOPER") {
+  if (!doesQaWork(await workRoleOf(user))) {
     throw new AuthorizationError(
       "Only an administrator or a tester can create work items.",
     );

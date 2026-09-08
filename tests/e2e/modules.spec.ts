@@ -200,7 +200,9 @@ test.describe("Issue sheet export", () => {
 });
 
 test.describe("Bug management", () => {
-  test("shows only bugs, with severity statistics", async ({ page }) => {
+  test("shows only bugs, and no severity anywhere on the surface", async ({
+    page,
+  }) => {
     await page.goto("/bugs");
 
     await expect(page.getByRole("heading", { name: "Bugs" })).toBeVisible();
@@ -211,27 +213,30 @@ test.describe("Bug management", () => {
     expect(types.length).toBeGreaterThan(0);
     expect(new Set(types)).toEqual(new Set(["BUG"]));
 
-    // Severity is a first-class column here, and every bug has one.
-    const severities = await page
-      .locator(".prio-table tbody .prio-severity")
-      .evaluateAll((els) => els.map((e) => e.getAttribute("data-severity")));
-    expect(severities.length).toBe(types.length);
+    /* Severity used to be a first-class column on this surface. It is gone
+       from the whole application, so the column, its chips and its filter are
+       all absent — the page is priority-led now. */
+    await expect(page.locator(".prio-severity")).toHaveCount(0);
+    await expect(
+      page.getByRole("columnheader", { name: "Severity" }),
+    ).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^Severity/ })).toHaveCount(0);
 
     // The type filter is hidden — this surface is locked to bugs.
     await expect(page.getByRole("button", { name: /^Type/ })).toHaveCount(0);
   });
 
-  test("filters by severity", async ({ page }) => {
+  test("filters by priority, which is what it ranks by now", async ({ page }) => {
     await page.goto("/bugs");
 
-    await page.getByRole("button", { name: /^Severity/ }).click();
-    await page.getByRole("menuitemradio", { name: "Critical" }).click();
-    await expect(page).toHaveURL(/severity=CRITICAL/);
+    await page.getByRole("button", { name: /^Priority/ }).click();
+    await page.getByRole("menuitemradio", { name: "Urgent" }).first().click();
+    await expect(page).toHaveURL(/priority=URGENT/);
 
-    const severities = await page
-      .locator(".prio-table tbody .prio-severity")
-      .evaluateAll((els) => els.map((e) => e.getAttribute("data-severity")));
-    expect(new Set(severities)).toEqual(new Set(["CRITICAL"]));
+    const priorities = await page
+      .locator(".prio-table tbody .prio-priority")
+      .evaluateAll((els) => els.map((e) => e.getAttribute("data-priority")));
+    expect(new Set(priorities)).toEqual(new Set(["URGENT"]));
   });
 });
 
@@ -454,9 +459,13 @@ test.describe("Project settings", () => {
 
 test.describe("Admin", () => {
   test("lists users with roles and real statistics", async ({ page }) => {
-    await page.goto("/admin");
+    /* People has a route of its own — it is one of Administration's four
+       blocks, and each of them opens a page that can offer the way back. The
+       Users tile still counts what this screen lists, which is what the last
+       assertion here checks. */
+    await page.goto("/admin/users");
     await expect(
-      page.getByRole("heading", { name: "Administration" }),
+      page.getByRole("heading", { name: "People", level: 1 }),
     ).toBeVisible();
 
     const rows = page
@@ -475,19 +484,23 @@ test.describe("Admin", () => {
     ).toBeVisible();
     await expect(page.getByRole("button", { name: "New user" })).toBeVisible();
 
-    // Statistics come from the database, not placeholders.
+    /* Statistics come from the database, not placeholders — and the tile that
+       counts People, back on Administration, agrees with what People lists. */
+    const counted = await rows.count();
+
+    await page.goto("/admin");
     const users = await page
       .locator(".prio-stat")
       .filter({ hasText: "Users" })
       .locator(".prio-stat__value")
       .innerText();
-    expect(Number(users)).toBe(await rows.count());
+    expect(Number(users)).toBe(counted);
   });
 
   test("warns, but does not block, creating a user with no project selected", async ({
     page,
   }) => {
-    await page.goto("/admin");
+    await page.goto("/admin/users");
     await page.getByRole("button", { name: "New user" }).click();
 
     const dialog = page.getByRole("dialog");
@@ -524,7 +537,7 @@ test.describe("Admin", () => {
   test("a member's open-issue count drills down to their filtered issue list", async ({
     page,
   }) => {
-    await page.goto("/admin");
+    await page.goto("/admin/users");
 
     const link = page.locator(".prio-admin__drilldown").first();
     // The seed always has at least one person with open work assigned.
@@ -552,7 +565,7 @@ test.describe("Admin", () => {
   });
 
   test("refuses to strip the last administrator", async ({ page }) => {
-    await page.goto("/admin");
+    await page.goto("/admin/users");
 
     // Demoting yourself is refused outright.
     const ownRow = page

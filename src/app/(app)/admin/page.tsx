@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { UserAdmin } from "@/components/admin/UserAdmin";
 import { TeamAdmin } from "@/components/admin/TeamAdmin";
 import { NewUsers, SectionHead } from "@/components/dashboard/DashboardParts";
 import { loadNewUsers } from "@/server/queries/dashboard";
@@ -21,7 +20,8 @@ export const dynamic = "force-dynamic";
  * what makes it safe.
  */
 export default async function AdminPage() {
-  const admin = await requireAdmin();
+  // Gates the route; the sections below re-check for themselves.
+  await requireAdmin();
 
   const [
     users,
@@ -100,18 +100,6 @@ export default async function AdminPage() {
     }),
   ]);
 
-  // Open work per person, in one grouped query rather than one per user.
-  const openByAssignee = await prisma.issue.groupBy({
-    by: ["assigneeId"],
-    where: { status: { in: [...OPEN_STATUSES] } },
-    _count: { _all: true },
-  });
-  const openCount = new Map(
-    openByAssignee
-      .filter((r) => r.assigneeId !== null)
-      .map((r) => [r.assigneeId as string, r._count._all]),
-  );
-
   const activeUsers = users.filter((u) => u.isActive).length;
   const admins = users.filter((u) => u.role === "ADMIN" && u.isActive).length;
 
@@ -139,10 +127,12 @@ export default async function AdminPage() {
           * the markup, tone and hint are untouched and a linked tile looks
           * exactly like the plain one it replaces.
           *
-          * Users points at the People section further down this page rather
-          * than a route of its own, because that section *is* the users
-          * screen — `UserAdmin` is rendered below. Sending it to a new page
-          * would duplicate what is already here.
+          * All four now open a page of their own, People included: it moved
+          * to `/admin/users` so that every block behaves the same way and
+          * every destination can offer the same way back. `from=admin` is
+          * what the three shared pages read to decide whether to show it —
+          * they are reached from the sidebar as well, where a "Back to
+          * Administration" control would be a lie.
           */}
         <div className="col-6 col-xl-3">
           <Stat
@@ -150,7 +140,7 @@ export default async function AdminPage() {
             value={users.length}
             icon={<IconUsers size={13} />}
             hint={`${activeUsers} active · ${admins} admin`}
-            href="/admin#people"
+            href="/admin/users"
           />
         </div>
         <div className="col-6 col-xl-3">
@@ -158,7 +148,7 @@ export default async function AdminPage() {
             label="Projects"
             value={projects.length}
             hint={`${projects.reduce((s, p) => s + p._count.issues, 0)} issues total`}
-            href="/projects"
+            href="/projects?from=admin"
           />
         </div>
         <div className="col-6 col-xl-3">
@@ -168,7 +158,7 @@ export default async function AdminPage() {
             icon={<IconIssues size={13} />}
             tone="brand"
             hint={`${openIssues} open · ${completedIssues} done`}
-            href="/issues"
+            href="/issues?from=admin"
           />
         </div>
         <div className="col-6 col-xl-3">
@@ -178,7 +168,7 @@ export default async function AdminPage() {
             icon={<IconBug size={13} />}
             tone={openBugs > 0 ? "danger" : "default"}
             hint={`${openBugs} open · ${overdue} overdue overall`}
-            href="/bugs"
+            href="/bugs?from=admin"
           />
         </div>
       </div>
@@ -220,6 +210,9 @@ export default async function AdminPage() {
               email: u.email,
               image: u.image,
               jobTitle: u.jobTitle,
+              /* Carried so the dialog's Role field can narrow the Members
+                 list to the people that role can name. */
+              role: u.role,
             }))}
           /* The same live projects the rest of this page counts, so the
              dialog's list can never name one that has been archived. */
@@ -228,25 +221,6 @@ export default async function AdminPage() {
             key: p.key,
             name: p.name,
           }))}
-        />
-      </div>
-
-      <div id="people" style={{ marginBottom: "var(--prio-space-6)" }}>
-        <UserAdmin
-          users={users.map((u) => ({
-            id: u.id,
-            name: u.name,
-            email: u.email,
-            image: u.image,
-            jobTitle: u.jobTitle,
-            role: u.role,
-            isActive: u.isActive,
-            createdAt: u.createdAt,
-            projectCount: u._count.projectMemberships,
-            assignedOpen: openCount.get(u.id) ?? 0,
-          }))}
-          projects={projects.map((p) => ({ id: p.id, key: p.key, name: p.name }))}
-          currentUserId={admin.id}
         />
       </div>
 

@@ -428,7 +428,6 @@ test.describe("A project's List tab", () => {
       "Type",
       "Status",
       "Priority",
-      "Severity",
       "Assignee",
       "Reporter",
       "More",

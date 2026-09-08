@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/Icon";
 import { CloneIssueDialog } from "@/components/issues/CloneIssueDialog";
 import { deleteIssue } from "@/server/issues";
+import type { WorkRole } from "@/lib/domain";
 
 /**
  * The ⋮ menu at the end of a table row.
@@ -39,6 +40,8 @@ export interface IssueRowActionsProps {
   reporterId: string;
   currentUserId: string;
   isAdmin: boolean;
+  /** Cloning files new work; the dialog offers the statuses that allows. */
+  workRole: WorkRole;
 }
 
 export function IssueRowActions({
@@ -47,6 +50,7 @@ export function IssueRowActions({
   reporterId,
   currentUserId,
   isAdmin,
+  workRole,
 }: IssueRowActionsProps) {
   const router = useRouter();
   const { toast } = useToast();
@@ -116,6 +120,7 @@ export function IssueRowActions({
 
       {cloning ? (
         <CloneIssueDialog
+          workRole={workRole}
           issueId={issueId}
           issueKey={issueKey}
           onClose={() => setCloning(false)}

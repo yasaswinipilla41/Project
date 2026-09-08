@@ -1,4 +1,4 @@
-import type { IssueStatus, IssueType, Priority, Role, Severity } from "@prisma/client";
+import type { IssueStatus, IssueType, Priority, Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { assertAdmin } from "@/lib/authz";
 import { OPEN_STATUSES } from "@/lib/domain";
@@ -22,7 +22,6 @@ export interface MemberDetailIssue {
   type: IssueType;
   status: IssueStatus;
   priority: Priority;
-  severity: Severity | null;
   dueDate: Date | null;
   project: { key: string; name: string };
 }
@@ -59,7 +58,6 @@ const ISSUE_CARD_SELECT = {
   type: true,
   status: true,
   priority: true,
-  severity: true,
   dueDate: true,
   project: { select: { key: true, name: true } },
 } as const;

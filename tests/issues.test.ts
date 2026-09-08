@@ -107,8 +107,11 @@ describe("createIssue", () => {
     });
 
     expect(row.type).toBe("STORY");
-    // Defaults from the schema.
-    expect(row.status).toBe("BACKLOG");
+    /* Priority defaults in the schema; status defaults to where work of this
+       person's job starts. The actor is on the Testing team, whose four
+       statuses have no backlog in them, so theirs starts at Ready for QA —
+       asking for the work to be looked at. A developer's would be Backlog. */
+    expect(row.status).toBe("IN_REVIEW");
     expect(row.priority).toBe("MEDIUM");
   });
 
@@ -153,7 +156,6 @@ describe("createIssue", () => {
       type: "BUG",
       title: "Bug reported the way the form now submits it",
       description: "The board drops a card when two are dragged at once.",
-      severity: "MAJOR",
     });
 
     expect(result.ok).toBe(true);
@@ -163,22 +165,24 @@ describe("createIssue", () => {
     const row = await prisma.issue.findUniqueOrThrow({
       where: { id: result.data.id },
       select: {
-        severity: true,
         stepsToReproduce: true,
         expectedResult: true,
         actualResult: true,
       },
     });
 
-    // Severity survived; the retired fields are simply empty, not defaulted.
-    expect(row.severity).toBe("MAJOR");
+    // The retired fields are simply empty, not defaulted.
     expect(row.stepsToReproduce).toBeNull();
     expect(row.expectedResult).toBeNull();
     expect(row.actualResult).toBeNull();
   });
 
   it("creates a bug with every bug field still in use, and records activity", async () => {
-    const reporter = await actAs("sneha.iyer@symbiosystech.com");
+    /* Filed by the administrator, because this bug is handed to somebody as
+       it is created and deciding who does a piece of work is an
+       administrator's. A tester files the same bug without that field — see
+       the QA create rules in `role-permissions.test.ts`. */
+    const reporter = await actAs("admin@symbiosystech.com");
     const project = await projectByKey("ENG");
 
     const assignee = await prisma.user.findUniqueOrThrow({
@@ -193,7 +197,6 @@ describe("createIssue", () => {
       description: "Cards vanish when dropped twice in quick succession.",
       status: "TODO",
       priority: "URGENT",
-      severity: "CRITICAL",
       assigneeId: assignee.id,
       environment: "Staging",
       browser: "Chrome 141",
@@ -210,7 +213,6 @@ describe("createIssue", () => {
       where: { id: result.data.id },
       select: {
         type: true,
-        severity: true,
         priority: true,
         stepsToReproduce: true,
         expectedResult: true,
@@ -226,8 +228,6 @@ describe("createIssue", () => {
     });
 
     expect(bug.type).toBe("BUG");
-    // Severity and priority are independent concepts and both persist.
-    expect(bug.severity).toBe("CRITICAL");
     expect(bug.priority).toBe("URGENT");
     // Retired fields: the create path no longer accepts them, so a bug
     // recorded now stores null rather than keeping whatever was passed.
@@ -308,7 +308,10 @@ describe("createIssue", () => {
 
 describe("updateIssue", () => {
   it("moves a bug through the workflow and records each change", async () => {
-    await actAs("kiran.das@symbiosystech.com");
+    /* Filed by the administrator so it starts in New, which is where the
+       build picks work up. A tester files into their own four — see
+       `qa-create-rules.test.ts` — and the walk below is what this is about. */
+    await actAs("admin@symbiosystech.com");
     const project = await projectByKey("ENG");
 
     const result = await createIssue({
@@ -318,7 +321,6 @@ describe("updateIssue", () => {
       description: "Used to verify status transitions are recorded.",
       status: "TODO",
       priority: "MEDIUM",
-      severity: "MINOR",
     });
 
     expect(result.ok).toBe(true);
@@ -341,6 +343,9 @@ describe("updateIssue", () => {
     await moveTo("IN_REVIEW");
 
     await actAs("kiran.das@symbiosystech.com");
+    // In QA first: Done is what testing concluded, so a tester reaches it from
+    // there rather than straight from Ready for QA.
+    await moveTo("IN_QA");
     await moveTo("DONE");
 
     const bug = await prisma.issue.findUniqueOrThrow({
@@ -358,7 +363,7 @@ describe("updateIssue", () => {
       select: { oldValue: true, newValue: true, actorId: true },
     });
 
-    expect(statusChanges).toHaveLength(3);
+    expect(statusChanges).toHaveLength(4);
     expect(statusChanges[0]).toMatchObject({
       oldValue: "TODO",
       newValue: "IN_PROGRESS",
@@ -366,21 +371,29 @@ describe("updateIssue", () => {
     });
     expect(statusChanges[2]).toMatchObject({
       oldValue: "IN_REVIEW",
+      newValue: "IN_QA",
+    });
+    expect(statusChanges[3]).toMatchObject({
+      oldValue: "IN_QA",
       newValue: "DONE",
     });
   });
 
-  it("records severity and priority as separate changes", async () => {
+  it("records one change per field, and leaves the others alone", async () => {
+    /* A partial update touches what it names and nothing else. This used to be
+       asserted with severity and priority, the two fields most often confused
+       for each other; severity is no longer a field anybody sets, so the same
+       property is asserted with the two that remain independent. */
     await actAs("admin@symbiosystech.com");
     const project = await projectByKey("ENG");
 
     const result = await createIssue({
       projectId: project.id,
       type: "BUG",
-      title: "Severity and priority independence",
-      description: "Severity and priority must not be derived from each other.",
+      title: "Priority and due date independence",
+      description: "Neither field may be derived from the other.",
       priority: "LOW",
-      severity: "CRITICAL",
+      dueDate: "2099-01-31",
     });
 
     expect(result.ok).toBe(true);
@@ -391,15 +404,15 @@ describe("updateIssue", () => {
 
     const row = await prisma.issue.findUniqueOrThrow({
       where: { id: result.data.id },
-      select: { priority: true, severity: true },
+      select: { priority: true, dueDate: true },
     });
 
-    // Changing priority left severity untouched.
+    // Changing priority left the due date untouched.
     expect(row.priority).toBe("URGENT");
-    expect(row.severity).toBe("CRITICAL");
+    expect(row.dueDate?.toISOString().slice(0, 10)).toBe("2099-01-31");
 
     const changes = await prisma.activityLogEntry.findMany({
-      where: { issueId: result.data.id, field: { in: ["priority", "severity"] } },
+      where: { issueId: result.data.id, field: { in: ["priority", "dueDate"] } },
       select: { field: true, oldValue: true, newValue: true },
     });
 

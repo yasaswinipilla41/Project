@@ -6,7 +6,6 @@ import { Avatar } from "@/components/ui/primitives";
 import { Menu, MenuItem, MenuLabel } from "@/components/ui/Menu";
 import {
   PriorityIndicator,
-  SeverityChip,
   StatusPill,
 } from "@/components/ui/Indicators";
 import { useToast } from "@/components/ui/Toast";
@@ -14,12 +13,11 @@ import { IconChevronDown } from "@/components/ui/Icon";
 import {
   PRIORITIES,
   PRIORITY_LABEL,
-  SEVERITIES,
-  SEVERITY_LABEL,
-  ISSUE_STATUSES,
   STATUS_LABEL,
+  allowedStatusesFor,
+  type WorkRole,
 } from "@/lib/domain";
-import type { IssueStatus, Priority, Severity } from "@prisma/client";
+import type { IssueStatus, Priority } from "@prisma/client";
 import { updateIssue } from "@/server/issues";
 
 /**
@@ -69,8 +67,10 @@ export function StatusControl({
   issueId,
   status,
   disabled,
-}: BaseProps & { status: IssueStatus }) {
+  workRole,
+}: BaseProps & { status: IssueStatus; workRole: WorkRole }) {
   const { update, busy } = useFieldUpdate(issueId);
+  const options = allowedStatusesFor(workRole, status);
 
   return (
     <Menu
@@ -91,17 +91,17 @@ export function StatusControl({
     >
       <MenuLabel>Move to</MenuLabel>
       {/*
-       * Every status the project has, not a subset.
+       * Every status this person may set, from wherever the issue is now.
        *
-       * This menu used to offer only `allowedTransitions(status)`, which meant
-       * a status that existed could be unreachable from where an issue happened
-       * to be -- a bug filed straight to Done had no way to Reject, and nothing
-       * on the page explained why the option was missing rather than merely
-       * disabled. Showing the whole vocabulary and letting the person choose is
-       * what was asked for; `STATUS_TRANSITIONS` still describes the ordinary
-       * path and still shapes the board's drag and drop.
+       * Not a workflow subset: the menu still offers the whole of what is
+       * theirs regardless of where the issue sits, because a status that
+       * exists being unreachable from where an issue happens to be — a bug
+       * filed straight to Done with no way back — is what this deliberately
+       * stopped doing. What it does exclude is what belongs to somebody else's
+       * half of the job, and `updateIssue` refuses exactly the same set, so
+       * this is the courtesy and not the control.
        */}
-      {ISSUE_STATUSES.map((option) => (
+      {options.map((option) => (
         <MenuItem
           key={option}
           selected={option === status}
@@ -157,57 +157,6 @@ export function PriorityControl({
           }
         >
           <PriorityIndicator priority={option} />
-        </MenuItem>
-      ))}
-    </Menu>
-  );
-}
-
-/* -------------------------------------------------------------- severity */
-
-/** Bugs only — severity is meaningless on tasks and stories (§8). */
-export function SeverityControl({
-  issueId,
-  severity,
-  disabled,
-}: BaseProps & { severity: Severity | null }) {
-  const { update, busy } = useFieldUpdate(issueId);
-
-  return (
-    <Menu
-      align="start"
-      width={190}
-      label="Change severity"
-      trigger={(props) => (
-        <button
-          type="button"
-          className="prio-fieldtrigger"
-          disabled={disabled || busy}
-          {...props}
-        >
-          {severity ? (
-            <SeverityChip severity={severity} />
-          ) : (
-            <span className="prio-text-muted">Not set</span>
-          )}
-          <IconChevronDown size={12} />
-        </button>
-      )}
-    >
-      <MenuLabel>Severity</MenuLabel>
-      {SEVERITIES.map((option) => (
-        <MenuItem
-          key={option}
-          selected={option === severity}
-          onSelect={() =>
-            option !== severity &&
-            update(
-              { severity: option },
-              `Severity set to ${SEVERITY_LABEL[option]}`,
-            )
-          }
-        >
-          <SeverityChip severity={option} />
         </MenuItem>
       ))}
     </Menu>

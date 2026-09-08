@@ -105,7 +105,6 @@ test.describe("Create flow", () => {
       "Summary",
       "Description",
       "Priority",
-      "Severity",
       "Assignee",
       "Attachments",
       "Parent issue",
@@ -256,7 +255,6 @@ test.describe("Create flow", () => {
     await dialog.getByLabel("Description").fill(description);
     await dialog.getByLabel("Project").selectOption({ label: "Engineering (ENG)" });
     await dialog.getByLabel("Summary").fill(title);
-    await dialog.getByLabel("Severity").selectOption("CRITICAL");
     await dialog.getByLabel("Status").selectOption("TODO");
     await dialog.getByLabel("Priority").selectOption("URGENT");
 
@@ -266,12 +264,6 @@ test.describe("Create flow", () => {
     await expect(page).toHaveURL(/\/issues\/eng-\d+$/i);
     await expect(page.getByRole("heading", { name: title })).toBeVisible();
 
-    // Severity and priority are shown as separate, differently shaped
-    // indicators — they are independent concepts.
-    await expect(page.locator(".prio-severity").first()).toHaveAttribute(
-      "data-severity",
-      "CRITICAL",
-    );
     await expect(page.locator(".prio-priority").first()).toHaveAttribute(
       "data-priority",
       "URGENT",
@@ -330,33 +322,17 @@ test.describe("Create flow", () => {
     }
   });
 
-  test("severity is a standard field, opening at Major only for a bug", async ({
-    page,
-  }) => {
-    /* Severity is one of the fields every type shares, so it is offered on all
-       of them. Only the *starting value* differs: a bug opens at Major because
-       a defect always has an impact, while anything else opens unset rather
-       than being handed an opinion it has no use for. */
-    const taskDialog = await openCreate(page, "Task");
-    const taskSeverity = taskDialog.getByLabel("Severity");
-    await expect(taskSeverity).toHaveCount(1);
-    await expect(taskSeverity).toHaveValue("");
-    await expect(taskDialog.getByLabel("Steps to reproduce")).toHaveCount(0);
-
-    // And it is a real field on a task: choosing one sticks.
-    await taskSeverity.selectOption("MINOR");
-    await expect(taskSeverity).toHaveValue("MINOR");
-    await page.keyboard.press("Escape");
-
-    const bugDialog = await openCreate(page, "Bug");
-    const severity = bugDialog.getByLabel("Severity");
-    await expect(severity).toBeVisible();
-    await expect(severity).toHaveValue("MAJOR");
-
-    // Still the author's to change, in either direction.
-    await severity.selectOption("MINOR");
-    await expect(severity).toHaveValue("MINOR");
-    await severity.selectOption("");
-    await expect(severity).toHaveValue("");
+  test("severity is not a field on any type", async ({ page }) => {
+    /* Severity was a field on every type. It was removed from the whole
+       application — forms, filters, tables, charts and the issue itself — so
+       what is asserted now is its absence, on the form where it was last
+       offered. The column is still in the database; nothing writes it. */
+    for (const type of ["Task", "Bug"] as const) {
+      const dialog = await openCreate(page, type);
+      await expect(dialog.getByLabel("Severity")).toHaveCount(0);
+      await expect(dialog.getByText("Severity")).toHaveCount(0);
+      await expect(dialog.locator("#create-severity")).toHaveCount(0);
+      await page.keyboard.press("Escape");
+    }
   });
 });

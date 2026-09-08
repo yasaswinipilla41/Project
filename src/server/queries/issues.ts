@@ -11,7 +11,6 @@ import {
   isIssueStatus,
   isIssueType,
   isPriority,
-  isSeverity,
 } from "@/lib/domain";
 
 /**
@@ -27,7 +26,6 @@ export const SORT_FIELDS = [
   "updated",
   "created",
   "priority",
-  "severity",
   "due",
   "status",
   "key",
@@ -80,7 +78,6 @@ export interface IssueListRow {
   title: string;
   status: (typeof OPEN_STATUSES)[number] | (typeof CLOSED_STATUSES)[number];
   priority: "URGENT" | "HIGH" | "MEDIUM" | "LOW" | "NONE";
-  severity: "CRITICAL" | "MAJOR" | "MINOR" | "TRIVIAL" | null;
   dueDate: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -128,9 +125,6 @@ export function buildIssueWhere(
 
   const priorities = (filters.priorities ?? []).filter(isPriority);
   if (priorities.length > 0) where.priority = { in: priorities };
-
-  const severities = (filters.severities ?? []).filter(isSeverity);
-  if (severities.length > 0) where.severity = { in: severities };
 
   if (filters.assigneeIds?.length) {
     // "unassigned" is a first-class choice, not the absence of a filter.
@@ -264,9 +258,9 @@ export function issueTextSearch(q: string): Prisma.IssueWhereInput {
 }
 
 /**
- * Sort order. Priority and severity are enums whose declaration order runs from
- * most to least urgent, so Postgres sorts them meaningfully with no extra
- * column: ascending enum order === descending urgency.
+ * Sort order. Priority is an enum whose declaration order runs from most to
+ * least urgent, so Postgres sorts it meaningfully with no extra column:
+ * ascending enum order === descending urgency.
  */
 function buildOrderBy(
   sort: SortField,
@@ -280,11 +274,6 @@ function buildOrderBy(
     case "priority":
       // URGENT is first in the enum, so "desc" urgency is "asc" enum order.
       return [{ priority: dir === "desc" ? "asc" : "desc" }, { updatedAt: "desc" }];
-    case "severity":
-      return [
-        { severity: dir === "desc" ? "asc" : "desc" },
-        { updatedAt: "desc" },
-      ];
     case "due":
       // Items without a due date sort last regardless of direction.
       return [{ dueDate: { sort: dir, nulls: "last" } }, { updatedAt: "desc" }];
@@ -307,7 +296,6 @@ const LIST_SELECT = {
   title: true,
   status: true,
   priority: true,
-  severity: true,
   dueDate: true,
   createdAt: true,
   updatedAt: true,

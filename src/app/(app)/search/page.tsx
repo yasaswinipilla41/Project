@@ -6,7 +6,6 @@ import {
   IssueKey,
   IssueTypeIcon,
   PriorityIndicator,
-  SeverityChip,
   StatusPill,
 } from "@/components/ui/Indicators";
 import {
@@ -76,7 +75,6 @@ export default async function SearchPage({
             title: true,
             status: true,
             priority: true,
-            severity: true,
             updatedAt: true,
             project: { select: { name: true } },
             assignee: { select: { name: true } },
@@ -288,7 +286,6 @@ function IssueResult({
     title: string;
     status: IssueStatus;
     priority: "URGENT" | "HIGH" | "MEDIUM" | "LOW" | "NONE";
-    severity: "CRITICAL" | "MAJOR" | "MINOR" | "TRIVIAL" | null;
     updatedAt: Date;
     project: { name: string };
     assignee: { name: string } | null;
@@ -299,7 +296,6 @@ function IssueResult({
       <IssueTypeIcon type={issue.type} size={17} />
       <IssueKey issueKey={issue.key} />
       <span className="prio-relatedrow__title prio-truncate">{issue.title}</span>
-      {issue.severity ? <SeverityChip severity={issue.severity} /> : null}
       <PriorityIndicator priority={issue.priority} showLabel={false} />
       <StatusPill status={issue.status} />
       <span className="prio-text-muted prio-searchresults__project">

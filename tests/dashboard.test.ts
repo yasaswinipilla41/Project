@@ -1,4 +1,6 @@
 import { afterAll, describe, expect, it } from "vitest";
+import { listIssues } from "@/server/queries/issues";
+import type { IssueFilters } from "@/server/queries/issues";
 import { prisma } from "@/lib/prisma";
 import { accessibleProjectIds } from "@/lib/authz";
 import { CLOSED_STATUSES, OPEN_STATUSES } from "@/lib/domain";
@@ -669,5 +671,108 @@ describe("loadDashboard — the QA panel", () => {
     } finally {
       await leave();
     }
+  });
+});
+
+describe("a personal figure and the list it opens are the same issues", () => {
+  /*
+   * The invariant, asserted directly: every tile on "My work" links to the
+   * issue list with a filter, and the number on the tile has to be the number
+   * of rows that filter returns. Not approximately, and not the same shape of
+   * query written twice — the same set.
+   *
+   * Each case below names the filter the tile's `href` actually encodes (see
+   * `WorkGrid` in `DashboardParts`), so a change to either side that is not
+   * made to the other fails here rather than in front of somebody counting
+   * rows by hand.
+   *
+   * The trap this caught: "Completed" counted DONE, REJECTED and CANCELLED
+   * while its link filtered `status=DONE`, so anybody holding rejected or
+   * cancelled work saw a figure larger than the list beneath it.
+   */
+  const cases: {
+    tile: string;
+    filters: (userId: string) => Partial<IssueFilters>;
+    count: (data: Awaited<ReturnType<typeof loadDashboard>>) => number;
+  }[] = [
+    {
+      tile: "Assigned",
+      filters: (id) => ({ assigneeIds: [id], resolution: "open" }),
+      count: (d) => d.myWork.assigned,
+    },
+    {
+      tile: "In progress",
+      filters: (id) => ({ assigneeIds: [id], statuses: ["IN_PROGRESS"] }),
+      count: (d) => d.myWork.inProgress,
+    },
+    {
+      tile: "Ready for QA",
+      filters: (id) => ({ assigneeIds: [id], statuses: ["IN_REVIEW"] }),
+      count: (d) => d.myWork.review,
+    },
+    {
+      tile: "In QA",
+      filters: (id) => ({ assigneeIds: [id], statuses: ["IN_QA"] }),
+      count: (d) => d.myWork.inQa,
+    },
+    {
+      tile: "Completed",
+      filters: (id) => ({ assigneeIds: [id], statuses: ["DONE"] }),
+      count: (d) => d.myWork.completed,
+    },
+    {
+      tile: "Overdue",
+      filters: (id) => ({ assigneeIds: [id], resolution: "open", overdue: true }),
+      count: (d) => d.myWork.overdue,
+    },
+  ];
+
+  for (const testCase of cases) {
+    it(`${testCase.tile}: the count is the list`, async () => {
+      const user = await aMemberWithProjects();
+      const data = await loadDashboard(user);
+
+      const list = await listIssues(user, {
+        ...testCase.filters(user.id),
+        pageSize: 100,
+      });
+
+      expect(list.total).toBe(testCase.count(data));
+
+      /* And the rows really are this person's, so a figure cannot be right by
+         counting somebody else's work. */
+      for (const row of list.rows) {
+        expect(row.assignee?.id).toBe(user.id);
+      }
+    });
+  }
+
+  it("Completed excludes rejected and cancelled work", async () => {
+    /*
+     * The specific regression. Both are closed, neither was completed, and the
+     * tile says "Completed" — so the figure must not move when work is
+     * rejected or cancelled.
+     */
+    const user = await aMemberWithProjects();
+    const data = await loadDashboard(user);
+
+    const mine = {
+      projectId: { in: data.scope.projectIds },
+      assigneeId: user.id,
+    };
+
+    const [done, everyClosed] = await Promise.all([
+      prisma.issue.count({ where: { ...mine, status: "DONE" } }),
+      prisma.issue.count({
+        where: { ...mine, status: { in: [...CLOSED_STATUSES] } },
+      }),
+    ]);
+
+    expect(data.myWork.completed).toBe(done);
+
+    /* Where the fixture holds rejected or cancelled work, the two figures
+       differ — which is exactly the gap the tile used to show. Where it holds
+       none they coincide, and the assertion above still pins the definition. */
+    expect(data.myWork.completed).toBeLessThanOrEqual(everyClosed);
   });
 });

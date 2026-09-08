@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ISSUE_STATUSES, ISSUE_TYPES, PRIORITIES, SEVERITIES } from "@/lib/domain";
+import { ISSUE_STATUSES, ISSUE_TYPES, PRIORITIES } from "@/lib/domain";
 
 /**
  * Input contracts for every write path.
@@ -18,7 +18,7 @@ const trimmed = (max: number) => z.string().trim().max(max);
  * update, an omitted field means "leave this alone" and must survive parsing as
  * `undefined`. Deriving the update schema from the create one made every
  * partial update carry the create defaults, so changing a bug's priority
- * silently cleared its severity. The two are kept apart so that cannot recur.
+ * silently cleared its module. The two are kept apart so that cannot recur.
  */
 
 /** Create: absent or empty becomes `null`. */
@@ -83,7 +83,6 @@ const patchDate = z
 export const issueStatusSchema = z.enum(ISSUE_STATUSES);
 export const issueTypeSchema = z.enum(ISSUE_TYPES);
 export const prioritySchema = z.enum(PRIORITIES);
-export const severitySchema = z.enum(SEVERITIES);
 
 /* --------------------------------------------------------------- projects */
 
@@ -156,7 +155,13 @@ const issueBase = z.object({
   type: issueTypeSchema,
   title: trimmed(200).min(3, "Give it a title of at least 3 characters."),
   description: optionalText(20_000),
-  status: issueStatusSchema.default("BACKLOG"),
+  /*
+   * Omitted means "wherever work of mine starts", which depends on who is
+   * filing: Backlog for anyone who builds, Ready for QA for a tester, whose
+   * four statuses have no backlog in them. `createIssue` resolves it, because
+   * the schema does not know who is asking.
+   */
+  status: issueStatusSchema.optional(),
   priority: prioritySchema.default("MEDIUM"),
   assigneeId: optionalId,
   labelIds: z.array(z.string()).default([]),
@@ -164,7 +169,6 @@ const issueBase = z.object({
   parentId: optionalId,
 
   // Bug-specific — always accepted, required only when type is BUG.
-  severity: severitySchema.nullable().optional().default(null),
   environment: optionalText(120),
   browser: optionalText(120),
   operatingSystem: optionalText(120),
@@ -209,7 +213,6 @@ export const updateIssueSchema = z.object({
   description: patchText(20_000),
   status: issueStatusSchema.optional(),
   priority: prioritySchema.optional(),
-  severity: severitySchema.nullable().optional(),
   assigneeId: patchId,
   dueDate: patchDate,
   parentId: patchId,
@@ -282,7 +285,6 @@ export const reportBugSchema = z.object({
   issueId: z.string().min(1),
   title: trimmed(200).min(5, "Summarise the problem in a few words."),
   affectedModule: trimmed(120).min(2, "Say where you found it."),
-  severity: severitySchema.nullable().optional().default(null),
   priority: prioritySchema.default("MEDIUM"),
 });
 

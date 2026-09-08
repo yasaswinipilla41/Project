@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { BackLink } from "@/components/shell/BackLink";
 import { IssueFilters } from "@/components/issues/IssueFilters";
 import { IssueTable } from "@/components/issues/IssueTable";
 import { Stat } from "@/components/ui/primitives";
@@ -7,7 +8,7 @@ import { filterOptions, listIssues } from "@/server/queries/issues";
 import { parseIssueParams, type SearchParams } from "@/server/queries/params";
 import { OPEN_STATUSES } from "@/lib/domain";
 import { prisma } from "@/lib/prisma";
-import { issueScope } from "@/lib/authz";
+import { issueScope, workRoleOf } from "@/lib/authz";
 import { requireUser } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Bugs" };
@@ -17,7 +18,7 @@ export const dynamic = "force-dynamic";
  * The dedicated Bugs view (§12).
  *
  * A bug is `Issue.type = BUG` — the same table, the same list machinery, with
- * the type locked and severity given prominence.
+ * the type locked.
  */
 export default async function BugsPage({
   searchParams,
@@ -30,7 +31,7 @@ export default async function BugsPage({
 
   const scope = issueScope(user);
 
-  const [result, options, total, open, critical, mine] = await Promise.all([
+  const [result, options, total, open, urgent, mine] = await Promise.all([
     listIssues(user, filters),
     filterOptions(user),
     prisma.issue.count({ where: { ...scope, type: "BUG" } }),
@@ -41,7 +42,7 @@ export default async function BugsPage({
       where: {
         ...scope,
         type: "BUG",
-        severity: "CRITICAL",
+        priority: "URGENT",
         status: { in: [...OPEN_STATUSES] },
       },
     }),
@@ -57,6 +58,14 @@ export default async function BugsPage({
 
   return (
     <>
+      {/* Reached from Administration's Users/Projects/Issues/Bugs blocks,
+          which say so in the query string. Shown only then: this page is
+          reached from the sidebar too, where there is no Administration to go
+          back to and a control claiming otherwise would be a lie. */}
+      {params.from === "admin" ? (
+        <BackLink href="/admin" label="Back to Administration" />
+      ) : null}
+
       <div className="prio-page-header">
         <div className="prio-page-header__text">
           <h1 className="prio-page-header__title">
@@ -64,7 +73,7 @@ export default async function BugsPage({
             Bugs
           </h1>
           <p className="prio-page-header__subtitle">
-            Every defect being tracked, with severity alongside priority.
+            Every defect being tracked, and how soon each is being worked on.
           </p>
         </div>
       </div>
@@ -78,10 +87,10 @@ export default async function BugsPage({
         </div>
         <div className="col-6 col-xl-3">
           <Stat
-            label="Critical open"
-            value={critical}
-            tone={critical > 0 ? "danger" : "default"}
-            hint="Severity Critical"
+            label="Urgent open"
+            value={urgent}
+            tone={urgent > 0 ? "danger" : "default"}
+            hint="Priority Urgent"
           />
         </div>
         <div className="col-6 col-xl-3">
@@ -106,7 +115,11 @@ export default async function BugsPage({
         dir={filters.dir ?? "desc"}
         emptyTitle="No bugs found"
         emptyBody="No bug matches these filters. Create a bug to start tracking defects."
-        currentUser={{ id: user.id, isAdmin: user.role === "ADMIN" }}
+        currentUser={{
+          id: user.id,
+          isAdmin: user.role === "ADMIN",
+          workRole: await workRoleOf(user),
+        }}
       />
     </>
   );

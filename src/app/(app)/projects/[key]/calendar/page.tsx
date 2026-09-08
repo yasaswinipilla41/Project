@@ -8,6 +8,7 @@ import {
   type CalendarIssue,
 } from "@/components/projects/ProjectCalendarGrid";
 import { projectScope, workRoleOf } from "@/lib/authz";
+import { doesQaWork } from "@/lib/domain";
 import { prisma } from "@/lib/prisma";
 import { recordProjectVisit } from "@/lib/recents";
 import { requireUser, type CurrentUser } from "@/lib/session";
@@ -92,6 +93,9 @@ export default async function ProjectCalendarPage({
 }) {
   const [{ key }, query] = await Promise.all([params, searchParams]);
   const user = await requireUser();
+  const workRole = await workRoleOf(user);
+  /* Filing from a day sets a due date; a pure tester does not set those. */
+  const canDateWork = doesQaWork(workRole) && workRole !== "QA";
 
   const project = await loadProject(key, user);
   if (!project) notFound();
@@ -191,7 +195,14 @@ export default async function ProjectCalendarPage({
           ) : null}
 
           <ProjectCalendarGrid
-        canCreate={(await workRoleOf(user)) !== "DEVELOPER"}
+        /*
+         * Filing from a day *is* setting a due date — that is the whole point
+         * of the composer — so it is offered to whoever may set one. A pure
+         * tester may not: they raise work, and when it is due is decided by
+         * whoever plans it. They still file from everywhere else, with the
+         * dialog that does not ask for a date.
+         */
+        canCreate={canDateWork}
             projectId={project.id}
             monthLabel={monthLabel}
             year={year}

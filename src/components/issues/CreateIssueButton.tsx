@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/primitives";
 import { IconPlus } from "@/components/ui/Icon";
 import { CreateIssueDialog } from "@/components/create/CreateIssueDialog";
+import type { WorkRole } from "@/lib/domain";
 
 /**
  * "Create Issue" on the issue list.
@@ -23,9 +24,12 @@ import { CreateIssueDialog } from "@/components/create/CreateIssueDialog";
 export function CreateIssueButton({
   defaultProjectId = null,
   disabled = false,
+  workRole,
 }: {
   defaultProjectId?: string | null;
   disabled?: boolean;
+  /** Forwarded to the dialog, which shapes itself around the job. */
+  workRole: WorkRole;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -56,6 +60,7 @@ export function CreateIssueButton({
       {open ? (
         <CreateIssueDialog
           open
+          workRole={workRole}
           defaultProjectId={defaultProjectId}
           onClose={() => setOpen(false)}
         />

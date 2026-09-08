@@ -175,7 +175,6 @@ async function makeSource(label = "Duplication source") {
     title: "Child bug",
     status: "TODO",
     priority: "LOW",
-    severity: "MAJOR",
     assigneeId: member.id,
     parentId: parent.data.id,
   });
@@ -280,7 +279,6 @@ async function issuesByTitle(projectId: string) {
       type: true,
       status: true,
       priority: true,
-      severity: true,
       assigneeId: true,
       reporterId: true,
       dueDate: true,
@@ -462,7 +460,6 @@ describe("the copied project's configuration", () => {
       expect(after.get(title)?.status).toBe(before.get(title)?.status);
       expect(after.get(title)?.priority).toBe(before.get(title)?.priority);
       expect(after.get(title)?.type).toBe(before.get(title)?.type);
-      expect(after.get(title)?.severity).toBe(before.get(title)?.severity);
     }
   });
 });
@@ -501,7 +498,6 @@ describe("the copied issues", () => {
     ]);
 
     const childAfter = after.get("Child bug")!;
-    expect(childAfter.severity).toBe("MAJOR");
     expect(childAfter.assigneeId).toBe(source.member.id);
   });
 

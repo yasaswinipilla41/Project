@@ -13,8 +13,8 @@
    * active navigation item, primary badges. Currently Deep Purple (#5B2C83),
    * at 600, the applied shade.
    *
-   * It is deliberately NOT read by the semantic status/priority/severity/type
-   * tokens further down (TODO, Medium priority, Minor severity, Task type) —
+   * It is deliberately NOT read by the semantic status/priority/type
+   * tokens further down (TODO, Medium priority, Task type) —
    * those anchor to `--prio-info-*` instead, a small frozen ramp kept apart
    * from whatever this one currently is. Coupling them here would make
    * "Medium priority" turn the brand colour alongside every button on the next
@@ -85,7 +85,7 @@
   --prio-neutral-900: #131c2b;
   --prio-neutral-950: #0b1220;
 
-  /* Signal colours (status, severity, feedback). */
+  /* Signal colours (status, priority, feedback). */
   --prio-red-50: #fef2f3;
   --prio-red-100: #fde3e5;
   --prio-red-500: #e5484d;
@@ -363,15 +363,6 @@
   --prio-priority-none: var(--prio-neutral-400);
   --prio-priority-none-bg: var(--prio-neutral-100);
 
-  /* --------------------------------------------- severity semantics */
-  --prio-severity-critical: #a82227;
-  --prio-severity-critical-bg: var(--prio-red-100);
-  --prio-severity-major: #b45309;
-  --prio-severity-major-bg: var(--prio-amber-100);
-  --prio-severity-minor: var(--prio-info-700);
-  --prio-severity-minor-bg: var(--prio-info-100);
-  --prio-severity-trivial: var(--prio-neutral-600);
-  --prio-severity-trivial-bg: var(--prio-neutral-200);
 
   /* ------------------------------------------------ issue type hues */
   --prio-type-task: var(--prio-info-600);

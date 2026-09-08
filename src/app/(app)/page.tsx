@@ -111,7 +111,7 @@ export default async function HomePage() {
           */}
         <div className="prio-dash__heroaside">
           <RoleBadge role={workRole} />
-          <QuickActions role={workRole} />
+          <QuickActions role={workRole} userId={user.id} />
         </div>
       </header>
 
@@ -325,14 +325,14 @@ export default async function HomePage() {
                         <span className="prio-worktile__label">Ready for QA</span>
                       </Link>
                       <Link
-                        href="/bugs?severity=CRITICAL&resolution=open"
+                        href="/bugs?priority=URGENT&resolution=open"
                         className="prio-worktile"
-                        data-tone={data.qa.criticalOpen > 0 ? "danger" : undefined}
+                        data-tone={data.qa.urgentOpen > 0 ? "danger" : undefined}
                       >
                         <span className="prio-worktile__value">
-                          {data.qa.criticalOpen}
+                          {data.qa.urgentOpen}
                         </span>
-                        <span className="prio-worktile__label">Critical</span>
+                        <span className="prio-worktile__label">Urgent</span>
                       </Link>
                     </div>
                   </CardBody>
@@ -434,7 +434,7 @@ export default async function HomePage() {
                     value={data.org.openBugs}
                     icon={<IconBug size={13} />}
                     tone={data.org.openBugs > 0 ? "danger" : "default"}
-                    hint={`${data.org.criticalOpen} critical`}
+                    hint={`${data.org.urgentOpen} urgent`}
                     href="/bugs?resolution=open"
                   />
                 </div>

@@ -16,11 +16,10 @@ import { actAs, joinTestingTeam, projectByKey } from "./helpers";
 /**
  * Administration's rosters, and the line between a roster and a role.
  *
- * The Development team is the new row here, and the thing worth pinning is
- * what it does *not* do: it grants nothing, withholds nothing, and does not
- * decide who is a QA member. `workRoleOf` still reads Testing alone, so
- * somebody on both teams is a QA member and somebody on Development only is a
- * developer exactly as they were before the team existed.
+ * The Development team does two things and it is worth pinning both. On its
+ * own it grants nothing — somebody on Development alone is a developer, which
+ * is what a member not on Testing has always been. Held together with Testing
+ * it makes a Full Stack Developer: both jobs, neither winning over the other.
  *
  * Every assignment case calls the server action directly — the same call a
  * forged request would make — because a filtered dropdown is not a check.
@@ -119,12 +118,15 @@ describe("the Development team is a roster, not a role", () => {
     expect(await workRoleOf(person)).toBe("DEVELOPER");
   });
 
-  it("loses to Testing when somebody is on both", async () => {
+  it("combines with Testing rather than losing to it", async () => {
     /*
-     * Precedence, stated once and asserted here. Testing decides who tests;
-     * Development records who has been onboarded to build. Being on both is
-     * not a contradiction and not an error — it resolves to QA member, because
-     * `workRoleOf` asks about Testing and nothing else.
+     * The rule the whole model turns on. Testing says somebody checks work;
+     * Development says they build it. Holding both is not a contradiction to
+     * be resolved in one side's favour — it is both jobs, and the role says so.
+     *
+     * Neither "QA" nor "DEVELOPER" is an acceptable answer here. A person on
+     * both teams who resolved to either would silently lose half of what they
+     * are allowed to do.
      */
     const team = await developmentTeam();
     const person = await userByEmail(TESTER);
@@ -138,10 +140,70 @@ describe("the Development team is a roster, not a role", () => {
       });
       await trackNewMemberships(team.id, [person.id]);
 
-      expect(await workRoleOf(person)).toBe("QA");
+      expect(await workRoleOf(person)).toBe("FULLSTACK");
     } finally {
       await leave();
     }
+  });
+
+  it("resolves the whole matrix", async () => {
+    /*
+     * Every combination in one place, so a change to `workRoleOf` cannot
+     * satisfy one row by breaking another.
+     *
+     *   Testing only          -> QA
+     *   Development only      -> DEVELOPER
+     *   both                  -> FULLSTACK
+     *   neither               -> DEVELOPER   (the long-standing default)
+     */
+    const dev = await developmentTeam();
+    const testing = await prisma.team.findUniqueOrThrow({
+      where: { slug: TESTING_TEAM_SLUG },
+      select: { id: true },
+    });
+    const person = await userByEmail(TESTER);
+
+    const setTeams = async (onTesting: boolean, onDevelopment: boolean) => {
+      for (const [teamId, wanted] of [
+        [testing.id, onTesting],
+        [dev.id, onDevelopment],
+      ] as const) {
+        if (wanted) {
+          await prisma.teamMember.upsert({
+            where: { teamId_userId: { teamId, userId: person.id } },
+            update: {},
+            create: { teamId, userId: person.id },
+          });
+        } else {
+          await prisma.teamMember.deleteMany({
+            where: { teamId, userId: person.id },
+          });
+        }
+      }
+    };
+
+    try {
+      await setTeams(false, false);
+      expect(await workRoleOf(person)).toBe("DEVELOPER");
+
+      await setTeams(true, false);
+      expect(await workRoleOf(person)).toBe("QA");
+
+      await setTeams(false, true);
+      expect(await workRoleOf(person)).toBe("DEVELOPER");
+
+      await setTeams(true, true);
+      expect(await workRoleOf(person)).toBe("FULLSTACK");
+    } finally {
+      await setTeams(false, false);
+    }
+  });
+
+  it("does not make an administrator anything but an administrator", async () => {
+    /* Full stack is two member jobs. It is not a route to administration, and
+       an admin on both teams is still simply an admin. */
+    const admin = await userByEmail(ADMIN);
+    expect(await workRoleOf(admin)).toBe("ADMIN");
   });
 });
 
@@ -388,19 +450,48 @@ describe("listProjectIssues", () => {
 describe("loadRosterProfile", () => {
   it("reports the derived work role, not the block it was opened from", async () => {
     /*
-     * A profile opened from the Development block still says QA member if that
-     * is what `workRoleOf` says. Anything else would make this the one place
-     * in Prio that answers the question differently.
+     * A profile opened from the Development block reports whatever
+     * `workRoleOf` says — QA member for somebody on Testing alone, Full Stack
+     * Developer for somebody on both. Anything else would make this the one
+     * place in Prio that answers the question differently, and a profile that
+     * named the card it was opened from would be lying about half the people
+     * on it.
+     *
+     * Both memberships are set explicitly rather than inherited from whatever
+     * an earlier test left behind, so the two cases are actually the two cases.
      */
     const person = await userByEmail(TESTER);
-    const { leave } = await joinTestingTeam(TESTER);
+    const dev = await developmentTeam();
+    const testing = await prisma.team.findUniqueOrThrow({
+      where: { slug: TESTING_TEAM_SLUG },
+      select: { id: true },
+    });
+
+    const join = async (teamId: string) => {
+      await prisma.teamMember.upsert({
+        where: { teamId_userId: { teamId, userId: person.id } },
+        update: {},
+        create: { teamId, userId: person.id },
+      });
+    };
+    const drop = async (teamId: string) => {
+      await prisma.teamMember.deleteMany({ where: { teamId, userId: person.id } });
+    };
 
     try {
-      const result = await loadRosterProfile(person.id);
-      expect(result.ok).toBe(true);
-      if (result.ok) expect(result.data.workRole).toBe("QA");
+      await drop(dev.id);
+      await join(testing.id);
+      const asTester = await loadRosterProfile(person.id);
+      expect(asTester.ok).toBe(true);
+      if (asTester.ok) expect(asTester.data.workRole).toBe("QA");
+
+      await join(dev.id);
+      const asFullStack = await loadRosterProfile(person.id);
+      expect(asFullStack.ok).toBe(true);
+      if (asFullStack.ok) expect(asFullStack.data.workRole).toBe("FULLSTACK");
     } finally {
-      await leave();
+      await drop(dev.id);
+      await drop(testing.id);
     }
   });
 

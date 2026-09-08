@@ -6,7 +6,6 @@ import type {
   IssueType,
   Prisma,
   Priority,
-  Severity,
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { listIssues } from "@/server/queries/issues";
@@ -19,7 +18,15 @@ import {
   workRoleOf,
 } from "@/lib/authz";
 import { requireUser } from "@/lib/session";
-import { ISSUE_TYPE_LABEL, STATUS_LABEL, isClosedStatus } from "@/lib/domain";
+import {
+  ISSUE_TYPE_LABEL,
+  STATUS_LABEL,
+  allowedStatusesFor,
+  canSetStatus,
+  doesDeveloperWork,
+  isClosedStatus,
+  statusRefusalReason,
+} from "@/lib/domain";
 import {
   addWatchers,
   assignmentMessage,
@@ -176,6 +183,58 @@ export async function createIssue(
        the button is not what stops a direct call. */
     await assertCanCreateWork(user);
 
+    const role = await workRoleOf(user);
+
+    /*
+     * What a person may file work as.
+     *
+     * The same table the status menu reads, asked with no current status
+     * because creation is not a transition. A tester's four are what testing
+     * uses, so work they raise arrives asking to be looked at rather than
+     * already sitting in somebody's build — Backlog, New and In Progress are
+     * decisions about what is being worked on, and those are not theirs.
+     *
+     * Enforced here rather than by the form, which is the point: a stale page,
+     * a hand-made request and a clone of an In Progress issue all arrive the
+     * same way. The clone dialog offers only what its caller may file, so the
+     * only requests this refuses are the ones no interface would send.
+     */
+    const permitted = allowedStatusesFor(role, null);
+    /* Omitted: the first status this person's job files work in — Backlog for
+       anyone who builds, Ready for QA for a tester. Named: it has to be one of
+       theirs. */
+    const status = input.status ?? permitted[0] ?? "BACKLOG";
+
+    if (!canSetStatus(role, null, status)) {
+      return {
+        ok: false,
+        error: statusRefusalReason(role, null, status),
+        fieldErrors: { status: "Not a status you can file work as." },
+      };
+    }
+
+    /*
+     * A tester files work; they do not hand it out or date it.
+     *
+     * Deciding who does a piece of work is an administrator's, and so is when
+     * it is due — a tester raising a defect is reporting something, not
+     * planning somebody's week. The QA create form does not offer either
+     * field, and this is why that is not the protection: the values are
+     * dropped here, so a stale form, a copied request or a clone of an issue
+     * that had them cannot put them back.
+     *
+     * Dropped rather than refused because both are optional facts about the
+     * work, not instructions that failed — a tester cloning an assigned issue
+     * gets their copy, unassigned, which is what they are allowed to create.
+     * Anyone who also builds keeps both fields; this is the pure tester's
+     * restriction, not QA's half of a fullstack job.
+     */
+    const filesAsTester = role === "QA";
+    if (filesAsTester) {
+      input.assigneeId = null;
+      input.dueDate = null;
+    }
+
     // An assignee must be a member of the project they are being assigned in.
     if (input.assigneeId) {
       const member = await prisma.projectMember.count({
@@ -217,7 +276,7 @@ export async function createIssue(
 
       // Place new work at the end of its column.
       const last = await tx.issue.findFirst({
-        where: { projectId: input.projectId, status: input.status },
+        where: { projectId: input.projectId, status },
         orderBy: { sortIndex: "desc" },
         select: { sortIndex: true },
       });
@@ -234,20 +293,14 @@ export async function createIssue(
              silently dropped. Harmless while no form offered the field;
              not harmless now that every type has one. */
           description: input.description,
-          status: input.status,
+          status,
           priority: input.priority,
           assigneeId: input.assigneeId,
           reporterId: user.id,
           dueDate: input.dueDate,
           parentId: input.parentId,
           sortIndex: (last?.sortIndex ?? 0) + 1000,
-          completedAt: isClosedStatus(input.status) ? new Date() : null,
-
-          /* Severity is a standard field on every type now, so it is stored
-             as given rather than being thrown away for anything that is not a
-             bug — which is what used to happen, and would have made the
-             severity control on a task or story silently do nothing. */
-          severity: input.severity,
+          completedAt: isClosedStatus(status) ? new Date() : null,
 
           // The retired bug columns. Nothing collects them any more; they are
           // still accepted so an existing caller is not broken.
@@ -379,7 +432,6 @@ export async function updateIssue(
         type: true,
         status: true,
         priority: true,
-        severity: true,
         title: true,
         description: true,
         assigneeId: true,
@@ -422,13 +474,17 @@ export async function updateIssue(
       const next = input.assigneeId;
       const changing = next !== existing.assigneeId;
 
-      if (changing && role === "QA") {
+      /* A pure tester does not decide who builds a thing, so they do not touch
+         the assignee at all. Somebody who does development — a developer, or a
+         full stack developer wearing that half of the job — takes work for
+         themselves under the rule below. */
+      if (changing && !doesDeveloperWork(role)) {
         throw new AuthorizationError(
           "Only an administrator can decide who a piece of work belongs to.",
         );
       }
 
-      if (changing && role === "DEVELOPER") {
+      if (changing && role !== "ADMIN") {
         const takingItThemselves = next === user.id;
         const puttingDownTheirOwn =
           next === null && existing.assigneeId === user.id;
@@ -446,29 +502,28 @@ export async function updateIssue(
      *
      * The workflow hands an issue between two people and the statuses are
      * where the hand-off happens, so each end owns the statuses that mean
-     * "I am finished". A developer says Ready for QA and stops there; saying
-     * In QA or Done would be marking their own homework. A tester says In QA,
-     * Done and Reopen, and does not say Ready for QA, which is a claim about
-     * development they are not the one making.
+     * something about its own half: a developer moves work through the build
+     * and hands it over, a tester takes it, checks it and says what the
+     * checking found. Neither writes work off — rejecting and cancelling are
+     * an administrator's, who is unrestricted because they own the workflow
+     * rather than a side of it.
      *
-     * Admins are unrestricted — they own the workflow, not a side of it.
+     * The lists themselves are in `domain.ts` and are keyed by the two halves
+     * of the job rather than by role name, so somebody who does both gets both
+     * — and so this check, the status menu, the board and the create form are
+     * all reading the one table. `allowedStatusesFor` also carries the tester's
+     * discipline: Done follows In QA, because it is what testing concluded.
      */
     if ("status" in input && input.status !== undefined) {
       const next = input.status;
 
-      if (next !== existing.status) {
-        const forbidden: Record<Exclude<typeof role, "ADMIN">, IssueStatus[]> = {
-          DEVELOPER: ["IN_QA", "DONE"],
-          QA: ["IN_REVIEW"],
-        };
-
-        if (role !== "ADMIN" && forbidden[role].includes(next)) {
-          throw new AuthorizationError(
-            role === "DEVELOPER"
-              ? "Only a tester or an administrator can put work into QA or mark it done."
-              : "Only the developer on this work, or an administrator, can mark it ready for QA.",
-          );
-        }
+      if (
+        next !== existing.status &&
+        !canSetStatus(role, existing.status, next)
+      ) {
+        throw new AuthorizationError(
+          statusRefusalReason(role, existing.status, next),
+        );
       }
     }
 
@@ -478,7 +533,6 @@ export async function updateIssue(
       "description",
       "status",
       "priority",
-      "severity",
       "assigneeId",
       "dueDate",
       "parentId",
@@ -673,7 +727,7 @@ export async function claimIssue(
     /* Testers raise work and verify it; they do not take development on.
        Administrators may, because nothing is withheld from them. */
     const role = await workRoleOf(user);
-    if (role === "QA") {
+    if (!doesDeveloperWork(role)) {
       throw new AuthorizationError(
         "Testers do not take development work; a developer picks this up.",
       );
@@ -872,7 +926,6 @@ export interface IssueCloneDraft {
   description: string | null;
   status: IssueStatus;
   priority: Priority;
-  severity: Severity | null;
   assigneeId: string | null;
   dueDate: string | null;
   labelIds: string[];
@@ -898,7 +951,6 @@ export async function issueCloneDraft(
         description: true,
         status: true,
         priority: true,
-        severity: true,
         assigneeId: true,
         dueDate: true,
         project: { select: { id: true, key: true, name: true } },
@@ -931,7 +983,6 @@ export async function issueCloneDraft(
         description: source.description,
         status: source.status,
         priority: source.priority,
-        severity: source.severity,
         assigneeId: source.assigneeId,
         dueDate: source.dueDate
           ? source.dueDate.toISOString().slice(0, 10)
@@ -1197,7 +1248,6 @@ export async function reportBug(
           type: "BUG",
           title: input.title,
           affectedModule: input.affectedModule,
-          severity: input.severity,
           priority: input.priority,
           status: "TODO",
           reporterId: user.id,

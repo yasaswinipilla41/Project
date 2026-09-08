@@ -279,10 +279,12 @@ describe("Who completed an issue, in the issue list", () => {
       expect((await updateIssue({ issueId: issue.id, status })).ok).toBe(true);
     }
 
+    /* The tester takes it through In QA on the way: Done is what testing
+       concluded, so a tester reaches it from there and not from Ready for QA. */
     const finisher = await actAs("priya.nair@symbiosystech.com");
-    expect((await updateIssue({ issueId: issue.id, status: "DONE" })).ok).toBe(
-      true,
-    );
+    for (const status of ["IN_QA", "DONE"] as const) {
+      expect((await updateIssue({ issueId: issue.id, status })).ok).toBe(true);
+    }
 
     // …and afterwards it is handed to somebody else entirely.
     await actAs(ADMIN);
