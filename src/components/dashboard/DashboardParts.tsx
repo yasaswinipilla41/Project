@@ -15,6 +15,9 @@ import {
   ROLE_DESCRIPTION,
   ROLE_LABEL,
   STATUS_LABEL,
+  WORK_ROLE_DESCRIPTION,
+  WORK_ROLE_LABEL,
+  type WorkRole,
 } from "@/lib/domain";
 import {
   daysUntil,
@@ -459,10 +462,36 @@ export function ActivityList({ entries }: { entries: DashboardActivity[] }) {
 /* -------------------------------------------------------------- role badge */
 
 /**
- * The account's real role, from `User.role`. Prio has exactly two — ADMIN and
- * MEMBER — and this renders those, nothing invented.
+ * What the signed-in person does here, derived by `workRoleOf` on the server.
+ *
+ * The account still has exactly two roles and this invents no third one: a
+ * developer and a tester are both MEMBER, and telling them apart is the
+ * Testing team, not a new value in the database. The badge says which, because
+ * the two are offered visibly different things and being told why is better
+ * than being left to work it out from an absent button.
  */
-export function RoleBadge({ role }: { role: Role }) {
+export function RoleBadge({ role }: { role: WorkRole }) {
+  return (
+    <span
+      className="prio-rolebadge"
+      data-role={role}
+      title={WORK_ROLE_DESCRIPTION[role]}
+    >
+      {WORK_ROLE_LABEL[role]}
+    </span>
+  );
+}
+
+/**
+ * Somebody else's account role — Admin or Member — as the People screen grants
+ * it, and as the lists below show it.
+ *
+ * Deliberately not the work role. Whether a member tests or builds is their
+ * team membership, which these lists do not load and which is not what an
+ * administrator changes here; showing "Developer" beside a person whose access
+ * is "Member" would name a thing this row cannot alter.
+ */
+export function AccountRoleBadge({ role }: { role: Role }) {
   return (
     <span className="prio-rolebadge" data-role={role} title={ROLE_DESCRIPTION[role]}>
       {ROLE_LABEL[role]}
@@ -673,7 +702,19 @@ export function WorkloadList({
  */
 export function TeamMembers({
   members,
+  isAdmin = false,
 }: {
+  /**
+   * Whether the viewer is an administrator, which decides whether the detail
+   * control is offered at all.
+   *
+   * The team list itself is everybody's — who is on the projects you can see,
+   * and how much each of them is holding. What sits behind the control is not:
+   * `loadMemberDetail` calls `assertAdmin`, so for anyone else the dialog can
+   * only open, fail and close again. Offering a button that cannot work is
+   * worse than not offering it, and the refusal is still the server's.
+   */
+  isAdmin?: boolean;
   members: {
     id: string;
     name: string;
@@ -706,7 +747,7 @@ export function TeamMembers({
                 ) : null}
               </span>
               <span className="prio-team__meta">
-                <RoleBadge role={member.role} />
+                <AccountRoleBadge role={member.role} />
                 {!member.isActive ? (
                   <span className="prio-team__inactive">Inactive</span>
                 ) : null}
@@ -718,10 +759,13 @@ export function TeamMembers({
             >
               {member.openInScope}
             </span>
-            <MemberDetailButton
-              memberId={member.id}
-              memberName={member.name}
-            />
+            {isAdmin ? (
+              <MemberDetailButton
+                memberId={member.id}
+                memberName={member.name}
+                canAssign
+              />
+            ) : null}
           </div>
         </li>
       ))}
@@ -765,7 +809,7 @@ export function NewUsers({
             </span>
             <span className="prio-newusers__meta">
               {user.email}
-              <RoleBadge role={user.role} />
+              <AccountRoleBadge role={user.role} />
               {!user.isActive ? (
                 <span className="prio-team__inactive">Inactive</span>
               ) : null}
@@ -774,7 +818,13 @@ export function NewUsers({
           <span className="prio-newusers__joined">
             {formatRelative(user.createdAt)}
           </span>
-          <MemberDetailButton memberId={user.id} memberName={user.name} />
+          {/* The new-users list is an administrator's section, so handing the
+              newcomer something to do belongs in it. */}
+          <MemberDetailButton
+            memberId={user.id}
+            memberName={user.name}
+            canAssign
+          />
         </li>
       ))}
     </ul>

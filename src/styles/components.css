@@ -521,7 +521,7 @@
   align-items: center;
   gap: var(--prio-space-2);
   height: 21px;
-  padding: 0 var(--prio-space-3);
+  /* padding: 0 var(--prio-space-3); */
   border-radius: var(--prio-radius-sm);
   font-size: var(--prio-text-2xs);
   font-weight: var(--prio-weight-semibold);

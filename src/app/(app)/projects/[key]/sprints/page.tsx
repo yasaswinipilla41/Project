@@ -4,7 +4,7 @@ import { NewSprintButton } from "@/components/sprints/NewSprintButton";
 import { SprintCard } from "@/components/sprints/SprintCard";
 import { Card, EmptyState } from "@/components/ui/primitives";
 import { IconEmptyBox } from "@/components/ui/Icon";
-import { canManageProject, projectScope } from "@/lib/authz";
+import { projectScope } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
 import { loadSprintBacklog, loadSprints } from "@/server/queries/sprints";
 import { requireUser } from "@/lib/session";
@@ -55,7 +55,16 @@ export default async function ProjectSprintsPage({
    * Both are re-checked inside the server actions; this only decides what is
    * worth showing.
    */
-  const canManage = canManageProject(user, project);
+  /*
+   * A sprint is an administrator's instrument.
+   *
+   * This used to be `canManageProject` — an administrator *or* whoever created
+   * the project. Starting and closing a sprint commits everybody working in
+   * it, and developers and testers read sprints rather than shape them, so the
+   * lifecycle narrowed to administrators alone. `sprints.ts` asserts the same
+   * rule on every write; this only decides what to draw.
+   */
+  const canManage = user.role === "ADMIN";
 
   const open = sprints.filter((sprint) => sprint.status !== "COMPLETED");
   const completed = sprints.filter((sprint) => sprint.status === "COMPLETED");

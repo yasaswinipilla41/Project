@@ -35,20 +35,39 @@ export function proxy(request: NextRequest) {
 
   if (!hasSession) {
     /*
-     * An API request is answered, not redirected.
+     * A programmatic call is answered; a person opening a link is sent to sign
+     * in. The distinction matters in both directions, and getting it wrong
+     * breaks one caller or the other:
      *
-     * Bouncing `/api/...` to the sign-in page sends back 307 and then a page of
-     * HTML, which is useless to every caller that asks for one of these: a
-     * `fetch` sees a success status and HTML where it expected JSON, and a
-     * `<video src="/api/attachments/...">` follows the redirect, is handed
-     * `text/html`, and fails to load with nothing to explain why. The route
-     * behind this already answers 401 for exactly this case — this makes the
-     * guard in front of it say the same thing instead of contradicting it.
+     *  - A `fetch` that is redirected sees a success status and a page of HTML
+     *    where it expected JSON, which is why these are answered rather than
+     *    bounced.
+     *  - Excel does the opposite. Clicking an attachment link in an exported
+     *    sheet makes Office fetch the URL itself before handing it anywhere,
+     *    with no Prio cookie to send. A 401 with no authentication scheme it
+     *    recognises ends the attempt there — "Cannot download the information
+     *    you requested" — and the browser, which *does* have the session, is
+     *    never opened. A redirect it follows, landing the reader on sign-in
+     *    and then, through `next`, on the file they asked for.
      *
-     * Nothing is loosened: the request is still refused before it reaches the
-     * route, and the route re-checks the real session regardless.
+     * So only requests that are recognisably programmatic get JSON. Anything
+     * else — a browser navigation, Office, a pasted URL — is treated as a
+     * person and redirected. `Sec-Fetch-Mode` is what modern browsers say about
+     * their own requests; the `Accept` and `X-Requested-With` arms cover the
+     * callers that do not send it.
+     *
+     * Nothing is loosened either way: the request is refused before it reaches
+     * the route, and the route re-resolves the real session regardless.
      */
-    if (pathname.startsWith("/api/")) {
+    const accept = request.headers.get("accept") ?? "";
+    const fetchMode = request.headers.get("sec-fetch-mode");
+    const isProgrammatic =
+      fetchMode === "cors" ||
+      fetchMode === "same-origin" ||
+      request.headers.get("x-requested-with") === "XMLHttpRequest" ||
+      (accept.includes("application/json") && !accept.includes("text/html"));
+
+    if (pathname.startsWith("/api/") && isProgrammatic) {
       return NextResponse.json({ error: "Not signed in." }, { status: 401 });
     }
 

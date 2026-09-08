@@ -12,6 +12,7 @@ import {
 import { signOut } from "@/lib/auth-client";
 import { Avatar } from "@/components/ui/primitives";
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/Menu";
+import type { WorkRole } from "@/lib/authz";
 import {
   IconBell,
   IconChevronDown,
@@ -74,10 +75,13 @@ function ShortcutHint() {
 
 export function Topbar({
   user,
+  workRole,
   projects,
   unreadNotifications,
   onOpenMobileNav,
 }: {
+  /** Decides what the bar offers; `createIssue` re-checks for itself. */
+  workRole: WorkRole;
   user: TopbarUser;
   projects: TopbarProject[];
   unreadNotifications: number;
@@ -276,7 +280,15 @@ export function Topbar({
       <div className="prio-topbar__spacer" />
 
       <div className="prio-topbar__actions">
-        {/* Split control: the button creates a Task, the caret picks the type. */}
+        {/*
+          * Split control: the button creates a Task, the caret picks the type.
+          *
+          * Absent for a developer, who does not file work — it is raised for
+          * them, and a control that always answered "you may not" would be
+          * worse than no control. `createIssue` refuses the call regardless,
+          * so this is the offer and not the rule.
+          */}
+        {workRole === "DEVELOPER" ? null : (
         <div className="prio-create">
           <button
             type="button"
@@ -319,15 +331,22 @@ export function Topbar({
               * the sprint to the project being looked at when there is one,
               * and otherwise asks which project it belongs to.
               */}
-            <MenuSeparator />
-            <MenuItem
-              icon={<IconTimeline size={16} />}
-              onSelect={() => setSprintOpen(true)}
-            >
-              Sprint
-            </MenuItem>
+            {/* A sprint commits everybody's fortnight, so creating one is an
+                administrator's act; `createSprint` asserts it too. */}
+            {user.role === "ADMIN" ? (
+              <>
+                <MenuSeparator />
+                <MenuItem
+                  icon={<IconTimeline size={16} />}
+                  onSelect={() => setSprintOpen(true)}
+                >
+                  Sprint
+                </MenuItem>
+              </>
+            ) : null}
           </Menu>
         </div>
+        )}
 
         {/* Mounted only while open so every open starts from a clean form. */}
         {createOpen ? (

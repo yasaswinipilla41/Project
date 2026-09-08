@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ListScrollMemory } from "@/components/issues/ListScrollMemory";
 import { Avatar, EmptyState } from "@/components/ui/primitives";
 import {
   IssueKey,
@@ -122,8 +123,21 @@ export function IssueTable({
     (c) => showSeverity || c.field !== "severity",
   );
 
+  /*
+   * This list, exactly as it is being looked at — filters, search, sort, page
+   * and page size are all already in the query string. Carried onto every row
+   * as `?from=`, so the issue that opens knows which list it came from and can
+   * offer a way back to it rather than to the project's summary.
+   */
+  const listHref = buildHref(basePath, searchParams, {});
+  const issueHref = (key: string) =>
+    `/issues/${key.toLowerCase()}?from=${encodeURIComponent(listHref)}`;
+
   return (
     <>
+      {/* Puts the reader back where they were when they return to this list. */}
+      <ListScrollMemory url={listHref} />
+
       <div className="prio-table-wrap prio-scroll">
         <table className="prio-table prio-table--compact">
           <thead>
@@ -182,7 +196,7 @@ export function IssueTable({
                 >
                   <td className="prio-col-key">
                     <Link
-                      href={`/issues/${issue.key.toLowerCase()}`}
+                      href={issueHref(issue.key)}
                       className="prio-issuelink"
                     >
                       <IssueTypeIcon type={issue.type} size={17} />
@@ -192,7 +206,7 @@ export function IssueTable({
 
                   <td>
                     <Link
-                      href={`/issues/${issue.key.toLowerCase()}`}
+                      href={issueHref(issue.key)}
                       className="prio-issuetitle"
                     >
                       {issue.title}

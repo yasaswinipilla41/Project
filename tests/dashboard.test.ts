@@ -6,7 +6,7 @@ import type { CurrentUser } from "@/lib/session";
 import { loadDashboard } from "@/server/queries/dashboard";
 import { createIssue, updateIssue } from "@/server/issues";
 import { markNotificationRead } from "@/server/notifications";
-import { actAs, deleteIssues, projectByKey } from "./helpers";
+import { actAs, deleteIssues, joinTestingTeam, projectByKey } from "./helpers";
 
 /**
  * The dashboard's contract is that every figure on it is real: an aggregate
@@ -549,5 +549,55 @@ describe("loadDashboard — new assignment highlight", () => {
       select: { assigneeId: true },
     });
     expect(stillAssigned.assigneeId).toBe(member.id);
+  });
+});
+
+describe("loadDashboard — the QA panel", () => {
+  const MEMBER = "priya.nair@symbiosystech.com";
+
+  it("is not shown to a developer whose history is not bug-led", async () => {
+    /* A member who is not on the Testing team is a developer. The panel may
+       still appear for one whose own reporting outweighs their assignments —
+       that rule is unchanged — so this asserts the two together rather than
+       assuming either. */
+    const developer = await userByEmail("kiran.das@symbiosystech.com");
+    const data = await loadDashboard(developer);
+
+    if (data.qa) {
+      expect(data.qa.isTester).toBe(false);
+      expect(data.qa.bugsReportedByMe).toBeGreaterThan(0);
+    } else {
+      expect(data.qa).toBeNull();
+    }
+  });
+
+  it("is shown to a tester, and counts every issue waiting in their projects", async () => {
+    const { leave } = await joinTestingTeam(MEMBER);
+    try {
+      const tester = await userByEmail(MEMBER);
+      const data = await loadDashboard(tester);
+
+      expect(data.qa).not.toBeNull();
+      expect(data.qa!.isTester).toBe(true);
+
+      /* The queue is everything handed back for checking anywhere they can
+         see — recomputed here with a different query than the one under
+         test, which is this file's whole method. */
+      const waiting = await prisma.issue.count({
+        where: {
+          projectId: { in: data.scope.projectIds },
+          status: "IN_REVIEW",
+        },
+      });
+      expect(data.qa!.readyForQa).toBe(waiting);
+
+      /* And it is a wider set than the bugs they happened to report
+         themselves, which is what the panel counted before. */
+      expect(data.qa!.readyForQa).toBeGreaterThanOrEqual(
+        data.qa!.awaitingVerification,
+      );
+    } finally {
+      await leave();
+    }
   });
 });

@@ -320,18 +320,27 @@ describe("Adding issues to a sprint", () => {
     expect(ids).not.toContain(elsewhere.id);
   });
 
-  it("lets a member of the project put their work into a sprint", async () => {
-    /* Filling a sprint is ordinary work in a project you belong to — the same
-       access `updateIssue` asks for — unlike starting or completing one. */
+  it("refuses a member filling a sprint, and lets an administrator", async () => {
+    /*
+     * Filling a sprint used to be ordinary work in a project you belong to.
+     * It is not: what a sprint contains is a commitment about the next
+     * fortnight, made for everybody working in it, so it moved to the same
+     * rule as starting and completing one. Developers and testers read
+     * sprints; they do not shape them.
+     */
     await actAs(ADMIN);
     const project = await projectByKey("ENG");
     const sprintId = await makeSprint(project.id, "Member fills this");
+    const issue = await makeIssue(project.id, "Member's own work");
 
     await actAs(MEMBER);
-    const issue = await makeIssue(project.id, "Member's own work");
-    const result = await addIssuesToSprint({ sprintId, issueIds: [issue.id] });
+    const refused = await addIssuesToSprint({ sprintId, issueIds: [issue.id] });
+    expect(refused.ok).toBe(false);
+    expect(await prisma.issue.count({ where: { sprintId } })).toBe(0);
 
-    expect(result.ok).toBe(true);
+    await actAs(ADMIN);
+    const allowed = await addIssuesToSprint({ sprintId, issueIds: [issue.id] });
+    expect(allowed.ok).toBe(true);
     expect(await prisma.issue.count({ where: { sprintId } })).toBe(1);
   });
 

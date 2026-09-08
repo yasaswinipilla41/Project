@@ -238,14 +238,18 @@ test.describe("The issue list", () => {
 /* ------------------------------------------------- the attachment guard */
 
 test.describe("An attachment request without a session", () => {
-  test("is answered with 401 JSON, not a redirect to a sign-in page", async ({
+  test("answers a program with JSON and sends a person to sign in", async ({
   }, testInfo) => {
     /*
-     * What a `<video src="/api/attachments/...">` actually experiences. The
-     * guard in front of the route used to redirect an unauthenticated request
-     * to `/sign-in`, so the player followed it, was handed `text/html`, and
-     * failed to load with nothing to explain why. The refusal is unchanged —
-     * this is about answering in the language the caller asked in.
+     * Two callers, two right answers, and the file for neither.
+     *
+     * A `fetch` that is redirected sees a success status and a page of HTML
+     * where it expected JSON, so a programmatic call is answered outright. A
+     * person — a browser navigation, or Excel resolving a hyperlink out of an
+     * exported sheet — has to be redirected instead: Office fetches the URL
+     * itself before handing it anywhere, has no Prio cookie to send, and ends
+     * the attempt on a 401 it cannot answer ("Cannot download the information
+     * you requested"), never opening the browser that does have the session.
      */
     const attachment = await prisma.attachment.findFirst({
       select: { id: true },
@@ -256,19 +260,43 @@ test.describe("An attachment request without a session", () => {
       baseURL: testInfo.project.use.baseURL,
       storageState: { cookies: [], origins: [] },
     });
+    const url = `/api/attachments/${attachment!.id}`;
 
-    const attempts: Record<string, string>[] = [{}, { Range: "bytes=0-100" }];
-    for (const headers of attempts) {
-      const response = await anonymous.get(
-        `/api/attachments/${attachment!.id}`,
-        { headers, maxRedirects: 0 },
-      );
-
-      expect(response.status()).toBe(401);
+    // A program: answered, in the language it asked in.
+    const asProgram: Record<string, string>[] = [
+      { Accept: "application/json" },
+      { "Sec-Fetch-Mode": "cors" },
+      { "X-Requested-With": "XMLHttpRequest" },
+    ];
+    for (const headers of asProgram) {
+      const response = await anonymous.get(url, { headers, maxRedirects: 0 });
+      expect(response.status(), JSON.stringify(headers)).toBe(401);
       expect(response.headers()["content-type"]).toContain("application/json");
-      // Emphatically not the file, and not an HTML page.
-      expect(response.headers()["content-type"]).not.toContain("video/");
-      expect(response.headers()["content-type"]).not.toContain("text/html");
+    }
+
+    // A person: pointed at sign-in, and back to the file afterwards.
+    const asPerson: Record<string, string>[] = [
+      { Accept: "*/*" },
+      { Accept: "text/html", "Sec-Fetch-Mode": "navigate" },
+    ];
+    for (const headers of asPerson) {
+      const response = await anonymous.get(url, { headers, maxRedirects: 0 });
+      expect(response.status(), JSON.stringify(headers)).toBe(307);
+      const location = response.headers()["location"]!;
+      expect(location).toContain("/sign-in");
+      expect(decodeURIComponent(location)).toContain(url);
+    }
+
+    // Whichever they were, no file came back.
+    const either: Record<string, string>[] = [
+      { Accept: "*/*" },
+      { Accept: "application/json" },
+    ];
+    for (const headers of either) {
+      const response = await anonymous.get(url, { headers, maxRedirects: 0 });
+      const type = response.headers()["content-type"] ?? "";
+      expect(type).not.toContain("image/");
+      expect(type).not.toContain("video/");
     }
 
     await anonymous.dispose();

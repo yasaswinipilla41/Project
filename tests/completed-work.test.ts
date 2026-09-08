@@ -1,8 +1,9 @@
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/prisma";
+import { testHeaders } from "./setup";
 import { createIssue, updateIssue } from "@/server/issues";
 import { loadCompletedByPerson } from "@/server/queries/completedWork";
-import { actAs, deleteIssues, projectByKey } from "./helpers";
+import { actAs, deleteIssues, joinTestingTeam, projectByKey } from "./helpers";
 
 /**
  * Who completed the work.
@@ -24,16 +25,48 @@ const HOLDER = "rahul.menon@symbiosystech.com";
 
 const createdIssues: string[] = [];
 
+/*
+ * These tests raise work and carry it through to Done, which is a tester's
+ * job: Prio decides developer-or-tester by Testing-team membership, and the
+ * seed puts nobody on it. The people acting below are made testers for the
+ * run and taken off again afterwards, so the fixture is left as it was found.
+ */
+const testerEmails = [FINISHER, HOLDER];
+const leaveTestingTeam: (() => Promise<void>)[] = [];
+
+beforeAll(async () => {
+  for (const email of testerEmails) {
+    const { leave } = await joinTestingTeam(email);
+    leaveTestingTeam.push(leave);
+  }
+});
+
 afterAll(async () => {
+  for (const leave of leaveTestingTeam) await leave();
   await deleteIssues(createdIssues);
 });
 
-/** Walks an issue through the ordinary workflow to Done, as whoever is acting. */
+/**
+ * Walks an issue to Done, finishing as whoever is acting.
+ *
+ * The steps up to Ready for QA belong to the developer side of the workflow,
+ * so they are taken by the administrator — who is unrestricted — and only the
+ * last one, the one this file is about, is taken by the caller. Otherwise
+ * these tests would be asserting who may move an issue rather than who gets
+ * the credit for finishing it.
+ */
 async function finish(issueId: string) {
-  for (const status of ["TODO", "IN_PROGRESS", "IN_REVIEW", "DONE"] as const) {
+  const finisher = testHeaders.current;
+
+  await actAs(ADMIN);
+  for (const status of ["TODO", "IN_PROGRESS", "IN_REVIEW"] as const) {
     const result = await updateIssue({ issueId, status });
     if (!result.ok) throw new Error(`could not move to ${status}: ${result.error}`);
   }
+
+  testHeaders.current = finisher;
+  const done = await updateIssue({ issueId, status: "DONE" });
+  if (!done.ok) throw new Error(`could not move to DONE: ${done.error}`);
 }
 
 async function makeIssue(projectId: string, title: string) {

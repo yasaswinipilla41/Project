@@ -121,7 +121,13 @@ describe("assignment protection", () => {
     expect(row.assigneeId).toBe(memberA);
   });
 
-  it("lets a member hand on work that is currently their own", async () => {
+  it("refuses to let a developer hand their work on to somebody else", async () => {
+    /*
+     * This used to be allowed — passing on work that was already yours read as
+     * a courtesy rather than an assignment. It is an assignment: it decides who
+     * does a piece of work, and that is an administrator's call. A developer
+     * may put work down or take it up; they may not place it on a colleague.
+     */
     const issueId = await anIssue("Assignment fixture — hand on");
     const memberA = await userId(MEMBER_A);
     const memberB = await userId(MEMBER_B);
@@ -131,16 +137,23 @@ describe("assignment protection", () => {
 
     await actAs(MEMBER_A);
     const result = await updateIssue({ issueId, assigneeId: memberB });
-    expect(result.ok).toBe(true);
+    expect(result.ok).toBe(false);
 
     const row = await prisma.issue.findUniqueOrThrow({
       where: { id: issueId },
       select: { assigneeId: true },
     });
-    expect(row.assigneeId).toBe(memberB);
+    expect(row.assigneeId).toBe(memberA);
   });
 
-  it("refuses to let a member take another member's work", async () => {
+  it("lets a developer take another developer's work — for themselves", async () => {
+    /*
+     * The other half of the same rule, and the reason the first half is not
+     * simply "developers do not touch the assignee". Work has to be able to
+     * move when somebody is away, so a developer may take it; what they cannot
+     * do is decide where it goes. Recorded as a handover — see
+     * `issue-claim-takeover.test.ts`, which covers the trail this leaves.
+     */
     const issueId = await anIssue("Assignment fixture — takeover");
     const memberA = await userId(MEMBER_A);
     const memberB = await userId(MEMBER_B);
@@ -152,13 +165,13 @@ describe("assignment protection", () => {
     // only version of this attempt that matters.
     await actAs(MEMBER_B);
     const result = await updateIssue({ issueId, assigneeId: memberB });
-    expect(result.ok).toBe(false);
+    expect(result.ok).toBe(true);
 
     const row = await prisma.issue.findUniqueOrThrow({
       where: { id: issueId },
       select: { assigneeId: true },
     });
-    expect(row.assigneeId).toBe(memberA);
+    expect(row.assigneeId).toBe(memberB);
   });
 
   it("refuses to let a member unassign another member's work", async () => {

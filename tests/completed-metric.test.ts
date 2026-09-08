@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { monthWindow } from "@/lib/format";
 import type { CurrentUser } from "@/lib/session";
@@ -6,7 +6,7 @@ import { loadDashboard } from "@/server/queries/dashboard";
 import { createIssue, updateIssue } from "@/server/issues";
 import { listIssues } from "@/server/queries/issues";
 import { parseIssueParams } from "@/server/queries/params";
-import { actAs, deleteIssues, projectByKey } from "./helpers";
+import { actAs, deleteIssues, joinTestingTeam, projectByKey } from "./helpers";
 
 /**
  * "Completed this month", and the list it opens.
@@ -26,7 +26,24 @@ const ADMIN = "admin@symbiosystech.com";
 
 const createdIssues: string[] = [];
 
+/*
+ * These tests raise work and carry it through to Done, which is a tester's
+ * job: Prio decides developer-or-tester by Testing-team membership, and the
+ * seed puts nobody on it. The people acting below are made testers for the
+ * run and taken off again afterwards, so the fixture is left as it was found.
+ */
+const testerEmails = ["priya.nair@symbiosystech.com"];
+const leaveTestingTeam: (() => Promise<void>)[] = [];
+
+beforeAll(async () => {
+  for (const email of testerEmails) {
+    const { leave } = await joinTestingTeam(email);
+    leaveTestingTeam.push(leave);
+  }
+});
+
 afterAll(async () => {
+  for (const leave of leaveTestingTeam) await leave();
   await deleteIssues(createdIssues);
 });
 
@@ -254,11 +271,18 @@ describe("Who completed an issue, in the issue list", () => {
     });
     createdIssues.push(issue.id);
 
-    // A different person finishes it…
-    const finisher = await actAs("priya.nair@symbiosystech.com");
-    for (const status of ["TODO", "IN_PROGRESS", "IN_REVIEW", "DONE"] as const) {
+    /* Carried to the point of verification by the people whose statuses those
+       are, and then finished by somebody else — which is the whole point: the
+       person who moved it to Done is not the person holding it. */
+    await actAs(ADMIN);
+    for (const status of ["TODO", "IN_PROGRESS", "IN_REVIEW"] as const) {
       expect((await updateIssue({ issueId: issue.id, status })).ok).toBe(true);
     }
+
+    const finisher = await actAs("priya.nair@symbiosystech.com");
+    expect((await updateIssue({ issueId: issue.id, status: "DONE" })).ok).toBe(
+      true,
+    );
 
     // …and afterwards it is handed to somebody else entirely.
     await actAs(ADMIN);

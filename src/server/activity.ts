@@ -33,10 +33,25 @@ export async function recordIssueCreated(
   });
 }
 
-/** Records one entry per changed field. No changes means no rows. */
+/**
+ * Records one entry per changed field. No changes means no rows.
+ *
+ * `action` names what the change *was*, and defaults to the ordinary edit. A
+ * developer taking an issue off another developer passes `issue.takeover`: the
+ * row is otherwise identical — same field, same old and new assignee, same
+ * actor, same timestamp — so every reader that already understands an
+ * `assigneeId` change keeps working, including the Activity feed's assignment
+ * filter. Only the sentence it renders differs, which is the whole difference
+ * between "reassigned this" and "took this over".
+ */
 export async function recordFieldChanges(
   db: Db,
-  params: { issueId: string; actorId: string; changes: FieldChange[] },
+  params: {
+    issueId: string;
+    actorId: string;
+    changes: FieldChange[];
+    action?: string;
+  },
 ): Promise<void> {
   if (params.changes.length === 0) return;
 
@@ -44,7 +59,7 @@ export async function recordFieldChanges(
     data: params.changes.map((change) => ({
       issueId: params.issueId,
       actorId: params.actorId,
-      action: "issue.updated",
+      action: params.action ?? "issue.updated",
       field: change.field,
       oldValue: change.oldValue,
       newValue: change.newValue,
@@ -214,4 +229,29 @@ export async function notifyAdminsOfNewUser(
         "has joined Prio and is now available in Bugs → Reporter and Assignee.",
     })),
   });
+}
+
+/**
+ * The testers on a project: its members who are on the Testing team.
+ *
+ * Handing work to QA has no one person to address — the issue is not assigned
+ * to a tester at that moment, and often never is — so the notice goes to
+ * whoever could pick it up. Membership of the project bounds it: a tester who
+ * cannot open the issue is not told about it.
+ */
+export async function projectTesterIds(
+  db: Db,
+  projectId: string,
+): Promise<string[]> {
+  const rows = await db.projectMember.findMany({
+    where: {
+      projectId,
+      user: {
+        isActive: true,
+        teamMemberships: { some: { team: { slug: TESTING_TEAM_SLUG } } },
+      },
+    },
+    select: { userId: true },
+  });
+  return rows.map((row) => row.userId);
 }

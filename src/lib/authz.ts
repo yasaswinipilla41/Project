@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import type { CurrentUser } from "@/lib/session";
+import type { WorkRole } from "@/lib/domain";
 
 /**
  * Project-level authorization.
@@ -180,6 +181,53 @@ export async function accessibleProjectIds(
 
 /** Slug of the team that owns the testing surfaces. */
 export const TESTING_TEAM_SLUG = "testing";
+
+/* --------------------------------------------------------- working roles */
+
+/**
+ * What somebody does here, as opposed to what they may administer.
+ *
+ * Prio has two `Role` values and always has: ADMIN and MEMBER. That answers
+ * "may this person administer Prio", which is a different question from "is
+ * this person a tester or a developer" — and the second is the one the
+ * workflow turns on. Rather than a third `Role` value and the migration that
+ * would need, the answer is read from the team the person is on, which is
+ * where Prio already keeps it: `/my-work` has always decided whether to show
+ * the testing surfaces this way.
+ *
+ *   ADMIN                              -> "ADMIN"
+ *   MEMBER on the Testing team         -> "QA"
+ *   MEMBER not on the Testing team     -> "DEVELOPER"
+ *
+ * An administrator is an administrator whether or not they are also on the
+ * team: nothing below is ever withheld from them, so the distinction between
+ * "admin who tests" and "admin who does not" would decide nothing.
+ *
+ * Everything that gates on this calls `workRoleOf`; there is no second
+ * definition of who a tester is anywhere in the codebase.
+ */
+export type { WorkRole };
+
+export async function workRoleOf(user: CurrentUser): Promise<WorkRole> {
+  if (user.role === "ADMIN") return "ADMIN";
+  return (await isTeamMember(user, TESTING_TEAM_SLUG)) ? "QA" : "DEVELOPER";
+}
+
+/**
+ * Who may file work: an administrator, or a tester.
+ *
+ * Raising work is QA's job in this model — a defect found, a task that needs
+ * doing — and a developer's job is to build what has been raised. A developer
+ * who needs something filed asks for it; the alternative is a backlog nobody
+ * has agreed to.
+ */
+export async function assertCanCreateWork(user: CurrentUser): Promise<void> {
+  if ((await workRoleOf(user)) === "DEVELOPER") {
+    throw new AuthorizationError(
+      "Only an administrator or a tester can create work items.",
+    );
+  }
+}
 
 export async function isTeamMember(
   user: CurrentUser,

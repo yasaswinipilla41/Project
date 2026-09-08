@@ -82,7 +82,8 @@ test.describe("Dashboard — signed in as an administrator", () => {
     await expect(greeting).toBeVisible();
     await expect(greeting).toHaveText(/^Good (morning|afternoon|evening), \S+/);
 
-    // Prio has exactly two roles. The badge shows the account's real one.
+    /* The badge names what this person does. For an administrator that is the
+       same word either way — the account role and the job coincide. */
     await expect(page.locator(".prio-dash__herometa .prio-rolebadge")).toHaveAttribute(
       "data-role",
       "ADMIN",
@@ -443,10 +444,19 @@ test.describe("Dashboard — signed in as a member", () => {
     await page.goto("/");
 
     await expect(page.locator(".prio-dash")).toBeVisible();
+    /* The badge names what this person does, not what their account row says:
+       a member who is not on the Testing team is a developer, and that is the
+       distinction the interface acts on — it is why the create control is
+       absent below. The account role is still MEMBER and still what the People
+       screen grants; it is shown as such beside other people, in the team
+       list. */
     await expect(page.locator(".prio-dash__herometa .prio-rolebadge")).toHaveAttribute(
       "data-role",
-      "MEMBER",
+      "DEVELOPER",
     );
+    await expect(
+      page.locator(".prio-dash__herometa .prio-rolebadge"),
+    ).toHaveText("Developer");
 
     // The org-wide section is an administrator surface.
     await expect(
@@ -527,14 +537,19 @@ test.describe("Dashboard — signed in as a member", () => {
     ).toHaveCount(0);
 
     /* The row used to be a link to the global issue list filtered by that
-       person — a roster entry that navigated off Home entirely. Looking
-       someone up now opens the member detail dialog that already existed for
-       it, so the context stays put. */
-    const url = page.url();
-    await first.getByRole("button", { name: /^View details for / }).click();
-    await expect(page.getByRole("dialog")).toBeVisible();
-    expect(page.url(), "opening a person must not navigate away").toBe(url);
-    await page.keyboard.press("Escape");
+       person — a roster entry that navigated off Home entirely. It is not one
+       any more: the section is a roster, and reading it does not take you off
+       the page you are on.
+
+       Nor does it carry the member-detail control. What that opens is an
+       administrator's read of somebody — `loadMemberDetail` calls
+       `assertAdmin` — so for a member the button could only ever open, fail
+       and close. The admin's own version of this is covered in
+       `role-workflow.spec.ts`. */
+    await expect(first.locator("a")).toHaveCount(0);
+    await expect(
+      first.getByRole("button", { name: /^View details for / }),
+    ).toHaveCount(0);
   });
 
   test("an assigned card opens the issue it names", async ({ page }) => {

@@ -29,6 +29,7 @@ import {
 } from "@/components/dashboard/DashboardParts";
 import { QuickActions } from "@/components/dashboard/QuickActions";
 import { requireUser } from "@/lib/session";
+import { workRoleOf } from "@/lib/authz";
 import { loadDashboard } from "@/server/queries/dashboard";
 
 export const dynamic = "force-dynamic";
@@ -53,6 +54,7 @@ export default async function HomePage() {
 
   const firstName = user.name.split(" ")[0] ?? user.name;
   const isAdmin = data.scope.isAdmin;
+  const workRole = await workRoleOf(user);
 
   /* Greeting and date are computed once, server-side, from the same request
      clock the aggregates used — so the copy can never disagree with the data. */
@@ -91,12 +93,12 @@ export default async function HomePage() {
                 : "You are not a member of any project yet."}
           </p>
           <div className="prio-dash__herometa">
-            <RoleBadge role={user.role} />
+            <RoleBadge role={workRole} />
             <span className="prio-dash__date">{today}</span>
           </div>
         </div>
 
-        <QuickActions role={user.role} />
+        <QuickActions role={workRole} />
       </header>
 
       {data.kpi.projects === 0 ? (
@@ -244,7 +246,7 @@ export default async function HomePage() {
             />
             <Card>
               <CardBody>
-                <TeamMembers members={data.teamMembers} />
+                <TeamMembers members={data.teamMembers} isAdmin={isAdmin} />
               </CardBody>
             </Card>
           </section>
@@ -264,15 +266,15 @@ export default async function HomePage() {
               </div>
             ) : null}
 
-            {/* Bug-focused figures, shown when this person's own history says
-                they work that way. Derived from what they have done — Prio has
-                no QA role to invent. */}
+            {/* The QA panel: a tester's queue, or — as before — the bugs of
+                somebody whose history is bug-led. Which of the two it is
+                changes what "Ready for QA" counts, and nothing else. */}
             {data.qa ? (
               <div className={isAdmin ? "col-12" : "col-12 col-xl-5"}>
                 <Card style={{ height: "100%" }}>
                   <CardBody>
                     <h2 className="prio-dash__section-title">
-                      Bugs I reported
+                      {data.qa.isTester ? "My QA queue" : "Bugs I reported"}
                     </h2>
                     <div
                       className="prio-workgrid"
@@ -287,12 +289,22 @@ export default async function HomePage() {
                         </span>
                         <span className="prio-worktile__label">Reported</span>
                       </Link>
+                      {/* A tester checks whatever a developer hands back, not
+                          only the bugs they raised themselves — so their queue
+                          is the whole of it, and the link opens the whole of
+                          it too. */}
                       <Link
-                        href={`/issues?reporter=${user.id}&type=BUG&status=IN_REVIEW`}
+                        href={
+                          data.qa.isTester
+                            ? "/issues?status=IN_REVIEW"
+                            : `/issues?reporter=${user.id}&type=BUG&status=IN_REVIEW`
+                        }
                         className="prio-worktile"
                       >
                         <span className="prio-worktile__value">
-                          {data.qa.awaitingVerification}
+                          {data.qa.isTester
+                            ? data.qa.readyForQa
+                            : data.qa.awaitingVerification}
                         </span>
                         <span className="prio-worktile__label">Ready for QA</span>
                       </Link>

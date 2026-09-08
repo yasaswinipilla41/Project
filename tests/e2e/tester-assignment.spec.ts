@@ -61,15 +61,21 @@ test("a tester is told they are the tester, and the notification opens the issue
   });
 
   /* An ENG issue they do not already hold, so assigning it is a real change
-     and the notification is this test's own. */
+     and the notification is this test's own.
+
+     `assigneeId: { not: member.id }` alone is not that set: a comparison
+     against a value never matches NULL, so it quietly excludes every
+     unassigned issue — which is most of them, and exactly the ones this wants.
+     Spelling it as an OR includes them, and stops the test depending on some
+     other person happening to hold something. */
   const issue = await prisma.issue.findFirstOrThrow({
     where: {
       project: { key: "ENG" },
-      assigneeId: { not: member.id },
+      OR: [{ assigneeId: null }, { assigneeId: { not: member.id } }],
       status: { in: ["BACKLOG", "TODO", "IN_PROGRESS"] },
     },
     orderBy: { createdAt: "desc" },
-    select: { id: true, key: true, title: true },
+    select: { id: true, key: true, title: true, assigneeId: true },
   });
 
   await prisma.notification.deleteMany({
@@ -130,4 +136,13 @@ test("a tester is told they are the tester, and the notification opens the issue
   );
 
   await memberContext.close();
+
+  /* Hand the issue back to whoever had it. The test has to move an assignee to
+     have anything to assert, and leaving it moved is how this spec previously
+     ate its own fixture: every run took one more issue out of the pool it
+     picks from, until nothing was left that the tester did not already hold. */
+  await prisma.issue.update({
+    where: { id: issue.id },
+    data: { assigneeId: issue.assigneeId },
+  });
 });

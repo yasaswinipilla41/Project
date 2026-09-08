@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { prisma } from "@/lib/prisma";
 import { MEMBER_STATE } from "./support";
+import { TESTING_TEAM_SLUG } from "@/lib/authz";
 
 /**
  * Creating and editing work from the project calendar.
@@ -275,10 +276,49 @@ test.describe("Creating from a calendar date", () => {
   });
 });
 
-test.describe("Creating from a calendar date as a member", () => {
+test.describe("Creating from a calendar date as a tester", () => {
   test.use({ storageState: MEMBER_STATE });
 
-  test("a member can file one, and it persists for everyone", async ({ page }) => {
+  /*
+   * Filing work is a tester's act, so the member is put on the Testing team
+   * for the run — the seed puts nobody on it, which makes every member a
+   * developer, and the day composer is not offered to a developer at all.
+   */
+  let leaveTeam: (() => Promise<void>) | null = null;
+
+  test.beforeAll(async () => {
+    const member = await prisma.user.findUniqueOrThrow({
+      where: { email: "priya.nair@symbiosystech.com" },
+      select: { id: true },
+    });
+    const team =
+      (await prisma.team.findUnique({
+        where: { slug: TESTING_TEAM_SLUG },
+        select: { id: true },
+      })) ??
+      (await prisma.team.create({
+        data: { slug: TESTING_TEAM_SLUG, name: "Testing" },
+        select: { id: true },
+      }));
+    const already = await prisma.teamMember.findFirst({
+      where: { teamId: team.id, userId: member.id },
+      select: { id: true },
+    });
+    if (already) return;
+    const added = await prisma.teamMember.create({
+      data: { teamId: team.id, userId: member.id },
+      select: { id: true },
+    });
+    leaveTeam = async () => {
+      await prisma.teamMember.deleteMany({ where: { id: added.id } });
+    };
+  });
+
+  test.afterAll(async () => {
+    if (leaveTeam) await leaveTeam();
+  });
+
+  test("a tester can file one, and it persists for everyone", async ({ page }) => {
     const month = monthParam(new Date());
     const title = `Calendar member ${stamp()}`;
 

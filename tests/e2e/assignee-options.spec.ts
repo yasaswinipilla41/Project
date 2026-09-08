@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { prisma } from "@/lib/prisma";
 import { BOARD_STATUSES } from "@/lib/board";
 import { MEMBER_STATE } from "./support";
+import { TESTING_TEAM_SLUG } from "@/lib/authz";
 
 /**
  * Who may be picked as an assignee.
@@ -304,6 +305,46 @@ test.describe("Assignee options come from project membership", () => {
 
 test.describe("Assignee options for a member account", () => {
   test.use({ storageState: MEMBER_STATE });
+
+  /*
+   * The create dialog below belongs to whoever may raise work — an
+   * administrator or a tester — so this member is put on the Testing team for
+   * the run and taken off again. The seed puts nobody on it, which makes every
+   * member a developer, and a developer is not offered the dialog at all.
+   */
+  let leaveTeam: (() => Promise<void>) | null = null;
+
+  test.beforeAll(async () => {
+    const member = await prisma.user.findUniqueOrThrow({
+      where: { email: "priya.nair@symbiosystech.com" },
+      select: { id: true },
+    });
+    const team =
+      (await prisma.team.findUnique({
+        where: { slug: TESTING_TEAM_SLUG },
+        select: { id: true },
+      })) ??
+      (await prisma.team.create({
+        data: { slug: TESTING_TEAM_SLUG, name: "Testing" },
+        select: { id: true },
+      }));
+    const already = await prisma.teamMember.findFirst({
+      where: { teamId: team.id, userId: member.id },
+      select: { id: true },
+    });
+    if (already) return;
+    const added = await prisma.teamMember.create({
+      data: { teamId: team.id, userId: member.id },
+      select: { id: true },
+    });
+    leaveTeam = async () => {
+      await prisma.teamMember.deleteMany({ where: { id: added.id } });
+    };
+  });
+
+  test.afterAll(async () => {
+    if (leaveTeam) await leaveTeam();
+  });
 
   /*
    * The Flow Board's Assignee filter is the one place a member's options are

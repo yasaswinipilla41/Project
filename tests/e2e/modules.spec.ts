@@ -155,13 +155,21 @@ test.describe("Issue sheet export", () => {
       maxRedirects: 0,
     });
 
-    expect(response.status()).toBe(401);
-    expect(response.headers()["content-type"]).toContain("application/json");
+    /* A person following a link is sent to sign in; a program asking for data
+       is answered. Neither is given the workbook, which is the point. */
+    expect(response.status()).toBe(307);
+    expect(response.headers()["location"]).toContain("/sign-in");
     expect(response.headers()["content-type"] ?? "").not.toContain(
       "spreadsheetml",
     );
-    // And no workbook came back under any content type.
     expect((await response.body()).length).toBeLessThan(200);
+
+    const asProgram = await context.request.get("/api/issues/export", {
+      headers: { Accept: "application/json" },
+      maxRedirects: 0,
+    });
+    expect(asProgram.status()).toBe(401);
+    expect(asProgram.headers()["content-type"]).toContain("application/json");
 
     await context.close();
   });

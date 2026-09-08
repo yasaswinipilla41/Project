@@ -35,7 +35,6 @@ import {
   AssignmentActivityList,
   type AssignmentActivityEntry,
 } from "@/components/projects/AssignmentActivity";
-import { CompletedWork } from "@/components/projects/CompletedWork";
 import { ProjectAttachments } from "@/components/projects/ProjectAttachments";
 import { ProjectMembers } from "@/components/projects/ProjectMembers";
 import { ProjectAccess } from "@/components/projects/ProjectAccess";
@@ -51,7 +50,6 @@ import {
 } from "@/lib/domain";
 import { barWidth, dueWindow, formatRelative, percent } from "@/lib/format";
 import { listActivity } from "@/server/queries/activity";
-import { loadCompletedByPerson } from "@/server/queries/completedWork";
 import { prisma } from "@/lib/prisma";
 import { recordProjectVisit } from "@/lib/recents";
 import { requireUser, type CurrentUser } from "@/lib/session";
@@ -199,7 +197,6 @@ export default async function ProjectOverviewPage({
     recentIssues,
     recentBugs,
     assignmentEntries,
-    completedByPerson,
     recentActivity,
     epics,
   ] = await Promise.all([
@@ -328,7 +325,6 @@ export default async function ProjectOverviewPage({
       }),
       /* Completed work grouped by whoever actually completed it — read from
          the activity trail, not from the assignee. See the query for why. */
-      loadCompletedByPerson(project.id),
       /*
        * This project's own recent activity, from the same `listActivity` the
        * Activity tab and the global feed read — the same immutable trail, the
@@ -997,19 +993,41 @@ export default async function ProjectOverviewPage({
 
         {/* ---------------------------------------------------- completed */}
         {/*
-         * The counterpart to Team workload: that card answers "who is carrying
-         * what", this one answers "who finished what". Neither changes the
-         * other — the workload is still open work by assignee, unchanged.
+         * The counterpart to Team workload, and drawn the same way: one bar,
+         * read from the same `prio-breakdown` vocabulary. It answers a single
+         * question — how much of this project is finished — so it carries a
+         * single figure rather than a breakdown by person.
+         *
+         * "Completed" is DONE and nothing else, the same definition the
+         * Completion card and the Home card use; cancelled and rejected work
+         * is closed, not finished.
          */}
         <Card className="prio-issue__section">
           <CardBody>
-            <h2 className="prio-issue__section-title">
-              <IconCheck size={15} /> Completed
-              {done > 0 ? (
-                <span className="prio-completed__total">{done}</span>
-              ) : null}
-            </h2>
-            <CompletedWork people={completedByPerson} projectKey={project.key} />
+            <h2 className="prio-issue__section-title">Completed</h2>
+            <p className="prio-summary__cardnote">
+              Issues finished in this project.
+            </p>
+            <ul className="prio-breakdown">
+              <li className="prio-breakdown__row">
+                <span className="prio-breakdown__label">
+                  <IconCheck size={15} />
+                  Completed
+                </span>
+                <span className="prio-breakdown__track" aria-hidden>
+                  <span
+                    className="prio-breakdown__bar"
+                    style={{ width: barWidth(done, total) }}
+                  />
+                </span>
+                <span className="prio-breakdown__value">
+                  {done}
+                  <span className="prio-breakdown__share">
+                    {percent(done, total)}%
+                  </span>
+                </span>
+              </li>
+            </ul>
           </CardBody>
         </Card>
 

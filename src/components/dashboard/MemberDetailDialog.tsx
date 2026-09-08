@@ -58,9 +58,18 @@ function IssueCard({ issue }: { issue: MemberDetailIssue }) {
 export function MemberDetailButton({
   memberId,
   memberName,
+  canAssign = false,
 }: {
   memberId: string;
   memberName: string;
+  /**
+   * Whether the viewer may hand this person work. Deciding who does a piece of
+   * work is an administrator's, so for everybody else the dialog is what it
+   * already was — who they are, what they are holding, what they have done —
+   * without a control that the server would only refuse. `updateIssue` makes
+   * that refusal itself; this just stops offering the button first.
+   */
+  canAssign?: boolean;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -195,6 +204,7 @@ export function MemberDetailButton({
                 )}
               </section>
 
+              {canAssign ? (
               <section className="prio-memberdetail__section">
                 <h3 className="prio-memberdetail__heading">Assign task / bug</h3>
                 {detail.assignableIssues.length === 0 ? (
@@ -230,6 +240,7 @@ export function MemberDetailButton({
                   </div>
                 )}
               </section>
+              ) : null}
 
               <section className="prio-memberdetail__section">
                 <h3 className="prio-memberdetail__heading">Recent activity</h3>

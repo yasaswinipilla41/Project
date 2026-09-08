@@ -227,11 +227,46 @@ export function AssigneeControl({
   assignee,
   members,
   disabled,
+  canAssign = true,
 }: BaseProps & {
   assignee: AssignableMember | null;
   members: AssignableMember[];
+  /**
+   * Whether this reader may decide who the work belongs to — an administrator.
+   * Everybody else sees who has it and cannot change it here; a developer
+   * takes work through Start / Take over instead, which only ever takes it for
+   * themselves. `updateIssue` enforces the same rule, so this decides what is
+   * drawn rather than what is allowed.
+   */
+  canAssign?: boolean;
 }) {
   const { update, busy } = useFieldUpdate(issueId);
+
+  const who = assignee ? (
+    <span className="prio-fieldtrigger__person">
+      <Avatar name={assignee.name} image={assignee.image} size="xs" />
+      {assignee.name}
+    </span>
+  ) : (
+    <span className="prio-fieldtrigger__person">
+      <Avatar name={null} size="xs" empty />
+      <span className="prio-text-muted">Unassigned</span>
+    </span>
+  );
+
+  /* Still the field, still in its place in the row — just stated rather than
+     offered, so the meta row does not change shape between roles. */
+  if (!canAssign) {
+    return (
+      <span
+        className="prio-fieldtrigger"
+        data-readonly
+        title="Only an administrator can change who this belongs to."
+      >
+        {who}
+      </span>
+    );
+  }
 
   return (
     <Menu
@@ -245,17 +280,7 @@ export function AssigneeControl({
           disabled={disabled || busy}
           {...props}
         >
-          {assignee ? (
-            <span className="prio-fieldtrigger__person">
-              <Avatar name={assignee.name} image={assignee.image} size="xs" />
-              {assignee.name}
-            </span>
-          ) : (
-            <span className="prio-fieldtrigger__person">
-              <Avatar name={null} size="xs" empty />
-              <span className="prio-text-muted">Unassigned</span>
-            </span>
-          )}
+          {who}
           <IconChevronDown size={12} />
         </button>
       )}

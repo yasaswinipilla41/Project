@@ -1,7 +1,7 @@
 import type { IssueStatus, IssueType, Priority, Role, Severity } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { dueWindow, monthWindow } from "@/lib/format";
-import { accessibleProjectIds } from "@/lib/authz";
+import { accessibleProjectIds, workRoleOf } from "@/lib/authz";
 import { CLOSED_STATUSES, OPEN_STATUSES } from "@/lib/domain";
 import type { CurrentUser } from "@/lib/session";
 
@@ -161,13 +161,24 @@ export interface DashboardData {
   /** Present only for admins — see `DashboardNewUser`. */
   newUsers: DashboardNewUser[] | null;
   /**
-   * Bug-focused figures, shown when the person's own history says they work
-   * that way. Derived from behaviour, not from an invented role.
+   * QA figures, for whoever the panel is for.
+   *
+   * Two people see it. A tester — a member on the Testing team — always does,
+   * because verifying is their job whatever their history looks like. So does
+   * anyone whose own history is bug-led, which is how this worked before Prio
+   * could tell a tester from a developer at all, and still does: nobody who
+   * used to have this panel has lost it.
+   *
+   * `isTester` says which of the two, and the only thing it changes is what
+   * the panel is about: a tester's queue is every issue in their projects
+   * waiting to be checked, while a reporter's is the bugs they raised.
    */
   qa: {
+    isTester: boolean;
     reportedByMe: number;
     bugsReportedByMe: number;
     awaitingVerification: number;
+    readyForQa: number;
     criticalOpen: number;
     resolvedThisWeek: number;
   } | null;
@@ -648,6 +659,7 @@ async function countBundle(
     awaitingVerification,
     criticalOpen,
     resolvedThisWeek,
+    readyForQa,
   ] = await Promise.all([
     prisma.issue.count({ where: { ...scope, status: open } }),
     prisma.issue.count({ where: { ...scope, type: "BUG", status: open } }),
@@ -737,7 +749,12 @@ async function countBundle(
     prisma.issue.count({
       where: { ...scope, type: "BUG", completedAt: { gte: w.weekAgo } },
     }),
+    /* The tester's queue: everything handed back for checking, anywhere they
+       can see, whoever raised it. */
+    prisma.issue.count({ where: { ...scope, status: "IN_REVIEW" } }),
   ]);
+
+  const isTester = (await workRoleOf(user)) === "QA";
 
   return {
     kpi: {
@@ -763,16 +780,20 @@ async function countBundle(
     },
     due: { overdue, today: dueToday, thisWeek: dueThisWeek },
     /*
-     * Shown when the person's own history is bug-led — they have reported bugs
-     * and report more than they are assigned. Prio has two roles, so this is
-     * read from behaviour rather than pretending a QA role exists.
+     * Shown to a tester outright — the Testing team is what makes somebody
+     * one, and it is not a guess — and, as before, to anyone whose own history
+     * is bug-led: they have reported bugs and report more than they are
+     * assigned. The second case is kept so that nobody who had this panel
+     * before Prio knew what a tester was has lost it.
      */
     qa:
-      bugsReportedByMe > 0 && myReported >= myAssigned
+      isTester || (bugsReportedByMe > 0 && myReported >= myAssigned)
         ? {
+            isTester,
             reportedByMe: myReported,
             bugsReportedByMe,
             awaitingVerification,
+            readyForQa,
             criticalOpen,
             resolvedThisWeek,
           }

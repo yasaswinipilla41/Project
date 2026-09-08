@@ -346,7 +346,7 @@
 .prio-distribution__row {
   display: flex;
   align-items: center;
-  gap: var(--prio-space-4);
+  gap: var(--prio-space-5);
 }
 
 .prio-distribution__label {
@@ -1029,4 +1029,9 @@ a.prio-completed__issue:hover {
 .prio-testresult[data-result="BLOCKED"] {
   background: var(--prio-amber-50);
   color: var(--prio-amber-700);
+}
+
+/* The "back to the list you came from" control, above the breadcrumb. */
+.prio-issue__return {
+  margin-bottom: var(--prio-space-2);
 }

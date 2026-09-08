@@ -1,4 +1,6 @@
 import { expect, test } from "@playwright/test";
+import { TESTING_TEAM_SLUG } from "@/lib/authz";
+import { prisma } from "@/lib/prisma";
 import {
   ADMIN_EMAIL,
   ADMIN_PASSWORD,
@@ -161,7 +163,38 @@ test.describe("Authorization probing", () => {
   test("member-facing write actions still enforce the server rules", async ({
     page,
   }) => {
-    // A member may create in their own projects…
+    /*
+     * A tester may raise work, and only in their own projects — which is what
+     * the option list below is checking. The member is put on the Testing team
+     * for this test because the seed puts nobody on it, and Prio reads
+     * developer-or-tester from that team: a developer is not offered the
+     * create dialog at all, which is its own rule and is covered separately.
+     */
+    const member = await prisma.user.findUniqueOrThrow({
+      where: { email: "priya.nair@symbiosystech.com" },
+      select: { id: true },
+    });
+    const team =
+      (await prisma.team.findUnique({
+        where: { slug: TESTING_TEAM_SLUG },
+        select: { id: true },
+      })) ??
+      (await prisma.team.create({
+        data: { slug: TESTING_TEAM_SLUG, name: "Testing" },
+        select: { id: true },
+      }));
+    const already = await prisma.teamMember.findFirst({
+      where: { teamId: team.id, userId: member.id },
+      select: { id: true },
+    });
+    const added = already
+      ? null
+      : await prisma.teamMember.create({
+          data: { teamId: team.id, userId: member.id },
+          select: { id: true },
+        });
+
+    try {
     await page.goto("/");
     await page.locator(".prio-create__main").click();
     const dialog = page.getByRole("dialog");
@@ -181,6 +214,11 @@ test.describe("Authorization probing", () => {
     // Only their projects are offered, plus the placeholder.
     expect(projectOptions).toBeGreaterThan(1);
     await page.keyboard.press("Escape");
+    } finally {
+      if (added) {
+        await prisma.teamMember.deleteMany({ where: { id: added.id } });
+      }
+    }
   });
 });
 

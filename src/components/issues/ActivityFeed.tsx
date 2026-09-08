@@ -91,6 +91,14 @@ function describe(entry: ActivityEntry, names: NameLookup): React.ReactNode {
   }
 
   if (field === "assigneeId") {
+    /* Taking work off somebody and being given it are the same row with a
+       different action; only the sentence tells them apart, which is the
+       point of recording the difference at all. */
+    if (entry.action === "issue.takeover") {
+      return entry.oldValue
+        ? `took this over from ${format(entry.oldValue)}`
+        : "picked this up";
+    }
     if (!entry.newValue) return "removed the assignee";
     if (!entry.oldValue) return `assigned this to ${format(entry.newValue)}`;
     return `reassigned this from ${format(entry.oldValue)} to ${format(entry.newValue)}`;

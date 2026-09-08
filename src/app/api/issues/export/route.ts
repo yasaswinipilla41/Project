@@ -46,6 +46,27 @@ interface Column {
   cell?: (row: IssueExportRow, origin: string) => Cell;
 }
 
+/**
+ * The URL for one attachment, with its filename on the end.
+ *
+ * The id alone identifies the file and `/api/attachments/<id>` still resolves
+ * to it; the trailing name exists so the link ends in a real extension. Excel
+ * probes a link that ends in an opaque id as though it might be a document
+ * library, and reports "Cannot download the information you requested" when
+ * that probe fails — a link ending in `Capture001.png` is handed to the
+ * browser as the file download it is, and the browser has a name to save it
+ * under.
+ *
+ * Encoded per segment, so a space or a `#` in somebody's filename cannot break
+ * the URL or add a fragment to it.
+ */
+function attachmentUrl(
+  origin: string,
+  file: { id: string; filename: string },
+): string {
+  return `${origin}/api/attachments/${file.id}/${encodeURIComponent(file.filename)}`;
+}
+
 /** An Excel string literal: the only character that can break out is a quote. */
 function quoted(text: string): string {
   return `"${text.replace(/"/g, '""')}"`;
@@ -85,7 +106,7 @@ function attachmentLinkColumns(count: number): Column[] {
       const file = row.attachments[index];
       if (!file) return { type: String, value: "" };
 
-      const url = `${origin}/api/attachments/${file.id}`;
+      const url = attachmentUrl(origin, file);
       return {
         type: "Formula",
         /* No leading "=": the OOXML `<f>` element holds the formula without

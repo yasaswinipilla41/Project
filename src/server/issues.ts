@@ -15,19 +15,23 @@ import {
   assertProjectAccess,
   AuthorizationError,
   NotFoundError,
+  assertCanCreateWork,
+  workRoleOf,
 } from "@/lib/authz";
 import { requireUser } from "@/lib/session";
-import { ISSUE_TYPE_LABEL, isClosedStatus } from "@/lib/domain";
+import { ISSUE_TYPE_LABEL, STATUS_LABEL, isClosedStatus } from "@/lib/domain";
 import {
   addWatchers,
   assignmentMessage,
   isTester,
   notify,
+  projectTesterIds,
   recordFieldChanges,
   recordIssueCreated,
   watcherIds,
 } from "@/server/activity";
 import {
+  claimIssueSchema,
   cloneIssueSchema,
   createIssueSchema,
   fieldErrors,
@@ -167,6 +171,10 @@ export async function createIssue(
     const input = parsed.data;
 
     await assertProjectAccess(user, input.projectId);
+    /* Raising work is an administrator's or a tester's act, not a
+       developer's. Enforced here rather than by hiding the button, because
+       the button is not what stops a direct call. */
+    await assertCanCreateWork(user);
 
     // An assignee must be a member of the project they are being assigned in.
     if (input.assigneeId) {
@@ -387,28 +395,81 @@ export async function updateIssue(
     });
     if (!existing) throw new NotFoundError("This issue no longer exists.");
 
+    const role = await workRoleOf(user);
+
     /*
-     * Reassignment is an administrative act once the work already belongs to
-     * somebody. Belonging to the project is enough to *work* on an issue —
-     * comment on it, move it through the workflow — but not to take another
-     * person's work off them or push work onto them.
+     * Who work may be given to.
      *
-     * A member may still pick up unassigned work, and may hand back or pass on
-     * work that is currently theirs. Admins are unrestricted, as before.
+     * Deciding who does a piece of work is an administrator's act. What is
+     * left to everybody else is taking work *for themselves* — which is not
+     * an assignment so much as picking something up — and putting down work
+     * that is already theirs.
      *
-     * Checked here against `existing.assigneeId` read from the database, so a
-     * forged payload cannot claim the issue was already theirs.
+     *   ADMIN      assigns anyone to anything.
+     *   DEVELOPER  may set the assignee to themselves, whether the issue is
+     *              unassigned or held by another developer, and may hand back
+     *              work that is currently theirs. Nothing else.
+     *   QA         raises work and verifies it; it does not decide who builds
+     *              it, so it does not touch the assignee at all.
+     *
+     * This is deliberately narrower than the rule it replaces, which let any
+     * member push unassigned work onto anybody — a developer could quietly
+     * hand their queue to a colleague. Checked against `existing.assigneeId`
+     * read from the database, so a forged payload cannot claim the issue was
+     * already theirs.
      */
-    if (
-      "assigneeId" in input &&
-      input.assigneeId !== undefined &&
-      user.role !== "ADMIN" &&
-      existing.assigneeId !== null &&
-      existing.assigneeId !== user.id
-    ) {
-      throw new AuthorizationError(
-        "Only an administrator can reassign work that belongs to someone else.",
-      );
+    if ("assigneeId" in input && input.assigneeId !== undefined) {
+      const next = input.assigneeId;
+      const changing = next !== existing.assigneeId;
+
+      if (changing && role === "QA") {
+        throw new AuthorizationError(
+          "Only an administrator can decide who a piece of work belongs to.",
+        );
+      }
+
+      if (changing && role === "DEVELOPER") {
+        const takingItThemselves = next === user.id;
+        const puttingDownTheirOwn =
+          next === null && existing.assigneeId === user.id;
+
+        if (!takingItThemselves && !puttingDownTheirOwn) {
+          throw new AuthorizationError(
+            "You can take work for yourself, but only an administrator can assign it to somebody else.",
+          );
+        }
+      }
+    }
+
+    /*
+     * Who may declare what.
+     *
+     * The workflow hands an issue between two people and the statuses are
+     * where the hand-off happens, so each end owns the statuses that mean
+     * "I am finished". A developer says Ready for QA and stops there; saying
+     * In QA or Done would be marking their own homework. A tester says In QA,
+     * Done and Reopen, and does not say Ready for QA, which is a claim about
+     * development they are not the one making.
+     *
+     * Admins are unrestricted — they own the workflow, not a side of it.
+     */
+    if ("status" in input && input.status !== undefined) {
+      const next = input.status;
+
+      if (next !== existing.status) {
+        const forbidden: Record<Exclude<typeof role, "ADMIN">, IssueStatus[]> = {
+          DEVELOPER: ["IN_QA", "DONE"],
+          QA: ["IN_REVIEW"],
+        };
+
+        if (role !== "ADMIN" && forbidden[role].includes(next)) {
+          throw new AuthorizationError(
+            role === "DEVELOPER"
+              ? "Only a tester or an administrator can put work into QA or mark it done."
+              : "Only the developer on this work, or an administrator, can mark it ready for QA.",
+          );
+        }
+      }
     }
 
     // Only fields actually present in the payload are considered.
@@ -527,19 +588,196 @@ export async function updateIssue(
       }
 
       if (statusChange) {
+        const nextStatus = statusChange.newValue as IssueStatus;
+
         await notify(tx, {
           issueId,
           actorId: user.id,
           userIds: await watcherIds(tx, issueId),
           type: "STATUS_CHANGED",
-          message: `moved ${existing.key} to ${statusChange.newValue}`,
+          message: `moved ${existing.key} to ${STATUS_LABEL[nextStatus] ?? nextStatus}`,
         });
+
+        /*
+         * Ready for QA is the one status that is a request rather than a
+         * report: a developer has finished and is asking for the work to be
+         * checked. The people who have to act on it are the project's testers,
+         * and at this moment the issue is not assigned to any of them — often
+         * it never is — so watching it is exactly what they have not done.
+         * Hence a second notice, addressed to who can pick the work up rather
+         * than to who was already following it.
+         *
+         * Whoever is both a watcher and a tester has the line above as well.
+         * That row says the status moved; this one asks for something, and the
+         * two are not the same sentence. The actor is filtered out of both, so
+         * a tester moving an issue there themselves is not told about it.
+         */
+        if (nextStatus === "IN_REVIEW") {
+          await notify(tx, {
+            issueId,
+            actorId: user.id,
+            userIds: await projectTesterIds(tx, projectId),
+            type: "STATUS_CHANGED",
+            message: `marked ${existing.key} ready for QA — ${existing.title}`,
+          });
+        }
       }
     });
 
     revalidateIssueSurfaces(existing.project.key, existing.key);
 
     return { ok: true, data: { key: existing.key } };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/* ------------------------------------------------------- claim / takeover */
+
+/**
+ * Take a piece of work, and start it.
+ *
+ * One action for the two ways a developer picks something up: an unassigned
+ * issue nobody has started, and one another developer is holding but is not
+ * getting to. Both end in the same place — the issue is theirs and it is in
+ * progress — and both are the same act, so they are one operation rather than
+ * an assignment followed by a status change. Done as two calls there is a
+ * window where an issue is assigned to somebody who has not started it, and a
+ * second caller can land in the middle of it; done here the two fields move
+ * together or not at all.
+ *
+ * The safety property is in the `updateMany` below: it carries the assignee
+ * the caller read in its `where`, so two developers pressing Start on the same
+ * unassigned issue cannot both succeed. The one that arrives second matches no
+ * row, and is told the work has just been taken rather than silently
+ * overwriting the first.
+ *
+ * A developer may only ever take work *for themselves*. There is no parameter
+ * for who to give it to, which is what makes "assign it to a colleague"
+ * unreachable through this path rather than merely refused by it.
+ */
+export async function claimIssue(
+  raw: unknown,
+): Promise<ActionResult<{ key: string; previousAssigneeId: string | null }>> {
+  try {
+    const user = await requireUser();
+
+    const parsed = claimIssueSchema.safeParse(raw);
+    if (!parsed.success) {
+      return { ok: false, error: "That issue could not be identified." };
+    }
+    const { issueId } = parsed.data;
+
+    await assertIssueAccess(user, issueId);
+
+    /* Testers raise work and verify it; they do not take development on.
+       Administrators may, because nothing is withheld from them. */
+    const role = await workRoleOf(user);
+    if (role === "QA") {
+      throw new AuthorizationError(
+        "Testers do not take development work; a developer picks this up.",
+      );
+    }
+
+    const existing = await prisma.issue.findUnique({
+      where: { id: issueId },
+      select: {
+        id: true,
+        key: true,
+        title: true,
+        type: true,
+        status: true,
+        assigneeId: true,
+        project: { select: { key: true } },
+      },
+    });
+    if (!existing) throw new NotFoundError("This issue no longer exists.");
+
+    const previousAssigneeId = existing.assigneeId;
+
+    /* Already theirs and already running: nothing to do, and saying so is
+       better than writing a second identical activity entry. */
+    if (previousAssigneeId === user.id && existing.status === "IN_PROGRESS") {
+      return {
+        ok: true,
+        data: { key: existing.key, previousAssigneeId },
+      };
+    }
+
+    /* A closed issue is not picked up; it is reopened first, which is a
+       tester's call. */
+    if (isClosedStatus(existing.status)) {
+      return {
+        ok: false,
+        error: "This work is closed. It has to be reopened before it can be picked up.",
+      };
+    }
+
+    const taken = await prisma.$transaction(async (tx) => {
+      /* The optimistic guard. `assigneeId` is the value this request was
+         decided against, so a change since then means somebody else moved
+         first and this update matches nothing. */
+      const { count } = await tx.issue.updateMany({
+        where: { id: issueId, assigneeId: previousAssigneeId },
+        data: { assigneeId: user.id, status: "IN_PROGRESS" },
+      });
+      if (count === 0) return false;
+
+      const changes: { field: string; oldValue: string | null; newValue: string | null }[] = [
+        { field: "assigneeId", oldValue: previousAssigneeId, newValue: user.id },
+      ];
+      if (existing.status !== "IN_PROGRESS") {
+        changes.push({
+          field: "status",
+          oldValue: existing.status,
+          newValue: "IN_PROGRESS",
+        });
+      }
+
+      /*
+       * Taking work off somebody is a different event from being given it, so
+       * it is recorded as one: same row shape, same fields, same filters —
+       * only the action, and so the sentence the feed renders, differs.
+       */
+      const handover =
+        previousAssigneeId !== null && previousAssigneeId !== user.id;
+
+      await recordFieldChanges(tx, {
+        issueId,
+        actorId: user.id,
+        changes,
+        action: handover ? "issue.takeover" : undefined,
+      });
+
+      await addWatchers(tx, issueId, [user.id]);
+
+      /* The developer who lost the work is told, because it left their queue
+         without them doing anything. `notify` drops the actor, so nobody is
+         told about their own act. */
+      if (handover) {
+        await notify(tx, {
+          issueId,
+          actorId: user.id,
+          userIds: [previousAssigneeId],
+          type: "ISSUE_ASSIGNED",
+          message: `took over ${existing.key} — ${existing.title} — from you`,
+        });
+      }
+
+      return true;
+    });
+
+    if (!taken) {
+      return {
+        ok: false,
+        error: "Somebody else picked this up first. Reload to see who has it.",
+      };
+    }
+
+    revalidateIssueSurfaces(existing.project.key, existing.key);
+    revalidatePath("/my-work");
+
+    return { ok: true, data: { key: existing.key, previousAssigneeId } };
   } catch (error) {
     return failure(error);
   }

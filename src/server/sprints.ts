@@ -3,8 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import {
-  assertProjectAccess,
-  assertProjectManage,
+  assertAdmin,
   AuthorizationError,
   NotFoundError,
 } from "@/lib/authz";
@@ -39,16 +38,20 @@ import {
  *    from the issues rather than stored beside them. Nothing here writes an
  *    issue's status.
  *
- *  - **Authorization reuses what Prio already has.** No sprint role, no sprint
- *    permission table:
- *      · the sprint's *lifecycle* — creating it, editing it, starting it,
- *        completing it — is `assertProjectManage`, the existing "an
- *        administrator, or the person who created this project" rule. Starting
- *        or closing a sprint commits everybody working in the project, which
- *        is the same weight as the acts that rule already governs.
- *      · putting issues *into* a sprint and taking them out again is
- *        `assertProjectAccess` — ordinary work inside a project you belong to,
- *        exactly like editing an issue through `updateIssue`.
+ *  - **Authorization reuses what Prio already has.** No sprint role and no
+ *    sprint permission table: a sprint is an administrator's instrument, so
+ *    every write here is `assertAdmin`.
+ *
+ *    That covers the lifecycle — creating, editing, starting, completing — and
+ *    also what a sprint *contains*, because putting an issue into the sprint
+ *    or taking it out is committing somebody's fortnight rather than editing
+ *    an issue. Both used to be looser: the lifecycle was "an administrator or
+ *    whoever created the project", and membership of the sprint was any member
+ *    of the project. Developers and testers read sprints now; they do not
+ *    shape them.
+ *
+ *    Reading is untouched. Nothing below gates a query, so everybody who can
+ *    open the project still sees the sprint, its goal, its dates and its work.
  */
 
 export type SprintActionResult<T = undefined> =
@@ -116,8 +119,12 @@ export async function createSprint(
     }
     const { projectId, ...input } = parsed.data;
 
-    // Reads `createdById` from the database; the caller cannot nominate itself.
-    const project = await assertProjectManage(user, projectId);
+    assertAdmin(user);
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+      select: { id: true, key: true },
+    });
+    if (!project) throw new NotFoundError("This project no longer exists.");
 
     const sprint = await prisma.sprint.create({
       data: { ...input, projectId, createdById: user.id },
@@ -146,7 +153,7 @@ export async function updateSprint(raw: unknown): Promise<SprintActionResult> {
     const { sprintId, ...input } = parsed.data;
 
     const sprint = await loadSprint(sprintId);
-    await assertProjectManage(user, sprint.projectId);
+    assertAdmin(user);
 
     /* A completed sprint is a record of what happened. Renaming one or moving
        its dates afterwards would rewrite that record, so it is refused rather
@@ -200,7 +207,7 @@ export async function addIssuesToSprint(
     const { sprintId, issueIds } = parsed.data;
 
     const sprint = await loadSprint(sprintId);
-    await assertProjectAccess(user, sprint.projectId);
+    assertAdmin(user);
 
     if (sprint.status === "COMPLETED") {
       return {
@@ -254,7 +261,7 @@ export async function removeIssueFromSprint(
     const { sprintId, issueId } = parsed.data;
 
     const sprint = await loadSprint(sprintId);
-    await assertProjectAccess(user, sprint.projectId);
+    assertAdmin(user);
 
     if (sprint.status === "COMPLETED") {
       return {
@@ -289,7 +296,7 @@ export async function startSprint(raw: unknown): Promise<SprintActionResult> {
     }
 
     const sprint = await loadSprint(parsed.data.sprintId);
-    await assertProjectManage(user, sprint.projectId);
+    assertAdmin(user);
 
     if (sprint.status !== "PLANNED") {
       return {
@@ -380,7 +387,7 @@ export async function completeSprint(
     const { sprintId, moveIncompleteTo, nextSprintId } = parsed.data;
 
     const sprint = await loadSprint(sprintId);
-    await assertProjectManage(user, sprint.projectId);
+    assertAdmin(user);
 
     if (sprint.status !== "ACTIVE") {
       return {

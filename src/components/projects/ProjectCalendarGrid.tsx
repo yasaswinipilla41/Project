@@ -71,6 +71,7 @@ export function ProjectCalendarGrid({
   issues,
   members,
   todayDay,
+  canCreate = true,
 }: {
   projectId: string;
   monthLabel: string;
@@ -80,6 +81,13 @@ export function ProjectCalendarGrid({
   /** One entry per grid cell: the day of the month, or `null` for padding. */
   cells: (number | null)[];
   issues: CalendarIssue[];
+  /**
+   * Whether this reader may raise work — an administrator or a tester. A
+   * developer gets the calendar without the day composer, because filing an
+   * issue is not theirs to do; `createIssue` refuses the call as well, so this
+   * removes an offer rather than a protection.
+   */
+  canCreate?: boolean;
   /** This project's members, for the composer's assignee control. */
   members: CalendarMember[];
   /** Today's day-of-month when this month is the current one, else `null`. */
@@ -296,6 +304,7 @@ export function ProjectCalendarGrid({
                  * be hit by accident, and it is reachable from the keyboard,
                  * which a clickable `div` would not be.
                  */}
+                {canCreate ? (
                 <button
                   type="button"
                   className="prio-calendar__add"
@@ -322,6 +331,7 @@ export function ProjectCalendarGrid({
                 >
                   <IconPlus size={12} />
                 </button>
+                ) : null}
 
                 {composing ? (
                   <div

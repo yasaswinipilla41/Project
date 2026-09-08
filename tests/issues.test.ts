@@ -1,7 +1,7 @@
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { createIssue, updateIssue } from "@/server/issues";
-import { actAs, deleteIssues, projectByKey } from "./helpers";
+import { actAs, deleteIssues, joinTestingTeam, projectByKey } from "./helpers";
 
 /**
  * Integration coverage for issue, story and bug creation.
@@ -13,7 +13,28 @@ import { actAs, deleteIssues, projectByKey } from "./helpers";
 
 const created: string[] = [];
 
+/*
+ * These tests raise work and carry it through to Done, which is a tester's
+ * job: Prio decides developer-or-tester by Testing-team membership, and the
+ * seed puts nobody on it. The people acting below are made testers for the
+ * run and taken off again afterwards, so the fixture is left as it was found.
+ */
+const testerEmails = [
+  "priya.nair@symbiosystech.com",
+  "sneha.iyer@symbiosystech.com",
+  "kiran.das@symbiosystech.com",
+];
+const leaveTestingTeam: (() => Promise<void>)[] = [];
+
+beforeAll(async () => {
+  for (const email of testerEmails) {
+    const { leave } = await joinTestingTeam(email);
+    leaveTestingTeam.push(leave);
+  }
+});
+
 afterAll(async () => {
+  for (const leave of leaveTestingTeam) await leave();
   await deleteIssues(created);
   await prisma.$disconnect();
 });
@@ -287,7 +308,7 @@ describe("createIssue", () => {
 
 describe("updateIssue", () => {
   it("moves a bug through the workflow and records each change", async () => {
-    const actor = await actAs("kiran.das@symbiosystech.com");
+    await actAs("kiran.das@symbiosystech.com");
     const project = await projectByKey("ENG");
 
     const result = await createIssue({
@@ -306,11 +327,20 @@ describe("updateIssue", () => {
 
     const moveTo = async (status: string) => {
       const update = await updateIssue({ issueId: result.data.id, status });
-      expect(update.ok).toBe(true);
+      expect(update.ok, `moving to ${status}`).toBe(true);
     };
 
+    /*
+     * The workflow is two people's, so it is walked by two people: the
+     * developer carries it to Ready for QA and stops there, and the tester
+     * takes it through to Done. Each step is recorded against whoever took
+     * it, which is what the trail is for.
+     */
+    const developer = await actAs("rahul.menon@symbiosystech.com");
     await moveTo("IN_PROGRESS");
     await moveTo("IN_REVIEW");
+
+    await actAs("kiran.das@symbiosystech.com");
     await moveTo("DONE");
 
     const bug = await prisma.issue.findUniqueOrThrow({
@@ -332,7 +362,7 @@ describe("updateIssue", () => {
     expect(statusChanges[0]).toMatchObject({
       oldValue: "TODO",
       newValue: "IN_PROGRESS",
-      actorId: actor.id,
+      actorId: developer.id,
     });
     expect(statusChanges[2]).toMatchObject({
       oldValue: "IN_REVIEW",

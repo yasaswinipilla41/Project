@@ -21,7 +21,7 @@ import {
   setStorageProvider,
   storage,
 } from "@/server/storage";
-import { actAs, projectByKey } from "./helpers";
+import { actAs, joinTestingTeam, projectByKey } from "./helpers";
 
 /**
  * Cloning issues and projects.
@@ -626,30 +626,44 @@ describe("the parent of an issue", () => {
 /* ------------------------------------------------------------ permissions */
 
 describe("who may clone", () => {
-  it("lets an ordinary project member clone an issue", async () => {
+  it("lets a tester clone an issue, and refuses a developer", async () => {
     /*
-     * Cloning creates an issue, and any member of a project may already create
-     * one there. This is that same permission reached through a different
-     * door — no wider, and re-checked on the server rather than assumed from
-     * the button being visible.
+     * Cloning creates an issue, so it is governed by whoever may create one:
+     * an administrator or a tester. It is that same permission reached through
+     * a different door — no wider — and it is re-checked on the server rather
+     * than assumed from the button being visible.
+     *
+     * Both halves are asserted together because the pair is the rule: the door
+     * being open to a tester is only meaningful if it is shut to a developer.
      */
     await actAs(ADMIN);
     const source = await makeIssue({ description: "Member clones this." });
-
-    await actAs(MEMBER);
     const project = await projectByKey("ENG");
-    const result = await cloneIssue({
+
+    const draft = {
       sourceIssueId: source.id,
       projectId: project.id,
-      type: "TASK",
-      title: "Cloned by a member",
+      type: "TASK" as const,
       description: "Member clones this.",
       copyLinks: false,
       copyAttachments: false,
-    });
+    };
 
-    expect(result.ok).toBe(true);
-    if (result.ok) createdIssues.push(result.data.id);
+    // A developer — a member who is not on the Testing team — may not.
+    await actAs(MEMBER);
+    const refused = await cloneIssue({ ...draft, title: "Cloned by a developer" });
+    expect(refused.ok).toBe(false);
+
+    // The same person, once they are a tester, may.
+    const { leave } = await joinTestingTeam(MEMBER);
+    try {
+      await actAs(MEMBER);
+      const allowed = await cloneIssue({ ...draft, title: "Cloned by a tester" });
+      expect(allowed.ok).toBe(true);
+      if (allowed.ok) createdIssues.push(allowed.data.id);
+    } finally {
+      await leave();
+    }
   });
 
   it("refuses someone with no access to the source", async () => {

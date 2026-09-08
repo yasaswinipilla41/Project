@@ -195,6 +195,14 @@ export type CreateIssueInput = z.infer<typeof createIssueSchema>;
  * left untouched by `updateIssue`, and only keys actually present produce an
  * activity entry.
  */
+/**
+ * Taking a piece of work. Just the issue — who it goes to is never a
+ * parameter, because it is always the caller.
+ */
+export const claimIssueSchema = z.object({
+  issueId: z.string().min(1),
+});
+
 export const updateIssueSchema = z.object({
   issueId: z.string().min(1),
   title: trimmed(200).min(3, "Give it a title of at least 3 characters.").optional(),

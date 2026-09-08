@@ -1,8 +1,8 @@
 "use client";
 
-import type { Role } from "@prisma/client";
+import type { WorkRole } from "@/lib/domain";
 import { ButtonLink } from "@/components/ui/primitives";
-import { IconProjects, IconUsers } from "@/components/ui/Icon";
+import { IconCheck, IconProjects, IconUsers } from "@/components/ui/Icon";
 
 /**
  * Dashboard quick actions.
@@ -18,7 +18,7 @@ import { IconProjects, IconUsers } from "@/components/ui/Icon";
  * — the server still authorizes every one of these routes on its own. Hiding a
  * link is a courtesy, never the control.
  */
-export function QuickActions({ role }: { role: Role }) {
+export function QuickActions({ role }: { role: WorkRole }) {
   return (
     <div className="prio-dash__actions">
       {role === "ADMIN" ? (
@@ -33,9 +33,20 @@ export function QuickActions({ role }: { role: Role }) {
           </ButtonLink>
         </>
       ) : (
-        <ButtonLink href="/my-work" variant="ghost">
-          My work
-        </ButtonLink>
+        <>
+          <ButtonLink href="/my-work" variant="ghost">
+            My work
+          </ButtonLink>
+          {/* A tester's queue is not their own assignments — it is everything a
+              developer has handed back. Their own row above still holds what
+              they were given directly. */}
+          {role === "QA" ? (
+            <ButtonLink href="/issues?status=IN_REVIEW" variant="ghost">
+              <IconCheck size={14} />
+              Ready for QA
+            </ButtonLink>
+          ) : null}
+        </>
       )}
     </div>
   );

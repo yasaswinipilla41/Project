@@ -294,6 +294,30 @@ export const ROLE_DESCRIPTION: Record<Role, string> = {
   MEMBER: "Works in assigned projects. Creates and updates issues and bugs.",
 };
 
+/**
+ * What somebody does here, as opposed to what their account is.
+ *
+ * `Role` is the account: ADMIN or MEMBER, and that is what the People screen
+ * grants. The job is narrower — a member on the Testing team tests, a member
+ * who is not builds — and it is the job that decides who may raise work, hand
+ * it to QA, or call it done. `workRoleOf` in `lib/authz` is the one place that
+ * derives it; the labels live here because the badges that show it are client
+ * components and must not pull the database in.
+ */
+export type WorkRole = "ADMIN" | "QA" | "DEVELOPER";
+
+export const WORK_ROLE_LABEL: Record<WorkRole, string> = {
+  ADMIN: "Admin",
+  QA: "QA Tester",
+  DEVELOPER: "Developer",
+};
+
+export const WORK_ROLE_DESCRIPTION: Record<WorkRole, string> = {
+  ADMIN: "Full access. Manages projects, members, sprints and assignment.",
+  QA: "Raises work, verifies what developers hand back, and closes it.",
+  DEVELOPER: "Picks up work in their projects and hands it back for QA.",
+};
+
 // ------------------------------------------------------------------ guards
 
 export function isIssueStatus(value: unknown): value is IssueStatus {

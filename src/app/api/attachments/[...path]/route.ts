@@ -101,11 +101,30 @@ const INLINE_TYPES = new Set([
   "application/pdf",
 ]);
 
+/**
+ * The id, and the filename that may follow it.
+ *
+ * `/api/attachments/<id>` is the canonical URL and still works everywhere it
+ * always did. `/api/attachments/<id>/<filename>` resolves to exactly the same
+ * attachment — the id alone selects the row, and the trailing segment is never
+ * read for anything — but it gives the URL a real file extension.
+ *
+ * That extension is not cosmetic. Excel decides how to treat a hyperlink partly
+ * by what the URL looks like: a link ending in an opaque id is probed as though
+ * it might be a document library, and when that probe fails the reader is told
+ * "Cannot download the information you requested" and the link never reaches
+ * the browser. A link ending in `Capture001.png` is treated as the file
+ * download it is. It also gives the browser a sensible name to save under.
+ */
+function attachmentId(path: string[]): string {
+  return path[0] ?? "";
+}
+
 export async function GET(
   request: Request,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: { params: Promise<{ path: string[] }> },
 ) {
-  const { id } = await params;
+  const id = attachmentId((await params).path);
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "Not signed in." }, { status: 401 });
@@ -227,9 +246,9 @@ export async function GET(
  */
 export async function DELETE(
   _request: Request,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: { params: Promise<{ path: string[] }> },
 ) {
-  const { id } = await params;
+  const id = attachmentId((await params).path);
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "Not signed in." }, { status: 401 });

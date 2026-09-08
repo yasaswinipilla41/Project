@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { type NameLookup } from "@/components/issues/ActivityFeed";
+import { BackLink } from "@/components/shell/BackLink";
 import { IssueConversation } from "@/components/issues/IssueConversation";
 import { RelatedIssues } from "@/components/issues/RelatedIssues";
 import { IssueAttachments } from "@/components/issues/IssueAttachments";
@@ -21,6 +22,7 @@ import { IssueDetailActions } from "@/components/issues/IssueDetailActions";
 import { SubmitWorkButton } from "@/components/issues/SubmitWorkButton";
 import { TestResultPanel } from "@/components/issues/TestResultPanel";
 import { ReportBugDialog } from "@/components/issues/ReportBugDialog";
+import { ClaimIssueButton } from "@/components/issues/ClaimIssueButton";
 import {
   Avatar,
   Card,
@@ -43,7 +45,7 @@ import {
   IconSubIssue,
   IconWarning,
 } from "@/components/ui/Icon";
-import { issueScope } from "@/lib/authz";
+import { issueScope, workRoleOf } from "@/lib/authz";
 import { ISSUE_TYPE_LABEL, isClosedStatus } from "@/lib/domain";
 import { formatDate, formatDateTime, formatRelative, isOverdue } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
@@ -189,13 +191,41 @@ export async function generateMetadata({
   return { title: `${issue.key} · ${issue.title}` };
 }
 
+/**
+ * The list this issue was opened from, if it says so and the claim is safe.
+ *
+ * `from` is user-controlled — it arrives in the query string and is rendered
+ * into an `href` — so only a plain internal path is accepted. A protocol-
+ * relative `//evil.example` is a path as far as `startsWith("/")` is concerned
+ * and a browser reads it as another origin, which is why the second character
+ * is checked too. Anything else is ignored and the reader simply gets no back
+ * link, which is what they had before.
+ */
+function listReturnPath(raw: string | string[] | undefined): string | null {
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (!value) return null;
+  if (!value.startsWith("/") || value.startsWith("//")) return null;
+  return value;
+}
+
+/** "Back to Issues" for the global list, "Back to <Project>" for a project's. */
+function returnLabel(path: string, projectName: string): string {
+  return path.startsWith("/projects/") ? `Back to ${projectName}` : "Back to Issues";
+}
+
 export default async function IssueDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ key: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { key } = await params;
+  const returnTo = listReturnPath((await searchParams).from);
   const user = await requireUser();
+  /* What this reader does here, so the page offers only what is theirs
+     to do. Every action it leads to re-checks on the server. */
+  const workRole = await workRoleOf(user);
 
   const issue = await loadIssue(key, user);
   if (!issue) notFound();
@@ -238,6 +268,21 @@ export default async function IssueDetailPage({
       {/* ------------------------------------------------------- header */}
       <header className="prio-issue__header">
         <div className="prio-issue__headtop">
+          {/*
+            * Back to the list that was open, not to the project's summary.
+            * Only shown when the reader actually arrived from one — opening an
+            * issue from a notification or a pasted key has no list to return
+            * to, and the breadcrumb below still leads to the project.
+            */}
+          {returnTo ? (
+            <div className="prio-issue__return">
+              <BackLink
+                href={returnTo}
+                label={returnLabel(returnTo, issue.project.name)}
+              />
+            </div>
+          ) : null}
+
           <nav aria-label="Breadcrumb" className="prio-issue__crumbs">
             <Link href="/projects">Projects</Link>
             <span aria-hidden>/</span>
@@ -252,12 +297,28 @@ export default async function IssueDetailPage({
           </nav>
 
           <div className="prio-issue__headactions">
-            <ReportBugDialog
-              issueId={issue.id}
-              issueKey={issue.key}
-              assigneeId={issue.assignee?.id ?? null}
-              currentUserId={user.id}
-            />
+            {/* Filing a defect off this issue is raising work, which is a
+                tester's or an administrator's act. */}
+            {workRole === "DEVELOPER" ? null : (
+              <ReportBugDialog
+                issueId={issue.id}
+                issueKey={issue.key}
+                assigneeId={issue.assignee?.id ?? null}
+                currentUserId={user.id}
+              />
+            )}
+
+            {/* Picking the work up — for themselves, never for anyone else. */}
+            {workRole === "DEVELOPER" ? (
+              <ClaimIssueButton
+                issueId={issue.id}
+                issueKey={issue.key}
+                status={issue.status}
+                assigneeId={issue.assignee?.id ?? null}
+                assigneeName={issue.assignee?.name ?? null}
+                currentUserId={user.id}
+              />
+            ) : null}
 
             <SubmitWorkButton
               issueId={issue.id}
@@ -293,6 +354,7 @@ export default async function IssueDetailPage({
             issueId={issue.id}
             assignee={issue.assignee}
             members={members.map((m) => m.user)}
+            canAssign={workRole === "ADMIN"}
           />
           {/*
             * Due date sits with the other things that get changed about an

@@ -15,46 +15,54 @@ import { prisma } from "@/lib/prisma";
 /* ------------------------------------------------- summary: completed work */
 
 test.describe("The project summary's Completed section", () => {
-  test("sits below Open work by assignee and groups by who finished it", async ({
+  test("shows the project's completed total as one bar, below Team workload", async ({
     page,
   }) => {
+    /*
+     * The card used to group completed issues under whoever finished each one.
+     * It now answers a single question — how much of this project is done —
+     * with a single figure, drawn in the same `prio-breakdown` bar the Team
+     * workload card above it uses. Who finished a given issue is still
+     * recorded and still shown, on the issue list's "Completed by" column.
+     */
     await page.goto("/projects/eng/summary");
 
     const workload = page
       .locator(".prio-card", { hasText: "Team workload" })
       .first();
     const completed = page
-      .locator(".prio-card", { hasText: "Completed" })
-      .filter({ has: page.locator(".prio-completed, .prio-text-muted") })
-      .last();
+      .locator(".prio-card")
+      .filter({ hasText: "Issues finished in this project" })
+      .first();
 
     await expect(workload).toBeVisible();
     await expect(completed).toBeVisible();
 
-    // Directly below it, not above and not elsewhere on the page.
-    const above = (await workload.boundingBox())!;
-    const below = (await completed.boundingBox())!;
-    expect(below.y).toBeGreaterThan(above.y);
+    // Still below Team workload, not above it and not elsewhere.
+    expect((await completed.boundingBox())!.y).toBeGreaterThan(
+      (await workload.boundingBox())!.y,
+    );
 
-    const people = completed.locator(".prio-completed__person");
-    if ((await people.count()) === 0) {
-      // A project with nothing finished says so rather than showing an empty list.
-      await expect(completed).toContainText(/nothing has been completed/i);
-      return;
-    }
+    // One row, drawn the same way the workload rows are.
+    const rows = completed.locator(".prio-breakdown__row");
+    await expect(rows).toHaveCount(1);
+    await expect(rows.locator(".prio-breakdown__track")).toHaveCount(1);
+    await expect(rows.locator(".prio-breakdown__bar")).toHaveCount(1);
 
-    /* Every issue listed under a person leads to that person's work in this
-       project — the completer's, read from the activity trail, not the
-       assignee's. */
-    const first = people.first();
-    const link = first.locator("a.prio-completed__issue").first();
-    if ((await link.count()) > 0) {
-      const href = await link.getAttribute("href");
-      expect(href).toMatch(/^\/projects\/eng\/list\?assignee=.+/);
+    // And no per-person breakdown any more.
+    await expect(completed.locator(".prio-completed__person")).toHaveCount(0);
 
-      await link.click();
-      await expect(page).toHaveURL(/\/projects\/eng\/list\?assignee=/);
-    }
+    /* The figure is the real number of DONE issues in this project, counted
+       independently of the page that rendered it. */
+    const done = await prisma.issue.count({
+      where: { project: { key: "ENG" }, status: "DONE" },
+    });
+    const shown = Number(
+      /(\d+)/.exec(
+        await rows.locator(".prio-breakdown__value").innerText(),
+      )![1],
+    );
+    expect(shown).toBe(done);
   });
 
   test("marks completed issues in Recently updated", async ({ page }) => {

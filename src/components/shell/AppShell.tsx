@@ -8,6 +8,7 @@ import {
 import { ToastProvider } from "@/components/ui/Toast";
 import { Sidebar, useSidebarState, type SidebarProject } from "./Sidebar";
 import { Topbar, type TopbarUser } from "./Topbar";
+import type { WorkRole } from "@/lib/authz";
 
 /**
  * The Prio application frame. Server components render inside `children`; only
@@ -15,6 +16,7 @@ import { Topbar, type TopbarUser } from "./Topbar";
  */
 export function AppShell({
   user,
+  workRole,
   projects,
   unreadNotifications,
   newUserAlerts = [],
@@ -22,6 +24,12 @@ export function AppShell({
   children,
 }: {
   user: TopbarUser;
+  /**
+   * What this person does here, resolved on the server (see `workRoleOf`).
+   * The chrome only decides what to *offer*; every action it leads to
+   * re-checks for itself, so this is presentation, never the boundary.
+   */
+  workRole: WorkRole;
   projects: SidebarProject[];
   unreadNotifications: number;
   /** Admin-only; always empty for a Member. */
@@ -53,6 +61,7 @@ export function AppShell({
         <div className="prio-main" data-collapsed={collapsed}>
           <Topbar
             user={user}
+            workRole={workRole}
             projects={projects}
             unreadNotifications={unreadNotifications}
             onOpenMobileNav={openMobile}

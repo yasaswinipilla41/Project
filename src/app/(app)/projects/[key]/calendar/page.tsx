@@ -7,7 +7,7 @@ import {
   ProjectCalendarGrid,
   type CalendarIssue,
 } from "@/components/projects/ProjectCalendarGrid";
-import { projectScope } from "@/lib/authz";
+import { projectScope, workRoleOf } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
 import { recordProjectVisit } from "@/lib/recents";
 import { requireUser, type CurrentUser } from "@/lib/session";
@@ -191,6 +191,7 @@ export default async function ProjectCalendarPage({
           ) : null}
 
           <ProjectCalendarGrid
+        canCreate={(await workRoleOf(user)) !== "DEVELOPER"}
             projectId={project.id}
             monthLabel={monthLabel}
             year={year}

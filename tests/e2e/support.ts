@@ -57,7 +57,11 @@ export async function setViewport(
   await page.setViewportSize({ width, height });
   await page.waitForFunction(
     () => {
-      const el = document.querySelector(".prio-create") as HTMLElement | null;
+      /* `.prio-main` is the region the sidebar's width pushes around, so it is
+         what actually animates — and unlike the create control, which a
+         developer is not offered, it is on the page for everybody. A probe
+         that some accounts do not have is a probe that hangs for them. */
+      const el = document.querySelector(".prio-main") as HTMLElement | null;
       if (!el) return false;
       const w = el.getBoundingClientRect().width;
       // Two consecutive frames with the same width means nothing is animating.

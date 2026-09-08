@@ -35,37 +35,41 @@ function dateValue(offsetDays: number) {
   return date.toISOString().slice(0, 10);
 }
 
-/** Files an issue straight into a project, so a test never eats the seeded backlog. */
+/**
+ * Files an issue straight into a project, so a test never eats the seeded
+ * backlog.
+ *
+ * The number comes from an atomic `increment` and the key is built from what
+ * that returns. Reading `issueSequence` first and writing the value back — as
+ * this did — is a read-then-write race: two seeds that read before either
+ * wrote both claimed the same number, and the second hit the unique constraint
+ * on `key`. The app's own `createIssue` reserves its numbers the same way.
+ */
 async function seedIssue(projectKey: string, title: string) {
-  const project = await prisma.project.findUniqueOrThrow({
+  const project = await prisma.project.update({
     where: { key: projectKey },
+    data: { issueSequence: { increment: 1 } },
     select: { id: true, issueSequence: true },
   });
-  const number = project.issueSequence + 1;
+  const number = project.issueSequence;
 
-  const [, issue] = await prisma.$transaction([
-    prisma.project.update({
-      where: { id: project.id },
-      data: { issueSequence: number },
-    }),
-    prisma.issue.create({
-      data: {
-        projectId: project.id,
-        key: `${projectKey}-${number}`,
-        number,
-        title,
-        type: "TASK",
-        status: "TODO",
-        reporterId: (
-          await prisma.user.findFirstOrThrow({
-            where: { role: "ADMIN" },
-            select: { id: true },
-          })
-        ).id,
-      },
-      select: { id: true, key: true },
-    }),
-  ]);
+  const reporter = await prisma.user.findFirstOrThrow({
+    where: { role: "ADMIN" },
+    select: { id: true },
+  });
+
+  const issue = await prisma.issue.create({
+    data: {
+      projectId: project.id,
+      key: `${projectKey}-${number}`,
+      number,
+      title,
+      type: "TASK",
+      status: "TODO",
+      reporterId: reporter.id,
+    },
+    select: { id: true, key: true },
+  });
 
   createdIssues.push(issue.id);
   return issue;
