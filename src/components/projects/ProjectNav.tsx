@@ -32,8 +32,23 @@ export type ProjectTab =
  */
 export function ProjectNav({
   projectKey,
+  showSprints = true,
 }: {
   projectKey: string;
+  /**
+   * Whether this reader gets the Sprints tab.
+   *
+   * Resolved on the server by the project layout and passed down, because a
+   * client component cannot ask who is signed in. False for QA members: a
+   * sprint is an administrator's instrument, testers read work rather than
+   * shape it, and the route itself turns them away — so leaving the tab up
+   * would offer a link to a page that refuses them.
+   *
+   * Hiding it decides nothing about access. `sprints.ts` asserts an
+   * administrator on every write and the page re-checks the reader, both of
+   * which hold whatever this prop says.
+   */
+  showSprints?: boolean;
 }) {
   const pathname = usePathname();
   const base = `/projects/${projectKey.toLowerCase()}`;
@@ -59,7 +74,9 @@ export function ProjectNav({
     { id: "summary", label: "Summary", href: `${base}/summary` },
     { id: "list", label: "List", href: `${base}/list` },
     { id: "board", label: "Flow Board", href: `${base}/board` },
-    { id: "sprints", label: "Sprints", href: `${base}/sprints` },
+    ...(showSprints
+      ? [{ id: "sprints" as const, label: "Sprints", href: `${base}/sprints` }]
+      : []),
     { id: "calendar", label: "Calendar", href: `${base}/calendar` },
     { id: "timeline", label: "Timeline", href: `${base}/timeline` },
     { id: "activity", label: "Activity", href: `${base}/activity` },

@@ -131,12 +131,26 @@ export default async function AdminPage() {
       </div>
 
       <div className="row g-3" style={{ marginBottom: "var(--prio-space-6)" }}>
+        {/*
+          * Each tile opens what it counts.
+          *
+          * `Stat` has taken an `href` since the dashboard's KPI cards were
+          * built, so this is the affordance being used rather than a new one:
+          * the markup, tone and hint are untouched and a linked tile looks
+          * exactly like the plain one it replaces.
+          *
+          * Users points at the People section further down this page rather
+          * than a route of its own, because that section *is* the users
+          * screen — `UserAdmin` is rendered below. Sending it to a new page
+          * would duplicate what is already here.
+          */}
         <div className="col-6 col-xl-3">
           <Stat
             label="Users"
             value={users.length}
             icon={<IconUsers size={13} />}
             hint={`${activeUsers} active · ${admins} admin`}
+            href="/admin#people"
           />
         </div>
         <div className="col-6 col-xl-3">
@@ -144,6 +158,7 @@ export default async function AdminPage() {
             label="Projects"
             value={projects.length}
             hint={`${projects.reduce((s, p) => s + p._count.issues, 0)} issues total`}
+            href="/projects"
           />
         </div>
         <div className="col-6 col-xl-3">
@@ -153,6 +168,7 @@ export default async function AdminPage() {
             icon={<IconIssues size={13} />}
             tone="brand"
             hint={`${openIssues} open · ${completedIssues} done`}
+            href="/issues"
           />
         </div>
         <div className="col-6 col-xl-3">
@@ -162,6 +178,7 @@ export default async function AdminPage() {
             icon={<IconBug size={13} />}
             tone={openBugs > 0 ? "danger" : "default"}
             hint={`${openBugs} open · ${overdue} overdue overall`}
+            href="/bugs"
           />
         </div>
       </div>
@@ -204,10 +221,17 @@ export default async function AdminPage() {
               image: u.image,
               jobTitle: u.jobTitle,
             }))}
+          /* The same live projects the rest of this page counts, so the
+             dialog's list can never name one that has been archived. */
+          projects={projects.map((p) => ({
+            id: p.id,
+            key: p.key,
+            name: p.name,
+          }))}
         />
       </div>
 
-      <div style={{ marginBottom: "var(--prio-space-6)" }}>
+      <div id="people" style={{ marginBottom: "var(--prio-space-6)" }}>
         <UserAdmin
           users={users.map((u) => ({
             id: u.id,

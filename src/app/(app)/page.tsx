@@ -93,12 +93,26 @@ export default async function HomePage() {
                 : "You are not a member of any project yet."}
           </p>
           <div className="prio-dash__herometa">
-            <RoleBadge role={workRole} />
             <span className="prio-dash__date">{today}</span>
           </div>
         </div>
 
-        <QuickActions role={workRole} />
+        {/*
+          * The role, top-right, above the work below it.
+          *
+          * It used to sit beside the date under the greeting, where it read as
+          * a detail of the sentence above rather than a statement about the
+          * reader. A QA member arriving at this page is being told what they
+          * are before being shown the two things that follow from it — My work
+          * and their QA queue — so the badge heads the column those sit under.
+          *
+          * Same component, same derivation, same single place it comes from.
+          * Only where it is drawn changed.
+          */}
+        <div className="prio-dash__heroaside">
+          <RoleBadge role={workRole} />
+          <QuickActions role={workRole} />
+        </div>
       </header>
 
       {data.kpi.projects === 0 ? (
@@ -290,13 +304,15 @@ export default async function HomePage() {
                         <span className="prio-worktile__label">Reported</span>
                       </Link>
                       {/* A tester checks whatever a developer hands back, not
-                          only the bugs they raised themselves — so their queue
-                          is the whole of it, and the link opens the whole of
-                          it too. */}
+                          only the bugs they raised themselves — but only what
+                          has been handed to *them*. The link carries the same
+                          assignee the count is cut on, so opening the tile
+                          shows the rows the figure was counting rather than
+                          every unchecked issue in their projects. */}
                       <Link
                         href={
                           data.qa.isTester
-                            ? "/issues?status=IN_REVIEW"
+                            ? `/issues?assignee=${user.id}&status=IN_REVIEW`
                             : `/issues?reporter=${user.id}&type=BUG&status=IN_REVIEW`
                         }
                         className="prio-worktile"

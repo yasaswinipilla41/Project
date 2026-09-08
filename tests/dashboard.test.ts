@@ -242,11 +242,12 @@ describe("loadDashboard — every figure is the real count", () => {
       assigneeId: user.id,
     };
 
-    const [assigned, inProgress, review, completed, reported] =
+    const [assigned, inProgress, review, inQa, completed, reported] =
       await Promise.all([
         prisma.issue.count({ where: { ...mine, status: open } }),
         prisma.issue.count({ where: { ...mine, status: "IN_PROGRESS" } }),
         prisma.issue.count({ where: { ...mine, status: "IN_REVIEW" } }),
+        prisma.issue.count({ where: { ...mine, status: "IN_QA" } }),
         prisma.issue.count({
           where: { ...mine, status: { in: [...CLOSED_STATUSES] } },
         }),
@@ -261,8 +262,35 @@ describe("loadDashboard — every figure is the real count", () => {
     expect(data.myWork.assigned).toBe(assigned);
     expect(data.myWork.inProgress).toBe(inProgress);
     expect(data.myWork.review).toBe(review);
+    expect(data.myWork.inQa).toBe(inQa);
     expect(data.myWork.completed).toBe(completed);
     expect(data.myWork.reported).toBe(reported);
+  });
+
+  it("counts only the reader's own Ready for QA and In QA", async () => {
+    /*
+     * My work is the reader's queue, not their projects'. Both QA buckets are
+     * cut on `assigneeId`, so an issue in the same project at the same status
+     * held by somebody else belongs to neither figure.
+     */
+    const user = await aMemberWithProjects();
+    const data = await loadDashboard(user);
+
+    for (const status of ["IN_REVIEW", "IN_QA"] as const) {
+      const theirs = await prisma.issue.count({
+        where: {
+          projectId: { in: data.scope.projectIds },
+          status,
+          NOT: { assigneeId: user.id },
+        },
+      });
+      const everyone = await prisma.issue.count({
+        where: { projectId: { in: data.scope.projectIds }, status },
+      });
+
+      const figure = status === "IN_REVIEW" ? data.myWork.review : data.myWork.inQa;
+      expect(figure).toBe(everyone - theirs);
+    }
   });
 
   it("distributes issues without inventing or losing any", async () => {
@@ -571,7 +599,7 @@ describe("loadDashboard — the QA panel", () => {
     }
   });
 
-  it("is shown to a tester, and counts every issue waiting in their projects", async () => {
+  it("is shown to a tester, and counts only what is waiting on them", async () => {
     const { leave } = await joinTestingTeam(MEMBER);
     try {
       const tester = await userByEmail(MEMBER);
@@ -580,22 +608,64 @@ describe("loadDashboard — the QA panel", () => {
       expect(data.qa).not.toBeNull();
       expect(data.qa!.isTester).toBe(true);
 
-      /* The queue is everything handed back for checking anywhere they can
-         see — recomputed here with a different query than the one under
-         test, which is this file's whole method. */
-      const waiting = await prisma.issue.count({
+      /* The queue is what has been handed to *this* tester for checking:
+         assigned to them, in a project they can see, and waiting for QA.
+         Recomputed here with a different query than the one under test,
+         which is this file's whole method. */
+      const mine = await prisma.issue.count({
         where: {
           projectId: { in: data.scope.projectIds },
+          assigneeId: tester.id,
           status: "IN_REVIEW",
         },
       });
-      expect(data.qa!.readyForQa).toBe(waiting);
+      expect(data.qa!.readyForQa).toBe(mine);
+    } finally {
+      await leave();
+    }
+  });
 
-      /* And it is a wider set than the bugs they happened to report
-         themselves, which is what the panel counted before. */
-      expect(data.qa!.readyForQa).toBeGreaterThanOrEqual(
-        data.qa!.awaitingVerification,
-      );
+  it("leaves another tester's queue out of this one", async () => {
+    /*
+     * The count used to be every IN_REVIEW issue in reach, whoever held it,
+     * so a tester's queue included their colleagues' work and work nobody had
+     * picked up. This pins the narrowing: an issue waiting for QA in a project
+     * this tester can see, assigned to somebody else, must not be counted.
+     */
+    const { leave } = await joinTestingTeam(MEMBER);
+    try {
+      const tester = await userByEmail(MEMBER);
+      const before = await loadDashboard(tester);
+
+      const someoneElse = await prisma.issue.findFirst({
+        where: {
+          projectId: { in: before.scope.projectIds },
+          status: "IN_REVIEW",
+          assigneeId: { not: tester.id },
+        },
+        select: { id: true },
+      });
+
+      const foreign = await prisma.issue.count({
+        where: {
+          projectId: { in: before.scope.projectIds },
+          status: "IN_REVIEW",
+          NOT: { assigneeId: tester.id },
+        },
+      });
+
+      /* Only meaningful where such an issue exists; where the seed has none,
+         the equality below still says the count is the tester's own. */
+      if (someoneElse) expect(foreign).toBeGreaterThan(0);
+
+      const everythingWaiting = await prisma.issue.count({
+        where: {
+          projectId: { in: before.scope.projectIds },
+          status: "IN_REVIEW",
+        },
+      });
+
+      expect(before.qa!.readyForQa).toBe(everythingWaiting - foreign);
     } finally {
       await leave();
     }

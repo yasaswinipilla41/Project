@@ -84,7 +84,7 @@ test.describe("Dashboard — signed in as an administrator", () => {
 
     /* The badge names what this person does. For an administrator that is the
        same word either way — the account role and the job coincide. */
-    await expect(page.locator(".prio-dash__herometa .prio-rolebadge")).toHaveAttribute(
+    await expect(page.locator(".prio-dash__heroaside .prio-rolebadge")).toHaveAttribute(
       "data-role",
       "ADMIN",
     );
@@ -450,12 +450,12 @@ test.describe("Dashboard — signed in as a member", () => {
        absent below. The account role is still MEMBER and still what the People
        screen grants; it is shown as such beside other people, in the team
        list. */
-    await expect(page.locator(".prio-dash__herometa .prio-rolebadge")).toHaveAttribute(
+    await expect(page.locator(".prio-dash__heroaside .prio-rolebadge")).toHaveAttribute(
       "data-role",
       "DEVELOPER",
     );
     await expect(
-      page.locator(".prio-dash__herometa .prio-rolebadge"),
+      page.locator(".prio-dash__heroaside .prio-rolebadge"),
     ).toHaveText("Developer");
 
     // The org-wide section is an administrator surface.

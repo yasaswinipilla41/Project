@@ -28,6 +28,8 @@ export interface WorkSummary {
   assigned: number;
   inProgress: number;
   review: number;
+  /** Being tested right now — the other half of a tester's own queue. */
+  inQa: number;
   completed: number;
   overdue: number;
   reported: number;
@@ -170,8 +172,8 @@ export interface DashboardData {
    * used to have this panel has lost it.
    *
    * `isTester` says which of the two, and the only thing it changes is what
-   * the panel is about: a tester's queue is every issue in their projects
-   * waiting to be checked, while a reporter's is the bugs they raised.
+   * the panel is about: a tester's queue is what has been assigned to them and
+   * is waiting to be checked, while a reporter's is the bugs they raised.
    */
   qa: {
     isTester: boolean;
@@ -649,6 +651,7 @@ async function countBundle(
     myAssigned,
     myInProgress,
     myReview,
+    myInQa,
     myCompleted,
     myOverdue,
     myReported,
@@ -709,6 +712,10 @@ async function countBundle(
     prisma.issue.count({ where: { ...mine, status: open } }),
     prisma.issue.count({ where: { ...mine, status: "IN_PROGRESS" } }),
     prisma.issue.count({ where: { ...mine, status: "IN_REVIEW" } }),
+    /* Work this person is testing now. Ready for QA is what has been handed
+       to them; this is what they have picked up, and a tester's own queue is
+       both — so My work shows the pair rather than only the first half. */
+    prisma.issue.count({ where: { ...mine, status: "IN_QA" } }),
     prisma.issue.count({ where: { ...mine, status: closed } }),
     prisma.issue.count({
       where: { ...mine, status: open, dueDate: { lt: w.now } },
@@ -749,9 +756,21 @@ async function countBundle(
     prisma.issue.count({
       where: { ...scope, type: "BUG", completedAt: { gte: w.weekAgo } },
     }),
-    /* The tester's queue: everything handed back for checking, anywhere they
-       can see, whoever raised it. */
-    prisma.issue.count({ where: { ...scope, status: "IN_REVIEW" } }),
+    /*
+     * The tester's queue: what has been handed back for *them* to check.
+     *
+     * This used to count every IN_REVIEW issue anywhere the person could see,
+     * whoever it belonged to — so a QA member's queue included work assigned
+     * to their colleagues, work assigned to a developer, and work nobody had
+     * picked up. The figure was the project's backlog of unchecked work rather
+     * than the reader's own, and the tile that showed it opened a list that did
+     * not match it.
+     *
+     * `mine` is `scope` plus `assigneeId`, so all three conditions hold at
+     * once: assigned to this person, in a project they may open, and waiting
+     * for QA. Everything else is somebody else's queue.
+     */
+    prisma.issue.count({ where: { ...mine, status: "IN_REVIEW" } }),
   ]);
 
   const isTester = (await workRoleOf(user)) === "QA";
@@ -774,6 +793,7 @@ async function countBundle(
       assigned: myAssigned,
       inProgress: myInProgress,
       review: myReview,
+      inQa: myInQa,
       completed: myCompleted,
       overdue: myOverdue,
       reported: myReported,
@@ -913,6 +933,7 @@ function emptyDashboard(
       assigned: 0,
       inProgress: 0,
       review: 0,
+      inQa: 0,
       completed: 0,
       overdue: 0,
       reported: 0,

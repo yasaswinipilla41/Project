@@ -5,7 +5,7 @@ import { ProjectActions } from "@/components/projects/ProjectActions";
 import { ProjectNav } from "@/components/projects/ProjectNav";
 import { ProjectShellChrome } from "@/components/projects/ProjectShellChrome";
 import { IconSettings } from "@/components/ui/Icon";
-import { canManageProject, projectScope } from "@/lib/authz";
+import { canManageProject, projectScope, workRoleOf } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 
@@ -52,6 +52,8 @@ export default async function ProjectLayout({
     },
   });
   if (!project) notFound();
+
+  const workRole = await workRoleOf(user);
 
   return (
     <>
@@ -110,7 +112,15 @@ export default async function ProjectLayout({
         </div>
       </div>
 
-      <ProjectNav projectKey={project.key} />
+      {/*
+        * QA members get no Sprints tab.
+        *
+        * Resolved here, on the server, from the same `workRoleOf` every other
+        * surface uses — the strip is a client component and cannot ask. The
+        * route refuses them as well, so this removes a link that would only
+        * lead to a refusal rather than being what withholds anything.
+        */}
+      <ProjectNav projectKey={project.key} showSprints={workRole !== "QA"} />
       </ProjectShellChrome>
 
       {children}

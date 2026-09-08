@@ -308,7 +308,7 @@ export type WorkRole = "ADMIN" | "QA" | "DEVELOPER";
 
 export const WORK_ROLE_LABEL: Record<WorkRole, string> = {
   ADMIN: "Admin",
-  QA: "QA Tester",
+  QA: "QA member",
   DEVELOPER: "Developer",
 };
 

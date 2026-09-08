@@ -72,6 +72,21 @@
   margin-top: var(--prio-space-4);
 }
 
+/*
+ * The hero's right-hand column: the role badge, then the quick actions.
+ *
+ * `align-items: flex-end` puts both against the right edge, and the hero's own
+ * `align-items: flex-end` keeps the column's baseline level with the greeting
+ * block beside it. On a narrow viewport the hero already wraps, so this stack
+ * falls below the greeting and the badge stays above the actions.
+ */
+.prio-dash__heroaside {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--prio-space-3);
+}
+
 /* Role badge. Shows the account's real role — Administrator or Member — never
    an invented one. */
 .prio-rolebadge {

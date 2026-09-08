@@ -66,7 +66,7 @@ test.describe("A developer", () => {
     page,
   }) => {
     await page.goto("/");
-    await expect(page.locator(".prio-dash__herometa .prio-rolebadge")).toHaveText(
+    await expect(page.locator(".prio-dash__heroaside .prio-rolebadge")).toHaveText(
       "Developer",
     );
 
@@ -138,8 +138,8 @@ test.describe("A tester", () => {
     page,
   }) => {
     await page.goto("/");
-    await expect(page.locator(".prio-dash__herometa .prio-rolebadge")).toHaveText(
-      "QA Tester",
+    await expect(page.locator(".prio-dash__heroaside .prio-rolebadge")).toHaveText(
+      "QA member",
     );
 
     await expect(page.locator(".prio-create__main")).toBeVisible();
@@ -172,7 +172,7 @@ test.describe("An administrator", () => {
     page,
   }) => {
     await page.goto("/");
-    await expect(page.locator(".prio-dash__herometa .prio-rolebadge")).toHaveText("Admin");
+    await expect(page.locator(".prio-dash__heroaside .prio-rolebadge")).toHaveText("Admin");
     await expect(page.locator(".prio-create__main")).toBeVisible();
 
     await page.goto(`/issues/${await anOpenIssueOfTheirs()}`);

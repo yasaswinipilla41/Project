@@ -617,6 +617,11 @@ export function WorkGrid({
       href: `${mine}&status=IN_PROGRESS`,
     },
     { label: "Ready for QA", value: work.review, href: `${mine}&status=IN_REVIEW` },
+    /* The other half of a tester's own queue. Ready for QA is what has been
+       handed to them; this is what they have picked up and are checking now.
+       Both are theirs, so My work names both rather than folding the second
+       into the undifferentiated "Assigned". */
+    { label: "In QA", value: work.inQa, href: `${mine}&status=IN_QA` },
     { label: "Completed", value: work.completed, href: `${mine}&status=DONE` },
     {
       label: "Overdue",

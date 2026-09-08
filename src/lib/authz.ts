@@ -182,6 +182,21 @@ export async function accessibleProjectIds(
 /** Slug of the team that owns the testing surfaces. */
 export const TESTING_TEAM_SLUG = "testing";
 
+/**
+ * Slug of the Development team — a roster, and nothing else.
+ *
+ * `workRoleOf` does not read this and must not. A developer is a member who is
+ * not on Testing, which is the absence of a row rather than the presence of
+ * one, so this team grants no permission, withholds none, and changes nobody's
+ * effective role. Somebody on both teams is a QA member, because Testing is
+ * still what decides that.
+ *
+ * What it exists for is administration: there was previously nowhere to record
+ * who has actually been onboarded as a developer, so Administration had no
+ * list to show and no person to hang a profile on. This is that list.
+ */
+export const DEVELOPMENT_TEAM_SLUG = "development";
+
 /* --------------------------------------------------------- working roles */
 
 /**

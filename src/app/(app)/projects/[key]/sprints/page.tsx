@@ -4,7 +4,7 @@ import { NewSprintButton } from "@/components/sprints/NewSprintButton";
 import { SprintCard } from "@/components/sprints/SprintCard";
 import { Card, EmptyState } from "@/components/ui/primitives";
 import { IconEmptyBox } from "@/components/ui/Icon";
-import { projectScope } from "@/lib/authz";
+import { projectScope, workRoleOf } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
 import { loadSprintBacklog, loadSprints } from "@/server/queries/sprints";
 import { requireUser } from "@/lib/session";
@@ -34,6 +34,21 @@ export default async function ProjectSprintsPage({
 }) {
   const { key } = await params;
   const user = await requireUser();
+
+  /*
+   * Sprints are not a QA member's surface.
+   *
+   * Checked here, before the project is even queried, so a direct URL gets the
+   * not-found page rather than a sprint board with every control missing — an
+   * empty management screen is a worse answer than no screen. The tab strip
+   * hides the link for the same people; this is what makes the hiding binding,
+   * since a hidden link is not a check.
+   *
+   * Administrators are unaffected, and so are developers, who read sprints to
+   * see what they are working in. Every write in `sprints.ts` still asserts an
+   * administrator independently.
+   */
+  if ((await workRoleOf(user)) === "QA") notFound();
 
   const project = await prisma.project.findFirst({
     where: { key: key.toUpperCase(), ...projectScope(user) },
