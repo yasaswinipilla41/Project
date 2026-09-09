@@ -21,6 +21,8 @@ const DEVELOPER = "kiran.das@symbiosystech.com";
 
 const created: string[] = [];
 const memberships: string[] = [];
+/** Rows this file took away to make somebody a pure tester, put back after. */
+const suspended: { teamId: string; userId: string }[] = [];
 
 async function join(email: string, slug: string): Promise<void> {
   const [user, team] = await Promise.all([
@@ -36,7 +38,31 @@ async function join(email: string, slug: string): Promise<void> {
   memberships.push(row.id);
 }
 
+/**
+ * Takes somebody off a team for the run, and remembers to put them back.
+ *
+ * The tester here has to be a *pure* tester, and team rows are shared state
+ * that other suites add to. A membership left behind by an interrupted run
+ * would quietly make this person full stack, and every rule below would then
+ * be asserted against the wrong role and pass or fail for the wrong reason.
+ */
+async function leaveFor(email: string, slug: string): Promise<void> {
+  const [user, team] = await Promise.all([
+    prisma.user.findUniqueOrThrow({ where: { email }, select: { id: true } }),
+    prisma.team.findUniqueOrThrow({ where: { slug }, select: { id: true } }),
+  ]);
+  const existing = await prisma.teamMember.findFirst({
+    where: { teamId: team.id, userId: user.id },
+    select: { id: true },
+  });
+  if (!existing) return;
+
+  await prisma.teamMember.delete({ where: { id: existing.id } });
+  suspended.push({ teamId: team.id, userId: user.id });
+}
+
 beforeAll(async () => {
+  await leaveFor(TESTER, DEVELOPMENT_TEAM_SLUG);
   await join(TESTER, TESTING_TEAM_SLUG);
   await join(FULLSTACK, TESTING_TEAM_SLUG);
   await join(FULLSTACK, DEVELOPMENT_TEAM_SLUG);
@@ -48,6 +74,13 @@ afterAll(async () => {
     await prisma.issue.deleteMany({ where: { id: { in: created } } });
   }
   await prisma.teamMember.deleteMany({ where: { id: { in: memberships } } });
+  for (const row of suspended) {
+    await prisma.teamMember.upsert({
+      where: { teamId_userId: { teamId: row.teamId, userId: row.userId } },
+      update: {},
+      create: { teamId: row.teamId, userId: row.userId },
+    });
+  }
   await prisma.$disconnect();
 });
 
@@ -61,7 +94,10 @@ async function userId(email: string): Promise<string> {
 
 describe("the statuses each job may set", () => {
   it("gives a tester the four that testing uses, and nothing of the build", () => {
-    expect([...allowedStatusesFor("QA")]).toEqual([
+    /* Asked of work that is In QA, which is where all four are theirs. Done is
+       the verdict and follows testing, so what they are offered elsewhere is
+       narrower — see the last case in this block. */
+    expect([...allowedStatusesFor("QA", "IN_QA")]).toEqual([
       "IN_REVIEW",
       "IN_QA",
       "DONE",
@@ -111,9 +147,47 @@ describe("the statuses each job may set", () => {
     expect(canSetStatus("FULLSTACK", "IN_REVIEW", "DONE")).toBe(true);
     expect(canSetStatus("ADMIN", "IN_REVIEW", "DONE")).toBe(true);
   });
+
+  it("holds it back at creation too, where nothing has been tested at all", () => {
+    /* `current` is null when work is being filed. Filing something as already
+       finished is the same skip as moving it there from Ready for QA, and a
+       create form is where it could otherwise slip through. */
+    expect(canSetStatus("QA", null, "DONE")).toBe(false);
+    expect([...allowedStatusesFor("QA", null)]).toEqual([
+      "IN_REVIEW",
+      "IN_QA",
+      "REOPENED",
+    ]);
+
+    // Everybody else files as they always did.
+    expect(canSetStatus("ADMIN", null, "DONE")).toBe(true);
+    expect(canSetStatus("FULLSTACK", null, "DONE")).toBe(true);
+  });
 });
 
 describe("a tester filing work", () => {
+  it("cannot file it as already finished", async () => {
+    await actAs(TESTER);
+    const project = await projectByKey("ENG");
+    const title = `Tester files work as done ${Date.now()}`;
+
+    const result = await createIssue({
+      projectId: project.id,
+      type: "BUG",
+      title,
+      description: "x",
+      status: "DONE",
+      priority: "MEDIUM",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/in qa/i);
+
+    // Refused means nothing was written — this run's title, not the prefix,
+    // so debris from any other run cannot decide the answer.
+    expect(await prisma.issue.count({ where: { title } })).toBe(0);
+  });
+
   it("cannot file it into a status the build owns", async () => {
     await actAs(TESTER);
     const project = await projectByKey("ENG");

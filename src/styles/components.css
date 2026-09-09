@@ -2625,6 +2625,21 @@ a.prio-stat:focus-visible {
   font-weight: var(--prio-weight-medium);
 }
 
+/* --------------------------------------------------- archived projects */
+/*
+ * A plain stack of rows, reusing the roster row so an archived project reads
+ * like every other list of things in Prio rather than like a second kind of
+ * project card.
+ */
+.prio-archivedlist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
 /* ------------------------------------------------------- search select */
 /*
  * The chip's own remove control, and the two-line option row. Everything else

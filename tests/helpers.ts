@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { TESTING_TEAM_SLUG } from "@/lib/authz";
+import { DEVELOPMENT_TEAM_SLUG, TESTING_TEAM_SLUG } from "@/lib/authz";
 import { testHeaders } from "./setup";
 
 /**
@@ -89,13 +89,48 @@ export async function joinTestingTeam(
       select: { id: true },
     }));
 
+  /*
+   * A *pure* tester, which means the Development team matters too.
+   *
+   * Holding both teams is a Full Stack Developer, who builds as well as
+   * checks — so a Development row left behind by another suite, or by an
+   * interrupted end-to-end run, silently turns every "a tester may not…" case
+   * into "a full stack developer may", and those all pass for the wrong
+   * reason. The row is taken away for the duration and put back by `leave`,
+   * so a caller that inherits one still leaves the fixture as it found it.
+   */
+  const development = await prisma.team.findUnique({
+    where: { slug: DEVELOPMENT_TEAM_SLUG },
+    select: { id: true },
+  });
+  const buildsToo = development
+    ? await prisma.teamMember.findFirst({
+        where: { teamId: development.id, userId: user.id },
+        select: { id: true },
+      })
+    : null;
+  if (buildsToo) {
+    await prisma.teamMember.delete({ where: { id: buildsToo.id } });
+  }
+
+  const restoreDevelopment = async () => {
+    if (!buildsToo || !development) return;
+    await prisma.teamMember.upsert({
+      where: {
+        teamId_userId: { teamId: development.id, userId: user.id },
+      },
+      update: {},
+      create: { teamId: development.id, userId: user.id },
+    });
+  };
+
   const existing = await prisma.teamMember.findFirst({
     where: { teamId: team.id, userId: user.id },
     select: { id: true },
   });
 
-  // Already on it: leave it that way, and undo nothing.
-  if (existing) return { userId: user.id, leave: async () => {} };
+  // Already on Testing: leave that row alone, and undo only what was changed.
+  if (existing) return { userId: user.id, leave: restoreDevelopment };
 
   const added = await prisma.teamMember.create({
     data: { teamId: team.id, userId: user.id },
@@ -106,6 +141,7 @@ export async function joinTestingTeam(
     userId: user.id,
     leave: async () => {
       await prisma.teamMember.deleteMany({ where: { id: added.id } });
+      await restoreDevelopment();
     },
   };
 }

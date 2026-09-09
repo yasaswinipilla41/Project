@@ -326,6 +326,91 @@ describe("who may declare what", () => {
   });
 });
 
+/* ---------------------------------------------------------- the round trip */
+
+describe("the workflow, walked end to end", () => {
+  it("passes: built, handed over, tested, done", async () => {
+    /* The whole of the successful path, each step taken by the person whose
+       step it is. Nothing here is a new rule — it is the rules already
+       asserted above, walked in order, which is the thing a reader wants to
+       see once. */
+    const issueId = await anIssue("Round trip — passes", { status: "IN_PROGRESS" });
+
+    await actAs(DEVELOPER);
+    expect((await updateIssue({ issueId, status: "IN_REVIEW" })).ok).toBe(true);
+
+    await actAs(TESTER);
+    expect((await updateIssue({ issueId, status: "IN_QA" })).ok).toBe(true);
+    expect((await updateIssue({ issueId, status: "DONE" })).ok).toBe(true);
+
+    const after = await prisma.issue.findUniqueOrThrow({
+      where: { id: issueId },
+      select: { status: true, completedAt: true },
+    });
+    expect(after.status).toBe("DONE");
+    expect(after.completedAt).not.toBeNull();
+  });
+
+  it("fails: tested, reopened, fixed, handed back, and done the second time", async () => {
+    const issueId = await anIssue("Round trip — fails first", {
+      status: "IN_PROGRESS",
+    });
+
+    await actAs(DEVELOPER);
+    expect((await updateIssue({ issueId, status: "IN_REVIEW" })).ok).toBe(true);
+
+    // Testing finds a problem.
+    await actAs(TESTER);
+    expect((await updateIssue({ issueId, status: "IN_QA" })).ok).toBe(true);
+    expect((await updateIssue({ issueId, status: "REOPENED" })).ok).toBe(true);
+
+    // …which is the developer's again: reopened work goes back into the build.
+    await actAs(DEVELOPER);
+    expect((await updateIssue({ issueId, status: "IN_PROGRESS" })).ok).toBe(true);
+    expect((await updateIssue({ issueId, status: "IN_REVIEW" })).ok).toBe(true);
+
+    // Second time through, it passes.
+    await actAs(TESTER);
+    expect((await updateIssue({ issueId, status: "IN_QA" })).ok).toBe(true);
+    expect((await updateIssue({ issueId, status: "DONE" })).ok).toBe(true);
+
+    const trail = await prisma.activityLogEntry.findMany({
+      where: { issueId, field: "status" },
+      orderBy: { createdAt: "asc" },
+      select: { newValue: true },
+    });
+    expect(trail.map((row) => row.newValue)).toEqual([
+      "IN_PROGRESS",
+      "IN_REVIEW",
+      "IN_QA",
+      "REOPENED",
+      "IN_PROGRESS",
+      "IN_REVIEW",
+      "IN_QA",
+      "DONE",
+    ]);
+  });
+
+  it("cannot be short-circuited: the tester's Done needs the In QA before it", async () => {
+    const issueId = await anIssue("Round trip — no shortcut", {
+      status: "IN_PROGRESS",
+    });
+
+    await actAs(DEVELOPER);
+    await updateIssue({ issueId, status: "IN_REVIEW" });
+
+    await actAs(TESTER);
+    const straight = await updateIssue({ issueId, status: "DONE" });
+    expect(straight.ok).toBe(false);
+
+    const after = await prisma.issue.findUniqueOrThrow({
+      where: { id: issueId },
+      select: { status: true },
+    });
+    expect(after.status).toBe("IN_REVIEW");
+  });
+});
+
 /* ----------------------------------------------------------------- sprints */
 
 describe("sprints", () => {

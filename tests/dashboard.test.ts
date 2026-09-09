@@ -503,11 +503,22 @@ describe("loadDashboard — new assignment highlight", () => {
     await actAs("admin@symbiosystech.com");
     const project = await projectByKey("ENG");
 
-    // Must be a MEMBER, not the acting admin — `notify()` never notifies the
-    // actor about their own action, so picking the admin's own membership row
-    // here (they are often a project member too) would make this flaky.
+    /*
+     * Must be a MEMBER, not the acting admin — `notify()` never notifies the
+     * actor about their own action, so picking the admin's own membership row
+     * here (they are often a project member too) would make this flaky.
+     *
+     * And it must be a seeded account, because the test signs in as them
+     * further down. Projects collect real accounts over time — somebody signs
+     * up, an administrator puts them on a project — and those have passwords
+     * nobody here knows, so "the first member of ENG" is not by itself
+     * somebody this test can act as.
+     */
     const membership = await prisma.projectMember.findFirstOrThrow({
-      where: { projectId: project.id, user: { role: "MEMBER" } },
+      where: {
+        projectId: project.id,
+        user: { role: "MEMBER", email: { endsWith: "@symbiosystech.com" } },
+      },
       select: {
         user: {
           select: {

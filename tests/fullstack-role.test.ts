@@ -87,7 +87,33 @@ async function anIssue(
   return result.data.id;
 }
 
+const suspended: { teamId: string; userId: string }[] = [];
+
+/**
+ * Takes somebody off a team for the run, remembering to put them back.
+ *
+ * This file turns on the difference between a pure tester and somebody who
+ * also builds, so the pure one has to actually be pure. A Development row left
+ * behind by another suite would make them full stack and every "still refuses
+ * a pure tester…" case below would pass for the wrong reason.
+ */
+async function leaveFor(email: string, slug: string): Promise<void> {
+  const [user, team] = await Promise.all([
+    prisma.user.findUniqueOrThrow({ where: { email }, select: { id: true } }),
+    prisma.team.findUniqueOrThrow({ where: { slug }, select: { id: true } }),
+  ]);
+  const existing = await prisma.teamMember.findFirst({
+    where: { teamId: team.id, userId: user.id },
+    select: { id: true },
+  });
+  if (!existing) return;
+
+  await prisma.teamMember.delete({ where: { id: existing.id } });
+  suspended.push({ teamId: team.id, userId: user.id });
+}
+
 beforeAll(async () => {
+  await leaveFor(TESTER, DEVELOPMENT_TEAM_SLUG);
   await join(TESTER, TESTING_TEAM_SLUG);
   await join(FULLSTACK, TESTING_TEAM_SLUG);
   await join(FULLSTACK, DEVELOPMENT_TEAM_SLUG);
@@ -107,6 +133,13 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  for (const row of suspended) {
+    await prisma.teamMember.upsert({
+      where: { teamId_userId: { teamId: row.teamId, userId: row.userId } },
+      update: {},
+      create: { teamId: row.teamId, userId: row.userId },
+    });
+  }
   if (createdSprintIds.length > 0) {
     await prisma.sprint.deleteMany({ where: { id: { in: createdSprintIds } } });
   }

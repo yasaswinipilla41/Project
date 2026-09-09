@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { BackLink } from "@/components/shell/BackLink";
 import { ProjectsHeaderActions } from "@/components/projects/ProjectsHeaderActions";
+import { SectionHead } from "@/components/dashboard/DashboardParts";
 import {
   AvatarStack,
   Card,
@@ -33,7 +34,7 @@ export default async function ProjectsPage({
   const user = await requireUser();
   const isAdmin = user.role === "ADMIN";
 
-  const [projects, users] = await Promise.all([
+  const [projects, archived, users] = await Promise.all([
     prisma.project.findMany({
       where: { ...projectScope(user), isArchived: false },
       orderBy: { name: "asc" },
@@ -52,6 +53,21 @@ export default async function ProjectsPage({
         _count: { select: { members: true, issues: true } },
       },
     }),
+    /* Archived projects, for an administrator to find again. Archiving hides
+       a project from every list in Prio, which left the only way back a
+       remembered URL; this is that way back, and nothing else reads it. */
+    isAdmin
+      ? prisma.project.findMany({
+          where: { isArchived: true },
+          orderBy: { name: "asc" },
+          select: {
+            id: true,
+            key: true,
+            name: true,
+            _count: { select: { issues: true, members: true } },
+          },
+        })
+      : Promise.resolve([]),
     isAdmin
       ? prisma.user.findMany({
           where: { isActive: true },
@@ -238,6 +254,56 @@ export default async function ProjectsPage({
           })}
         </div>
       )}
+
+      {/*
+        * Archived projects.
+        *
+        * Archiving is reversible and destroys nothing — the issues, members
+        * and settings all stay — but it takes the project out of every list,
+        * which used to leave no way back except remembering the key. This is
+        * the way back, and it is an administrator's: `updateProject` already
+        * refuses everybody else, and unarchiving stays where it was, on the
+        * project's own settings page.
+        */}
+      {isAdmin && archived.length > 0 ? (
+        <section style={{ marginTop: "var(--prio-space-6)" }}>
+          <SectionHead title="Archived projects" count={archived.length} />
+          <Card>
+            <CardBody>
+              <ul className="prio-archivedlist">
+                {archived.map((project) => (
+                  <li key={project.id} className="prio-memberrow">
+                    <span className="prio-projectcard__badge" aria-hidden>
+                      {project.key.slice(0, 2)}
+                    </span>
+                    <span className="prio-memberpicker__text">
+                      <span className="prio-memberpicker__name">
+                        {project.name}
+                      </span>
+                      <span className="prio-memberpicker__meta">
+                        {project.key} · {project._count.issues} issues ·{" "}
+                        {project._count.members} members
+                      </span>
+                    </span>
+                    <Link
+                      href={`/projects/${project.key.toLowerCase()}/summary`}
+                      className="prio-btn prio-btn--ghost prio-btn--sm"
+                    >
+                      Open
+                    </Link>
+                    <Link
+                      href={`/projects/${project.key.toLowerCase()}/settings`}
+                      className="prio-btn prio-btn--secondary prio-btn--sm"
+                    >
+                      Restore
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </CardBody>
+          </Card>
+        </section>
+      ) : null}
     </>
   );
 }

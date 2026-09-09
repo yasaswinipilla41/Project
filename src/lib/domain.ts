@@ -181,10 +181,18 @@ export function allowedStatusesFor(
       (doesQaWork(role) && (QA_STATUSES as readonly IssueStatus[]).includes(status)),
   );
 
-  if (doesDeveloperWork(role) || current === null) return allowed;
+  if (doesDeveloperWork(role)) return allowed;
 
-  /* Staying put is not a verdict: refusing Done on something already Done
-     would refuse every other edit to finished work. */
+  /*
+   * Done is the verdict, so it follows In QA — including at creation, where
+   * `current` is null and there is no In QA behind the issue at all. Filing
+   * something as already finished is the same skip as moving it there
+   * straight from Ready for QA, and it is the one a create form could
+   * otherwise wave through.
+   *
+   * Staying put is not a verdict: refusing Done on something already Done
+   * would refuse every other edit to finished work.
+   */
   return allowed.filter(
     (status) => status !== "DONE" || current === "IN_QA" || current === "DONE",
   );
@@ -212,7 +220,11 @@ export function statusRefusalReason(
   current: IssueStatus | null,
   next: IssueStatus,
 ): string {
-  if (next === "DONE" && allowedStatusesFor(role).includes("DONE")) {
+  /* Refused Done to somebody whose claim to it is their testing half: it is
+     theirs, from In QA, and this is them not being there yet. Asked as a
+     capability rather than by reading the list back, because the list is
+     exactly what has already excluded it. */
+  if (next === "DONE" && doesQaWork(role) && !doesDeveloperWork(role)) {
     return "Done is what testing concluded — put this into In QA first.";
   }
   if (next === "IN_QA" || next === "DONE") {

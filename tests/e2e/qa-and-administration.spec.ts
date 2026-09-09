@@ -106,7 +106,7 @@ test.describe("A QA member", () => {
     await page.keyboard.press("Escape");
   });
 
-  test("is offered the four statuses testing uses, and no others", async ({
+  test("is offered the statuses testing uses, and cannot file work as Done", async ({
     page,
   }) => {
     await page.goto("/");
@@ -117,10 +117,12 @@ test.describe("A QA member", () => {
       .locator("#create-status option")
       .allInnerTexts();
 
+    /* Their four, less Done: Done is what testing concluded, and nothing has
+       been tested at the moment work is filed. It appears on the issue itself
+       once the work is In QA — see the status-menu test below. */
     expect(options.map((o) => o.trim())).toEqual([
       "Ready for QA",
       "In QA",
-      "Done",
       "Reopen",
     ]);
     await page.keyboard.press("Escape");
