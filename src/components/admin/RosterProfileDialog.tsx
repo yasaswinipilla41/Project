@@ -10,6 +10,7 @@ import { SearchSelect } from "@/components/admin/SearchSelect";
 import { ISSUE_TYPE_LABEL, STATUS_LABEL, WORK_ROLE_LABEL } from "@/lib/domain";
 import type { IssueStatus, IssueType } from "@prisma/client";
 import {
+  issuesAssignedTo,
   listProjectIssues,
   loadRosterProfile,
   updateRosterAssignment,
@@ -92,13 +93,29 @@ export function RosterProfileDialog({
       return;
     }
     setOptions(result.data);
-    /* Start from what they already hold there, so saving without touching the
-       list is a no-op rather than an unassignment. */
-    setIssueIds(
-      result.data
-        .filter((issue) => issue.assigneeName === personName)
-        .map((issue) => issue.id),
-    );
+
+    /*
+     * Start from what they already hold there, so saving without touching the
+     * list is a no-op rather than an unassignment.
+     *
+     * Asked for directly rather than read off the rows above, for two reasons
+     * and both of them lost data. The rows were matched by the displayed
+     * assignee *name*, which is only the same answer while every name is
+     * unique and spelled identically. And the rows are capped at 500, while a
+     * real project holds more — the seed's Engineering project has 985 — so
+     * everything past the cap was invisible to the seeding and released on
+     * save.
+     *
+     * `issuesAssignedTo` answers with the whole set. An issue outside the
+     * visible rows stays selected and therefore stays theirs.
+     */
+    const current = await issuesAssignedTo(nextId, personId);
+    if (current.ok) setIssueIds(current.data);
+    else {
+      toast(current.error, "error");
+      /* Better to offer nothing than a selection that would release work. */
+      setEditing(false);
+    }
   }
 
   function startEditing() {

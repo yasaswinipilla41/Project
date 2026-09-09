@@ -318,6 +318,17 @@ export interface RosterIssueOption {
   title: string;
   type: string;
   status: string;
+  /**
+   * Who holds it, by id.
+   *
+   * The name is for reading; this is for deciding. The roster editor starts
+   * from the issues a person already holds, and matching that on the displayed
+   * name is wrong in a way that loses data: two people called the same thing
+   * pre-select each other's work, and a name that does not match at all
+   * pre-selects nothing — after which saving releases everything they held,
+   * because the save replaces the selection for that project.
+   */
+  assigneeId: string | null;
   assigneeName: string | null;
 }
 
@@ -346,6 +357,7 @@ export async function listProjectIssues(
         title: true,
         type: true,
         status: true,
+        assigneeId: true,
         assignee: { select: { name: true } },
       },
       take: 500,
@@ -359,9 +371,47 @@ export async function listProjectIssues(
         title: issue.title,
         type: issue.type,
         status: issue.status,
+        assigneeId: issue.assigneeId,
         assigneeName: issue.assignee?.name ?? null,
       })),
     };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/**
+ * The issues this person currently holds in this project — every one of them.
+ *
+ * The editor needs this separately from the list it displays, and the reason is
+ * the cap on that list. `listProjectIssues` returns at most 500 rows, which is
+ * a sensible size for a picker and far short of a real project: the seed's own
+ * Engineering project has 985. Seeding the selection from those rows therefore
+ * missed everything past the cap, and because the save *replaces* this person's
+ * assignments within the project, saving an untouched editor released every one
+ * of them.
+ *
+ * Answered by its own query, unaffected by any cap, so the selection the editor
+ * starts from is what the person actually holds. An issue outside the visible
+ * rows stays selected and therefore stays theirs — it cannot be deselected by
+ * an administrator who was never shown it, which is the right way round.
+ */
+export async function issuesAssignedTo(
+  projectId: string,
+  userId: string,
+): Promise<RosterActionResult<string[]>> {
+  try {
+    const admin = await requireUser();
+    assertAdmin(admin);
+
+    if (!projectId || !userId) return { ok: true, data: [] };
+
+    const rows = await prisma.issue.findMany({
+      where: { projectId, assigneeId: userId },
+      select: { id: true },
+    });
+
+    return { ok: true, data: rows.map((row) => row.id) };
   } catch (error) {
     return failure(error);
   }

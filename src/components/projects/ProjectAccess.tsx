@@ -241,7 +241,7 @@ export function ProjectAccess({
                       {person.name}
                     </span>
                     <span className="prio-memberpicker__meta">
-                      {person.jobTitle ?? person.email}
+                      {person.jobTitle ?? "Not set"}
                     </span>
                   </span>
                 </label>

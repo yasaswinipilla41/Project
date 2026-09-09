@@ -250,9 +250,17 @@ describe("loadDashboard — every figure is the real count", () => {
         prisma.issue.count({ where: { ...mine, status: "IN_PROGRESS" } }),
         prisma.issue.count({ where: { ...mine, status: "IN_REVIEW" } }),
         prisma.issue.count({ where: { ...mine, status: "IN_QA" } }),
-        prisma.issue.count({
-          where: { ...mine, status: { in: [...CLOSED_STATUSES] } },
-        }),
+        /*
+         * Completed is DONE, and nothing else.
+         *
+         * This recomputed it as every closed status — DONE, REJECTED and
+         * CANCELLED — which is not what the dashboard counts and not what the
+         * tile says. It passed only while the person it picked happened to
+         * hold no rejected or cancelled work; give them one and the oracle,
+         * not the code, is what breaks. The rest of this file already asserts
+         * the DONE definition, so the file disagreed with itself.
+         */
+        prisma.issue.count({ where: { ...mine, status: "DONE" } }),
         prisma.issue.count({
           where: {
             projectId: { in: data.scope.projectIds },
@@ -785,5 +793,82 @@ describe("a personal figure and the list it opens are the same issues", () => {
        differ — which is exactly the gap the tile used to show. Where it holds
        none they coincide, and the assertion above still pins the definition. */
     expect(data.myWork.completed).toBeLessThanOrEqual(everyClosed);
+  });
+});
+
+describe("completed means finished, not merely handed over", () => {
+  /*
+   * Completed and redirected are different things and must never be the same
+   * number. "Completed" on a dashboard is the authoritative DONE state; moving
+   * an issue to somebody else is a change of hands, not an outcome, and must
+   * not register as one anywhere.
+   *
+   * Both directions are asserted: reassigning open work leaves every Completed
+   * figure alone, and the figure only moves when the work actually reaches
+   * Done.
+   */
+  const touched: { id: string; assigneeId: string | null }[] = [];
+
+  afterAll(async () => {
+    for (const issue of touched) {
+      await prisma.issue.update({
+        where: { id: issue.id },
+        data: { assigneeId: issue.assigneeId },
+      });
+    }
+  });
+
+  it("redirecting open work moves nobody's Completed figure", async () => {
+    const member = await aMemberWithProjects();
+    const other = await prisma.user.findFirstOrThrow({
+      where: { role: "MEMBER", isActive: true, NOT: { id: member.id } },
+      select: { id: true, email: true },
+    });
+
+    /* An open issue this person holds — the thing a redirect acts on. */
+    const open = await prisma.issue.findFirst({
+      where: {
+        assigneeId: member.id,
+        status: { in: ["TODO", "IN_PROGRESS", "IN_REVIEW", "IN_QA"] },
+      },
+      select: { id: true, assigneeId: true },
+    });
+    if (!open) return;
+    touched.push({ id: open.id, assigneeId: open.assigneeId });
+
+    const before = await loadDashboard(member);
+    const otherBefore = await loadDashboard(await userByEmail(other.email));
+
+    await prisma.issue.update({
+      where: { id: open.id },
+      data: { assigneeId: other.id },
+    });
+
+    const after = await loadDashboard(member);
+    const otherAfter = await loadDashboard(await userByEmail(other.email));
+
+    /* Neither side completed anything, so neither Completed figure moves. */
+    expect(after.myWork.completed).toBe(before.myWork.completed);
+    expect(otherAfter.myWork.completed).toBe(otherBefore.myWork.completed);
+
+    /* The work did move — otherwise the assertion above is vacuous. */
+    expect(after.myWork.assigned).toBe(before.myWork.assigned - 1);
+  });
+
+  it("a redirected issue is absent from the Completed list on both sides", async () => {
+    const member = await aMemberWithProjects();
+
+    const redirected = touched[0];
+    if (!redirected) return;
+
+    const data = await loadDashboard(member);
+    const list = await listIssues(member, {
+      assigneeIds: [member.id],
+      statuses: ["DONE"],
+      pageSize: 100,
+    });
+
+    expect(list.rows.map((row) => row.id)).not.toContain(redirected.id);
+    expect(list.total).toBe(data.myWork.completed);
   });
 });

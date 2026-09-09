@@ -6,8 +6,17 @@ export interface SearchOption {
   id: string;
   /** What is matched against, and what the chip and the row show. */
   label: string;
-  /** Second line in the list — an email, a project key, an assignee. */
+  /** Second line in the list — a designation, a project key, an assignee. */
   meta?: string;
+  /**
+   * Matched against, but never shown.
+   *
+   * For when the thing people search by is not the thing worth displaying. A
+   * person's row shows their designation, and colleagues look each other up by
+   * email — so the email lives here and the field keeps finding them by it
+   * without putting an address on every row.
+   */
+  keywords?: string;
   /** Rendered before the label in the list, e.g. an avatar. */
   adornment?: ReactNode;
 }
@@ -83,7 +92,8 @@ export function SearchSelect({
       ? available.filter(
           (option) =>
             option.label.toLowerCase().includes(folded) ||
-            (option.meta ?? "").toLowerCase().includes(folded),
+            (option.meta ?? "").toLowerCase().includes(folded) ||
+            (option.keywords ?? "").toLowerCase().includes(folded),
         )
       : available;
     /* Capped so a project with a thousand issues does not render a thousand

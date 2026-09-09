@@ -8,8 +8,10 @@ import { prisma } from "@/lib/prisma";
 import {
   assignDevelopers,
   assignTeamMembers,
+  issuesAssignedTo,
   listProjectIssues,
   loadRosterProfile,
+  updateRosterAssignment,
 } from "@/server/roster";
 import { actAs, joinTestingTeam, projectByKey } from "./helpers";
 
@@ -516,6 +518,228 @@ describe("loadRosterProfile", () => {
 
     await actAs(DEVELOPER);
     const result = await loadRosterProfile(person.id);
+    await actAs(ADMIN);
+
+    expect(result.ok).toBe(false);
+  });
+});
+
+describe("updateRosterAssignment — an edit changes what was edited, and nothing else", () => {
+  /*
+   * The save replaces this person's issues *within the chosen project*: what is
+   * in the list stays theirs, what is theirs and not in the list is released.
+   * That is a reasonable contract, and it is also why the editor opening with
+   * the wrong selection is destructive rather than merely wrong — saving an
+   * empty selection releases everything they held there.
+   *
+   * So these pin both halves: the contract, and the fact that the editor can
+   * actually reconstruct the current selection from what `listProjectIssues`
+   * returns. It could not while that only carried the assignee's *name*.
+   */
+
+  /** Gives `count` of this project's issues to `userId`, returning their ids. */
+  async function give(
+    projectId: string,
+    userId: string,
+    count: number,
+  ): Promise<string[]> {
+    const issues = await prisma.issue.findMany({
+      where: { projectId },
+      select: { id: true, assigneeId: true },
+      orderBy: { key: "asc" },
+      take: count,
+    });
+
+    for (const issue of issues) {
+      restoreAssignees.push({ id: issue.id, assigneeId: issue.assigneeId });
+      await prisma.issue.update({
+        where: { id: issue.id },
+        data: { assigneeId: userId },
+      });
+    }
+    return issues.map((i) => i.id);
+  }
+
+  /** What this person holds in this project right now. */
+  async function held(projectId: string, userId: string): Promise<string[]> {
+    const rows = await prisma.issue.findMany({
+      where: { projectId, assigneeId: userId },
+      select: { id: true },
+      orderBy: { id: "asc" },
+    });
+    return rows.map((r) => r.id);
+  }
+
+  it("reports what somebody holds without the picker's row cap losing any of it", async () => {
+    /*
+     * Two bugs in one, and both released work on an untouched save.
+     *
+     * The editor pre-selected by matching the displayed assignee *name*, which
+     * is the right answer only while every name is unique and spelled the
+     * same. And it read those rows from `listProjectIssues`, which returns at
+     * most 500 — Engineering has 985 — so anything past the cap was never
+     * selected, and the save released it.
+     *
+     * `issuesAssignedTo` is the authoritative answer: its own query, no cap.
+     * This asserts it agrees with the database exactly, and that the capped
+     * picker genuinely cannot be used for the job.
+     */
+    const project = await projectByKey("ENG");
+    const person = await userByEmail(DEVELOPER);
+    const mine = await give(project.id, person.id, 2);
+
+    const authoritative = await issuesAssignedTo(project.id, person.id);
+    expect(authoritative.ok).toBe(true);
+    if (!authoritative.ok) return;
+
+    const expected = await held(project.id, person.id);
+    expect([...authoritative.data].sort()).toEqual(expected);
+    for (const id of mine) expect(authoritative.data).toContain(id);
+
+    /* And the picker really is capped, so seeding from it would have been
+       wrong rather than merely fragile. */
+    const picker = await listProjectIssues(project.id);
+    expect(picker.ok).toBe(true);
+    if (picker.ok) {
+      const total = await prisma.issue.count({ where: { projectId: project.id } });
+      if (total > picker.data.length) {
+        expect(picker.data.length).toBeLessThan(total);
+      }
+    }
+  });
+
+  it("saving without changing anything releases nothing", async () => {
+    /* The non-negotiable one. Open, save, and everything is still theirs. */
+    const project = await projectByKey("ENG");
+    const person = await userByEmail(DEVELOPER);
+    const before = await held(project.id, person.id);
+    expect(before.length).toBeGreaterThan(0);
+
+    const result = await updateRosterAssignment({
+      userId: person.id,
+      projectId: project.id,
+      issueIds: before,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data.released).toBe(0);
+    expect(await held(project.id, person.id)).toEqual(before);
+  });
+
+  it("adding one keeps the others", async () => {
+    const project = await projectByKey("ENG");
+    const person = await userByEmail(DEVELOPER);
+    const before = await held(project.id, person.id);
+
+    const extra = await prisma.issue.findFirst({
+      where: { projectId: project.id, id: { notIn: before } },
+      select: { id: true, assigneeId: true },
+    });
+    if (!extra) return;
+    restoreAssignees.push({ id: extra.id, assigneeId: extra.assigneeId });
+
+    const result = await updateRosterAssignment({
+      userId: person.id,
+      projectId: project.id,
+      issueIds: [...before, extra.id],
+    });
+
+    expect(result.ok).toBe(true);
+    expect(await held(project.id, person.id)).toEqual(
+      [...before, extra.id].sort(),
+    );
+  });
+
+  it("removing one keeps the rest", async () => {
+    const project = await projectByKey("ENG");
+    const person = await userByEmail(DEVELOPER);
+    const before = await held(project.id, person.id);
+    expect(before.length).toBeGreaterThan(1);
+
+    const dropped = before[0]!;
+    const kept = before.slice(1);
+
+    const result = await updateRosterAssignment({
+      userId: person.id,
+      projectId: project.id,
+      issueIds: kept,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data.released).toBe(1);
+
+    const after = await held(project.id, person.id);
+    expect(after).toEqual(kept.sort());
+    expect(after).not.toContain(dropped);
+  });
+
+  it("leaves another project's assignments alone", async () => {
+    /*
+     * The edit names one project, and that project is the whole of what it may
+     * touch. Work this person holds elsewhere is not in the request and must
+     * not be collateral.
+     */
+    const eng = await projectByKey("ENG");
+    const web = await projectByKey("WEB");
+    const person = await userByEmail(DEVELOPER);
+
+    await prisma.projectMember.upsert({
+      where: { projectId_userId: { projectId: web.id, userId: person.id } },
+      update: {},
+      create: { projectId: web.id, userId: person.id },
+    });
+    const elsewhere = await give(web.id, person.id, 1);
+    if (elsewhere.length === 0) return;
+
+    /* Release everything in ENG — the most destructive edit available. */
+    const result = await updateRosterAssignment({
+      userId: person.id,
+      projectId: eng.id,
+      issueIds: [],
+    });
+    expect(result.ok).toBe(true);
+
+    expect(await held(web.id, person.id)).toEqual(elsewhere.sort());
+  });
+
+  it("changes nothing about the person themselves", async () => {
+    /* An assignment edit is about assignments. Name, email, designation, role
+       and team membership are facts about the person and are not its business. */
+    const project = await projectByKey("ENG");
+    const before = await userByEmail(DEVELOPER);
+
+    const teamsBefore = await prisma.teamMember.count({
+      where: { userId: before.id },
+    });
+
+    const result = await updateRosterAssignment({
+      userId: before.id,
+      projectId: project.id,
+      issueIds: [],
+    });
+    expect(result.ok).toBe(true);
+
+    const after = await userByEmail(DEVELOPER);
+    expect(after.name).toBe(before.name);
+    expect(after.email).toBe(before.email);
+    expect(after.jobTitle).toBe(before.jobTitle);
+    expect(after.role).toBe(before.role);
+    expect(after.isActive).toBe(before.isActive);
+    expect(await prisma.teamMember.count({ where: { userId: before.id } })).toBe(
+      teamsBefore,
+    );
+  });
+
+  it("refuses a caller who is not an administrator", async () => {
+    const project = await projectByKey("ENG");
+    const person = await userByEmail(DEVELOPER);
+
+    await actAs(DEVELOPER);
+    const result = await updateRosterAssignment({
+      userId: person.id,
+      projectId: project.id,
+      issueIds: [],
+    });
     await actAs(ADMIN);
 
     expect(result.ok).toBe(false);

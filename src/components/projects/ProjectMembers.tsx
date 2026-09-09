@@ -111,7 +111,7 @@ export function ProjectMembers({
             <span className="prio-memberpicker__text">
               <span className="prio-memberpicker__name">{member.name}</span>
               <span className="prio-memberpicker__meta">
-                {member.jobTitle ?? member.email}
+                {member.jobTitle ?? "Not set"}
               </span>
             </span>
             {canManage ? (
@@ -170,7 +170,7 @@ export function ProjectMembers({
                       {person.name}
                     </span>
                     <span className="prio-memberpicker__meta">
-                      {person.jobTitle ?? person.email}
+                      {person.jobTitle ?? "Not set"}
                     </span>
                   </span>
                   <Button

@@ -292,7 +292,7 @@ export function TeamAdmin({
                         {member.name}
                       </span>
                       <span className="prio-memberpicker__meta">
-                        {member.jobTitle ?? member.email}
+                        {member.jobTitle ?? "Not set"}
                       </span>
                     </span>
                     <Button
@@ -464,7 +464,11 @@ export function TeamAdmin({
               options={candidates.map((person) => ({
                 id: person.id,
                 label: person.name,
-                meta: person.jobTitle ?? person.email,
+                meta: person.jobTitle ?? "Not set",
+                /* The field says "name or email", and it still means it — the
+                   row shows a designation, and this is what keeps the promise
+                   without printing an address beside every name. */
+                keywords: person.email,
                 adornment: (
                   <Avatar name={person.name} image={person.image} size="sm" />
                 ),
