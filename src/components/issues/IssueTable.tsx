@@ -44,6 +44,9 @@ const COLUMNS: Column[] = [
   /* Who finished it, which is not the same question as who holds it — see the
      cell below. Empty for anything that is not Done. */
   { field: null, label: "Completed by", className: "prio-col-person" },
+  /* When it was finished, beside who finished it. Both are blank until an
+     issue is Done, which is the only state that records either. */
+  { field: null, label: "Completed", className: "prio-col-date" },
   { field: "due", label: "Due", className: "prio-col-date" },
   { field: "updated", label: "Updated", className: "prio-col-date" },
   { field: null, label: "", className: "prio-col-actions" },
@@ -321,6 +324,14 @@ export function IssueTable({
                         <Avatar name={null} size="xs" empty title="Not recorded" />
                         <span className="prio-text-disabled">Not recorded</span>
                       </span>
+                    )}
+                  </td>
+
+                  <td className="prio-col-date">
+                    {issue.completedAt ? (
+                      formatDateCompact(issue.completedAt)
+                    ) : (
+                      <span className="prio-text-disabled">—</span>
                     )}
                   </td>
 

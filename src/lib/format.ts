@@ -221,6 +221,8 @@ export function dueWindow(now: Date = new Date()): {
   now: Date;
   startOfToday: Date;
   endOfToday: Date;
+  /** Start of the current calendar week — inclusive lower bound for "this week". */
+  startOfWeek: Date;
   /** Start of the *next* calendar week — exclusive upper bound for "this week". */
   endOfWeek: Date;
 } {
@@ -231,12 +233,17 @@ export function dueWindow(now: Date = new Date()): {
   endOfToday.setDate(endOfToday.getDate() + 1);
 
   /* Monday-first: `getDay()` is Sunday-based, so shift it before measuring how
-     far into the week today already is. */
+     far into the week today already is. Both ends of the week are derived from
+     that one measurement, so they can never describe different weeks. */
   const dayOfWeek = (startOfToday.getDay() + 6) % 7;
+
+  const startOfWeek = new Date(startOfToday);
+  startOfWeek.setDate(startOfWeek.getDate() - dayOfWeek);
+
   const endOfWeek = new Date(startOfToday);
   endOfWeek.setDate(endOfWeek.getDate() + (7 - dayOfWeek));
 
-  return { now, startOfToday, endOfToday, endOfWeek };
+  return { now, startOfToday, endOfToday, startOfWeek, endOfWeek };
 }
 
 /**

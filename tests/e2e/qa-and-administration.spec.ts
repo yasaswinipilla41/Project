@@ -117,14 +117,10 @@ test.describe("A QA member", () => {
       .locator("#create-status option")
       .allInnerTexts();
 
-    /* Their four, less Done: Done is what testing concluded, and nothing has
-       been tested at the moment work is filed. It appears on the issue itself
-       once the work is In QA — see the status-menu test below. */
-    expect(options.map((o) => o.trim())).toEqual([
-      "Ready for QA",
-      "In QA",
-      "Reopen",
-    ]);
+    /* One status, because raising work is one act: something nobody has
+       picked up yet. The other four they may set are verdicts about work that
+       already exists — see the status-menu test below. */
+    expect(options.map((o) => o.trim())).toEqual(["Backlog"]);
     await page.keyboard.press("Escape");
   });
 
@@ -135,10 +131,17 @@ test.describe("A QA member", () => {
     await page.goto(`/issues/${key}`);
 
     const labels = await statusMenuOptions(page);
-    expect(labels).toContain("In QA");
-    expect(labels).toContain("Ready for QA");
-    expect(labels).toContain("Reopen");
-    for (const forbidden of ["Backlog", "New", "In Progress", "Cancelled"]) {
+    for (const theirs of [
+      "Backlog",
+      "In QA",
+      "Reject / Not an Issue",
+      "Cancelled",
+    ]) {
+      expect(labels, `${theirs} is theirs`).toContain(theirs);
+    }
+    /* The build is the developer's half: New and In Progress say what somebody
+       is working on, and Ready for QA is the hand-off from whoever built it. */
+    for (const forbidden of ["New", "In Progress", "Ready for QA", "Reopen"]) {
       expect(labels, `${forbidden} is not offered`).not.toContain(forbidden);
     }
 
@@ -205,10 +208,20 @@ test.describe("A developer", () => {
     await page.goto(`/issues/${await anIssueOfTheirs()}`);
 
     const labels = await statusMenuOptions(page);
-    for (const theirs of ["Backlog", "New", "In Progress", "Ready for QA", "Reopen"]) {
+    for (const theirs of ["New", "In Progress", "Ready for QA"]) {
       expect(labels, `${theirs} is theirs`).toContain(theirs);
     }
-    for (const forbidden of ["In QA", "Done", "Reject / Not an Issue", "Cancelled"]) {
+    /* Everything else belongs to somebody else: In QA and Done are what
+       testing concluded, Backlog and Reopen are decisions about what is being
+       worked on next, and the two that write work off are an administrator's. */
+    for (const forbidden of [
+      "Backlog",
+      "In QA",
+      "Done",
+      "Reopen",
+      "Reject / Not an Issue",
+      "Cancelled",
+    ]) {
       expect(labels, `${forbidden} is not theirs`).not.toContain(forbidden);
     }
   });

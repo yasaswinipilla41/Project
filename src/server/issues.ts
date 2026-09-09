@@ -21,8 +21,11 @@ import { requireUser } from "@/lib/session";
 import {
   ISSUE_TYPE_LABEL,
   STATUS_LABEL,
-  allowedStatusesFor,
+  canEditDueDate,
+  canEditIssueName,
+  canEditPriority,
   canSetStatus,
+  filableStatusesFor,
   doesDeveloperWork,
   isClosedStatus,
   statusRefusalReason,
@@ -186,26 +189,26 @@ export async function createIssue(
     const role = await workRoleOf(user);
 
     /*
-     * What a person may file work as.
+     * What this person may file work as.
      *
-     * The same table the status menu reads, asked with no current status
-     * because creation is not a transition. A tester's four are what testing
-     * uses, so work they raise arrives asking to be looked at rather than
-     * already sitting in somebody's build — Backlog, New and In Progress are
-     * decisions about what is being worked on, and those are not theirs.
+     * Raising work and moving it are separate decisions, so this is not simply
+     * the transition list. Work is raised as New in Prio's workflow — a tester
+     * finds a defect and files it for somebody to pick up — and New is
+     * therefore filable by anybody who may raise work at all, alongside the
+     * statuses their own half of the job may set.
      *
-     * Enforced here rather than by the form, which is the point: a stale page,
-     * a hand-made request and a clone of an In Progress issue all arrive the
-     * same way. The clone dialog offers only what its caller may file, so the
-     * only requests this refuses are the ones no interface would send.
+     * Everyone who builds already has New, so the union only ever adds it for
+     * a pure tester, whose transition list starts at Ready for QA. Without it
+     * a tester could not file the thing they are for: reporting something
+     * nobody has looked at yet.
+     *
+     * Omitting the status means the first one they may file in, which is New
+     * for a tester and Backlog for an administrator.
      */
-    const permitted = allowedStatusesFor(role, null);
-    /* Omitted: the first status this person's job files work in — Backlog for
-       anyone who builds, Ready for QA for a tester. Named: it has to be one of
-       theirs. */
-    const status = input.status ?? permitted[0] ?? "BACKLOG";
+    const permitted = filableStatusesFor(role);
+    const status = input.status ?? permitted[0] ?? "TODO";
 
-    if (!canSetStatus(role, null, status)) {
+    if (!permitted.includes(status)) {
       return {
         ok: false,
         error: statusRefusalReason(role, null, status),
@@ -523,6 +526,47 @@ export async function updateIssue(
       ) {
         throw new AuthorizationError(
           statusRefusalReason(role, existing.status, next),
+        );
+      }
+    }
+
+    /*
+     * The three fields that describe and plan the work, rather than do it.
+     *
+     * Checked against what actually arrived and against what is already
+     * stored, so re-saving a form without touching a field is never refused —
+     * only a real change is. This is the whole of the enforcement: the issue
+     * page renders these read-only for the same roles, and that is the
+     * courtesy.
+     */
+    if (
+      "title" in input &&
+      input.title !== undefined &&
+      input.title !== existing.title &&
+      !canEditIssueName(role)
+    ) {
+      throw new AuthorizationError(
+        "Renaming an issue is not a developer's — ask an administrator or the tester who raised it.",
+      );
+    }
+
+    if (
+      "priority" in input &&
+      input.priority !== undefined &&
+      input.priority !== existing.priority &&
+      !canEditPriority(role)
+    ) {
+      throw new AuthorizationError(
+        "How soon work is done is decided for you, not by you.",
+      );
+    }
+
+    if ("dueDate" in input && input.dueDate !== undefined && !canEditDueDate(role)) {
+      const before = existing.dueDate?.getTime() ?? null;
+      const after = input.dueDate?.getTime() ?? null;
+      if (before !== after) {
+        throw new AuthorizationError(
+          "Only an administrator can set when work is due.",
         );
       }
     }

@@ -115,18 +115,18 @@ export const STATUS_TRANSITIONS: Record<IssueStatus, readonly IssueStatus[]> = {
  * `allowedStatusesFor` composes them with `doesQaWork` / `doesDeveloperWork`,
  * the same question the rest of the model asks.
  *
- *   DEVELOPMENT  Backlog, New, In Progress, Ready for QA, Reopen. Building
- *                work and handing it over. Declaring it tested or finished
- *                would be marking their own homework.
+ *   DEVELOPMENT  New, In Progress, Ready for QA, Reopen. The build, and
+ *                handing it over. Declaring work tested or finished would be
+ *                marking their own homework, and deciding what sits in the
+ *                backlog is planning rather than building.
  *   QA           Ready for QA, In QA, Done, Reopen. Testing work, and saying
  *                what the testing found.
  *
- * Each list is what that half of the job is *for*, rather than everything
- * except the other half's hand-off statuses. Two consequences are deliberate.
- * Moving work back into the build — Backlog, New, In Progress — is not a
- * tester's call: they report what they found and hand it back, and Reopen is
- * how they say so. And neither half writes work off: Reject / Not an Issue and
- * Cancelled are an administrator's, who has every status.
+ * Each list is what that half of the job is *for*. Ready for QA is the
+ * hand-off and sits in both: a developer says the build is finished, and a
+ * tester who finds a fault hands it straight back. Writing work off — Reject /
+ * Not an Issue and Cancelled — belongs to neither and is an administrator's,
+ * along with everything else not listed.
  *
  * This is the authorization, read by everything that offers or accepts a
  * status — the issue page's menu, the board's columns and card menus, the
@@ -136,7 +136,6 @@ export const STATUS_TRANSITIONS: Record<IssueStatus, readonly IssueStatus[]> = {
  * sense from where, and neither substitutes for the other.
  */
 export const DEVELOPMENT_STATUSES = [
-  "BACKLOG",
   "TODO",
   "IN_PROGRESS",
   "IN_REVIEW",
@@ -196,6 +195,60 @@ export function allowedStatusesFor(
   return allowed.filter(
     (status) => status !== "DONE" || current === "IN_QA" || current === "DONE",
   );
+}
+
+/**
+ * The statuses work may be *filed* as.
+ *
+ * Raising work and moving it are separate decisions, so this is not the
+ * transition list. Work is raised as New in Prio's workflow — a tester finds a
+ * defect and files it for somebody to pick up — so New is filable by anybody
+ * who may raise work at all, alongside the statuses their own half of the job
+ * may set.
+ *
+ * Everyone who builds already has New, so the union only ever adds it for a
+ * pure tester, whose transition list starts at Ready for QA. Without it a
+ * tester could not file the very thing they are for.
+ *
+ * Exported because the create and clone dialogs offer these and `createIssue`
+ * enforces them; one definition is what keeps the offer and the refusal in
+ * agreement.
+ */
+export function filableStatusesFor(role: WorkRole): readonly IssueStatus[] {
+  const settable = allowedStatusesFor(role, null);
+  return settable.includes("TODO") ? settable : ["TODO", ...settable];
+}
+
+/* ----------------------------------------------------- editing a field */
+
+/**
+ * Who may rename an issue, and who may change its priority.
+ *
+ * Not a developer: the summary and the priority are how work is described and
+ * ordered, which is the planning around the work rather than the work. A
+ * developer building it says so through the status, and asks for the rest.
+ * Everybody else keeps what they had.
+ */
+export function canEditIssueName(role: WorkRole): boolean {
+  return role !== "DEVELOPER";
+}
+
+export function canEditPriority(role: WorkRole): boolean {
+  return role !== "DEVELOPER";
+}
+
+/**
+ * Who may set a due date: an administrator, and only an administrator.
+ *
+ * Both halves of the job are excluded — a developer does not date their own
+ * work, and a tester raising a defect is reporting something rather than
+ * planning when it must be done — which between them leaves nobody else. It is
+ * written as its own question anyway, because "nobody but an administrator" is
+ * the rule, and a role arriving later should have to answer it rather than
+ * inherit an accident.
+ */
+export function canEditDueDate(role: WorkRole): boolean {
+  return role === "ADMIN";
 }
 
 /** May this person put this issue into that status? */

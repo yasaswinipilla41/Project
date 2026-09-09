@@ -5,6 +5,7 @@ import { Menu, MenuItem, MenuLabel } from "@/components/ui/Menu";
 import { IconMoon, IconSun, IconSystem } from "@/components/ui/Icon";
 import {
   isThemeChoice,
+  resolveTheme,
   THEME_STORAGE_KEY,
   type ThemeChoice,
 } from "@/components/theme/theme";
@@ -12,43 +13,44 @@ import {
 /**
  * Light / dark / system.
  *
- * The current choice lives in the DOM — `data-theme` on <html>, written before
- * first paint by the inline script — and is read with `useSyncExternalStore`
- * rather than `useState`.
+ * The choice is read from storage, not from `data-theme`: the attribute
+ * carries the *resolved* theme, and System resolves to Light, so reading it
+ * back would report "Light" and quietly rewrite the person's choice the next
+ * time they opened this menu.
  *
- * That is not a stylistic preference. A `useState` initializer that reads the
- * DOM is discarded during hydration: React runs it on the server (where there
- * is no DOM), renders the fallback, and never re-runs it. The control would
- * then be permanently stuck showing "System" no matter what the page is
- * actually displaying. `useSyncExternalStore` takes a separate server snapshot,
- * so the client reads the real attribute on its very first client render.
+ * Read with `useSyncExternalStore` rather than `useState`. That is not a
+ * stylistic preference. A `useState` initializer that reads the browser is
+ * discarded during hydration: React runs it on the server (where there is no
+ * storage), renders the fallback, and never re-runs it. The control would then
+ * be stuck showing one value no matter what was chosen. `useSyncExternalStore`
+ * takes a separate server snapshot, so the client reads the real preference on
+ * its very first client render.
  */
 
-/** No React state to subscribe to; the value only changes when we change it. */
+/** Nothing but this control writes the preference; watch storage for the tab
+ *  next door doing exactly that. The OS is not watched, because System no
+ *  longer follows it. */
 function subscribe(onChange: () => void): () => void {
-  const media = window.matchMedia("(prefers-color-scheme: dark)");
-  // Under "system" the effective theme follows the OS, so a change there is a
-  // change the control may need to reflect.
-  media.addEventListener("change", onChange);
   window.addEventListener("storage", onChange);
-  return () => {
-    media.removeEventListener("change", onChange);
-    window.removeEventListener("storage", onChange);
-  };
+  return () => window.removeEventListener("storage", onChange);
 }
 
 function readChoice(): ThemeChoice {
-  const attribute = document.documentElement.getAttribute("data-theme");
-  return isThemeChoice(attribute) ? attribute : "system";
+  let stored: string | null = null;
+  try {
+    stored = localStorage.getItem(THEME_STORAGE_KEY);
+  } catch {
+    // Storage can be unavailable; the default below is what the page painted.
+  }
+  return isThemeChoice(stored) ? stored : "light";
 }
 
 /* Rendered on the server and for the first hydration pass. The server cannot
    know what the browser stored, so it answers with the default a browser that
-   stored nothing will resolve to — Light. That is the common first render, so
-   the control usually hydrates to the same value it was drawn with instead of
-   swapping its icon on the first frame; anyone with a stored preference still
-   has it applied by `readChoice` on the first client render, exactly as
-   before. */
+   stored nothing has — Light. That is the common first render, so the control
+   usually hydrates to the same value it was drawn with instead of swapping its
+   icon on the first frame; anyone with a stored preference still has it read
+   by `readChoice` on the first client render. */
 function serverChoice(): ThemeChoice {
   return "light";
 }
@@ -65,13 +67,10 @@ export function ThemeSwitcher() {
   const apply = useCallback((next: ThemeChoice) => {
     const root = document.documentElement;
 
-    if (next === "system") {
-      // "System" is the absence of the attribute — the same state the CSS
-      // media query is written against.
-      root.removeAttribute("data-theme");
-    } else {
-      root.setAttribute("data-theme", next);
-    }
+    /* The attribute is the resolved theme, and everything that is not Dark
+       resolves to Light — System included. The choice itself is what goes to
+       storage, just below, so "System" stays selectable and selected. */
+    root.setAttribute("data-theme", resolveTheme(next));
 
     try {
       localStorage.setItem(THEME_STORAGE_KEY, next);

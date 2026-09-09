@@ -538,9 +538,9 @@ test.describe("Theme", () => {
       );
     }
 
-    // And back to the default.
+    // And back to the default, which paints Light like System does.
     await control.click();
     await page.getByRole("menuitemradio", { name: "System" }).click();
-    await expect(page.locator("html")).not.toHaveAttribute("data-theme", /.*/);
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   });
 });

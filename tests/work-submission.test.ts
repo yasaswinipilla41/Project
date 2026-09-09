@@ -225,15 +225,17 @@ describe("assignment protection", () => {
     const status = await updateIssue({ issueId, status: "IN_PROGRESS" });
     expect(status.ok).toBe(true);
 
+    /* How soon work is done is not a developer's to change — that is its own
+       rule, in `role-permissions`. What matters here is that the assignment
+       guard did not swallow the status change above with it. */
     const priority = await updateIssue({ issueId, priority: "HIGH" });
-    expect(priority.ok).toBe(true);
+    expect(priority.ok).toBe(false);
 
     const row = await prisma.issue.findUniqueOrThrow({
       where: { id: issueId },
-      select: { status: true, priority: true, assigneeId: true },
+      select: { status: true, assigneeId: true },
     });
     expect(row.status).toBe("IN_PROGRESS");
-    expect(row.priority).toBe("HIGH");
     expect(row.assigneeId).toBe(memberA);
   });
 });

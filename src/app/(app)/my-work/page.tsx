@@ -28,6 +28,7 @@ import {
 } from "@/lib/domain";
 import { formatDateCompact, isOverdue } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { dueThisWeekFilter, overdueFilter } from "@/server/queries/due";
 import { requireUser } from "@/lib/session";
 import {
   listIssues,
@@ -49,15 +50,6 @@ export const dynamic = "force-dynamic";
  * Everything assigned to the signed-in user, grouped by workflow status so the
  * next thing to pick up is obvious.
  */
-/**
- * Reference timestamps for the "overdue" and "due this week" buckets. Kept out
- * of the component body so the render does not read the clock.
- */
-function dueWindow(): { now: Date; weekAhead: Date } {
-  const now = new Date();
-  return { now, weekAhead: new Date(now.getTime() + 7 * 86_400_000) };
-}
-
 export default async function MyWorkPage({
   searchParams,
 }: {
@@ -66,7 +58,16 @@ export default async function MyWorkPage({
   const params = await searchParams;
   const user = await requireUser();
   const scope = issueScope(user);
-  const { now, weekAhead } = dueWindow();
+  /*
+   * One clock reading for the whole page, handed to the due fragments so
+   * every bucket on it describes the same instant.
+   *
+   * This used to be a local `dueWindow` of this page's own — "due this week"
+   * meant the next seven days from now, while the tile linked to a list that
+   * cut the calendar week. Two definitions, one number, and they disagreed by
+   * however far into the week today happened to be.
+   */
+  const now = new Date();
 
   /*
    * The project work table belongs to the Testing team.
@@ -188,14 +189,19 @@ export default async function MyWorkPage({
           assignee: { select: { name: true } },
         },
       }),
+      /*
+       * Overdue and Due this week, from the fragments every other surface
+       * counts with.
+       *
+       * These two used to be written here by hand — overdue from this
+       * instant, and "this week" as a rolling seven days from now. The tile
+       * linked to `dueWeek=1`, which cuts the calendar week, so the number and
+       * the list it opened were answering two different questions and could
+       * not agree. There is one answer now, in `queries/due`.
+       */
+      prisma.issue.count({ where: { ...assignedWhere, ...overdueFilter(now) } }),
       prisma.issue.count({
-        where: { ...assignedWhere, dueDate: { lt: now } },
-      }),
-      prisma.issue.count({
-        where: {
-          ...assignedWhere,
-          dueDate: { gte: now, lte: weekAhead },
-        },
+        where: { ...assignedWhere, ...dueThisWeekFilter(now) },
       }),
       prisma.issue.count({
         where: {

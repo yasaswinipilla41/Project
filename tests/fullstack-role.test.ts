@@ -298,7 +298,10 @@ describe("the developer half", () => {
     });
 
     await actAs(TESTER);
-    for (const status of ["BACKLOG", "TODO", "IN_PROGRESS"] as const) {
+    /* Ready for QA is not among these: it is the hand-off, shared by both
+       halves, and a tester who finds a fault hands the work straight back
+       with it. What stays the build's is New and In Progress. */
+    for (const status of ["TODO", "IN_PROGRESS"] as const) {
       const result = await updateIssue({ issueId, status });
       expect(result.ok, `${status} must be refused`).toBe(false);
     }

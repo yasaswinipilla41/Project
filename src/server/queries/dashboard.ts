@@ -2,6 +2,11 @@ import type { IssueStatus, IssueType, Priority, Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { dueWindow, monthWindow } from "@/lib/format";
 import { accessibleProjectIds, workRoleOf } from "@/lib/authz";
+import {
+  dueThisWeekFilter,
+  dueTodayFilter,
+  overdueFilter,
+} from "@/server/queries/due";
 import { CLOSED_STATUSES, OPEN_STATUSES } from "@/lib/domain";
 import type { CurrentUser } from "@/lib/session";
 
@@ -329,7 +334,16 @@ export async function loadDashboard(user: CurrentUser): Promise<DashboardData> {
          */
         OR: [
           { priority: { in: ["URGENT", "HIGH"] } },
-          { dueDate: { lt: w.now } },
+          /*
+           * Overdue, by the one definition of it.
+           *
+           * This read `dueDate < now`, which made work due at nine this
+           * morning "needing attention" by ten — while Overdue everywhere else
+           * counts from the start of today and would not list it until
+           * tomorrow. Two answers to the same question, and this was the last
+           * place still giving the second one.
+           */
+          overdueFilter(w.now),
           { testResult: { in: ["BLOCKED", "FAILED"] } },
           { status: "IN_REVIEW" },
         ],
@@ -352,6 +366,10 @@ export async function loadDashboard(user: CurrentUser): Promise<DashboardData> {
       take: 6,
     }),
     prisma.activityLogEntry.findMany({
+      /* The project's activity, scoped to the projects this person can open
+         and to nothing narrower. A completion is part of a project's history
+         like every other change, and everybody working in the project sees
+         it. */
       where: { issue: scope },
       select: {
         id: true,
@@ -442,7 +460,7 @@ export async function loadDashboard(user: CurrentUser): Promise<DashboardData> {
   const [overdueByProject, assignedByProject] = await Promise.all([
     prisma.issue.groupBy({
       by: ["projectId"],
-      where: { ...scope, status: open, dueDate: { lt: w.now } },
+      where: { ...scope, ...overdueFilter(w.now) },
       _count: { _all: true },
     }),
     prisma.issue.groupBy({
@@ -719,31 +737,22 @@ async function countBundle(
      */
     prisma.issue.count({ where: { ...mine, status: "DONE" } }),
     prisma.issue.count({
-      where: { ...mine, status: open, dueDate: { lt: w.now } },
+      where: { ...mine, ...overdueFilter(w.now) },
     }),
     prisma.issue.count({ where: { ...scope, reporterId: user.id } }),
 
     prisma.issue.count({
-      where: { ...mine, status: open, dueDate: { lt: w.startOfToday } },
+      where: { ...mine, ...overdueFilter(w.now) },
     }),
     prisma.issue.count({
-      where: {
-        ...mine,
-        status: open,
-        dueDate: { gte: w.startOfToday, lt: w.endOfToday },
-      },
+      where: { ...mine, ...dueTodayFilter(w.now) },
     }),
-    /* Due this week: the current calendar week, today included. It therefore
-       overlaps the "due today" bucket above by design — work due today is due
-       this week — and the figure matches what `dueWeek=1` shows when the
-       number is clicked. */
-    prisma.issue.count({
-      where: {
-        ...mine,
-        status: open,
-        dueDate: { gte: w.startOfToday, lt: w.endOfWeek },
-      },
-    }),
+    /* Due this week: the whole of the current calendar week, from its first
+       moment — `[startOfWeek, startOfNextWeek)`. It overlaps the two buckets
+       above by design, because work due on Monday and read on Wednesday is
+       both overdue and due this week. The same fragment `dueWeek=1` filters
+       on, so the number and the list it opens cannot disagree. */
+    prisma.issue.count({ where: { ...mine, ...dueThisWeekFilter(w.now) } }),
 
     prisma.issue.count({
       where: { ...scope, reporterId: user.id, type: "BUG" },

@@ -123,8 +123,24 @@ export function PriorityControl({
   issueId,
   priority,
   disabled,
-}: BaseProps & { priority: Priority }) {
+  canEdit = true,
+}: BaseProps & { priority: Priority; canEdit?: boolean }) {
   const { update, busy } = useFieldUpdate(issueId);
+
+  /* Stated rather than offered, in the same place and the same shape the menu
+     occupies — the meta row reads identically whoever is looking at it. The
+     server refuses the change either way. */
+  if (!canEdit) {
+    return (
+      <span
+        className="prio-fieldtrigger"
+        data-readonly
+        title="How soon this is worked on is decided for you."
+      >
+        <PriorityIndicator priority={priority} />
+      </span>
+    );
+  }
 
   return (
     <Menu

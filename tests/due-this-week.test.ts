@@ -10,10 +10,11 @@ import { actAs, deleteIssues, projectByKey } from "./helpers";
  * "Due this week" — the Home bucket and the list it opens.
  *
  * The rule under test is a definition, not a preference: this week means the
- * current calendar week, it includes today, and it excludes anything already
- * past its date. Overdue work has its own bucket and must never appear here;
- * work due after the week ends must not either; and an issue with no due date
- * is in neither.
+ * whole of the current calendar week — `[startOfWeek, startOfNextWeek)` — from
+ * its first moment, not the remainder of it. Work due on Monday is still due
+ * this week when it is read on Wednesday; it is also overdue, and both are
+ * true of it. Work due after the week ends is excluded, and an issue with no
+ * due date is in neither bucket.
  *
  * Written against `listIssues` rather than the page, because that filter is
  * what the Home link now navigates to — the count and the rows behind it come
@@ -59,27 +60,38 @@ describe("the due-date window", () => {
       monday.setDate(monday.getDate() + offset);
       monday.setHours(9, 30, 0, 0);
 
-      const { startOfToday, endOfWeek } = dueWindow(monday);
+      const { startOfWeek, endOfWeek } = dueWindow(monday);
 
-      // The window never runs past the following Monday.
+      // The window is exactly one week, Monday to Monday, wherever in it the
+      // clock happens to be.
+      expect(startOfWeek.getDay()).toBe(1);
       expect(endOfWeek.getDay()).toBe(1);
+      expect(startOfWeek.getTime()).toBe(new Date(2026, 8, 7).getTime());
       expect(endOfWeek.getTime()).toBe(new Date(2026, 8, 14).getTime());
-      expect(startOfToday.getTime()).toBeLessThan(endOfWeek.getTime());
     }
   });
 
-  it("starts at the beginning of today, so today is in the week", () => {
+  it("holds every day of the week, and neither day outside it", () => {
     const now = new Date(2026, 8, 9, 16, 45); // Wednesday afternoon.
-    const { startOfToday, endOfWeek } = dueWindow(now);
+    const { startOfWeek, endOfWeek } = dueWindow(now);
+    const inWeek = (date: Date) => date >= startOfWeek && date < endOfWeek;
 
-    const dueToday = new Date(2026, 8, 9);
-    expect(dueToday >= startOfToday && dueToday < endOfWeek).toBe(true);
-  });
+    // Monday the 7th through Sunday the 13th, inclusive.
+    for (let day = 7; day <= 13; day += 1) {
+      expect(inWeek(new Date(2026, 8, day)), `Sep ${day}`).toBe(true);
+    }
 
-  it("puts yesterday outside the window", () => {
-    const now = new Date(2026, 8, 9, 16, 45);
-    const { startOfToday } = dueWindow(now);
-    expect(new Date(2026, 8, 8) < startOfToday).toBe(true);
+    // The first moment of the week is in; the last moment before it is not.
+    expect(inWeek(startOfWeek)).toBe(true);
+    expect(inWeek(new Date(startOfWeek.getTime() - 1))).toBe(false);
+
+    // The last moment of the week is in; the first moment of the next is not.
+    expect(inWeek(new Date(endOfWeek.getTime() - 1))).toBe(true);
+    expect(inWeek(endOfWeek)).toBe(false);
+
+    // Either side of the week entirely.
+    expect(inWeek(new Date(2026, 8, 6))).toBe(false);
+    expect(inWeek(new Date(2026, 8, 14))).toBe(false);
   });
 });
 
@@ -106,15 +118,21 @@ describe("the dueWeek filter", () => {
     await actAs("admin@symbiosystech.com");
     const user = await userByEmail("admin@symbiosystech.com");
 
-    const { startOfToday, endOfWeek } = dueWindow();
+    const { startOfToday, startOfWeek, endOfWeek } = dueWindow();
     /* Days left in the calendar week, so "later this week" is only created
        when there is a later day in the week to use. Late on a Sunday there is
        not, and the case is skipped rather than faked. */
     const daysLeft = Math.round(
       (endOfWeek.getTime() - startOfToday.getTime()) / 86_400_000,
     );
+    // Likewise for a day earlier in the week: on a Monday there is none.
+    const daysIn = Math.round(
+      (startOfToday.getTime() - startOfWeek.getTime()) / 86_400_000,
+    );
 
-    const yesterday = await anIssueDue("Due yesterday", dayOffset(-1));
+    const earlier =
+      daysIn > 0 ? await anIssueDue("Due earlier this week", dayOffset(-1)) : null;
+    const lastWeek = await anIssueDue("Due last week", dayOffset(-(daysIn + 1)));
     const today = await anIssueDue("Due today", dayOffset(0));
     const later =
       daysLeft > 1 ? await anIssueDue("Due later this week", dayOffset(1)) : null;
@@ -129,24 +147,26 @@ describe("the dueWeek filter", () => {
 
     expect(ids.has(today)).toBe(true);
     if (later) expect(ids.has(later)).toBe(true);
+    // Earlier in the same week counts: the week is the week, all of it.
+    if (earlier) expect(ids.has(earlier)).toBe(true);
 
-    expect(ids.has(yesterday)).toBe(false);
+    expect(ids.has(lastWeek)).toBe(false);
     expect(ids.has(nextWeek)).toBe(false);
     expect(ids.has(undated)).toBe(false);
   });
 
-  it("never returns an issue whose due date has passed", async () => {
+  it("never returns anything outside the week", async () => {
     await actAs("admin@symbiosystech.com");
     const user = await userByEmail("admin@symbiosystech.com");
-    const { startOfToday } = dueWindow();
+    const { startOfWeek, endOfWeek } = dueWindow();
 
     const result = await listIssues(user, { dueWeek: true, pageSize: 100 });
 
     for (const row of result.rows) {
       expect(row.dueDate).not.toBeNull();
-      expect(new Date(row.dueDate!).getTime()).toBeGreaterThanOrEqual(
-        startOfToday.getTime(),
-      );
+      const due = new Date(row.dueDate!).getTime();
+      expect(due).toBeGreaterThanOrEqual(startOfWeek.getTime());
+      expect(due).toBeLessThan(endOfWeek.getTime());
     }
   });
 });

@@ -46,6 +46,9 @@ import {
 import { issueScope, workRoleOf } from "@/lib/authz";
 import {
   ISSUE_TYPE_LABEL,
+  canEditDueDate,
+  canEditIssueName,
+  canEditPriority,
   doesDeveloperWork,
   doesQaWork,
   isClosedStatus,
@@ -345,7 +348,11 @@ export default async function IssueDetailPage({
           </div>
         </div>
 
-        <EditableTitle issueId={issue.id} title={issue.title} />
+        <EditableTitle
+          issueId={issue.id}
+          title={issue.title}
+          canEdit={canEditIssueName(workRole)}
+        />
 
         <div className="prio-issue__headmeta">
           <span className="prio-badge prio-badge--pill">
@@ -357,7 +364,11 @@ export default async function IssueDetailPage({
             status={issue.status}
             workRole={workRole}
           />
-          <PriorityControl issueId={issue.id} priority={issue.priority} />
+          <PriorityControl
+            issueId={issue.id}
+            priority={issue.priority}
+            canEdit={canEditPriority(workRole)}
+          />
           <AssigneeControl
             issueId={issue.id}
             assignee={issue.assignee}
@@ -371,7 +382,11 @@ export default async function IssueDetailPage({
             * shows even with no date set -- "No due date" is a state worth
             * being able to see and click, not an absence to leave blank.
             */}
-          <DueDateField issueId={issue.id} dueDate={issue.dueDate}>
+          <DueDateField
+            issueId={issue.id}
+            dueDate={issue.dueDate}
+            canEdit={canEditDueDate(workRole)}
+          >
             <span
               className={overdue ? "prio-due prio-due--overdue" : "prio-due"}
             >

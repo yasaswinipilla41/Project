@@ -3,7 +3,8 @@ import type { IssueType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { completersFor } from "@/server/queries/completedWork";
 import { issueScope } from "@/lib/authz";
-import { dueWindow, monthWindow } from "@/lib/format";
+import { monthWindow } from "@/lib/format";
+import { dueThisWeekFilter, overdueFilter } from "@/server/queries/due";
 import type { CurrentUser } from "@/lib/session";
 import {
   CLOSED_STATUSES,
@@ -90,6 +91,8 @@ export interface IssueListRow {
    * often finished by somebody other than whoever holds it now.
    */
   completedBy: { id: string; name: string; image: string | null } | null;
+  /** When it was finished, from the issue's own `completedAt`. */
+  completedAt: Date | null;
   labels: { label: { id: string; name: string; color: string } }[];
   parent: { key: string } | null;
   _count: { children: number; comments: number };
@@ -149,10 +152,8 @@ export function buildIssueWhere(
   }
 
   if (filters.overdue) {
-    and.push({
-      dueDate: { lt: new Date() },
-      status: { notIn: [...CLOSED_STATUSES] },
-    });
+    // The one definition, shared with every counter that shows this number.
+    and.push(overdueFilter());
   }
 
   if (filters.completedWithin) {
@@ -169,16 +170,11 @@ export function buildIssueWhere(
   }
 
   if (filters.dueWeek) {
-    /* The same boundaries the dashboard counts on, so "Due this week" opens
-       exactly the issues it counted: from the start of today to the end of
-       the current calendar week. Overdue work is excluded by starting at
-       today — it belongs to the Overdue bucket — and an undated issue matches
-       neither bound, so it is never in this list. */
-    const { startOfToday, endOfWeek } = dueWindow();
-    and.push({
-      dueDate: { gte: startOfToday, lt: endOfWeek },
-      status: { notIn: [...CLOSED_STATUSES] },
-    });
+    /* The current calendar week, whole: `[startOfWeek, startOfNextWeek)`. The
+       same fragment every "Due this week" number is counted with, so opening
+       one shows exactly what it counted. An undated issue matches neither
+       bound, so it is never in this list. */
+    and.push(dueThisWeekFilter());
   }
 
   if (filters.environment) {
@@ -297,6 +293,7 @@ const LIST_SELECT = {
   status: true,
   priority: true,
   dueDate: true,
+  completedAt: true,
   createdAt: true,
   updatedAt: true,
   project: { select: { key: true, name: true } },

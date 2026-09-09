@@ -245,34 +245,37 @@ describe("who may declare what", () => {
     expect(after.completedAt).not.toBeNull();
   });
 
-  it("lets a tester reopen failed work", async () => {
-    const issueId = await anIssue("Status — tester reopens", {
+  it("lets a tester send failed work back, and not into the backlog", async () => {
+    /* Testing found a problem, so the work is not finished. Reopen is how a
+       tester says so — it names what happened. The backlog is planning, which
+       is an administrator's, so a tester cannot quietly re-file the work as
+       something nobody has started. */
+    const issueId = await anIssue("Status — tester sends it back", {
       status: "IN_REVIEW",
     });
 
     await actAs(TESTER);
     await updateIssue({ issueId, status: "IN_QA" });
-    const result = await updateIssue({ issueId, status: "REOPENED" });
-    expect(result.ok).toBe(true);
+
+    const reopened = await updateIssue({ issueId, status: "REOPENED" });
+    expect(reopened.ok, "Reopen is a tester's").toBe(true);
+
+    const refused = await updateIssue({ issueId, status: "BACKLOG" });
+    expect(refused.ok, "the backlog is an administrator's").toBe(false);
   });
 
-  it("refuses a tester the statuses of the build, and writing work off", async () => {
-    /* A tester's four are Ready for QA, In QA, Done and Reopen. Everything
-       else on the board belongs to somebody else: Backlog, New and In Progress
-       say what is being built, and Reject / Not an Issue and Cancelled write
-       work off, which is an administrator's call. */
+  it("refuses a tester the statuses of the build", async () => {
+    /* A tester's four are Ready for QA, In QA, Done and Reopen. What is not
+       theirs is the build — New and In Progress say what somebody is working
+       on — nor the backlog, nor writing work off. Ready for QA is deliberately
+       absent from the refusals: it is the hand-off, and a tester who finds a
+       fault hands the work straight back with it. */
     const issueId = await anIssue("Status — tester oversteps", {
       status: "IN_QA",
     });
 
     await actAs(TESTER);
-    for (const status of [
-      "BACKLOG",
-      "TODO",
-      "IN_PROGRESS",
-      "REJECTED",
-      "CANCELLED",
-    ] as const) {
+    for (const status of ["TODO", "IN_PROGRESS", "BACKLOG"] as const) {
       const result = await updateIssue({ issueId, status });
       expect(result.ok, `${status} must be refused`).toBe(false);
     }
@@ -284,16 +287,19 @@ describe("who may declare what", () => {
     expect(after.status).toBe("IN_QA");
   });
 
-  it("lets a tester ask for work to be checked", async () => {
-    // Ready for QA is theirs as well: asking for something to be looked at is
-    // not a claim about who built it.
-    const issueId = await anIssue("Status — tester asks for a check", {
-      status: "IN_PROGRESS",
-    });
+  it("refuses a tester writing work off", async () => {
+    /* Not every reported problem is one — but deciding that a piece of work
+       will never be done is a call about the plan rather than a verdict about
+       the build, so Reject / Not an Issue and Cancelled stay an
+       administrator's. A tester says what testing found, and Reopen is how
+       they say it. */
+    const issueId = await anIssue("Status — tester rejects", { status: "IN_QA" });
 
     await actAs(TESTER);
-    const result = await updateIssue({ issueId, status: "IN_REVIEW" });
-    expect(result.ok).toBe(true);
+    for (const status of ["REJECTED", "CANCELLED"] as const) {
+      const result = await updateIssue({ issueId, status });
+      expect(result.ok, `${status} must be refused`).toBe(false);
+    }
   });
 
   it("refuses a developer writing work off", async () => {
@@ -302,10 +308,17 @@ describe("who may declare what", () => {
     });
 
     await actAs(DEVELOPER);
-    for (const status of ["REJECTED", "CANCELLED"] as const) {
+    /* Reopen is deliberately absent: work that came back is a developer's to
+       pick up again, so Reopen sits in the build half as well. What a
+       developer may not do is decide the work is finished with — that, and
+       what sits in the backlog, are an administrator's. */
+    for (const status of ["REJECTED", "CANCELLED", "BACKLOG"] as const) {
       const result = await updateIssue({ issueId, status });
       expect(result.ok, `${status} must be refused`).toBe(false);
     }
+
+    const reopened = await updateIssue({ issueId, status: "REOPENED" });
+    expect(reopened.ok, "Reopen is a developer's").toBe(true);
   });
 
   it("refuses a tester marking work done that was never tested", async () => {
@@ -351,7 +364,7 @@ describe("the workflow, walked end to end", () => {
     expect(after.completedAt).not.toBeNull();
   });
 
-  it("fails: tested, reopened, fixed, handed back, and done the second time", async () => {
+  it("fails: tested, sent back, fixed, handed back, and done the second time", async () => {
     const issueId = await anIssue("Round trip — fails first", {
       status: "IN_PROGRESS",
     });
@@ -359,12 +372,13 @@ describe("the workflow, walked end to end", () => {
     await actAs(DEVELOPER);
     expect((await updateIssue({ issueId, status: "IN_REVIEW" })).ok).toBe(true);
 
-    // Testing finds a problem.
+    // Testing finds a problem, so the work is reopened: it is not finished,
+    // and Reopen is what says so.
     await actAs(TESTER);
     expect((await updateIssue({ issueId, status: "IN_QA" })).ok).toBe(true);
     expect((await updateIssue({ issueId, status: "REOPENED" })).ok).toBe(true);
 
-    // …which is the developer's again: reopened work goes back into the build.
+    // …which is the developer's again: they take it back into the build.
     await actAs(DEVELOPER);
     expect((await updateIssue({ issueId, status: "IN_PROGRESS" })).ok).toBe(true);
     expect((await updateIssue({ issueId, status: "IN_REVIEW" })).ok).toBe(true);

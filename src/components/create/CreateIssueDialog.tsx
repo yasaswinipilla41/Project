@@ -24,7 +24,7 @@ import {
   PRIORITIES,
   PRIORITY_LABEL,
   STATUS_LABEL,
-  allowedStatusesFor,
+  filableStatusesFor,
   type WorkRole,
 } from "@/lib/domain";
 import type { IssueStatus, IssueType, Priority } from "@prisma/client";
@@ -198,7 +198,7 @@ export function CreateIssueDialog({
    * so leaving the fields out is the form agreeing with the server rather than
    * the form being the rule.
    */
-  const statusOptions = allowedStatusesFor(workRole, null);
+  const statusOptions = filableStatusesFor(workRole);
   const filesAsTester = workRole === "QA";
 
   const [form, setForm] = useState({

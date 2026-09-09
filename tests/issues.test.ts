@@ -107,11 +107,10 @@ describe("createIssue", () => {
     });
 
     expect(row.type).toBe("STORY");
-    /* Priority defaults in the schema; status defaults to where work of this
-       person's job starts. The actor is on the Testing team, whose four
-       statuses have no backlog in them, so theirs starts at Ready for QA —
-       asking for the work to be looked at. A developer's would be Backlog. */
-    expect(row.status).toBe("IN_REVIEW");
+    /* Priority defaults in the schema; status defaults to where work this
+       person raises starts. Raising work means somebody has yet to pick it up,
+       which is New — the backlog is planning, and that is an administrator's. */
+    expect(row.status).toBe("TODO");
     expect(row.priority).toBe("MEDIUM");
   });
 

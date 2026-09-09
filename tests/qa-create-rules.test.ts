@@ -1,6 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/prisma";
-import { allowedStatusesFor, canSetStatus } from "@/lib/domain";
+import {
+  allowedStatusesFor,
+  canSetStatus,
+  filableStatusesFor,
+} from "@/lib/domain";
 import { DEVELOPMENT_TEAM_SLUG, TESTING_TEAM_SLUG } from "@/lib/authz";
 import { createIssue } from "@/server/issues";
 import { actAs, projectByKey } from "./helpers";
@@ -93,10 +97,13 @@ async function userId(email: string): Promise<string> {
 }
 
 describe("the statuses each job may set", () => {
-  it("gives a tester the four that testing uses, and nothing of the build", () => {
+  it("gives a tester what testing uses, and nothing of the build", () => {
     /* Asked of work that is In QA, which is where all four are theirs. Done is
        the verdict and follows testing, so what they are offered elsewhere is
-       narrower — see the last case in this block. */
+       narrower — see the last cases in this block.
+
+       Reject / Not an Issue and Cancelled are absent on purpose: writing work
+       off is an administrator's call, not a verdict testing reaches. */
     expect([...allowedStatusesFor("QA", "IN_QA")]).toEqual([
       "IN_REVIEW",
       "IN_QA",
@@ -105,14 +112,29 @@ describe("the statuses each job may set", () => {
     ]);
   });
 
-  it("gives a developer the build, and nothing that closes work", () => {
+  it("gives a developer the build, and only the build", () => {
     expect([...allowedStatusesFor("DEVELOPER")]).toEqual([
-      "BACKLOG",
       "TODO",
       "IN_PROGRESS",
       "IN_REVIEW",
       "REOPENED",
     ]);
+  });
+
+  it("keeps Backlog, Reject and Cancel to an administrator", () => {
+    /* Planning what sits in the backlog, and writing work off, belong to
+       neither half of the job. */
+    for (const role of ["QA", "DEVELOPER", "FULLSTACK"] as const) {
+      for (const status of ["BACKLOG", "REJECTED", "CANCELLED"] as const) {
+        expect(
+          canSetStatus(role, "IN_PROGRESS", status),
+          `${role} must not set ${status}`,
+        ).toBe(false);
+      }
+    }
+    for (const status of ["BACKLOG", "REJECTED", "CANCELLED"] as const) {
+      expect(canSetStatus("ADMIN", "IN_PROGRESS", status)).toBe(true);
+    }
   });
 
   it("gives an administrator every status", () => {
@@ -123,21 +145,23 @@ describe("the statuses each job may set", () => {
   });
 
   it("gives somebody who does both halves the union of them", () => {
-    const both = allowedStatusesFor("FULLSTACK");
+    const both = allowedStatusesFor("FULLSTACK", "IN_QA");
     for (const status of [
-      "BACKLOG",
       "TODO",
       "IN_PROGRESS",
       "IN_REVIEW",
       "IN_QA",
       "DONE",
-      "REOPENED",
     ] as const) {
       expect(both, `${status} is theirs`).toContain(status);
     }
-    // Writing work off is still nobody's but an administrator's.
+    /* Reopen is in both halves: a developer reopens work that came back, and a
+       tester reopens what failed verification. */
+    expect(both).toContain("REOPENED");
+    /* Writing work off is still neither's, and nor is the backlog. */
     expect(both).not.toContain("REJECTED");
     expect(both).not.toContain("CANCELLED");
+    expect(both).not.toContain("BACKLOG");
   });
 
   it("holds Done back until testing has happened, for a tester alone", () => {
@@ -150,18 +174,81 @@ describe("the statuses each job may set", () => {
 
   it("holds it back at creation too, where nothing has been tested at all", () => {
     /* `current` is null when work is being filed. Filing something as already
-       finished is the same skip as moving it there from Ready for QA, and a
-       create form is where it could otherwise slip through. */
+       finished is the same skip as moving it there from In QA. */
     expect(canSetStatus("QA", null, "DONE")).toBe(false);
-    expect([...allowedStatusesFor("QA", null)]).toEqual([
-      "IN_REVIEW",
-      "IN_QA",
-      "REOPENED",
-    ]);
 
-    // Everybody else files as they always did.
+    // Everybody else moves work as they always did.
     expect(canSetStatus("ADMIN", null, "DONE")).toBe(true);
     expect(canSetStatus("FULLSTACK", null, "DONE")).toBe(true);
+  });
+
+  it("is exactly the approved matrix, for both halves", () => {
+    /*
+     * The whole rule in one place, so a change that satisfies one case by
+     * breaking another fails here rather than somewhere downstream.
+     *
+     *   Developer  New, In Progress, Ready for QA, Reopen
+     *   QA         Ready for QA, In QA, Done, Reopen
+     *
+     * and Backlog, Reject / Not an Issue and Cancelled belong to neither.
+     */
+    const cases = [
+      ["DEVELOPER", "TODO", true],
+      ["DEVELOPER", "IN_PROGRESS", true],
+      ["DEVELOPER", "IN_REVIEW", true],
+      ["DEVELOPER", "REOPENED", true],
+      ["DEVELOPER", "BACKLOG", false],
+      ["DEVELOPER", "IN_QA", false],
+      ["DEVELOPER", "DONE", false],
+      ["DEVELOPER", "REJECTED", false],
+      ["DEVELOPER", "CANCELLED", false],
+
+      ["QA", "IN_REVIEW", true],
+      ["QA", "IN_QA", true],
+      ["QA", "REOPENED", true],
+      ["QA", "BACKLOG", false],
+      ["QA", "TODO", false],
+      ["QA", "IN_PROGRESS", false],
+      ["QA", "REJECTED", false],
+      ["QA", "CANCELLED", false],
+    ] as const;
+
+    for (const [role, status, allowed] of cases) {
+      expect(
+        canSetStatus(role, "IN_QA", status),
+        `${role} ${allowed ? "may" : "may not"} set ${status}`,
+      ).toBe(allowed);
+    }
+
+    /* Done is a tester's, once testing has happened — which is the one case
+       that depends on where the issue currently is. */
+    expect(canSetStatus("QA", "IN_QA", "DONE")).toBe(true);
+    expect(canSetStatus("QA", "IN_REVIEW", "DONE")).toBe(false);
+  });
+
+  it("lets a tester file work as New, which is what raising work means", () => {
+    /*
+     * Filing and moving are separate decisions. A tester raises work for
+     * somebody to pick up, and in Prio's workflow that arrives as New — so New
+     * is filable by anybody who may raise work at all, on top of the statuses
+     * their own half may set.
+     *
+     * New is also the first of them, so a tester who does not say gets it.
+     */
+    const tester = filableStatusesFor("QA");
+    expect(tester[0]).toBe("TODO");
+    expect(tester).toContain("TODO");
+
+    /* Still not a way round the verdict rule, or round the build. */
+    expect(tester).not.toContain("DONE");
+    expect(tester).not.toContain("IN_PROGRESS");
+    expect(tester).not.toContain("BACKLOG");
+
+    /* Everybody who builds already had New, so nothing changes for them. */
+    expect([...filableStatusesFor("FULLSTACK")]).toEqual([
+      ...allowedStatusesFor("FULLSTACK", null),
+    ]);
+    expect(filableStatusesFor("ADMIN")).toHaveLength(9);
   });
 });
 
@@ -181,7 +268,9 @@ describe("a tester filing work", () => {
     });
 
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toMatch(/in qa/i);
+    /* The verdict rule answers this one: Done follows testing, so it is
+       refused in those terms rather than as an unavailable status. */
+    if (!result.ok) expect(result.error).toMatch(/testing concluded|In QA/i);
 
     // Refused means nothing was written — this run's title, not the prefix,
     // so debris from any other run cannot decide the answer.
@@ -202,7 +291,33 @@ describe("a tester filing work", () => {
     });
 
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toMatch(/in progress/i);
+    if (!result.ok) expect(result.error).toMatch(/move work to|someone else/i);
+  });
+
+  it("files as New when it does not say", async () => {
+    await actAs(TESTER);
+    const project = await projectByKey("ENG");
+
+    const result = await createIssue({
+      projectId: project.id,
+      type: "BUG",
+      title: `Tester files without a status ${Date.now()}`,
+      description: "x",
+      priority: "MEDIUM",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    created.push(result.data.id);
+
+    const row = await prisma.issue.findUniqueOrThrow({
+      where: { id: result.data.id },
+      select: { status: true },
+    });
+    /* New, not Backlog: raising work means somebody has yet to pick it up,
+       which is what New says. Deciding what sits in the backlog is planning,
+       and that is an administrator's. */
+    expect(row.status).toBe("TODO");
   });
 
   it("files without an assignee or a due date, whatever the request says", async () => {
@@ -214,7 +329,7 @@ describe("a tester filing work", () => {
       type: "BUG",
       title: `Tester tries to hand work out ${Date.now()}`,
       description: "x",
-      status: "IN_REVIEW",
+      status: "TODO",
       priority: "MEDIUM",
       // Exactly what a stale form, or a forged request, would carry.
       assigneeId: await userId(DEVELOPER),
@@ -302,7 +417,7 @@ describe("the reporter", () => {
         type: "TASK",
         title: `Reporter check ${email} ${Date.now()}`,
         description: "x",
-        status: "IN_REVIEW",
+        status: "TODO",
         priority: "MEDIUM",
         /* A payload naming somebody else changes nothing: there is no field
            for it, and the reporter is read from the session. */

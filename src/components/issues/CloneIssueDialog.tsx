@@ -14,7 +14,7 @@ import {
   PRIORITIES,
   PRIORITY_LABEL,
   STATUS_LABEL,
-  allowedStatusesFor,
+  filableStatusesFor,
   type WorkRole,
 } from "@/lib/domain";
 import { DESCRIPTION_PLACEHOLDER } from "@/lib/issueTypeForms";
@@ -388,7 +388,7 @@ export function CloneIssueDialog({
               }))
             }
           >
-            {allowedStatusesFor(workRole, null).map((option) => (
+            {filableStatusesFor(workRole).map((option) => (
               <option key={option} value={option}>
                 {STATUS_LABEL[option]}
               </option>

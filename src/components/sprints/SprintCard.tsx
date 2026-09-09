@@ -3,20 +3,27 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Avatar, Button, CardBody } from "@/components/ui/primitives";
+import { Alert, Avatar, Button, CardBody } from "@/components/ui/primitives";
+import { Dialog } from "@/components/ui/Dialog";
 import {
   IconCalendar,
   IconCheck,
   IconClose,
   IconPlus,
+  IconTrash,
   IconUsers,
+  IconWarning,
 } from "@/components/ui/Icon";
 import { IssueKey, IssueTypeIcon, StatusPill } from "@/components/ui/Indicators";
 import { useToast } from "@/components/ui/Toast";
 import { BOARD_STATUSES, boardColumnFor } from "@/lib/board";
 import { isClosedStatus, STATUS_LABEL } from "@/lib/domain";
 import { formatDateCompact } from "@/lib/format";
-import { removeIssueFromSprint, startSprint } from "@/server/sprints";
+import {
+  deleteSprint,
+  removeIssueFromSprint,
+  startSprint,
+} from "@/server/sprints";
 import type { SprintIssueSummary, SprintView } from "@/server/queries/sprints";
 import { AddSprintIssuesDialog } from "./AddSprintIssuesDialog";
 import { CompleteSprintDialog } from "./CompleteSprintDialog";
@@ -119,6 +126,9 @@ export function SprintCard({
   const [closing, setClosing] = useState(false);
   const [starting, setStarting] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deletePending, setDeletePending] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const { stats } = sprint;
   const live = sprint.status !== "COMPLETED";
@@ -137,6 +147,31 @@ export function SprintCard({
         <strong>{sprint.name}</strong> is now active
       </>,
     );
+    router.refresh();
+  }
+
+  async function confirmDelete() {
+    setDeletePending(true);
+    setDeleteError(null);
+
+    const result = await deleteSprint({ sprintId: sprint.id });
+
+    if (!result.ok) {
+      setDeletePending(false);
+      setDeleteError(result.error);
+      return;
+    }
+
+    setDeletePending(false);
+    setDeleting(false);
+    toast(
+      <>
+        Deleted <strong>{sprint.name}</strong>
+      </>,
+    );
+    /* The list this card is in is rendered on the server, so the card goes
+       when that re-renders — not by being hidden here. A refresh afterwards
+       shows the same thing, because the row really is gone. */
     router.refresh();
   }
 
@@ -229,6 +264,21 @@ export function SprintCard({
               <Button variant="brand" size="sm" onClick={() => setClosing(true)}>
                 <IconCheck size={13} />
                 Complete sprint
+              </Button>
+            ) : null}
+
+            {/* Deleting is an administrator's, like the rest of this row, and
+                `deleteSprint` says so again on the server. Offered whatever
+                the sprint's state: a plan that was never run and a sprint that
+                was are both things an administrator may clear away. */}
+            {canManage ? (
+              <Button
+                variant="danger-outline"
+                size="sm"
+                onClick={() => setDeleting(true)}
+              >
+                <IconTrash size={13} />
+                Delete sprint
               </Button>
             ) : null}
           </div>
@@ -399,6 +449,52 @@ export function SprintCard({
           nextSprints={otherOpenSprints}
           onClose={() => setClosing(false)}
         />
+      ) : null}
+
+      {/* The same confirmation the issue page uses to delete an issue — the
+          shape, the tone and the wording of a destructive action in Prio are
+          established, and this is that pattern rather than another one. */}
+      {deleting ? (
+        <Dialog
+          open
+          onClose={() => (deletePending ? undefined : setDeleting(false))}
+          busy={deletePending}
+          title="Delete sprint?"
+          description="This cannot be undone."
+          footer={
+            <>
+              <Button
+                variant="ghost"
+                onClick={() => setDeleting(false)}
+                disabled={deletePending}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                onClick={() => void confirmDelete()}
+                loading={deletePending}
+              >
+                {deletePending ? "Deleting…" : "Delete sprint"}
+              </Button>
+            </>
+          }
+        >
+          {deleteError ? (
+            <div style={{ marginBottom: "var(--prio-space-5)" }}>
+              <Alert tone="danger" icon={<IconWarning />}>
+                {deleteError}
+              </Alert>
+            </div>
+          ) : null}
+
+          <Alert tone="danger" icon={<IconWarning />}>
+            Deleting <strong>{sprint.name}</strong> removes the sprint and its
+            record of how it went. Its{" "}
+            {stats.total === 1 ? "issue" : `${stats.total} issues`} stay exactly
+            as they are and return to the backlog.
+          </Alert>
+        </Dialog>
       ) : null}
     </section>
   );

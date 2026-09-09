@@ -205,10 +205,22 @@ test.describe("Theme persistence and system mode", () => {
 
     await control.click();
     await page.getByRole("menuitemradio", { name: "System" }).click();
-    await expect(page.locator("html")).not.toHaveAttribute("data-theme", /.*/);
+    // System paints Light; the choice itself is what is remembered.
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+    await expect(control).toHaveAttribute("aria-label", "Theme: System");
   });
 
-  test("system mode follows the operating system", async ({ browser }) => {
+  test("system mode paints Light, on a light machine and a dark one", async ({
+    browser,
+  }) => {
+    /*
+     * System is a choice, and what it resolves to is Light.
+     *
+     * Prio is a light application: arriving on a dark laptop and being handed
+     * a dark one nobody asked for — with no obvious sign that a Theme control
+     * exists — is how people ended up stuck in it. Dark is available, and it
+     * is deliberate. `prefers-color-scheme` decides nothing.
+     */
     for (const scheme of ["light", "dark"] as const) {
       const context = await browser.newContext({ colorScheme: scheme });
       const page = await context.newPage();
@@ -216,32 +228,22 @@ test.describe("Theme persistence and system mode", () => {
       await page.goto("/");
       await expect(page.locator(".prio-sidebar")).toBeVisible();
 
-      /*
-       * System is chosen here rather than assumed. It is no longer what an
-       * account starts on — a brand-new one opens on Light, so that somebody
-       * arriving on a dark laptop is not handed a dark application they never
-       * asked for — but it is still a first-class choice, and choosing it must
-       * still hand the decision back to the machine.
-       */
-      await page.getByRole("button", { name: /^Theme: / }).click();
+      const control = page.getByRole("button", { name: /^Theme: / });
+      await control.click();
       await page.getByRole("menuitemradio", { name: "System" }).click();
 
-      // "System" is the absence of the attribute: the media query decides.
-      await expect(page.locator("html")).not.toHaveAttribute("data-theme", /.*/);
+      await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
 
       const sidebar = await page
         .locator(".prio-sidebar")
         .evaluate((el) => getComputedStyle(el).backgroundColor);
+      expect(luminance(sidebar), `light sidebar on a ${scheme} machine`).toBeGreaterThan(0.7);
 
-      if (scheme === "dark") {
-        expect(luminance(sidebar)).toBeLessThan(0.3);
-      } else {
-        expect(luminance(sidebar)).toBeGreaterThan(0.7);
-      }
-
-      // And it survives a full document load, through the pre-paint script.
+      // And it survives a full document load, through the pre-paint script —
+      // still Light, and still reported as System.
       await page.reload();
-      await expect(page.locator("html")).not.toHaveAttribute("data-theme", /.*/);
+      await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+      await expect(control).toHaveAttribute("aria-label", "Theme: System");
 
       await context.close();
     }

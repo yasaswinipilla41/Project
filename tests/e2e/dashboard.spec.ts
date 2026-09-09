@@ -800,9 +800,10 @@ test.describe("Dashboard — presentation", () => {
     await control.click();
     await page.getByRole("menuitemradio", { name: "System" }).click();
 
-    // "System" is the absence of the attribute, which is what the CSS media
-    // query is written against.
-    await expect(page.locator("html")).not.toHaveAttribute("data-theme", /.*/);
+    /* System paints Light — Prio does not follow the machine — and the
+       control still reports the choice that was made. */
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+    await expect(control).toHaveAttribute("aria-label", "Theme: System");
   });
 
   test("the entrance animation leaves everything visible", async ({ page }) => {

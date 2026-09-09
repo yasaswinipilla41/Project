@@ -174,6 +174,46 @@ export async function updateSprint(raw: unknown): Promise<SprintActionResult> {
   }
 }
 
+/**
+ * Delete a sprint.
+ *
+ * An administrator's, like every other change to a sprint's lifecycle, and
+ * checked here rather than by hiding the button — the same `assertAdmin` the
+ * rest of this file uses, so there is no second notion of who may.
+ *
+ * What it removes is the sprint and nothing else. The schema already says so:
+ * `Issue.sprintId` is `onDelete: SetNull`, so the issues that were in it are
+ * simply no longer in a sprint — they keep their status, their assignee, their
+ * history and their place on the board — and `SprintIssueOutcome` cascades,
+ * because those rows are the sprint's own record of how it went and mean
+ * nothing without it. Nothing else in Prio points at a sprint.
+ *
+ * A sprint that has already gone is not an error worth alarming anybody about:
+ * `loadSprint` throws `NotFoundError`, which `failure` turns into the ordinary
+ * "no longer exists" message. Deleting twice therefore ends with the sprint
+ * deleted, which is what was asked for both times.
+ */
+export async function deleteSprint(raw: unknown): Promise<SprintActionResult> {
+  try {
+    const user = await requireUser();
+
+    const parsed = sprintIdSchema.safeParse(raw);
+    if (!parsed.success) {
+      return { ok: false, error: "That sprint could not be identified." };
+    }
+
+    const sprint = await loadSprint(parsed.data.sprintId);
+    assertAdmin(user);
+
+    await prisma.sprint.delete({ where: { id: sprint.id } });
+
+    revalidateSprintSurfaces(sprint.project.key);
+    return { ok: true, data: undefined };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
 /* -------------------------------------------------------------- the issues */
 
 /**

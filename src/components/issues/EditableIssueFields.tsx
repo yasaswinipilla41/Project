@@ -50,9 +50,18 @@ function useFieldSave(issueId: string) {
 export function EditableTitle({
   issueId,
   title,
+  canEdit = true,
 }: {
   issueId: string;
   title: string;
+  /**
+   * Whether this person may rename the issue. False renders the heading with
+   * no pencil at all rather than a disabled one: there is nothing here they
+   * can do, and a control that only ever refuses is worse than its absence.
+   * `updateIssue` refuses the rename regardless — that is the rule; this is
+   * the page agreeing with it.
+   */
+  canEdit?: boolean;
 }) {
   const { save, saving } = useFieldSave(issueId);
   const [editing, setEditing] = useState(false);
@@ -65,6 +74,10 @@ export function EditableTitle({
       return;
     }
     if (await save({ title: value }, "Title updated")) setEditing(false);
+  }
+
+  if (!canEdit) {
+    return <h1 className="prio-issue__title">{title}</h1>;
   }
 
   if (!editing) {
@@ -125,10 +138,13 @@ export function DueDateField({
   issueId,
   dueDate,
   children,
+  canEdit = true,
 }: {
   issueId: string;
   dueDate: Date | null;
   children: React.ReactNode;
+  /** Whether this person may set when the work is due. See `EditableTitle`. */
+  canEdit?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const { save, saving } = useFieldSave(issueId);
@@ -140,6 +156,8 @@ export function DueDateField({
       setEditing(false);
     }
   }
+
+  if (!canEdit) return <>{children}</>;
 
   if (editing) {
     return (
