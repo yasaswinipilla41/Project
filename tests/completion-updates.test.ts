@@ -245,7 +245,8 @@ describe("the completion itself", () => {
     const issue = await anIssueReadyToFinish("Persisted completion", ASSIGNEE);
 
     await actAs(TESTER);
-    await updateIssue({ issueId: issue.id, status: "DONE" });
+    const finished = await updateIssue({ issueId: issue.id, status: "DONE" });
+    expect(finished.ok, finished.ok ? "" : finished.error).toBe(true);
 
     const row = await prisma.issue.findUniqueOrThrow({
       where: { id: issue.id },

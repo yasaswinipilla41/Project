@@ -187,6 +187,47 @@ describe("Due today", () => {
   });
 });
 
+describe("the lists those numbers open", () => {
+  it("cuts Due today to today, and Overdue to what is late", async () => {
+    /* Each figure on Home links to the issue list with a filter, and these are
+       the filters. "Due today" used to link to every open issue assigned to
+       the reader — so the number and the list it opened were unrelated. */
+    const user = await userByEmail(TESTER);
+    await anIssueDue("Opens as due today", dayOffset(0));
+    await anIssueDue("Opens as overdue", dayOffset(-2));
+
+    const data = await loadDashboard(user);
+
+    const today = await listIssues(user, {
+      assigneeIds: [user.id],
+      resolution: "open",
+      dueToday: true,
+      pageSize: 200,
+    });
+    expect(today.total).toBe(data.due.today);
+
+    const { startOfToday, endOfToday } = dueWindow();
+    for (const row of today.rows) {
+      const due = new Date(row.dueDate!).getTime();
+      expect(due).toBeGreaterThanOrEqual(startOfToday.getTime());
+      expect(due).toBeLessThan(endOfToday.getTime());
+    }
+
+    const overdue = await listIssues(user, {
+      assigneeIds: [user.id],
+      resolution: "open",
+      overdue: true,
+      pageSize: 200,
+    });
+    expect(overdue.total).toBe(data.due.overdue);
+    for (const row of overdue.rows) {
+      expect(new Date(row.dueDate!).getTime()).toBeLessThan(
+        startOfToday.getTime(),
+      );
+    }
+  });
+});
+
 describe("Due this week", () => {
   it("counts the whole calendar week, and matches the list it opens", async () => {
     const user = await userByEmail(TESTER);

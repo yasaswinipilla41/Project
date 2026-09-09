@@ -65,6 +65,7 @@ export function parseIssueParams(params: SearchParams): IssueFilters {
       resolution === "open" || resolution === "closed" ? resolution : undefined,
     overdue: one(params.overdue) === "1",
     dueWeek: one(params.dueWeek) === "1",
+    dueToday: one(params.dueToday) === "1",
     completedWithin,
     environment: one(params.environment),
     affectedModule: one(params.module),

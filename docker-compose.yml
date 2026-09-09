@@ -89,6 +89,15 @@ services:
         condition: service_completed_successfully
     environment:
       NODE_ENV: production
+      # The organisation's own day.
+      #
+      # "Overdue", "due today" and "due this week" are calendar questions, and
+      # they are answered with the server's local clock. Without this the
+      # container runs in UTC, so the working day rolled over five and a half
+      # hours after it did for the people using Prio — work due today was
+      # already overdue for part of the evening, and a week boundary fell in
+      # the middle of one. Set it and the server's day is the business day.
+      TZ: ${TZ:-Asia/Kolkata}
       DATABASE_URL: postgresql://${POSTGRES_USER:-prio}:${POSTGRES_PASSWORD:-prio_dev_password}@postgres:5432/${POSTGRES_DB:-prio}?schema=public
       REDIS_URL: redis://redis:6379
       AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET is required}

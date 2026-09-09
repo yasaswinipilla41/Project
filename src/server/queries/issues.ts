@@ -4,7 +4,11 @@ import { prisma } from "@/lib/prisma";
 import { completersFor } from "@/server/queries/completedWork";
 import { issueScope } from "@/lib/authz";
 import { monthWindow } from "@/lib/format";
-import { dueThisWeekFilter, overdueFilter } from "@/server/queries/due";
+import {
+  dueThisWeekFilter,
+  dueTodayFilter,
+  overdueFilter,
+} from "@/server/queries/due";
 import type { CurrentUser } from "@/lib/session";
 import {
   CLOSED_STATUSES,
@@ -55,6 +59,7 @@ export interface IssueFilters {
   overdue?: boolean;
   /** Restricts to items due between the end of today and the end of the week. */
   dueWeek?: boolean;
+  dueToday?: boolean;
   /**
    * Restricts to work *completed* within a calendar month — "month" for the
    * current one, "lastMonth" for the one before. Completed means DONE, the
@@ -167,6 +172,12 @@ export function buildIssueWhere(
         : [startOfLastMonth, startOfMonth];
 
     and.push({ status: "DONE", completedAt: { gte, lt } });
+  }
+
+  if (filters.dueToday) {
+    /* Today's date, and the same fragment the number on Home is counted with,
+       so the figure and the list it opens are one query. */
+    and.push(dueTodayFilter());
   }
 
   if (filters.dueWeek) {

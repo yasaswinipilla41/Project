@@ -190,8 +190,15 @@ export function DueBar({
         </Link>
       ) : null}
 
+      {/* `dueToday=1`, for the same reason `dueWeek=1` is on the figure below:
+          this used to link to every open issue assigned to the reader, sorted
+          by due date, so a card reading "3 due today" opened thirty. */}
       {today > 0 ? (
-        <Link href={`${base}&sort=due&dir=asc`} className="prio-duebar__item" data-tone="warning">
+        <Link
+          href={`${base}&dueToday=1&sort=due&dir=asc`}
+          className="prio-duebar__item"
+          data-tone="warning"
+        >
           <IconClock size={14} />
           <strong>{today}</strong>
           due today
