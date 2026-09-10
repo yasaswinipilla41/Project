@@ -1,6 +1,15 @@
 "use client";
 
-import { useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import {
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
+import { createPortal } from "react-dom";
 
 export interface SearchOption {
   id: string;
@@ -37,6 +46,17 @@ export interface SearchOption {
  * "continue searching after selection" needs; in single mode picking replaces
  * the choice.
  *
+ * The option list is rendered into `document.body` and positioned against the
+ * field, rather than laid out inside it. Absolutely positioned, it was clipped
+ * the moment the field sat low in a dialog: `.prio-dialog` hides its overflow
+ * and `.prio-dialog__body` scrolls, so a list opening downwards was cut off at
+ * the panel's edge and the last options could not be read or reached. Escaping
+ * to the body is the same answer `Menu` already uses for the same reason, and
+ * it brings the rest of that behaviour with it — the list flips above the
+ * field when there is more room there, is capped to the space actually
+ * available so it scrolls rather than running off the screen, and follows the
+ * field when any ancestor scrolls.
+ *
  * This is presentation. Every dialog that uses it posts ids to a server action
  * that re-checks who is asking and what they named — nothing here is a
  * permission.
@@ -68,6 +88,8 @@ export function SearchSelect({
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
   const input = useRef<HTMLInputElement>(null);
+  const anchor = useRef<HTMLDivElement>(null);
+  const list = useRef<HTMLUListElement>(null);
 
   const byId = useMemo(
     () => new Map(options.map((option) => [option.id, option])),
@@ -101,6 +123,72 @@ export function SearchSelect({
        the slice — the cap is on what is drawn, never on what is searched. */
     return open ? narrowed.slice(0, 8) : [];
   }, [options, selected, folded, open, multiple]);
+
+  /*
+   * Put the list where the field is.
+   *
+   * Imperative and re-run on every scroll frame, like `Menu`: moving a panel
+   * a few pixels is not worth a render. `fixed` coordinates are
+   * viewport-relative, so anything scrolling underneath — the dialog body
+   * included — has to move it again, which is what the capturing scroll
+   * listener below is for.
+   */
+  const place = useCallback(() => {
+    const field = anchor.current;
+    const panel = list.current;
+    if (!field || !panel) return;
+
+    const rect = field.getBoundingClientRect();
+    const margin = 8;
+    const gap = 4;
+    const below = window.innerHeight - rect.bottom - gap - margin;
+    const above = rect.top - gap - margin;
+
+    /* Flip up only when below genuinely cannot hold the list and above is
+       roomier — otherwise a list that merely got short would jump sides. */
+    const natural = panel.scrollHeight;
+    const flip = natural > below && above > below;
+    const maxHeight = Math.min(220, Math.max(120, flip ? above : below));
+
+    panel.style.width = `${rect.width}px`;
+    panel.style.left = `${rect.left}px`;
+    panel.style.maxHeight = `${maxHeight}px`;
+    panel.style.top = flip
+      ? `${Math.max(margin, rect.top - gap - Math.min(natural, maxHeight))}px`
+      : `${rect.bottom + gap}px`;
+    panel.style.visibility = "visible";
+  }, []);
+
+  /*
+   * Re-measured after every render, deliberately without a dependency list.
+   *
+   * Choosing an option in `multiple` mode adds a chip above the field, which
+   * pushes the field down — and the list has to come with it. Keying this on
+   * `matches.length` was not enough: the list draws at most eight rows, so
+   * with nine or more candidates the count does not change when one is taken,
+   * the effect did not re-run, and the list stayed where the field used to be.
+   * It then covered the field it belongs to and swallowed the next click.
+   *
+   * Two `getBoundingClientRect` calls per render is nothing next to getting
+   * this wrong, and there is no other reliable signal: anything inside the
+   * dialog can move the field.
+   */
+  useLayoutEffect(() => {
+    if (matches.length > 0) place();
+  });
+
+  useLayoutEffect(() => {
+    if (matches.length === 0) return;
+
+    /* `true` captures scrolls on any ancestor, not only the page: the field
+       usually sits inside a dialog body with a scrollport of its own. */
+    window.addEventListener("scroll", place, true);
+    window.addEventListener("resize", place);
+    return () => {
+      window.removeEventListener("scroll", place, true);
+      window.removeEventListener("resize", place);
+    };
+  }, [matches.length, place]);
 
   function choose(index: number) {
     const option = matches[index];
@@ -184,7 +272,7 @@ export function SearchSelect({
         </div>
       ) : null}
 
-      <div className="prio-labelpicker">
+      <div className="prio-labelpicker" ref={anchor}>
         <input
           ref={input}
           id={id}
@@ -199,6 +287,11 @@ export function SearchSelect({
           aria-controls={matches.length > 0 ? listId : undefined}
           aria-activedescendant={active >= 0 ? `${listId}-${active}` : undefined}
           disabled={disabled}
+          /* While the list is open, Escape belongs to the list. Without this
+             the key bubbles to the dialog's own handler and shuts the whole
+             popup when the person only meant to dismiss the options. The
+             attribute is the hook `Dialog` already offers for exactly this. */
+          data-local-escape={matches.length > 0 ? "true" : undefined}
           onChange={(event) => {
             setQuery(event.target.value);
             setHighlight(0);
@@ -216,8 +309,18 @@ export function SearchSelect({
           }}
         />
 
-        {matches.length > 0 ? (
-          <ul className="prio-labelpicker__list" role="listbox" id={listId}>
+        {matches.length > 0 && typeof document !== "undefined"
+          ? createPortal(
+          <ul
+            ref={list}
+            className="prio-labelpicker__list prio-scroll"
+            role="listbox"
+            id={listId}
+            /* Hidden until `place()` has measured it: laid out at its natural
+               height first so the measurement is real, then revealed at the
+               coordinates that measurement produced. */
+            style={{ position: "fixed", top: 0, left: 0, visibility: "hidden" }}
+          >
             {matches.map((option, index) => (
               <li key={option.id}>
                 <button
@@ -241,8 +344,10 @@ export function SearchSelect({
                 </button>
               </li>
             ))}
-          </ul>
-        ) : null}
+          </ul>,
+          document.body,
+            )
+          : null}
       </div>
 
       {options.length === 0 && emptyHint ? (

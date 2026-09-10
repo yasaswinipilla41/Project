@@ -315,9 +315,12 @@ test.describe("Administration", () => {
   test("opens each block, and every one of them comes back", async ({ page }) => {
     /* By destination, not by the words on the tile: the tiles quote each other
        in their hints — Projects says "N issues total" — so matching "Issues"
-       would find the wrong one. */
+       would find the wrong one.
+
+       Users is not in this list any more. People is rendered on Administration
+       itself, so its tile scrolls to the block instead of leaving the page,
+       and there is nothing for it to come back from. */
     for (const [href, destination] of [
-      ["/admin/users", "admin/users"],
       ["/projects?from=admin", "projects"],
       ["/issues?from=admin", "issues"],
       ["/bugs?from=admin", "bugs"],
@@ -331,6 +334,53 @@ test.describe("Administration", () => {
       await back.click();
       await expect(page).toHaveURL(/\/admin$/);
     }
+  });
+
+  test("holds People under Development and Testing, without leaving the page", async ({
+    page,
+  }) => {
+    await page.goto("/admin");
+
+    /* The Users tile points at the block on this page rather than a route of
+       its own. */
+    const tile = page.locator('.prio-stat[href="#people"]');
+    await expect(tile).toHaveCount(1);
+    await expect(page.locator('.prio-stat[href="/admin/users"]')).toHaveCount(0);
+
+    await tile.click();
+    await expect(page).toHaveURL(/\/admin(#people)?$/);
+
+    /* One People block, rendered here — not a second copy of it. */
+    const people = page.locator("#people");
+    await expect(people).toHaveCount(1);
+    await expect(people.getByRole("button", { name: /new user/i })).toBeVisible();
+
+    /* And it sits below the two rosters, in the order Administration lists
+       them: Development, Testing, then People. */
+    const order = await page.evaluate(() => {
+      const heads = [...document.querySelectorAll("h2")].map((h) =>
+        (h.textContent ?? "").trim(),
+      );
+      return heads;
+    });
+    const development = order.findIndex((t) => t.startsWith("Development"));
+    const testing = order.findIndex((t) => t.startsWith("Testing"));
+    const peopleHeading = order.findIndex((t) => t.startsWith("People"));
+    expect(development).toBeGreaterThanOrEqual(0);
+    expect(testing).toBeGreaterThanOrEqual(0);
+    expect(peopleHeading).toBeGreaterThan(Math.max(development, testing));
+  });
+
+  test("keeps the People route working for anyone who goes there directly", async ({
+    page,
+  }) => {
+    /* Embedding the block did not retire the route; it is linked from
+       elsewhere and still renders the same component. */
+    await page.goto("/admin/users");
+    await expect(
+      page.getByRole("heading", { name: "People", level: 1 }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: /new user/i })).toBeVisible();
   });
 
   test("Add to Development searches, filters by role, and keeps chips", async ({
@@ -353,7 +403,7 @@ test.describe("Administration", () => {
     const chipsOf = (field: string) =>
       dialog.locator(`.prio-field:has(#${field}) .prio-chipset__chip`);
     const optionsOf = (field: string) =>
-      dialog.locator(`#${field}-options`).getByRole("option");
+      page.locator(`#${field}-options`).getByRole("option");
 
     // Project: type, choose, and it becomes a chip.
     await dialog.locator("#roster-project").click();
@@ -409,7 +459,7 @@ test.describe("Administration", () => {
 
     // Choose a project, then a piece of its work.
     const optionsOf = (field: string) =>
-      dialog.locator(`#${field}-options`).getByRole("option");
+      page.locator(`#${field}-options`).getByRole("option");
 
     await dialog.locator("#roster-edit-project").click();
     await optionsOf("roster-edit-project").first().click();

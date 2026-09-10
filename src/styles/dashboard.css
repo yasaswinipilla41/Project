@@ -463,10 +463,17 @@ a.prio-kpi:focus-visible {
   color: var(--prio-text-secondary);
 }
 
+/* The relative time an issue last moved.
+   `--prio-text-disabled` put it at roughly 2.6:1 on the card in Light and
+   3.6:1 in Dark -- under the 4.5:1 body-text floor in both, on the one piece
+   of timing information every card carries. `--prio-text-muted` is the next
+   token up and clears it in both themes, so the value stays secondary to the
+   title without being hard to read. Colour only: the size, the placement and
+   the value itself are untouched. */
 .prio-assigned__updated {
   margin-left: auto;
   font-size: var(--prio-text-2xs);
-  color: var(--prio-text-disabled);
+  color: var(--prio-text-muted);
   white-space: nowrap;
 }
 
@@ -485,12 +492,17 @@ a.prio-kpi:focus-visible {
   gap: var(--prio-space-2) var(--prio-space-4);
 }
 
+/* The due date, for work that is neither late nor due today.
+   Lifted from `--prio-text-secondary` to the primary text colour: a date is
+   the thing people scan this row for, and at secondary it sat at the same
+   weight as the sub-labels around it. Overdue and Due-today keep their own
+   colours below. Every card is treated the same way. */
 .prio-assigned__due {
   display: inline-flex;
   align-items: center;
   gap: var(--prio-space-2);
   font-size: var(--prio-text-xs);
-  color: var(--prio-text-secondary);
+  color: var(--prio-text-primary);
 }
 
 .prio-assigned__due[data-state="overdue"] {

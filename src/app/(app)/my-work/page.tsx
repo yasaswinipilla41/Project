@@ -14,13 +14,7 @@ import {
   IconMyWork,
   IconWarning,
 } from "@/components/ui/Icon";
-import {
-  accessibleProjectIds,
-  isTeamMember,
-  issueScope,
-  workRoleOf,
-  TESTING_TEAM_SLUG,
-} from "@/lib/authz";
+import { issueScope } from "@/lib/authz";
 import {
   CLOSED_STATUSES,
   OPEN_STATUSES,
@@ -30,17 +24,6 @@ import { formatDateCompact, isOverdue } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { dueThisWeekFilter, overdueFilter } from "@/server/queries/due";
 import { requireUser } from "@/lib/session";
-import {
-  listIssues,
-  loadIssueProgress,
-  SORT_FIELDS,
-  type SortField,
-} from "@/server/queries/issues";
-import {
-  ProjectWorkTable,
-  type WorkTableRow,
-} from "@/components/work/ProjectWorkTable";
-import { ProjectWorkPicker } from "@/components/work/ProjectWorkPicker";
 import type { IssueStatus } from "@prisma/client";
 
 export const metadata: Metadata = { title: "My Work" };
@@ -49,13 +32,35 @@ export const dynamic = "force-dynamic";
 /**
  * Everything assigned to the signed-in user, grouped by workflow status so the
  * next thing to pick up is obvious.
+ *
+ * One rule decides what is on this page, and every figure and every list obeys
+ * it:
+ *
+ *     assigned to me   AND   in a project I may open
+ *
+ * `assignedWhere` below *is* that rule — `issueScope(user)` for the second
+ * half and `assigneeId: user.id` for the first — and everything else is that
+ * fragment with a category added. So a count and the rows beneath it cannot
+ * describe different sets: they are the same query asked twice.
+ *
+ * The first half used to be missing in three places, and each one put somebody
+ * else's work on a page called My Work:
+ *
+ *  - **Waiting for testing** listed what other people had handed over,
+ *    `NOT assigneeId`. It now lists work handed to *this* person.
+ *  - **Reported by me, assigned to someone else** was, by its own name, other
+ *    people's assignments. Raising an issue is not being given it. It is gone
+ *    from here; `/issues?reporter=<id>` is where that question is answered.
+ *  - **Project work** was a whole project's issue table for anybody on the
+ *    Testing team. Belonging to a project is not being handed its work. The
+ *    project's own List and Board views still show it.
+ *
+ * `user` comes from `requireUser()` — the server session — and nothing on this
+ * page reads an identity, a project or a filter from the URL. There is no
+ * parameter to change: the query is built from who the request is
+ * authenticated as, and the database applies it.
  */
-export default async function MyWorkPage({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}) {
-  const params = await searchParams;
+export default async function MyWorkPage() {
   const user = await requireUser();
   const scope = issueScope(user);
   /*
@@ -69,77 +74,6 @@ export default async function MyWorkPage({
    */
   const now = new Date();
 
-  /*
-   * The project work table belongs to the Testing team.
-   *
-   * The check is here, on the server, before anything is queried — not a
-   * hidden element in the markup. Somebody who is not on the team gets no
-   * table, no rows, and nothing extra in the payload, whatever they put in the
-   * URL. Being an administrator is deliberately not enough: administering Prio
-   * and being on the testing team are different claims.
-   */
-  const onTestingTeam = await isTeamMember(user, TESTING_TEAM_SLUG);
-  const workRole = await workRoleOf(user);
-
-  /* Project access is still the ordinary rule. Team membership decides whether
-     this view exists at all; it grants access to no project on its own, so the
-     picker only ever lists projects the person could already open. */
-  const workProjects = onTestingTeam
-    ? await prisma.project.findMany({
-        where: {
-          isArchived: false,
-          id: { in: await accessibleProjectIds(user) },
-        },
-        select: { id: true, key: true, name: true },
-        orderBy: { name: "asc" },
-      })
-    : [];
-
-  const one = (value: string | string[] | undefined): string | undefined =>
-    Array.isArray(value) ? value[0] : value;
-
-  const requestedProject = one(params.project);
-  const selectedProject =
-    workProjects.find((p) => p.id === requestedProject) ?? null;
-
-  const rawSort = one(params.sort);
-  const workSort: SortField = (SORT_FIELDS as readonly string[]).includes(
-    rawSort ?? "",
-  )
-    ? (rawSort as SortField)
-    : "updated";
-  const workDir = one(params.dir) === "asc" ? "asc" : "desc";
-
-  const workList = selectedProject
-    ? await listIssues(user, {
-        projectIds: [selectedProject.id],
-        sort: workSort,
-        dir: workDir,
-        pageSize: 100,
-      })
-    : null;
-
-  const workProgress = workList
-    ? await loadIssueProgress(workList.rows.map((r) => r.id))
-    : new Map<string, { done: number; total: number }>();
-
-  const workDescriptions = workList
-    ? new Map(
-        (
-          await prisma.issue.findMany({
-            where: { id: { in: workList.rows.map((r) => r.id) } },
-            select: { id: true, description: true },
-          })
-        ).map((row) => [row.id, row.description]),
-      )
-    : new Map<string, string | null>();
-
-  const workRows: WorkTableRow[] = (workList?.rows ?? []).map((row) => ({
-    ...row,
-    progress: workProgress.get(row.id) ?? null,
-    description: workDescriptions.get(row.id) ?? null,
-  }));
-
   const assignedWhere = {
     ...scope,
     assigneeId: user.id,
@@ -148,7 +82,6 @@ export default async function MyWorkPage({
 
   const [
     assigned,
-    reported,
     overdueCount,
     dueSoonCount,
     resolvedCount,
@@ -168,25 +101,6 @@ export default async function MyWorkPage({
           dueDate: true,
           updatedAt: true,
           project: { select: { key: true, name: true } },
-        },
-      }),
-      prisma.issue.findMany({
-        where: {
-          ...scope,
-          reporterId: user.id,
-          status: { in: [...OPEN_STATUSES] },
-          NOT: { assigneeId: user.id },
-        },
-        orderBy: { updatedAt: "desc" },
-        take: 8,
-        select: {
-          id: true,
-          key: true,
-          type: true,
-          title: true,
-          status: true,
-          priority: true,
-          assignee: { select: { name: true } },
         },
       }),
       /*
@@ -212,21 +126,28 @@ export default async function MyWorkPage({
       }),
 
       /*
-       * The two QA-shaped questions this page could not answer before.
-       *
-       * Both reuse `scope`, so they can only ever surface issues this person
-       * could already open — this is a different slice of the same authorized
-       * set, not a new source of data.
+       * The two QA-shaped questions, both of them about this person's own
+       * work: what they have handed over and are waiting on, and what came
+       * back. Neither is a project queue.
        */
 
-      // Submitted by somebody else and not yet judged: the tester's queue.
-      // Excludes their own work, because nobody signs off their own.
+      /*
+       * Handed to this person and not yet judged.
+       *
+       * It used to be the opposite — `NOT assigneeId`, every issue in reach
+       * that somebody *else* had submitted, on the strength of the reader
+       * being on the Testing team. That is a project queue, and this page is
+       * not one: it put other people's work under a heading that says My Work,
+       * and the count beside it counted other people's work too.
+       *
+       * The category is unchanged: Ready for QA, no verdict yet. Only who
+       * qualifies changed, which is the whole of what was wrong.
+       */
       prisma.issue.findMany({
         where: {
-          ...scope,
+          ...assignedWhere,
           status: "IN_REVIEW",
           testResult: "NOT_TESTED",
-          NOT: { assigneeId: user.id },
         },
         orderBy: [{ priority: "asc" }, { updatedAt: "desc" }],
         take: 10,
@@ -238,7 +159,6 @@ export default async function MyWorkPage({
           priority: true,
           updatedAt: true,
           project: { select: { name: true } },
-          assignee: { select: { name: true } },
         },
       }),
 
@@ -335,50 +255,6 @@ export default async function MyWorkPage({
         </div>
       </div>
 
-      {/* ------------------------------------------- project work table */}
-      {/* Rendered only for the team that owns it. A non-member's page does not
-          contain this markup at all — there is nothing here to reveal. */}
-      {onTestingTeam ? (
-        <Card style={{ marginBottom: "var(--prio-space-4)" }}>
-          <CardBody>
-            <div className="prio-projectmembers__head">
-              <h2 className="prio-issue__section-title">Project work</h2>
-              {selectedProject ? (
-                <span className="prio-text-muted">
-                  {workRows.length} item{workRows.length === 1 ? "" : "s"} in{" "}
-                  {selectedProject.name}
-                </span>
-              ) : null}
-            </div>
-
-            <ProjectWorkPicker
-              projects={workProjects}
-              selectedId={selectedProject?.id ?? null}
-              basePath="/my-work"
-            />
-
-            {selectedProject ? (
-              <div style={{ marginTop: "var(--prio-space-4)" }}>
-                <ProjectWorkTable
-                  rows={workRows}
-                  basePath="/my-work"
-                  searchParams={params}
-                  sort={workSort}
-                  dir={workDir}
-                  currentUserId={user.id}
-                  isAdmin={user.role === "ADMIN"}
-                  workRole={workRole}
-                />
-              </div>
-            ) : workProjects.length > 0 ? (
-              <p className="prio-text-muted" style={{ marginTop: "var(--prio-space-4)" }}>
-                Choose a project to see its work items.
-              </p>
-            ) : null}
-          </CardBody>
-        </Card>
-      ) : null}
-
       {/* ------------------------------------------------ QA collaboration */}
       {/* Shown only when there is something to act on, so the page stays a
           to-do list rather than a wall of empty sections. */}
@@ -452,11 +328,8 @@ export default async function MyWorkPage({
                           <span className="prio-text-muted">
                             {issue.project.name}
                           </span>
-                          {issue.assignee ? (
-                            <span className="prio-text-muted">
-                              from {issue.assignee.name}
-                            </span>
-                          ) : null}
+                          {/* The holder is the reader, so naming them here
+                              would only ever say "from yourself". */}
                         </span>
                       </span>
                       <PriorityIndicator priority={issue.priority} showLabel={false} />
@@ -537,34 +410,6 @@ export default async function MyWorkPage({
             );
           })}
 
-          {reported.length > 0 ? (
-            <div className="col-12">
-              <Card>
-                <CardBody>
-                  <h2 className="prio-issue__section-title">
-                    Reported by me, assigned to someone else
-                  </h2>
-                  {reported.map((issue) => (
-                    <Link
-                      key={issue.id}
-                      href={`/issues/${issue.key.toLowerCase()}`}
-                      className="prio-relatedrow"
-                    >
-                      <IssueTypeIcon type={issue.type} size={17} />
-                      <IssueKey issueKey={issue.key} />
-                      <span className="prio-relatedrow__title prio-truncate">
-                        {issue.title}
-                      </span>
-                      <span className="prio-text-muted">
-                        {issue.assignee?.name ?? "Unassigned"}
-                      </span>
-                      <StatusPill status={issue.status} />
-                    </Link>
-                  ))}
-                </CardBody>
-              </Card>
-            </div>
-          ) : null}
         </div>
       )}
     </>

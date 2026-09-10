@@ -180,7 +180,9 @@ test.describe("Administration's people picker", () => {
     await search.click();
     await search.fill(person.email);
 
-    const option = dialog
+    /* Portaled to the body so the dialog's overflow cannot clip it, so it is
+       addressed from the page. */
+    const option = page
       .locator("#team-search-options")
       .getByRole("option")
       .filter({ hasText: person.name })
@@ -198,11 +200,14 @@ test.describe("Administration → Add new user", () => {
   test("the Users block leads to People, and New user opens the account form", async ({
     page,
   }) => {
+    /* People is on Administration itself now, so the tile scrolls to the
+       block rather than opening a page — and the form it offers is the same
+       one it has always offered. */
     await page.goto("/admin");
-    await page.locator('.prio-stat[href="/admin/users"]').click();
-    await expect(page).toHaveURL(/\/admin\/users/);
+    await page.locator('.prio-stat[href="#people"]').click();
+    await expect(page.locator("#people")).toBeVisible();
 
-    await page.getByRole("button", { name: /new user/i }).click();
+    await page.locator("#people").getByRole("button", { name: /new user/i }).click();
 
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Avatar } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/Toast";
 import { IconClose, IconEdit, IconExternal, IconTrash } from "@/components/ui/Icon";
@@ -249,12 +249,41 @@ export function AttachmentGrid({
 }
 
 /**
- * Full-size image view.
+ * Full-size image view, with zoom that belongs to the image.
  *
- * Escape closes it and focus is trapped to the close button while it is open,
- * so it behaves like the rest of Prio's dialogs without pulling in the full
- * dialog machinery for what is really just a picture.
+ * The picture is the thing people came to look at, so it is the thing that
+ * zooms. Before this, the preview had no zoom of its own and the only way to
+ * look closer was the browser's — which scales the whole document, so the
+ * sidebar, the header and the issue behind the overlay all grew with it and
+ * the page had to be put back afterwards.
+ *
+ * Everything here therefore stays inside one `transform` on the `<img>`:
+ *
+ *  - the controls, the wheel and the `+` / `-` keys change `scale`, which is
+ *    the image's own and nothing else's;
+ *  - the viewport around it clips, so a magnified image cannot push the
+ *    overlay out of shape or give the page something to scroll;
+ *  - a zoomed image can be dragged to pan, because a picture you cannot move
+ *    is only zoomed in the middle.
+ *
+ * The browser's own zoom is held off while this is open — `Ctrl`/`⌘` with the
+ * wheel, and Safari's pinch gestures — so the gesture people already use for
+ * "look closer" reaches the image instead of the document. Both listeners are
+ * removed on close, and page zoom works normally again the moment it is.
+ *
+ * Escape closes it and focus starts on the close button, so it behaves like
+ * the rest of Prio's dialogs without pulling in the full dialog machinery for
+ * what is really just a picture.
  */
+
+const MIN_SCALE = 1;
+const MAX_SCALE = 6;
+const STEP = 0.25;
+
+function clampScale(value: number): number {
+  return Math.min(MAX_SCALE, Math.max(MIN_SCALE, value));
+}
+
 function Lightbox({
   attachment,
   onClose,
@@ -262,9 +291,51 @@ function Lightbox({
   attachment: AttachmentView;
   onClose: () => void;
 }) {
+  const viewport = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  /* Where the pointer went down, and where the image was at that moment.
+     A ref rather than state: it changes on every pointermove and none of
+     those changes is worth a render of its own. */
+  const drag = useRef<{ x: number; y: number; ox: number; oy: number } | null>(
+    null,
+  );
+
+  const zoomed = scale > MIN_SCALE;
+
+  /* Panning only means something while the image is bigger than its frame, so
+     going back to 1x recentres rather than leaving it parked off to one side. */
+  const zoomTo = useCallback((next: number) => {
+    const clamped = clampScale(next);
+    setScale(clamped);
+    if (clamped === MIN_SCALE) setOffset({ x: 0, y: 0 });
+  }, []);
+
+  const reset = useCallback(() => {
+    setScale(1);
+    setOffset({ x: 0, y: 0 });
+  }, []);
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") {
+        onClose();
+        return;
+      }
+      if (event.key === "+" || event.key === "=") {
+        event.preventDefault();
+        zoomTo(scale + STEP);
+        return;
+      }
+      if (event.key === "-" || event.key === "_") {
+        event.preventDefault();
+        zoomTo(scale - STEP);
+        return;
+      }
+      if (event.key === "0") {
+        event.preventDefault();
+        reset();
+      }
     };
     document.addEventListener("keydown", onKey);
 
@@ -275,7 +346,69 @@ function Lightbox({
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = previous;
     };
-  }, [onClose]);
+  }, [onClose, reset, scale, zoomTo]);
+
+  /*
+   * The wheel, and the browser zoom it would otherwise trigger.
+   *
+   * Registered by hand because it has to be non-passive: React's own onWheel
+   * is passive, and a passive listener may not call `preventDefault`, which is
+   * exactly what stops `Ctrl`+wheel from scaling the document. `gesturestart`
+   * and `gesturechange` are Safari's pinch, held off for the same reason.
+   */
+  useEffect(() => {
+    const element = viewport.current;
+    if (!element) return;
+
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      /* A trackpad pinch arrives as ctrl+wheel with small deltas; a mouse
+         wheel arrives in larger ones. Normalising to the sign keeps both
+         moving a quarter-step at a time rather than one crawling and the
+         other leaping. */
+      zoomTo(scale + (event.deltaY < 0 ? STEP : -STEP));
+    };
+
+    const onGesture = (event: Event) => event.preventDefault();
+
+    element.addEventListener("wheel", onWheel, { passive: false });
+    document.addEventListener("gesturestart", onGesture);
+    document.addEventListener("gesturechange", onGesture);
+
+    return () => {
+      element.removeEventListener("wheel", onWheel);
+      document.removeEventListener("gesturestart", onGesture);
+      document.removeEventListener("gesturechange", onGesture);
+    };
+  }, [scale, zoomTo]);
+
+  function startPan(event: React.PointerEvent<HTMLImageElement>) {
+    if (!zoomed) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    drag.current = {
+      x: event.clientX,
+      y: event.clientY,
+      ox: offset.x,
+      oy: offset.y,
+    };
+  }
+
+  function pan(event: React.PointerEvent<HTMLImageElement>) {
+    const from = drag.current;
+    if (!from) return;
+    setOffset({
+      x: from.ox + (event.clientX - from.x),
+      y: from.oy + (event.clientY - from.y),
+    });
+  }
+
+  function endPan(event: React.PointerEvent<HTMLImageElement>) {
+    if (drag.current) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+      drag.current = null;
+    }
+  }
 
   return (
     <div
@@ -295,13 +428,66 @@ function Lightbox({
         <IconClose size={16} />
       </button>
 
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        className="prio-lightbox__image"
-        src={`/api/attachments/${attachment.id}`}
-        alt={attachment.filename}
+      {/* The zoom controls sit on the overlay, not on the image, so they stay
+          put and stay the same size however far the picture is scaled. */}
+      <div
+        className="prio-lightbox__zoom"
         onClick={(event) => event.stopPropagation()}
-      />
+      >
+        <button
+          type="button"
+          aria-label="Zoom out"
+          disabled={scale <= MIN_SCALE}
+          onClick={() => zoomTo(scale - STEP)}
+        >
+          −
+        </button>
+        <button
+          type="button"
+          className="prio-lightbox__level"
+          aria-label="Reset zoom to fit"
+          onClick={reset}
+        >
+          {Math.round(scale * 100)}%
+        </button>
+        <button
+          type="button"
+          aria-label="Zoom in"
+          disabled={scale >= MAX_SCALE}
+          onClick={() => zoomTo(scale + STEP)}
+        >
+          +
+        </button>
+      </div>
+
+      {/*
+        * The frame the image is scaled inside. It clips, so a magnified
+        * picture stays within the overlay rather than stretching it — which
+        * is what would give the page something to scroll and make the zoom
+        * look like the browser's.
+        */}
+      <div
+        ref={viewport}
+        className="prio-lightbox__viewport"
+        data-zoomed={zoomed || undefined}
+        onClick={(event) => event.stopPropagation()}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          className="prio-lightbox__image"
+          src={`/api/attachments/${attachment.id}`}
+          alt={attachment.filename}
+          draggable={false}
+          style={{
+            transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
+          }}
+          onDoubleClick={() => (zoomed ? reset() : zoomTo(2))}
+          onPointerDown={startPan}
+          onPointerMove={pan}
+          onPointerUp={endPan}
+          onPointerCancel={endPan}
+        />
+      </div>
 
       <div className="prio-lightbox__caption">
         <Avatar

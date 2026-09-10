@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { TeamAdmin } from "@/components/admin/TeamAdmin";
+import { UserAdmin } from "@/components/admin/UserAdmin";
 import { NewUsers, SectionHead } from "@/components/dashboard/DashboardParts";
 import { loadNewUsers } from "@/server/queries/dashboard";
 import { Card, CardBody } from "@/components/ui/primitives";
@@ -21,7 +22,7 @@ export const dynamic = "force-dynamic";
  */
 export default async function AdminPage() {
   // Gates the route; the sections below re-check for themselves.
-  await requireAdmin();
+  const admin = await requireAdmin();
 
   const [
     users,
@@ -100,6 +101,19 @@ export default async function AdminPage() {
     }),
   ]);
 
+  /* Open work per person, in one grouped query rather than one per user —
+     the same figure `/admin/users` computes, for the same block. */
+  const openByAssignee = await prisma.issue.groupBy({
+    by: ["assigneeId"],
+    where: { status: { in: [...OPEN_STATUSES] } },
+    _count: { _all: true },
+  });
+  const openCount = new Map(
+    openByAssignee
+      .filter((row) => row.assigneeId !== null)
+      .map((row) => [row.assigneeId as string, row._count._all]),
+  );
+
   const activeUsers = users.filter((u) => u.isActive).length;
   const admins = users.filter((u) => u.role === "ADMIN" && u.isActive).length;
 
@@ -127,12 +141,18 @@ export default async function AdminPage() {
           * the markup, tone and hint are untouched and a linked tile looks
           * exactly like the plain one it replaces.
           *
-          * All four now open a page of their own, People included: it moved
-          * to `/admin/users` so that every block behaves the same way and
-          * every destination can offer the same way back. `from=admin` is
-          * what the three shared pages read to decide whether to show it —
-          * they are reached from the sidebar as well, where a "Back to
-          * Administration" control would be a lie.
+          * Projects, Issues and Bugs each open a page of their own, and
+          * `from=admin` is what those shared pages read to decide whether to
+          * offer a way back — they are reached from the sidebar as well, where
+          * a "Back to Administration" control would be a lie.
+          *
+          * Users is the exception, and now behaves like the heading it is:
+          * People is rendered further down this page, so the tile scrolls to
+          * it rather than leaving Administration to show it. Sending somebody
+          * to another page for a block that is already here made managing
+          * people a detour from the page that manages everything else.
+          * `/admin/users` still exists and still renders the same component
+          * for anyone who goes there directly.
           */}
         <div className="col-6 col-xl-3">
           <Stat
@@ -140,7 +160,7 @@ export default async function AdminPage() {
             value={users.length}
             icon={<IconUsers size={13} />}
             hint={`${activeUsers} active · ${admins} admin`}
-            href="/admin/users"
+            href="#people"
           />
         </div>
         <div className="col-6 col-xl-3">
@@ -224,6 +244,42 @@ export default async function AdminPage() {
         />
       </div>
 
+      {/*
+        * People, under Development and Testing.
+        *
+        * The same `UserAdmin` that `/admin/users` renders — the component, its
+        * props, its actions and its permissions are untouched; only where it
+        * is drawn changed. Administration now reads as the three rosters it
+        * administers, in the order they were asked for: who builds, who
+        * checks, and everybody with an account.
+        *
+        * The `#people` id is what the Users tile above scrolls to, and it is
+        * the id that block has always carried on its own page. No heading is
+        * added around it: `UserAdmin` draws its own, and a second one here
+        * would put the word People on the page twice.
+        */}
+      <div id="people">
+        <UserAdmin
+          users={users.map((u) => ({
+            id: u.id,
+            name: u.name,
+            email: u.email,
+            image: u.image,
+            jobTitle: u.jobTitle,
+            role: u.role,
+            isActive: u.isActive,
+            createdAt: u.createdAt,
+            projectCount: u._count.projectMemberships,
+            assignedOpen: openCount.get(u.id) ?? 0,
+          }))}
+          projects={projects.map((p) => ({
+            id: p.id,
+            key: p.key,
+            name: p.name,
+          }))}
+          currentUserId={admin.id}
+        />
+      </div>
     </>
   );
 }

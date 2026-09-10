@@ -1,7 +1,7 @@
 import type { IssueStatus, IssueType, Prisma, Priority, Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { dueWindow, monthWindow } from "@/lib/format";
-import { accessibleProjectIds, workRoleOf } from "@/lib/authz";
+import { accessibleProjectIds, issueScope, workRoleOf } from "@/lib/authz";
 import {
   dueThisWeekFilter,
   dueTodayFilter,
@@ -129,6 +129,8 @@ export interface DashboardData {
     inProgress: number;
     completed: number;
     highPriorityOpen: number;
+    /** How many of `highPriorityOpen` are bugs — the card's own sub-line. */
+    highPriorityOpenBugs: number;
     createdThisMonth: number;
     completedThisMonth: number;
     completedLastMonth: number;
@@ -288,7 +290,30 @@ export async function loadDashboard(user: CurrentUser): Promise<DashboardData> {
     return emptyDashboard(isAdmin, isAdmin ? await loadNewUsers() : null);
   }
 
-  const scope = { projectId: { in: projectIds } };
+  /*
+   * Two scopes, because Home asks two different questions.
+   *
+   * `scope` is which *issues* this person can see, and it is `issueScope` —
+   * the same fragment the issue list, My Work and the export already read.
+   * That is what makes a figure on this page equal the list its link opens:
+   * every card here is a number over a link, and the two are now one query
+   * with a different projection rather than two queries that happen to agree.
+   *
+   * It used to be `projectId in accessibleProjectIds`, which leaves archived
+   * projects out. Nothing else does. So the moment a project was archived,
+   * Home said 156 assigned and the list it opened held 158, My Work agreed
+   * with the list, and Home was the odd one out. My Work is the established
+   * answer to "what is mine", so Home follows it rather than the reverse.
+   *
+   * `projectIds` stays what it always was — the projects Home *lists* — and
+   * still leaves archived ones out, because the Projects section is a list of
+   * places to go and an archived project is not one. It scopes the project
+   * cards, their per-project rollups, the teammates block and Analytics, none
+   * of which links to a filtered issue list and none of which is a claim
+   * about how much work exists.
+   */
+  const scope = issueScope(user);
+  const listed = { projectId: { in: projectIds } };
   const open = { in: [...OPEN_STATUSES] };
   const mine = { ...scope, assigneeId: user.id };
 
@@ -306,19 +331,22 @@ export async function loadDashboard(user: CurrentUser): Promise<DashboardData> {
     newAssignmentRows,
     counts,
   ] = await Promise.all([
+    /* Analytics is the shape of the projects Home lists, so it is cut on
+       `listed` rather than on the issue scope. None of the three links
+       anywhere, so none of them owes a list the number it shows. */
     prisma.issue.groupBy({
       by: ["status"],
-      where: scope,
+      where: listed,
       _count: { _all: true },
     }),
     prisma.issue.groupBy({
       by: ["priority"],
-      where: { ...scope, status: open },
+      where: { ...listed, status: open },
       _count: { _all: true },
     }),
     prisma.issue.groupBy({
       by: ["type"],
-      where: scope,
+      where: listed,
       _count: { _all: true },
     }),
     prisma.project.findMany({
@@ -331,10 +359,11 @@ export async function loadDashboard(user: CurrentUser): Promise<DashboardData> {
       },
       orderBy: { name: "asc" },
     }),
-    // One grouped pass covers every per-project tile.
+    // One grouped pass covers every per-project tile, for the cards Home
+    // draws — so it is cut on the same `listed` set those cards come from.
     prisma.issue.groupBy({
       by: ["projectId", "status", "type"],
-      where: scope,
+      where: listed,
       _count: { _all: true },
     }),
     prisma.issue.findMany({
@@ -468,7 +497,7 @@ export async function loadDashboard(user: CurrentUser): Promise<DashboardData> {
       orderBy: { createdAt: "desc" },
       take: 50,
     }),
-    countBundle(user, scope, w),
+    countBundle(user, scope, projectIds, w),
   ]);
 
   // Per-project rollup from the single grouped result.
@@ -501,12 +530,12 @@ export async function loadDashboard(user: CurrentUser): Promise<DashboardData> {
   const [overdueByProject, assignedByProject] = await Promise.all([
     prisma.issue.groupBy({
       by: ["projectId"],
-      where: { ...scope, ...overdueFilter(w.now) },
+      where: { ...listed, ...overdueFilter(w.now) },
       _count: { _all: true },
     }),
     prisma.issue.groupBy({
       by: ["projectId"],
-      where: { ...mine, status: open },
+      where: { ...listed, assigneeId: user.id, status: open },
       _count: { _all: true },
     }),
   ]);
@@ -678,7 +707,10 @@ export async function loadDashboard(user: CurrentUser): Promise<DashboardData> {
 /** All the plain counts, issued together. */
 async function countBundle(
   user: CurrentUser,
-  scope: { projectId: { in: string[] } },
+  /** Which issues this person can see — `issueScope`, as the lists use. */
+  scope: Prisma.IssueWhereInput,
+  /** The projects Home lists; only the two project figures read it. */
+  listedProjectIds: string[],
   w: ReturnType<typeof windows>,
 ) {
   const open = { in: [...OPEN_STATUSES] };
@@ -690,6 +722,7 @@ async function countBundle(
     inProgress,
     completed,
     highPriorityOpen,
+    highPriorityOpenBugs,
     createdThisMonth,
     completedThisMonth,
     completedLastMonth,
@@ -715,8 +748,25 @@ async function countBundle(
     prisma.issue.count({ where: { ...scope, type: "BUG", status: open } }),
     prisma.issue.count({ where: { ...scope, status: "IN_PROGRESS" } }),
     prisma.issue.count({ where: { ...scope, status: "DONE" } }),
+    /*
+     * High priority means High.
+     *
+     * This counted Urgent as well, under a card labelled "High priority", so
+     * the number was never the population its own title named and the list it
+     * opened had to carry the same two-priority filter to keep up. Urgent is a
+     * priority of its own in Prio's vocabulary; a card that says High and
+     * means "High or worse" is a card nobody can reconcile against a filter.
+     *
+     * The bug figure beside it is cut the same way. It used to be every open
+     * bug in scope, printed under the heading "N of them are bugs" — of a
+     * different N entirely, so the two lines of one card described two
+     * different sets.
+     */
     prisma.issue.count({
-      where: { ...scope, status: open, priority: { in: ["URGENT", "HIGH"] } },
+      where: { ...scope, status: open, priority: "HIGH" },
+    }),
+    prisma.issue.count({
+      where: { ...scope, status: open, priority: "HIGH", type: "BUG" },
     }),
     prisma.issue.count({
       where: { ...scope, createdAt: { gte: w.startOfMonth } },
@@ -753,7 +803,10 @@ async function countBundle(
       where: { ...scope, status: "IN_PROGRESS", updatedAt: { gte: w.weekAgo } },
     }),
     prisma.project.count({
-      where: { id: { in: scope.projectId.in }, createdAt: { gte: w.startOfMonth } },
+      where: {
+        id: { in: listedProjectIds },
+        createdAt: { gte: w.startOfMonth },
+      },
     }),
 
     prisma.issue.count({ where: { ...mine, status: open } }),
@@ -833,12 +886,13 @@ async function countBundle(
 
   return {
     kpi: {
-      projects: scope.projectId.in.length,
+      projects: listedProjectIds.length,
       openIssues,
       openBugs,
       inProgress,
       completed,
       highPriorityOpen,
+      highPriorityOpenBugs,
       createdThisMonth,
       completedThisMonth,
       completedLastMonth,
@@ -979,6 +1033,7 @@ function emptyDashboard(
       inProgress: 0,
       completed: 0,
       highPriorityOpen: 0,
+      highPriorityOpenBugs: 0,
       createdThisMonth: 0,
       completedThisMonth: 0,
       completedLastMonth: 0,

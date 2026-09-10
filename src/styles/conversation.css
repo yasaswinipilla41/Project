@@ -1060,12 +1060,92 @@
   }
 }
 
-.prio-lightbox__image {
+/* The frame the picture is scaled inside.
+   It clips, which is what keeps a magnified image inside the overlay instead
+   of stretching it and giving the page something to scroll -- the thing that
+   made zooming feel like the browser's rather than the image's. */
+.prio-lightbox__viewport {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   max-width: min(100%, 1200px);
   max-height: 78vh;
+  overflow: hidden;
   border-radius: var(--prio-radius-md);
   box-shadow: var(--prio-shadow-xl);
+  /* The wheel belongs to the zoom here, and this tells the browser so rather
+     than leaving it to `preventDefault` alone. */
+  touch-action: none;
+  overscroll-behavior: contain;
+}
+
+.prio-lightbox__image {
+  display: block;
+  max-width: min(100vw - 2 * var(--prio-space-6), 1200px);
+  max-height: 78vh;
   cursor: default;
+  transform-origin: center center;
+  transition: transform var(--prio-duration-fast) var(--prio-ease);
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+/* Grab-to-pan, offered only while there is something to pan. The transition
+   is dropped at the same time so dragging tracks the pointer rather than
+   easing behind it. */
+.prio-lightbox__viewport[data-zoomed] .prio-lightbox__image {
+  cursor: grab;
+  transition: none;
+}
+
+.prio-lightbox__viewport[data-zoomed] .prio-lightbox__image:active {
+  cursor: grabbing;
+}
+
+.prio-lightbox__zoom {
+  position: absolute;
+  top: var(--prio-space-5);
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--prio-space-1);
+  padding: var(--prio-space-1);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: var(--prio-radius-md);
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(4px);
+}
+
+.prio-lightbox__zoom button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 30px;
+  padding: 0 var(--prio-space-2);
+  border: none;
+  border-radius: var(--prio-radius-sm);
+  background: transparent;
+  color: #fff;
+  font-size: var(--prio-text-md);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.prio-lightbox__zoom button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.prio-lightbox__zoom button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.prio-lightbox__level {
+  font-size: var(--prio-text-xs) !important;
+  font-variant-numeric: tabular-nums;
+  min-width: 52px !important;
 }
 
 .prio-lightbox__close {

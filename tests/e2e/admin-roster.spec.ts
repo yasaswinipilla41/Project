@@ -43,13 +43,15 @@ test.describe("Administration summary blocks", () => {
      * matching on the word "Issues" finds the Projects tile first, and the
      * test would pass while clicking the wrong thing.
      *
-     * All four leave the page now, People included: it has a route of its own
-     * so that every block behaves the same way and every destination can offer
-     * the same way back. The three shared pages carry `from=admin`, which is
-     * what tells them to show it — they are reached from the sidebar too.
+     * Three of the four leave the page, and carry `from=admin` — which is what
+     * tells those shared pages to offer the way back, since they are reached
+     * from the sidebar too.
+     *
+     * Users is the exception: People is rendered on Administration itself now,
+     * so its tile scrolls to the block rather than opening a page. It is
+     * asserted separately below.
      */
     for (const [href, destination] of [
-      ["/admin/users", "/admin/users"],
       ["/projects?from=admin", "/projects"],
       ["/issues?from=admin", "/issues"],
       ["/bugs?from=admin", "/bugs"],
@@ -114,10 +116,16 @@ test.describe("the Development block", () => {
      *
      * Each field's options are addressed through its own listbox. Several
      * fields can have one open at a time, and `getByRole("option")` across the
-     * dialog would mix an issue into the list of projects.
+     * page would mix an issue into the list of projects.
+     *
+     * The listbox is rendered into the body, not inside the dialog: an
+     * absolutely positioned list was clipped by the dialog's own overflow, so
+     * it escapes to the top layer and is positioned against its field. It is
+     * therefore addressed from the page rather than from the dialog — still by
+     * its own id, which is what keeps one field's options out of another's.
      */
     const optionsOf = (field: string) =>
-      dialog.locator(`#${field}-options`).getByRole("option");
+      page.locator(`#${field}-options`).getByRole("option");
 
     const project = dialog.locator("#roster-project");
     await project.click();
@@ -203,12 +211,13 @@ test.describe("the Testing block", () => {
     await expect(dialog.locator("#roster-role")).toHaveCount(0);
     await expect(dialog.locator("#roster-issues")).toHaveCount(0);
 
-    // Several people, one after another, each staying as a chip.
+    // Several people, one after another, each staying as a chip. The list is
+    // portaled to the body, so it is reached from the page.
     await dialog.locator("#team-search").click();
-    await dialog.getByRole("option").first().click();
+    await page.getByRole("option").first().click();
     await dialog.locator("#team-search").click();
-    if ((await dialog.getByRole("option").count()) > 0) {
-      await dialog.getByRole("option").first().click();
+    if ((await page.getByRole("option").count()) > 0) {
+      await page.getByRole("option").first().click();
     }
 
     await expect(dialog.getByText(/^Members · [12]$/)).toBeVisible();

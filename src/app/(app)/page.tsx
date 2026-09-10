@@ -199,19 +199,25 @@ export default async function HomePage() {
               {/*
                 * High priority rather than open bugs: what needs attention is
                 * a question about urgency, not about issue type, and a
-                * high-priority story is no less pressing than a bug. The
-                * figure is `highPriorityOpen`, which the dashboard already
-                * computed — Urgent and High, still open — and the link filters
-                * the issue list to exactly that, so the count and the list it
-                * opens can never disagree.
+                * high-priority story is no less pressing than a bug.
+                *
+                * The card says High and now means it. It used to count Urgent
+                * too, so the number was never the population its title named,
+                * and the sub-line counted every open bug rather than the
+                * high-priority ones — two lines of one card describing two
+                * different sets. All three now read the same filter the link
+                * carries, so the figure, the line under it and the list it
+                * opens are one question.
                 */}
               <KpiCard
                 label="High priority"
                 value={data.kpi.highPriorityOpen}
                 icon={<IconWarning size={13} />}
                 tone={data.kpi.highPriorityOpen > 0 ? "danger" : "default"}
-                hint={`${data.kpi.openBugs} of them ${data.kpi.openBugs === 1 ? "is a bug" : "are bugs"}`}
-                href="/issues?priority=URGENT&priority=HIGH&resolution=open"
+                hint={`${data.kpi.highPriorityOpenBugs} of them ${
+                  data.kpi.highPriorityOpenBugs === 1 ? "is a bug" : "are bugs"
+                }`}
+                href="/issues?priority=HIGH&resolution=open"
               />
             </div>
             <div className="col-12 col-sm-6 col-xl-3">

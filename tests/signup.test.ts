@@ -313,10 +313,24 @@ describe("default project auto-join", () => {
       select: { id: true },
     });
     const stamp = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+    /*
+     * The random half of the stamp has to survive the length cap.
+     *
+     * `key` is unique and holds ten characters. Building it as
+     * `SDF + stamp` and slicing afterwards kept only the first seven
+     * characters of the timestamp and threw the random suffix away, so two
+     * fixtures created inside the same ~36ms window asked for the same key
+     * and the second one failed on the constraint. This block creates three
+     * in a row, which is exactly how often that happened.
+     *
+     * Taking four characters of the timestamp and three of the randomness
+     * keeps both inside the ten.
+     */
+    const suffix = `${stamp.slice(-4)}${stamp.slice(-3)}`.toUpperCase();
     const project = await prisma.project.create({
       data: {
         name: `Signup Default Fixture ${stamp}`,
-        key: `SDF${stamp}`.toUpperCase().slice(0, 10),
+        key: `SDF${suffix}`.slice(0, 10),
         createdById: admin.id,
         isDefaultProject: data.isDefaultProject ?? false,
         isArchived: data.isArchived ?? false,

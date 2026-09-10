@@ -291,6 +291,11 @@
   --prio-z-sticky: 1010;
   --prio-z-drawer: 1040;
   --prio-z-modal: 1050;
+  /* Portaled dropdowns. Above the modal on purpose: a picker opened inside a
+     dialog is rendered into the body, so it is a sibling of the dialog rather
+     than a child of it, and at the dropdown layer it would paint underneath
+     the panel that owns it. */
+  --prio-z-popover: 1060;
   --prio-z-toast: 1080;
 
   /* ----------------------------------------- issue status semantics */

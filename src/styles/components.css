@@ -2582,16 +2582,19 @@ a.prio-stat:focus-visible {
   min-width: 0;
 }
 
-/* Above the fields below it, and out of the flow so opening it does not push
-   the rest of the form down. */
+/* Rendered into the body and positioned against the field by `SearchSelect`,
+   so `top`, `left`, `width` and `max-height` all arrive as inline styles. What
+   is left here is how it looks.
+
+   It used to be absolutely positioned inside the field, which is why it was
+   clipped in a dialog: the panel hides its overflow and its body scrolls, so a
+   list opening near the bottom was cut at the panel's edge. */
 .prio-labelpicker__list {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
-  z-index: var(--prio-z-dropdown);
+  position: fixed;
+  z-index: var(--prio-z-popover);
   max-height: 220px;
   overflow-y: auto;
+  overscroll-behavior: contain;
   margin: 0;
   padding: var(--prio-space-1);
   list-style: none;

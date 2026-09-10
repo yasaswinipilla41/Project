@@ -213,26 +213,41 @@ describe("loadDashboard — every figure is the real count", () => {
     const data = await loadDashboard(user);
     const scope = { projectId: { in: data.scope.projectIds } };
 
-    const [openIssues, openBugs, inProgress, completed, highPriorityOpen] =
-      await Promise.all([
-        prisma.issue.count({ where: { ...scope, status: open } }),
-        prisma.issue.count({ where: { ...scope, type: "BUG", status: open } }),
-        prisma.issue.count({ where: { ...scope, status: "IN_PROGRESS" } }),
-        prisma.issue.count({ where: { ...scope, status: "DONE" } }),
-        prisma.issue.count({
-          where: {
-            ...scope,
-            status: open,
-            priority: { in: ["URGENT", "HIGH"] },
-          },
-        }),
-      ]);
+    const [
+      openIssues,
+      openBugs,
+      inProgress,
+      completed,
+      highPriorityOpen,
+      highPriorityOpenBugs,
+    ] = await Promise.all([
+      prisma.issue.count({ where: { ...scope, status: open } }),
+      prisma.issue.count({ where: { ...scope, type: "BUG", status: open } }),
+      prisma.issue.count({ where: { ...scope, status: "IN_PROGRESS" } }),
+      prisma.issue.count({ where: { ...scope, status: "DONE" } }),
+      /* High means High. The card is labelled "High priority", so counting
+         Urgent alongside it made the figure something no filter could
+         reproduce -- and the list the card opens is cut on this one
+         priority. */
+      prisma.issue.count({
+        where: { ...scope, status: open, priority: "HIGH" },
+      }),
+      /* And the sub-line under it counts the bugs *within that figure*,
+         not every open bug in scope, which is what it used to do. */
+      prisma.issue.count({
+        where: { ...scope, status: open, priority: "HIGH", type: "BUG" },
+      }),
+    ]);
 
     expect(data.kpi.openIssues).toBe(openIssues);
     expect(data.kpi.openBugs).toBe(openBugs);
     expect(data.kpi.inProgress).toBe(inProgress);
     expect(data.kpi.completed).toBe(completed);
     expect(data.kpi.highPriorityOpen).toBe(highPriorityOpen);
+    expect(data.kpi.highPriorityOpenBugs).toBe(highPriorityOpenBugs);
+    expect(data.kpi.highPriorityOpenBugs).toBeLessThanOrEqual(
+      data.kpi.highPriorityOpen,
+    );
     expect(data.kpi.projects).toBe(data.scope.projectIds.length);
   });
 
