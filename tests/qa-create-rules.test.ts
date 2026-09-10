@@ -14,8 +14,8 @@ import { actAs, projectByKey } from "./helpers";
  *
  * Two rules, both asserted against the server rather than the form: a tester
  * raises work without handing it to anybody and without dating it, and files
- * it in a status their half of the job owns. The dialog leaves those fields
- * out and offers the four statuses; that is the courtesy. This is the rule.
+ * it into the Backlog and nowhere else. The dialog leaves those fields out and
+ * offers the one status; that is the courtesy. This is the rule.
  */
 
 const ADMIN = "admin@symbiosystech.com";
@@ -98,17 +98,20 @@ async function userId(email: string): Promise<string> {
 
 describe("the statuses each job may set", () => {
   it("gives a tester what testing uses, and nothing of the build", () => {
-    /* Asked of work that is In QA, which is where all four are theirs. Done is
+    /* Asked of work that is In QA, which is where all five are theirs. Done is
        the verdict and follows testing, so what they are offered elsewhere is
        narrower — see the last cases in this block.
 
-       Reject / Not an Issue and Cancelled are absent on purpose: writing work
-       off is an administrator's call, not a verdict testing reaches. */
+       Ready for QA is absent on purpose: it is the developer's hand-off, and a
+       tester who could set it would be handing work to themselves. Sending
+       something back is the Backlog, or one of the two verdicts that say it
+       was never a defect. */
     expect([...allowedStatusesFor("QA", "IN_QA")]).toEqual([
-      "IN_REVIEW",
+      "BACKLOG",
       "IN_QA",
       "DONE",
-      "REOPENED",
+      "REJECTED",
+      "CANCELLED",
     ]);
   });
 
@@ -117,22 +120,30 @@ describe("the statuses each job may set", () => {
       "TODO",
       "IN_PROGRESS",
       "IN_REVIEW",
-      "REOPENED",
     ]);
   });
 
-  it("keeps Backlog, Reject and Cancel to an administrator", () => {
-    /* Planning what sits in the backlog, and writing work off, belong to
-       neither half of the job. */
+  it("keeps Reopen to an administrator", () => {
+    /* Reopening finished work reverses a completed verdict, which is the
+       person who owns the workflow rather than either side of it. */
     for (const role of ["QA", "DEVELOPER", "FULLSTACK"] as const) {
-      for (const status of ["BACKLOG", "REJECTED", "CANCELLED"] as const) {
-        expect(
-          canSetStatus(role, "IN_PROGRESS", status),
-          `${role} must not set ${status}`,
-        ).toBe(false);
-      }
+      expect(
+        canSetStatus(role, "DONE", "REOPENED"),
+        `${role} must not set REOPENED`,
+      ).toBe(false);
     }
+    expect(canSetStatus("ADMIN", "DONE", "REOPENED")).toBe(true);
+  });
+
+  it("keeps the backlog and the two verdicts away from the build", () => {
+    /* Deciding what sits in the backlog and writing work off are both things
+       testing concludes. A developer does neither. */
     for (const status of ["BACKLOG", "REJECTED", "CANCELLED"] as const) {
+      expect(
+        canSetStatus("DEVELOPER", "IN_PROGRESS", status),
+        `a developer must not set ${status}`,
+      ).toBe(false);
+      expect(canSetStatus("QA", "IN_PROGRESS", status)).toBe(true);
       expect(canSetStatus("ADMIN", "IN_PROGRESS", status)).toBe(true);
     }
   });
@@ -146,22 +157,22 @@ describe("the statuses each job may set", () => {
 
   it("gives somebody who does both halves the union of them", () => {
     const both = allowedStatusesFor("FULLSTACK", "IN_QA");
+    /* Every status either half owns, and nothing invented for the
+       combination: the build's three, and testing's five. */
     for (const status of [
       "TODO",
       "IN_PROGRESS",
       "IN_REVIEW",
+      "BACKLOG",
       "IN_QA",
       "DONE",
+      "REJECTED",
+      "CANCELLED",
     ] as const) {
       expect(both, `${status} is theirs`).toContain(status);
     }
-    /* Reopen is in both halves: a developer reopens work that came back, and a
-       tester reopens what failed verification. */
-    expect(both).toContain("REOPENED");
-    /* Writing work off is still neither's, and nor is the backlog. */
-    expect(both).not.toContain("REJECTED");
-    expect(both).not.toContain("CANCELLED");
-    expect(both).not.toContain("BACKLOG");
+    /* Reopen belongs to neither half, so holding both does not produce it. */
+    expect(both).not.toContain("REOPENED");
   });
 
   it("holds Done back until testing has happened, for a tester alone", () => {
@@ -187,30 +198,32 @@ describe("the statuses each job may set", () => {
      * The whole rule in one place, so a change that satisfies one case by
      * breaking another fails here rather than somewhere downstream.
      *
-     *   Developer  New, In Progress, Ready for QA, Reopen
-     *   QA         Ready for QA, In QA, Done, Reopen
+     *   Developer  New, In Progress, Ready for QA
+     *   QA         Backlog, In QA, Done, Reject / Not an Issue, Cancelled
      *
-     * and Backlog, Reject / Not an Issue and Cancelled belong to neither.
+     * and Reopen belongs to neither. The two lists are disjoint: Ready for QA
+     * is the developer's hand-off and theirs alone, so a tester cannot mark
+     * work ready to be tested and then test it.
      */
     const cases = [
       ["DEVELOPER", "TODO", true],
       ["DEVELOPER", "IN_PROGRESS", true],
       ["DEVELOPER", "IN_REVIEW", true],
-      ["DEVELOPER", "REOPENED", true],
+      ["DEVELOPER", "REOPENED", false],
       ["DEVELOPER", "BACKLOG", false],
       ["DEVELOPER", "IN_QA", false],
       ["DEVELOPER", "DONE", false],
       ["DEVELOPER", "REJECTED", false],
       ["DEVELOPER", "CANCELLED", false],
 
-      ["QA", "IN_REVIEW", true],
+      ["QA", "BACKLOG", true],
       ["QA", "IN_QA", true],
-      ["QA", "REOPENED", true],
-      ["QA", "BACKLOG", false],
+      ["QA", "REJECTED", true],
+      ["QA", "CANCELLED", true],
+      ["QA", "IN_REVIEW", false],
+      ["QA", "REOPENED", false],
       ["QA", "TODO", false],
       ["QA", "IN_PROGRESS", false],
-      ["QA", "REJECTED", false],
-      ["QA", "CANCELLED", false],
     ] as const;
 
     for (const [role, status, allowed] of cases) {
@@ -226,27 +239,41 @@ describe("the statuses each job may set", () => {
     expect(canSetStatus("QA", "IN_REVIEW", "DONE")).toBe(false);
   });
 
-  it("lets a tester file work as New, which is what raising work means", () => {
+  it("lets a tester file work into the Backlog, and nowhere else", () => {
     /*
-     * Filing and moving are separate decisions. A tester raises work for
-     * somebody to pick up, and in Prio's workflow that arrives as New — so New
-     * is filable by anybody who may raise work at all, on top of the statuses
-     * their own half may set.
+     * Filing and moving are separate decisions, and for a pure tester the
+     * filing list is narrower than the moving one. A tester raises work into
+     * the Backlog: what they file is a request for somebody to pick up, and
+     * whether it is next, being built or finished is not theirs to declare at
+     * the moment they raise it.
      *
-     * New is also the first of them, so a tester who does not say gets it.
+     * One status, so a tester who does not say gets it.
      */
-    const tester = filableStatusesFor("QA");
-    expect(tester[0]).toBe("TODO");
-    expect(tester).toContain("TODO");
+    expect([...filableStatusesFor("QA")]).toEqual(["BACKLOG"]);
 
-    /* Still not a way round the verdict rule, or round the build. */
-    expect(tester).not.toContain("DONE");
-    expect(tester).not.toContain("IN_PROGRESS");
-    expect(tester).not.toContain("BACKLOG");
+    /* Not a way round the verdict rule, round the build, or round the
+       hand-off — even though In QA and the two verdicts are statuses this
+       person may *set* on work that already exists. */
+    for (const status of [
+      "TODO",
+      "IN_PROGRESS",
+      "IN_REVIEW",
+      "IN_QA",
+      "DONE",
+      "REJECTED",
+      "CANCELLED",
+      "REOPENED",
+    ] as const) {
+      expect(filableStatusesFor("QA")).not.toContain(status);
+    }
 
-    /* Everybody who builds already had New, so nothing changes for them. */
+    /* Everybody who builds files in whatever their own half may set, which is
+       unchanged by the tester's rule above. */
     expect([...filableStatusesFor("FULLSTACK")]).toEqual([
       ...allowedStatusesFor("FULLSTACK", null),
+    ]);
+    expect([...filableStatusesFor("DEVELOPER")]).toEqual([
+      ...allowedStatusesFor("DEVELOPER", null),
     ]);
     expect(filableStatusesFor("ADMIN")).toHaveLength(9);
   });
@@ -291,10 +318,32 @@ describe("a tester filing work", () => {
     });
 
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toMatch(/move work to|someone else/i);
+    if (!result.ok) expect(result.error).toMatch(/raise work as|starts/i);
   });
 
-  it("files as New when it does not say", async () => {
+  it("cannot file it into a status it only gets to by being tested", async () => {
+    /* In QA is a status this person may *set* — on work that exists and has
+       been handed over. Filing something as already being tested skips the
+       build and the hand-off both, so raising and moving are asked
+       separately and this is the half that refuses. */
+    await actAs(TESTER);
+    const project = await projectByKey("ENG");
+    const title = `Tester files straight into QA ${Date.now()}`;
+
+    const result = await createIssue({
+      projectId: project.id,
+      type: "BUG",
+      title,
+      description: "x",
+      status: "IN_QA",
+      priority: "MEDIUM",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(await prisma.issue.count({ where: { title } })).toBe(0);
+  });
+
+  it("files into the Backlog when it does not say", async () => {
     await actAs(TESTER);
     const project = await projectByKey("ENG");
 
@@ -314,10 +363,9 @@ describe("a tester filing work", () => {
       where: { id: result.data.id },
       select: { status: true },
     });
-    /* New, not Backlog: raising work means somebody has yet to pick it up,
-       which is what New says. Deciding what sits in the backlog is planning,
-       and that is an administrator's. */
-    expect(row.status).toBe("TODO");
+    /* Backlog: raising work is asking for it to be picked up, and where it
+       goes from there is somebody else's decision. */
+    expect(row.status).toBe("BACKLOG");
   });
 
   it("files without an assignee or a due date, whatever the request says", async () => {
@@ -329,7 +377,7 @@ describe("a tester filing work", () => {
       type: "BUG",
       title: `Tester tries to hand work out ${Date.now()}`,
       description: "x",
-      status: "TODO",
+      status: "BACKLOG",
       priority: "MEDIUM",
       // Exactly what a stale form, or a forged request, would carry.
       assigneeId: await userId(DEVELOPER),
@@ -417,7 +465,9 @@ describe("the reporter", () => {
         type: "TASK",
         title: `Reporter check ${email} ${Date.now()}`,
         description: "x",
-        status: "TODO",
+        /* Left unsaid on purpose: each of these three files in a different
+           status, and the question here is who the reporter is rather than
+           what may be filed. Saying "New" would have refused the tester. */
         priority: "MEDIUM",
         /* A payload naming somebody else changes nothing: there is no field
            for it, and the reporter is read from the session. */

@@ -10,14 +10,20 @@ import { actAs, projectByKey } from "./helpers";
  * Who hears that work was finished.
  *
  * Prio's Home carries a Recent activity list scoped to the projects a person
- * can open, and a completion is part of a project's history like every other
- * change. So it reaches everybody working in the project — certainly whoever
- * moved it to Done, whoever was holding it and the administrators, and equally
- * the colleagues who share the project and can already see the issue itself.
+ * can open. A completion is the one entry on it that is addressed rather than
+ * broadcast: it reaches whoever moved the work to Done, whoever was holding
+ * it, and the administrators. Sharing the project is deliberately not enough
+ * — a colleague who was neither can still open the issue and read its history,
+ * and that is where a completion they had no part in belongs.
  *
- * A narrower rule was tried, addressing completions to those first three
- * alone. It was not kept: the feed answers "what happened here", and work
- * being finished is the most ordinary thing that happens.
+ * Everything else on the feed is unchanged and is still the project's news, so
+ * the last block here asserts that an ordinary status change still reaches the
+ * bystander. A rule that quietly narrowed the whole feed would pass every
+ * other case in this file.
+ *
+ * Deduplication is a property of the query rather than a step after it: one
+ * activity row is one row however many of the three categories the reader
+ * occupies, which is what the "finished by its holder" case pins down.
  *
  * Asserted through `loadDashboard`, which is what Home renders, so what is
  * tested is what a person actually sees rather than a helper alongside it.
@@ -143,7 +149,7 @@ async function homeShowsCompletion(
 }
 
 describe("when a tester finishes somebody's work", () => {
-  it("reaches the finisher, the holder, the admins and the project", async () => {
+  it("reaches the finisher, the holder and the admins, and nobody else", async () => {
     const issue = await anIssueReadyToFinish("Finished by a tester", ASSIGNEE);
 
     await actAs(TESTER);
@@ -161,17 +167,17 @@ describe("when a tester finishes somebody's work", () => {
       true,
     );
 
-    // …and the colleagues who share the project, who can already open the
-    // issue and for whom this is simply what happened in it.
+    /* …and not the colleague who merely shares the project. Being able to open
+       the issue is not being one of the three people this is addressed to. */
     expect(
       await homeShowsCompletion(COLLEAGUE, issue.key),
       "a colleague on the same project",
-    ).toBe(true);
+    ).toBe(false);
   });
 });
 
 describe("when an administrator finishes it", () => {
-  it("reaches them, the person holding it, and the project", async () => {
+  it("reaches them and the person holding it, and not the bystander", async () => {
     const issue = await anIssueReadyToFinish("Finished by an admin", ASSIGNEE);
 
     await actAs(ADMIN);
@@ -181,7 +187,7 @@ describe("when an administrator finishes it", () => {
 
     expect(await homeShowsCompletion(ADMIN, issue.key)).toBe(true);
     expect(await homeShowsCompletion(ASSIGNEE, issue.key)).toBe(true);
-    expect(await homeShowsCompletion(COLLEAGUE, issue.key)).toBe(true);
+    expect(await homeShowsCompletion(COLLEAGUE, issue.key)).toBe(false);
   });
 });
 
@@ -206,7 +212,9 @@ describe("when the person who finishes it is the person holding it", () => {
 });
 
 describe("work with nobody holding it", () => {
-  it("still reaches whoever finished it, the admins and the project", async () => {
+  it("still reaches whoever finished it and the admins", async () => {
+    /* One of the three categories is empty. The other two are unaffected —
+       an absent assignee removes a recipient, it does not widen the rest. */
     const issue = await anIssueReadyToFinish("Finished, unassigned", null);
 
     await actAs(TESTER);
@@ -216,7 +224,7 @@ describe("work with nobody holding it", () => {
 
     expect(await homeShowsCompletion(TESTER, issue.key)).toBe(true);
     expect(await homeShowsCompletion(ADMIN, issue.key)).toBe(true);
-    expect(await homeShowsCompletion(COLLEAGUE, issue.key)).toBe(true);
+    expect(await homeShowsCompletion(COLLEAGUE, issue.key)).toBe(false);
   });
 });
 
@@ -237,6 +245,20 @@ describe("everything else on the feed", () => {
         (entry) => entry.issue.key === issue.key && entry.field === "status",
       ),
     ).toBe(true);
+  });
+
+  it("keeps entries with no field at all, which a NOT would have dropped", async () => {
+    /* `field` and `newValue` are nullable, so "not a completion" cannot be
+       written as one negation: `NOT (field = 'status' AND newValue = 'DONE')`
+       is null — and therefore false — for a row where either is null, and the
+       creation entry for every issue would silently vanish from the feed. */
+    const issue = await anIssueReadyToFinish("Feed keeps creation", ASSIGNEE);
+
+    const data = await loadDashboard(await userByEmail(COLLEAGUE));
+    const entries = data.activity.filter(
+      (entry) => entry.issue.key === issue.key && entry.field === null,
+    );
+    expect(entries.length).toBeGreaterThan(0);
   });
 });
 

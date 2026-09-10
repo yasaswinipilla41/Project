@@ -28,9 +28,11 @@ import {
   WorkloadList,
 } from "@/components/dashboard/DashboardParts";
 import { QuickActions } from "@/components/dashboard/QuickActions";
+import { WorkStatusCard } from "@/components/dashboard/WorkStatusCard";
 import { requireUser } from "@/lib/session";
 import { workRoleOf } from "@/lib/authz";
 import { loadDashboard } from "@/server/queries/dashboard";
+import { loadWorkStatus } from "@/server/queries/workStatus";
 
 export const dynamic = "force-dynamic";
 
@@ -55,6 +57,16 @@ export default async function HomePage() {
   const firstName = user.name.split(" ")[0] ?? user.name;
   const isAdmin = data.scope.isAdmin;
   const workRole = await workRoleOf(user);
+
+  /*
+   * Work Status, in the slot "Assigned to me" used to hold on Admin Home.
+   *
+   * Loaded only for an administrator, because nobody else is offered it and a
+   * query nobody reads is a query not worth running. The card is the only
+   * change to this page: the three cards beside it, and every section below,
+   * are untouched.
+   */
+  const workStatus = isAdmin ? await loadWorkStatus(user) : null;
 
   /* Greeting and date are computed once, server-side, from the same request
      clock the aggregates used — so the copy can never disagree with the data. */
@@ -149,14 +161,30 @@ export default async function HomePage() {
           {/* ------------------------------------------------ kpi cards */}
           <div className="row g-3">
             <div className="col-12 col-sm-6 col-xl-3">
-              <KpiCard
-                label="Assigned to me"
-                value={data.myWork.assigned}
-                icon={<IconMyWork size={13} />}
-                tone="brand"
-                hint="Open work in your name"
-                href={`${mine}&resolution=open`}
-              />
+              {/*
+                * An administrator gets Work Status here; everybody else keeps
+                * "Assigned to me".
+                *
+                * The personal queue is not what an administrator's Home is
+                * about — they are not the person the work is on, they are the
+                * person who decides whose it is — and Home already hides the
+                * "My assigned tasks" list from them for the same reason. The
+                * data behind "Assigned to me" is untouched and still reached
+                * from Issues and My Work; this is what the card shows, not
+                * what anybody may see.
+                */}
+              {workStatus ? (
+                <WorkStatusCard data={workStatus} />
+              ) : (
+                <KpiCard
+                  label="Assigned to me"
+                  value={data.myWork.assigned}
+                  icon={<IconMyWork size={13} />}
+                  tone="brand"
+                  hint="Open work in your name"
+                  href={`${mine}&resolution=open`}
+                />
+              )}
             </div>
             <div className="col-12 col-sm-6 col-xl-3">
               <KpiCard

@@ -191,19 +191,18 @@ export async function createIssue(
     /*
      * What this person may file work as.
      *
-     * Raising work and moving it are separate decisions, so this is not simply
-     * the transition list. Work is raised as New in Prio's workflow — a tester
-     * finds a defect and files it for somebody to pick up — and New is
-     * therefore filable by anybody who may raise work at all, alongside the
-     * statuses their own half of the job may set.
+     * Raising work and moving it are separate decisions, so this is not the
+     * transition list and, for a pure tester, not the settable list either. A
+     * tester raises work into the Backlog and nowhere else — what they file is
+     * a request for somebody to pick up, and whether it is next, being built
+     * or finished is not theirs to declare at the moment they raise it.
      *
-     * Everyone who builds already has New, so the union only ever adds it for
-     * a pure tester, whose transition list starts at Ready for QA. Without it
-     * a tester could not file the thing they are for: reporting something
-     * nobody has looked at yet.
+     * Enforced here rather than by the form offering one option: a stale form,
+     * a copied request or a clone of a finished issue would otherwise put a
+     * different status back.
      *
-     * Omitting the status means the first one they may file in, which is New
-     * for a tester and Backlog for an administrator.
+     * Omitting the status means the first one they may file in, which is
+     * Backlog for a tester and Backlog for an administrator.
      */
     const permitted = filableStatusesFor(role);
     const status = input.status ?? permitted[0] ?? "TODO";

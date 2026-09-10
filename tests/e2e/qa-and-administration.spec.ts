@@ -106,7 +106,7 @@ test.describe("A QA member", () => {
     await page.keyboard.press("Escape");
   });
 
-  test("is offered the statuses testing uses, and cannot file work as Done", async ({
+  test("can file work into the Backlog, and into nothing else", async ({
     page,
   }) => {
     await page.goto("/");
@@ -117,17 +117,11 @@ test.describe("A QA member", () => {
       .locator("#create-status option")
       .allInnerTexts();
 
-    /* Raising work is a separate decision from moving it. New comes first,
-       because filing something means nobody has picked it up yet; the rest are
-       the statuses testing itself uses. Backlog is absent — planning what sits
-       there is an administrator's — and so is Done, which is a verdict and
-       follows In QA. */
-    expect(options.map((o) => o.trim())).toEqual([
-      "New",
-      "Ready for QA",
-      "In QA",
-      "Reopen",
-    ]);
+    /* Raising work is a separate decision from moving it, and for a tester the
+       filing list is the narrower of the two. What they file is a request for
+       somebody to pick up; whether it is next, being built or finished is not
+       theirs to declare at the moment they raise it. */
+    expect(options.map((o) => o.trim())).toEqual(["Backlog"]);
     await page.keyboard.press("Escape");
   });
 
@@ -138,20 +132,19 @@ test.describe("A QA member", () => {
     await page.goto(`/issues/${key}`);
 
     const labels = await statusMenuOptions(page);
-    for (const theirs of ["Ready for QA", "In QA", "Reopen"]) {
+    for (const theirs of ["Backlog", "In QA", "Reject / Not an Issue", "Cancelled"]) {
       expect(labels, `${theirs} is theirs`).toContain(theirs);
     }
     /* The build is the developer's half — New and In Progress say what
-       somebody is working on. The backlog is planning, and writing work off is
-       an administrator's call rather than a verdict testing reaches. Ready for
-       QA is deliberately not here: it is the hand-off, and a tester who finds
-       a fault hands the work straight back with it. */
+       somebody is working on, and Ready for QA is the hand-off *into* testing
+       rather than something testing declares: a tester who could set it would
+       be handing work to themselves. Reopen reverses a completed verdict,
+       which is an administrator's. */
     for (const forbidden of [
       "New",
       "In Progress",
-      "Backlog",
-      "Reject / Not an Issue",
-      "Cancelled",
+      "Ready for QA",
+      "Reopen",
     ]) {
       expect(labels, `${forbidden} is not offered`).not.toContain(forbidden);
     }
@@ -219,19 +212,19 @@ test.describe("A developer", () => {
     await page.goto(`/issues/${await anIssueOfTheirs()}`);
 
     const labels = await statusMenuOptions(page);
-    for (const theirs of ["New", "In Progress", "Ready for QA", "Reopen"]) {
+    for (const theirs of ["New", "In Progress", "Ready for QA"]) {
       expect(labels, `${theirs} is theirs`).toContain(theirs);
     }
-    /* Everything else belongs to somebody else: In QA and Done are what
-       testing concluded, what sits in the backlog is planning, and the two
-       that write work off are an administrator's. Reopen is not among them —
-       work that came back is a developer's to pick up again. */
+    /* Everything else belongs to somebody else: In QA, Done, the backlog and
+       the two verdicts that write work off are all things testing concludes,
+       and reopening finished work is an administrator's. */
     for (const forbidden of [
       "Backlog",
       "In QA",
       "Done",
       "Reject / Not an Issue",
       "Cancelled",
+      "Reopen",
     ]) {
       expect(labels, `${forbidden} is not theirs`).not.toContain(forbidden);
     }

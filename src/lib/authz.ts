@@ -246,10 +246,42 @@ export type { WorkRole };
 export async function workRoleOf(user: CurrentUser): Promise<WorkRole> {
   if (user.role === "ADMIN") return "ADMIN";
 
-  const [testing, development] = await Promise.all([
-    isTeamMember(user, TESTING_TEAM_SLUG),
-    isTeamMember(user, DEVELOPMENT_TEAM_SLUG),
-  ]);
+  const rows = await prisma.teamMember.findMany({
+    where: {
+      userId: user.id,
+      team: { slug: { in: [TESTING_TEAM_SLUG, DEVELOPMENT_TEAM_SLUG] } },
+    },
+    select: { team: { select: { slug: true } } },
+  });
+
+  return workRoleFromTeams(
+    user.role,
+    rows.map((row) => row.team.slug),
+  );
+}
+
+/**
+ * The same derivation, from teams already in hand.
+ *
+ * `workRoleOf` asks the database about one person, which is right nearly
+ * everywhere and wrong when a screen has to know this about a whole project's
+ * members at once — thirty people would be thirty round trips. This is the
+ * rule itself, taking the two facts it actually reads, so a caller that has
+ * loaded team rows in bulk answers the question the same way rather than
+ * writing a second version of it.
+ *
+ * `workRoleOf` is defined in terms of this, so there is one implementation and
+ * not two that agree today.
+ */
+export function workRoleFromTeams(
+  accountRole: CurrentUser["role"],
+  teamSlugs: Iterable<string>,
+): WorkRole {
+  if (accountRole === "ADMIN") return "ADMIN";
+
+  const slugs = new Set(teamSlugs);
+  const testing = slugs.has(TESTING_TEAM_SLUG);
+  const development = slugs.has(DEVELOPMENT_TEAM_SLUG);
 
   if (testing && development) return "FULLSTACK";
   if (testing) return "QA";

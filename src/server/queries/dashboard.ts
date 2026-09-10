@@ -1,4 +1,4 @@
-import type { IssueStatus, IssueType, Priority, Role } from "@prisma/client";
+import type { IssueStatus, IssueType, Prisma, Priority, Role } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { dueWindow, monthWindow } from "@/lib/format";
 import { accessibleProjectIds, workRoleOf } from "@/lib/authz";
@@ -215,6 +215,32 @@ function windows() {
   };
 }
 
+/**
+ * "Not a completion, or one of mine" — the disjunction that scopes Home's feed.
+ *
+ * A completion is an entry whose field is `status` and whose new value is
+ * `DONE`; nothing else on the feed is addressed to anybody. The negation is
+ * written as two nullable-safe arms rather than one `NOT`, because `field` and
+ * `newValue` are both nullable columns and `NOT (field = 'status' AND newValue
+ * = 'DONE')` is NULL — and therefore false — for a row where either is null.
+ * A comment or an attachment entry would silently vanish from the feed.
+ *
+ * Administrators never reach this: they are recipients of every completion by
+ * rule, so their feed is the project's whole history.
+ */
+function notACompletionOrTheirs(userId: string): Prisma.ActivityLogEntryWhereInput[] {
+  return [
+    { field: null },
+    { field: { not: "status" } },
+    { newValue: null },
+    { newValue: { not: "DONE" } },
+    /* The three recipients. The administrators are covered above; these two
+       are the person who moved it and the person who was holding it. */
+    { actorId: userId },
+    { issue: { assigneeId: userId } },
+  ];
+}
+
 /** How many assigned issues the dashboard previews before "View all". */
 const ASSIGNED_PREVIEW = 8;
 
@@ -366,11 +392,26 @@ export async function loadDashboard(user: CurrentUser): Promise<DashboardData> {
       take: 6,
     }),
     prisma.activityLogEntry.findMany({
-      /* The project's activity, scoped to the projects this person can open
-         and to nothing narrower. A completion is part of a project's history
-         like every other change, and everybody working in the project sees
-         it. */
-      where: { issue: scope },
+      /*
+       * The project's activity, scoped to the projects this person can open —
+       * with one entry addressed rather than broadcast.
+       *
+       * A completion is the end of a piece of work and reaches exactly the
+       * three people it is about: whoever moved it to Done, whoever was
+       * holding it, and the administrators. Sharing the project is
+       * deliberately not enough. Everything else on the feed is unchanged and
+       * is still the project's news, which is why the exclusion names the one
+       * shape it applies to rather than filtering status changes generally.
+       *
+       * Deduplication is a property of the query rather than a step after it:
+       * one activity row is one row however many of the three categories the
+       * reader happens to occupy, so somebody who finished their own work sees
+       * a single entry.
+       */
+      where: {
+        issue: scope,
+        ...(isAdmin ? {} : { OR: notACompletionOrTheirs(user.id) }),
+      },
       select: {
         id: true,
         action: true,

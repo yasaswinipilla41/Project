@@ -115,18 +115,26 @@ export const STATUS_TRANSITIONS: Record<IssueStatus, readonly IssueStatus[]> = {
  * `allowedStatusesFor` composes them with `doesQaWork` / `doesDeveloperWork`,
  * the same question the rest of the model asks.
  *
- *   DEVELOPMENT  New, In Progress, Ready for QA, Reopen. The build, and
- *                handing it over. Declaring work tested or finished would be
- *                marking their own homework, and deciding what sits in the
- *                backlog is planning rather than building.
- *   QA           Ready for QA, In QA, Done, Reopen. Testing work, and saying
- *                what the testing found.
+ *   DEVELOPMENT  New, In Progress, Ready for QA. The build, and handing it
+ *                over. Declaring work tested or finished would be marking
+ *                their own homework, deciding what sits in the backlog is
+ *                planning rather than building, and reopening finished work
+ *                is a decision about what is finished rather than about the
+ *                build.
+ *   QA           Backlog, In QA, Done, Reject / Not an Issue, Cancelled.
+ *                Taking work in, testing it, and saying what the testing
+ *                found — including the two verdicts that are not a defect at
+ *                all.
  *
- * Each list is what that half of the job is *for*. Ready for QA is the
- * hand-off and sits in both: a developer says the build is finished, and a
- * tester who finds a fault hands it straight back. Writing work off — Reject /
- * Not an Issue and Cancelled — belongs to neither and is an administrator's,
- * along with everything else not listed.
+ * Each list is what that half of the job is *for*, and the two are now
+ * disjoint: Ready for QA is the developer's hand-off and theirs alone, so a
+ * tester cannot mark work ready to be tested and then test it. A tester who
+ * finds a fault sends it back to the Backlog or writes it off, which are
+ * verdicts rather than a claim about the build.
+ *
+ * Reopen belongs to neither and is an administrator's, along with everything
+ * else not listed: reopening finished work reverses a completed verdict, and
+ * that is the person who owns the workflow rather than a side of it.
  *
  * This is the authorization, read by everything that offers or accepts a
  * status — the issue page's menu, the board's columns and card menus, the
@@ -139,14 +147,14 @@ export const DEVELOPMENT_STATUSES = [
   "TODO",
   "IN_PROGRESS",
   "IN_REVIEW",
-  "REOPENED",
 ] as const satisfies readonly IssueStatus[];
 
 export const QA_STATUSES = [
-  "IN_REVIEW",
+  "BACKLOG",
   "IN_QA",
   "DONE",
-  "REOPENED",
+  "REJECTED",
+  "CANCELLED",
 ] as const satisfies readonly IssueStatus[];
 
 /**
@@ -201,20 +209,28 @@ export function allowedStatusesFor(
  * The statuses work may be *filed* as.
  *
  * Raising work and moving it are separate decisions, so this is not the
- * transition list. Work is raised as New in Prio's workflow — a tester finds a
- * defect and files it for somebody to pick up — so New is filable by anybody
- * who may raise work at all, alongside the statuses their own half of the job
- * may set.
+ * transition list — and for a pure tester it is not the settable list either.
+ * A tester raises work into the backlog and nowhere else: what they file is a
+ * request for somebody to pick up, and the person who decides whether it is
+ * next, already being built, or finished is not the person who raised it.
+ * Filing straight into In QA or a verdict would let a tester walk work past
+ * every hand-off the workflow exists to record.
  *
- * Everyone who builds already has New, so the union only ever adds it for a
- * pure tester, whose transition list starts at Ready for QA. Without it a
- * tester could not file the very thing they are for.
+ * One status, therefore, and the create form offers exactly it. Everybody else
+ * files in whatever their own half may set: a developer or a full stack
+ * developer starts work at New, and an administrator may file anything.
  *
  * Exported because the create and clone dialogs offer these and `createIssue`
  * enforces them; one definition is what keeps the offer and the refusal in
  * agreement.
  */
+export const QA_FILABLE_STATUSES = [
+  "BACKLOG",
+] as const satisfies readonly IssueStatus[];
+
 export function filableStatusesFor(role: WorkRole): readonly IssueStatus[] {
+  if (role === "QA") return QA_FILABLE_STATUSES;
+
   const settable = allowedStatusesFor(role, null);
   return settable.includes("TODO") ? settable : ["TODO", ...settable];
 }
@@ -282,6 +298,17 @@ export function statusRefusalReason(
   }
   if (next === "IN_QA" || next === "DONE") {
     return "Only a tester or an administrator can put work into QA or mark it done.";
+  }
+
+  /* Filing, not moving. A tester may set In QA on work that already exists and
+     still may not *file* something as already being tested, so the sentence
+     has to name what may be filed rather than what may be set — otherwise it
+     lists the very status that was just refused. */
+  if (current === null) {
+    const filable = filableStatusesFor(role)
+      .map((status) => STATUS_LABEL[status])
+      .join(", ");
+    return `You can raise work as ${filable}. ${STATUS_LABEL[next]} is somewhere it gets to, not somewhere it starts.`;
   }
 
   const names = allowedStatusesFor(role, current)

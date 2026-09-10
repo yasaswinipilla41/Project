@@ -1042,3 +1042,38 @@ a.prio-worktile:hover {
   gap: var(--prio-space-2);
   font-size: var(--prio-text-sm);
 }
+
+/* ------------------------------------------------------------ work status
+
+   Admin Home's replacement for the "Assigned to me" card. It reuses the
+   `.prio-kpi` shell whole — the same border, radius, surface, padding and
+   label — so it reads as one of the four cards in that row rather than as
+   something bolted beside them. What it adds is the two actions in place of a
+   single figure, each carrying the count of work waiting in its lane. */
+
+.prio-workstatus__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-2);
+  margin-top: auto;
+}
+
+/* The label takes the room, the count sits hard right — so the two buttons
+   line their figures up with each other however long the wording is. */
+.prio-workstatus__btntext {
+  flex: 1 1 auto;
+  text-align: left;
+}
+
+.prio-workstatus__count {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--prio-weight-semibold);
+  color: var(--prio-primary-600);
+}
+
+/* A disabled lane has nothing waiting; its number should not still read as a
+   call to action. */
+.prio-workstatus button:disabled .prio-workstatus__count {
+  color: inherit;
+}

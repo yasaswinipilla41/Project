@@ -108,9 +108,12 @@ describe("createIssue", () => {
 
     expect(row.type).toBe("STORY");
     /* Priority defaults in the schema; status defaults to where work this
-       person raises starts. Raising work means somebody has yet to pick it up,
-       which is New — the backlog is planning, and that is an administrator's. */
-    expect(row.status).toBe("TODO");
+       person raises starts. A tester raises work into the Backlog — filing it
+       is asking for it to be picked up, and whether it is next, being built or
+       finished is not theirs to declare at the moment they raise it. The
+       people acting in this file are pure testers, so this is deterministic:
+       `joinTestingTeam` takes the Development row away for the run. */
+    expect(row.status).toBe("BACKLOG");
     expect(row.priority).toBe("MEDIUM");
   });
 
