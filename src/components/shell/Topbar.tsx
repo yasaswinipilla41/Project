@@ -33,7 +33,7 @@ import { ThemeSwitcher } from "@/components/theme/ThemeSwitcher";
 import {
   ISSUE_TYPES,
   ISSUE_TYPE_LABEL,
-  ROLE_LABEL,
+  WORK_ROLE_LABEL,
   doesQaWork,
 } from "@/lib/domain";
 import type { IssueType, Role } from "@prisma/client";
@@ -496,8 +496,19 @@ export function Topbar({
             <div style={{ minWidth: 0 }}>
               <p className="prio-topbar__account-name">{user.name}</p>
               <p className="prio-topbar__account-email">{user.email}</p>
+              {/*
+                * What this person does, not what their account is.
+                *
+                * `user.role` is the account — ADMIN or MEMBER, and nothing
+                * else — so a developer and a tester both read "Member" here
+                * while the badge on their own dashboard said Developer or QA
+                * member. `workRole` is the answer the rest of Prio uses: it
+                * is resolved once by `workRoleOf` on the server, handed to
+                * this component as a prop it already takes, and labelled from
+                * the same table every other badge reads.
+                */}
               <span className="prio-badge" style={{ marginTop: 4 }}>
-                {ROLE_LABEL[user.role]}
+                {WORK_ROLE_LABEL[workRole]}
               </span>
             </div>
           </div>

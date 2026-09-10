@@ -121,10 +121,10 @@ export const STATUS_TRANSITIONS: Record<IssueStatus, readonly IssueStatus[]> = {
  *                planning rather than building, and reopening finished work
  *                is a decision about what is finished rather than about the
  *                build.
- *   QA           Backlog, In QA, Done, Reject / Not an Issue, Cancelled.
- *                Taking work in, testing it, and saying what the testing
- *                found — including the two verdicts that are not a defect at
- *                all.
+ *   QA           Backlog, In QA, Done, Reopen, Reject / Not an Issue,
+ *                Cancelled. Taking work in, testing it, and saying what the
+ *                testing found — including the two verdicts that are not a
+ *                defect at all, and the one that sends failed work back.
  *
  * Each list is what that half of the job is *for*, and the two are now
  * disjoint: Ready for QA is the developer's hand-off and theirs alone, so a
@@ -132,9 +132,14 @@ export const STATUS_TRANSITIONS: Record<IssueStatus, readonly IssueStatus[]> = {
  * finds a fault sends it back to the Backlog or writes it off, which are
  * verdicts rather than a claim about the build.
  *
- * Reopen belongs to neither and is an administrator's, along with everything
- * else not listed: reopening finished work reverses a completed verdict, and
- * that is the person who owns the workflow rather than a side of it.
+ * Reopen is testing's, because failing something is testing's. It is the other
+ * half of the verdict Done is: a tester who checks work either finishes it or
+ * sends it back, and without Reopen they could only finish it. Writing work off
+ * — Reject / Not an Issue, Cancelled — sits beside it for the same reason.
+ *
+ * It is deliberately not the developer's. Reopening reverses a conclusion
+ * somebody else reached about the build; a developer who disagrees says so
+ * through the build.
  *
  * This is the authorization, read by everything that offers or accepts a
  * status — the issue page's menu, the board's columns and card menus, the
@@ -153,6 +158,7 @@ export const QA_STATUSES = [
   "BACKLOG",
   "IN_QA",
   "DONE",
+  "REOPENED",
   "REJECTED",
   "CANCELLED",
 ] as const satisfies readonly IssueStatus[];

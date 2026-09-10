@@ -132,20 +132,20 @@ test.describe("A QA member", () => {
     await page.goto(`/issues/${key}`);
 
     const labels = await statusMenuOptions(page);
-    for (const theirs of ["Backlog", "In QA", "Reject / Not an Issue", "Cancelled"]) {
+    for (const theirs of [
+      "Backlog",
+      "In QA",
+      "Reopen",
+      "Reject / Not an Issue",
+      "Cancelled",
+    ]) {
       expect(labels, `${theirs} is theirs`).toContain(theirs);
     }
     /* The build is the developer's half — New and In Progress say what
        somebody is working on, and Ready for QA is the hand-off *into* testing
        rather than something testing declares: a tester who could set it would
-       be handing work to themselves. Reopen reverses a completed verdict,
-       which is an administrator's. */
-    for (const forbidden of [
-      "New",
-      "In Progress",
-      "Ready for QA",
-      "Reopen",
-    ]) {
+       be handing work to themselves. */
+    for (const forbidden of ["New", "In Progress", "Ready for QA"]) {
       expect(labels, `${forbidden} is not offered`).not.toContain(forbidden);
     }
 
@@ -215,9 +215,9 @@ test.describe("A developer", () => {
     for (const theirs of ["New", "In Progress", "Ready for QA"]) {
       expect(labels, `${theirs} is theirs`).toContain(theirs);
     }
-    /* Everything else belongs to somebody else: In QA, Done, the backlog and
-       the two verdicts that write work off are all things testing concludes,
-       and reopening finished work is an administrator's. */
+    /* Everything else belongs to somebody else: In QA, Done, the backlog, the
+       two verdicts that write work off and Reopen are all things testing
+       concludes about the build rather than things the build declares. */
     for (const forbidden of [
       "Backlog",
       "In QA",

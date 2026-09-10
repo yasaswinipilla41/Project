@@ -104,12 +104,13 @@ describe("the statuses each job may set", () => {
 
        Ready for QA is absent on purpose: it is the developer's hand-off, and a
        tester who could set it would be handing work to themselves. Sending
-       something back is the Backlog, or one of the two verdicts that say it
-       was never a defect. */
+       something back is Reopen, the Backlog, or one of the two verdicts that
+       say it was never a defect. */
     expect([...allowedStatusesFor("QA", "IN_QA")]).toEqual([
       "BACKLOG",
       "IN_QA",
       "DONE",
+      "REOPENED",
       "REJECTED",
       "CANCELLED",
     ]);
@@ -123,16 +124,17 @@ describe("the statuses each job may set", () => {
     ]);
   });
 
-  it("keeps Reopen to an administrator", () => {
-    /* Reopening finished work reverses a completed verdict, which is the
-       person who owns the workflow rather than either side of it. */
-    for (const role of ["QA", "DEVELOPER", "FULLSTACK"] as const) {
+  it("gives Reopen to testing, and withholds it from the build", () => {
+    /* Failing something is testing's half of the verdict Done is: a tester
+       who checks work either finishes it or sends it back. A developer does
+       not reverse a conclusion somebody else reached about the build. */
+    for (const role of ["QA", "FULLSTACK", "ADMIN"] as const) {
       expect(
         canSetStatus(role, "DONE", "REOPENED"),
-        `${role} must not set REOPENED`,
-      ).toBe(false);
+        `${role} may set REOPENED`,
+      ).toBe(true);
     }
-    expect(canSetStatus("ADMIN", "DONE", "REOPENED")).toBe(true);
+    expect(canSetStatus("DEVELOPER", "DONE", "REOPENED")).toBe(false);
   });
 
   it("keeps the backlog and the two verdicts away from the build", () => {
@@ -166,13 +168,16 @@ describe("the statuses each job may set", () => {
       "BACKLOG",
       "IN_QA",
       "DONE",
+      "REOPENED",
       "REJECTED",
       "CANCELLED",
     ] as const) {
       expect(both, `${status} is theirs`).toContain(status);
     }
-    /* Reopen belongs to neither half, so holding both does not produce it. */
-    expect(both).not.toContain("REOPENED");
+    /* Which is every status but nothing invented: holding both halves is the
+       union of them, and an administrator's list is the same nine minus
+       nothing. */
+    expect(both).toHaveLength(9);
   });
 
   it("holds Done back until testing has happened, for a tester alone", () => {
@@ -199,11 +204,12 @@ describe("the statuses each job may set", () => {
      * breaking another fails here rather than somewhere downstream.
      *
      *   Developer  New, In Progress, Ready for QA
-     *   QA         Backlog, In QA, Done, Reject / Not an Issue, Cancelled
+     *   QA         Backlog, In QA, Done, Reopen, Reject / Not an Issue,
+     *              Cancelled
      *
-     * and Reopen belongs to neither. The two lists are disjoint: Ready for QA
-     * is the developer's hand-off and theirs alone, so a tester cannot mark
-     * work ready to be tested and then test it.
+     * The two lists are disjoint: Ready for QA is the developer's hand-off and
+     * theirs alone, so a tester cannot mark work ready to be tested and then
+     * test it — and Reopen is testing's, because failing something is.
      */
     const cases = [
       ["DEVELOPER", "TODO", true],
@@ -221,7 +227,7 @@ describe("the statuses each job may set", () => {
       ["QA", "REJECTED", true],
       ["QA", "CANCELLED", true],
       ["QA", "IN_REVIEW", false],
-      ["QA", "REOPENED", false],
+      ["QA", "REOPENED", true],
       ["QA", "TODO", false],
       ["QA", "IN_PROGRESS", false],
     ] as const;

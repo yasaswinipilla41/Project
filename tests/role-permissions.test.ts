@@ -286,10 +286,11 @@ describe("who may declare what", () => {
     expect(after.status).toBe("IN_QA");
   });
 
-  it("lets a tester write work off, and refuses them Reopen", async () => {
+  it("lets a tester write work off, and send failed work back", async () => {
     /* Not every reported problem is one, and saying so is a verdict testing
-       reaches — so Reject / Not an Issue and Cancelled are theirs. Reopening
-       finished work reverses a completed verdict, which is neither half's. */
+       reaches — so Reject / Not an Issue and Cancelled are theirs. So is
+       Reopen: failing something is the other half of the verdict Done is, and
+       without it a tester could only ever finish work. */
     const issueId = await anIssue("Status — tester rejects", { status: "IN_QA" });
 
     await actAs(TESTER);
@@ -297,7 +298,7 @@ describe("who may declare what", () => {
     expect(rejected.ok, "Reject / Not an Issue is a verdict").toBe(true);
 
     const reopened = await updateIssue({ issueId, status: "REOPENED" });
-    expect(reopened.ok, "Reopen is an administrator's").toBe(false);
+    expect(reopened.ok, "Reopen is testing's too").toBe(true);
 
     const cancelled = await anIssue("Status — tester cancels", {
       status: "IN_QA",
