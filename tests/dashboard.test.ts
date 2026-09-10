@@ -287,19 +287,39 @@ describe("loadDashboard — every figure is the real count", () => {
     const data = await loadDashboard(user);
 
     for (const status of ["IN_REVIEW", "IN_QA"] as const) {
+      /*
+       * Counted directly rather than as "everyone minus the others".
+       *
+       * That subtraction was wrong on a nullable column: `NOT { assigneeId }`
+       * becomes `NOT (assigneeId = 'x')`, which is NULL — and so false — for an
+       * unassigned issue, leaving every one of them out of "the others" and
+       * therefore inside `everyone - others`. Work nobody has picked up was
+       * being counted as the reader's own. The oracle passed only while no
+       * such issue existed at these two statuses.
+       */
       const theirs = await prisma.issue.count({
         where: {
           projectId: { in: data.scope.projectIds },
           status,
-          NOT: { assigneeId: user.id },
+          assigneeId: user.id,
+        },
+      });
+
+      const figure = status === "IN_REVIEW" ? data.myWork.review : data.myWork.inQa;
+      expect(figure, `${status} is the reader's own`).toBe(theirs);
+
+      // …and somebody else's work at the same status is not in it.
+      const notTheirs = await prisma.issue.count({
+        where: {
+          projectId: { in: data.scope.projectIds },
+          status,
+          OR: [{ assigneeId: null }, { assigneeId: { not: user.id } }],
         },
       });
       const everyone = await prisma.issue.count({
         where: { projectId: { in: data.scope.projectIds }, status },
       });
-
-      const figure = status === "IN_REVIEW" ? data.myWork.review : data.myWork.inQa;
-      expect(figure).toBe(everyone - theirs);
+      expect(theirs + notTheirs, `${status} partitions cleanly`).toBe(everyone);
     }
   });
 
@@ -667,11 +687,18 @@ describe("loadDashboard — the QA panel", () => {
         select: { id: true },
       });
 
+      /*
+       * "Not theirs" has to name the unassigned case explicitly. `NOT
+       * { assigneeId }` is `NOT (assigneeId = 'x')`, which is NULL — and so
+       * false — for work nobody holds, so an unassigned issue would fall out
+       * of this count and back into the tester's own by subtraction. Work
+       * waiting for anybody is precisely not this tester's queue.
+       */
       const foreign = await prisma.issue.count({
         where: {
           projectId: { in: before.scope.projectIds },
           status: "IN_REVIEW",
-          NOT: { assigneeId: tester.id },
+          OR: [{ assigneeId: null }, { assigneeId: { not: tester.id } }],
         },
       });
 
