@@ -4,9 +4,15 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Avatar } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/Toast";
-import { IconClose, IconEdit, IconExternal, IconTrash } from "@/components/ui/Icon";
+import {
+  IconClose,
+  IconEdit,
+  IconExternal,
+  IconLabel,
+  IconTrash,
+} from "@/components/ui/Icon";
 import { ScreenshotEditor } from "@/components/attachments/ScreenshotEditor";
-import { annotatedName } from "@/lib/uploadAttachment";
+
 import { formatBytes, renderKindFor, shortTypeLabel } from "@/lib/attachments";
 import { formatRelative } from "@/lib/format";
 
@@ -27,6 +33,61 @@ export interface AttachmentView {
   byteSize: number;
   createdAt: Date;
   uploadedBy: { id: string; name: string; image: string | null };
+}
+
+/**
+ * The filename, while it is being edited.
+ *
+ * Its own component because of one hazard: committing on blur is the
+ * behaviour people expect from an inline edit, and a field that has not been
+ * focused yet can receive a blur anyway as the control it replaced is
+ * unmounted. Acting on that would close the editor in the same frame it
+ * opened, so the box appears to flicker and nothing can be typed.
+ *
+ * Focus is therefore tracked, and blur only commits once the field has
+ * actually held it. Enter commits, Escape abandons.
+ */
+function AttachmentNameEditor({
+  attachment,
+  onCommit,
+  onCancel,
+}: {
+  attachment: AttachmentView;
+  onCommit: (next: string) => void;
+  onCancel: () => void;
+}) {
+  const hadFocus = useRef(false);
+
+  return (
+    <form
+      className="prio-attachment__rename"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const field = event.currentTarget.elements.namedItem("name");
+        if (field instanceof HTMLInputElement) onCommit(field.value);
+      }}
+    >
+      <input
+        name="name"
+        className="prio-input"
+        defaultValue={attachment.filename}
+        aria-label={`Rename ${attachment.filename}`}
+        autoFocus
+        onFocus={() => {
+          hadFocus.current = true;
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            onCancel();
+          }
+        }}
+        onBlur={(event) => {
+          if (hadFocus.current) onCommit(event.target.value);
+        }}
+      />
+    </form>
+  );
 }
 
 export function AttachmentGrid({
@@ -51,6 +112,8 @@ export function AttachmentGrid({
   const { toast } = useToast();
   const [removing, setRemoving] = useState<string | null>(null);
   const [preparing, setPreparing] = useState<string | null>(null);
+  /** The attachment whose name is currently being edited, if any. */
+  const [renaming, setRenaming] = useState<string | null>(null);
   const [annotating, setAnnotating] = useState<{
     attachment: AttachmentView;
     blob: Blob;
@@ -106,35 +169,69 @@ export function AttachmentGrid({
   );
 
   /*
-   * Saved as a new attachment rather than over the old one. The original
-   * stays exactly where it was — the same rule the Create form follows, and
-   * the reason this needs no new storage or delete path.
+   * Saved over the attachment that was opened, not beside it.
+   *
+   * This used to POST a second file called `<name>-annotated.png`, so marking
+   * up one screenshot left two rows in the panel and every later edit added
+   * another. One screenshot is one attachment: the row keeps its id, its name
+   * and its place in the list, and only the bytes behind it change. `PUT`
+   * carries that out — it re-identifies the new bytes from their own content
+   * and holds them to the same limits a first upload faces, then removes the
+   * object it replaced so nothing is left unreferenced.
    */
   const saveAnnotation = useCallback(
     async (blob: Blob) => {
-      if (!annotating || !annotateIssueId) return;
+      if (!annotating) return;
       const source = annotating.attachment;
       setAnnotating(null);
 
       const form = new FormData();
-      form.append("issueId", annotateIssueId);
-      form.append("file", blob, annotatedName(source.filename));
+      form.append("file", blob, source.filename);
 
-      const response = await fetch("/api/attachments", {
-        method: "POST",
+      const response = await fetch(`/api/attachments/${source.id}`, {
+        method: "PUT",
         body: form,
       });
 
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
-        toast(<>{payload.error ?? "The annotated copy could not be saved."}</>);
+        toast(<>{payload.error ?? "That edit could not be saved."}</>);
         return;
       }
 
-      toast(<>Saved annotated copy of {source.filename}</>);
+      toast(<>Updated {source.filename}</>);
       router.refresh();
     },
-    [annotating, annotateIssueId, router, toast],
+    [annotating, router, toast],
+  );
+
+  /*
+   * Renaming is the label and nothing else — the same file, the same row, the
+   * same link. The extension is held steady on the server, so a rename cannot
+   * change what the file claims to be; see `renamedFilename`.
+   */
+  const rename = useCallback(
+    async (attachment: AttachmentView, next: string) => {
+      setRenaming(null);
+      if (next.trim() === "" || next === attachment.filename) return;
+
+      const response = await fetch(`/api/attachments/${attachment.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ filename: next }),
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        toast(<>{payload.error ?? "That file could not be renamed."}</>);
+        return;
+      }
+
+      const saved = await response.json().catch(() => null);
+      toast(<>Renamed to {saved?.filename ?? next}</>);
+      router.refresh();
+    },
+    [router, toast],
   );
 
   if (attachments.length === 0) return null;
@@ -187,15 +284,23 @@ export function AttachmentGrid({
             )}
 
             <div className="prio-attachment__meta">
-              <a
-                className="prio-attachment__name prio-truncate"
-                href={url}
-                target="_blank"
-                rel="noopener noreferrer"
-                title={attachment.filename}
-              >
-                {attachment.filename}
-              </a>
+              {renaming === attachment.id ? (
+                <AttachmentNameEditor
+                  attachment={attachment}
+                  onCommit={(next) => void rename(attachment, next)}
+                  onCancel={() => setRenaming(null)}
+                />
+              ) : (
+                <a
+                  className="prio-attachment__name prio-truncate"
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={attachment.filename}
+                >
+                  {attachment.filename}
+                </a>
+              )}
               <span className="prio-attachment__sub">
                 {formatBytes(attachment.byteSize)} ·{" "}
                 {attachment.uploadedBy.name} ·{" "}
@@ -213,6 +318,21 @@ export function AttachmentGrid({
                 onClick={() => void openAnnotator(attachment)}
               >
                 <IconEdit size={13} />
+              </button>
+            ) : null}
+
+            {/* Renaming is open to whoever may remove the file — the same
+                rule, because both are edits to somebody's evidence. The slot
+                keeps it clear of whichever corner controls are also shown. */}
+            {canRemove && renaming !== attachment.id ? (
+              <button
+                type="button"
+                className="prio-attachment__rename-action"
+                data-slot={1 + (annotateIssueId && kind === "image" ? 1 : 0)}
+                aria-label={`Rename ${attachment.filename}`}
+                onClick={() => setRenaming(attachment.id)}
+              >
+                <IconLabel size={13} />
               </button>
             ) : null}
 

@@ -16,6 +16,7 @@ import {
   NotFoundError,
   assertCanCreateWork,
   workRoleOf,
+  workRolesFor,
 } from "@/lib/authz";
 import { requireUser } from "@/lib/session";
 import {
@@ -216,25 +217,44 @@ export async function createIssue(
     }
 
     /*
-     * A tester files work; they do not hand it out or date it.
+     * A tester hands work to somebody who builds, and dates nothing.
      *
-     * Deciding who does a piece of work is an administrator's, and so is when
-     * it is due — a tester raising a defect is reporting something, not
-     * planning somebody's week. The QA create form does not offer either
-     * field, and this is why that is not the protection: the values are
-     * dropped here, so a stale form, a copied request or a clone of an issue
-     * that had them cannot put them back.
+     * Raising a defect and saying who should fix it are one act for a tester,
+     * so the assignee is theirs to set. Two limits still apply, and both are
+     * enforced below rather than by the form: the person named must actually
+     * build — a tester may not hand work to another tester, and may not hand
+     * it to an administrator — and the project-membership rule every assignee
+     * faces applies unchanged.
      *
-     * Dropped rather than refused because both are optional facts about the
-     * work, not instructions that failed — a tester cloning an assigned issue
-     * gets their copy, unassigned, which is what they are allowed to create.
-     * Anyone who also builds keeps both fields; this is the pure tester's
-     * restriction, not QA's half of a fullstack job.
+     * The due date stays an administrator's. A tester reporting something is
+     * not planning somebody's week, and unlike the assignee there is nobody
+     * the work is being passed to. It is dropped rather than refused, because
+     * it is an optional fact about the work rather than an instruction that
+     * failed: a tester cloning a dated issue gets their copy, undated.
+     *
+     * None of this touches anybody who also builds; it is the pure tester's
+     * rule, not QA's half of a fullstack job.
      */
     const filesAsTester = role === "QA";
     if (filesAsTester) {
-      input.assigneeId = null;
       input.dueDate = null;
+
+      if (input.assigneeId) {
+        const [assigneeRole] = (
+          await workRolesFor([input.assigneeId])
+        ).values();
+
+        if (!assigneeRole || !doesDeveloperWork(assigneeRole) ||
+            assigneeRole === "ADMIN") {
+          return {
+            ok: false,
+            error: "Work can only be handed to a developer.",
+            fieldErrors: {
+              assigneeId: "Choose a developer or full stack developer.",
+            },
+          };
+        }
+      }
     }
 
     // An assignee must be a member of the project they are being assigned in.

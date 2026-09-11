@@ -250,18 +250,19 @@ export function oversizeMessage(file: {
   } limited to ${megabytes(limit)}.`;
 }
 
-/**
- * A filename safe to put in a `Content-Disposition` header and to show in the
- * interface. Path separators and control characters are removed; the name is
- * never used to locate the file, only to label it.
+/*
+ * Naming rules live in `lib/attachments`, which is client-safe.
+ *
+ * A staged attachment in a Create form is renamed in the browser, before it
+ * has ever reached the server, and this route renames one that already
+ * exists. Both must agree about what a rename may do to an extension, so
+ * there is one implementation and this module re-exports it rather than
+ * keeping a second that happens to match today.
  */
-export function safeFilename(raw: string): string {
-  const base = raw.split(/[\\/]/).pop() ?? "file";
-  const cleaned = base
-    .replace(/[\u0000-\u001F\u007F"]/g, "")
-    .replace(/^\.+/, "")
-    .trim();
-  return cleaned.length > 0 ? cleaned.slice(0, 200) : "file";
-}
+export {
+  safeFilename,
+  extensionOf,
+  renamedFilename,
+} from "@/lib/attachments";
 
 export { KIND as UPLOAD_KINDS };

@@ -176,10 +176,10 @@ test.describe("Screenshot attachments in Create flows", () => {
 
     // Removing the last one returns to the empty dropzone.
     await dialog.getByRole("button", { name: "Remove" }).click();
-    /* "Add attachments" now: the field takes documents and video, not only
-       screenshots, and the wording says so. */
+    /* "Add files" now: one control opens a menu offering the file picker and
+       the Snip Tool, so the trigger names the act rather than the result. */
     await expect(
-      dialog.getByRole("button", { name: "Add attachments" }),
+      dialog.getByRole("button", { name: "Add files" }),
     ).toBeVisible();
     await expect(dialog.getByRole("button", { name: /Annotate|Edit markup/ })).toHaveCount(0);
   });

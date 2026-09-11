@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { canAccessProject, projectScope } from "@/lib/authz";
+import { canAccessProject, projectScope, workRolesFor } from "@/lib/authz";
 import { getCurrentUser } from "@/lib/session";
 import { issueTextSearch } from "@/server/queries/issues";
 
@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
 
   const [members, labels, parents] = await Promise.all([
     prisma.projectMember.findMany({
-      where: { projectId },
+      where: { projectId, user: { isActive: true } },
       select: {
         user: { select: { id: true, name: true, email: true, image: true } },
       },
@@ -77,11 +77,25 @@ export async function GET(request: NextRequest) {
     }),
   ]);
 
+  /*
+   * Each member's working role travels with them.
+   *
+   * The assignee picker has to know who builds, because a tester may hand
+   * work to a developer and to nobody else. Derived here, from the one rule
+   * that owns it, rather than guessed in the browser from a job title — and
+   * the server applies the same test again when the issue is actually
+   * created, so this only decides what is *offered*.
+   */
+  const workRoles = await workRolesFor(members.map((m) => m.user.id));
+
   return NextResponse.json(
     {
       projects,
       viewerId: user.id,
-      members: members.map((m) => m.user),
+      members: members.map((m) => ({
+        ...m.user,
+        workRole: workRoles.get(m.user.id) ?? "DEVELOPER",
+      })),
       labels,
       parents,
     },

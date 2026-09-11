@@ -289,6 +289,54 @@ export function workRoleFromTeams(
 }
 
 /**
+ * The working role of each of several people, in one query.
+ *
+ * `workRoleOf` answers for the signed-in caller, which is what nearly every
+ * gate needs. An assignee picker needs the answer for a whole project's
+ * membership at once, and asking one at a time would be a round trip per
+ * person. This loads both facts the rule reads — the account role, and
+ * membership of the two teams — and hands each pair to `workRoleFromTeams`,
+ * so the derivation stays in the one place that owns it.
+ *
+ * Anybody asked about who does not exist is simply absent from the result;
+ * callers decide what that means rather than being handed a default that
+ * looks like an answer.
+ */
+export async function workRolesFor(
+  userIds: string[],
+): Promise<Map<string, WorkRole>> {
+  if (userIds.length === 0) return new Map();
+
+  const [people, memberships] = await Promise.all([
+    prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, role: true },
+    }),
+    prisma.teamMember.findMany({
+      where: {
+        userId: { in: userIds },
+        team: { slug: { in: [TESTING_TEAM_SLUG, DEVELOPMENT_TEAM_SLUG] } },
+      },
+      select: { userId: true, team: { select: { slug: true } } },
+    }),
+  ]);
+
+  const slugsByUser = new Map<string, string[]>();
+  for (const row of memberships) {
+    const slugs = slugsByUser.get(row.userId) ?? [];
+    slugs.push(row.team.slug);
+    slugsByUser.set(row.userId, slugs);
+  }
+
+  return new Map(
+    people.map((person) => [
+      person.id,
+      workRoleFromTeams(person.role, slugsByUser.get(person.id) ?? []),
+    ]),
+  );
+}
+
+/**
  * Who may file work: anybody who does the QA half of the job.
  *
  * Raising work is QA's job in this model — a defect found, a task that needs

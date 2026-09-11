@@ -1,13 +1,17 @@
 /**
- * Uploads a client-staged attachment (e.g. an edited screenshot from a Create
- * form) once its target actually exists. Thin wrapper around the same
- * `POST /api/attachments` every other upload path in the app already uses —
- * no separate storage or authorization logic here.
+ * Uploading what a Create form staged.
+ *
+ * A thin wrapper around the same `POST /api/attachments` every other upload
+ * path already uses — no separate storage, no second validation, no
+ * authorization of its own. The server still identifies each file from its
+ * own leading bytes and holds it to the same size ceilings, whether it
+ * arrived from a file picker, a screen capture or a recording.
  */
+
 export async function uploadStagedAttachment(
   target: { issueId: string } | { projectId: string },
   file: Blob,
-  filename = "screenshot.png",
+  filename = "attachment",
 ): Promise<void> {
   const form = new FormData();
   if ("issueId" in target) form.append("issueId", target.issueId);
@@ -21,40 +25,37 @@ export async function uploadStagedAttachment(
 
   if (!response.ok) {
     const body = await response.json().catch(() => null);
-    throw new Error(body?.error ?? "The screenshot could not be attached.");
+    throw new Error(body?.error ?? "That file could not be attached.");
   }
-}
-
-/** `report.png` -> `report-annotated.png`. */
-export function annotatedName(name: string): string {
-  const dot = name.lastIndexOf(".");
-  return dot > 0
-    ? `${name.slice(0, dot)}-annotated.png`
-    : `${name}-annotated.png`;
 }
 
 /**
- * Uploads one staged screenshot as the pair it is: the untouched original,
- * and the marked-up copy when the tester drew on it. Both land in the same
- * Attachments panel, named so it is obvious which is which — the annotation
- * is evidence *about* the screenshot, not a replacement for it.
+ * Everything a Create form staged, uploaded once its target exists.
  *
- * Structurally typed rather than importing `StagedScreenshot`, which lives in
- * a client component; this file is imported from both sides.
+ * Each file stands or falls on its own: one refused does not take the rest
+ * with it, and the names of those that failed come back so the caller can say
+ * so rather than reporting a silent partial success. Nothing is retried here
+ * — the issue exists by this point, and its own Attachments panel is the
+ * place to try again.
+ *
+ * Structurally typed rather than importing `StagedAttachment`, which lives in
+ * a client component; this module is imported from both sides.
  */
-export async function uploadStagedScreenshot(
+export async function uploadStagedAttachments(
   target: { issueId: string } | { projectId: string },
-  shot: { original: Blob; annotated: Blob | null },
-  index: number,
-): Promise<void> {
-  const fallback = `screenshot-${index + 1}.png`;
-  const name =
-    shot.original instanceof File && shot.original.name
-      ? shot.original.name
-      : fallback;
+  staged: { blob: Blob; name: string }[],
+): Promise<{ uploaded: number; failed: string[] }> {
+  let uploaded = 0;
+  const failed: string[] = [];
 
-  await uploadStagedAttachment(target, shot.original, name);
-  if (shot.annotated) {
-    await uploadStagedAttachment(target, shot.annotated, annotatedName(name));
+  for (const item of staged) {
+    try {
+      await uploadStagedAttachment(target, item.blob, item.name);
+      uploaded += 1;
+    } catch {
+      failed.push(item.name);
+    }
   }
+
+  return { uploaded, failed };
 }

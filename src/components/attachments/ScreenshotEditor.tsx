@@ -239,10 +239,12 @@ function drawShapePreview(
  * — undo, or Clear all, brings the detail straight back exactly as it does
  * for every other tool here.
  *
- * That also means this is emphasis, not a privacy guarantee: the unmarked
- * original is deliberately kept and uploaded alongside the annotated copy
- * (see `ScreenshotAttachmentField`), so anything blurred here is still
- * legible in the original attachment.
+ * That also means this is emphasis rather than redaction. Saving replaces the
+ * attachment's contents with what the canvas holds, so the unmarked pixels
+ * under a blur are gone from the stored file — but the blur itself is a
+ * visual effect applied to the image, not a guarantee about what can be
+ * recovered from it. Anything genuinely sensitive should be cropped out, not
+ * blurred over.
  */
 function drawBlurRegion(
   ctx: CanvasRenderingContext2D,
@@ -437,10 +439,10 @@ export function ScreenshotEditor({
 
   /*
    * The caller mounts this component fresh for each edit session (see
-   * `ScreenshotAttachmentField`, which renders it only while there is a
-   * source to edit), so every piece of state above already starts at its
-   * correct initial value — there is nothing to reset here, only the image
-   * to load.
+   * `AttachmentField` and the issue Attachments panel, which each render it
+   * only while there is a source to edit), so every piece of state above
+   * already starts at its correct initial value — there is nothing to reset
+   * here, only the image to load.
    */
   useEffect(() => {
     if (!open) return;

@@ -328,6 +328,21 @@ export function MenuItem({
   const role = selected === undefined ? "menuitem" : "menuitemradio";
   const checked = selected === undefined ? undefined : selected;
 
+  /*
+   * Escape belongs to the menu while one of its items has focus.
+   *
+   * A menu opened from inside a dialog is the topmost layer, so Escape should
+   * shut the menu and leave the dialog alone. It did the opposite: `Dialog`
+   * listens in the capture phase and the menu in the bubble phase, so the
+   * dialog always saw the key first and closed — which, from the Add files
+   * menu in Create Issue, threw away a half-written issue to dismiss a
+   * dropdown.
+   *
+   * `data-local-escape` is the mechanism `Dialog` already documents for
+   * exactly this: a focused descendant saying it wants its own Escape.
+   * Opening the menu moves focus to an item, so marking the items is what
+   * makes the dialog defer.
+   */
   if (href && !disabled) {
     return (
       <a
@@ -336,6 +351,7 @@ export function MenuItem({
         href={href}
         className={className}
         data-menu-keep-open={keepOpen || undefined}
+        data-local-escape="true"
         tabIndex={-1}
       >
         {content}
@@ -352,6 +368,7 @@ export function MenuItem({
       onClick={disabled ? undefined : onSelect}
       aria-disabled={disabled || undefined}
       data-menu-keep-open={keepOpen || undefined}
+      data-local-escape="true"
       tabIndex={-1}
     >
       {content}

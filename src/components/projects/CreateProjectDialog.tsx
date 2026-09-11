@@ -7,10 +7,11 @@ import { Alert, Avatar, Button } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/Toast";
 import { IconWarning } from "@/components/ui/Icon";
 import {
-  ScreenshotAttachmentField,
-  type StagedScreenshot,
-} from "@/components/attachments/ScreenshotAttachmentField";
-import { uploadStagedScreenshot } from "@/lib/uploadAttachment";
+  AttachmentField,
+  type StagedAttachment,
+} from "@/components/attachments/AttachmentField";
+import { uploadStagedAttachments } from "@/lib/uploadAttachment";
+import { MAX_IMAGE_BYTES, MAX_UPLOAD_BYTES } from "@/server/upload-types";
 import { createProject } from "@/server/projects";
 import type { FieldErrors } from "@/server/schemas";
 
@@ -46,7 +47,7 @@ export function CreateProjectDialog({
   const [keyTouched, setKeyTouched] = useState(false);
   const [description, setDescription] = useState("");
   const [memberIds, setMemberIds] = useState<string[]>([]);
-  const [screenshots, setScreenshots] = useState<StagedScreenshot[]>([]);
+  const [attachments, setAttachments] = useState<StagedAttachment[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
@@ -82,21 +83,22 @@ export function CreateProjectDialog({
       return;
     }
 
-    for (const [index, screenshot] of screenshots.entries()) {
-      try {
-        await uploadStagedScreenshot({ projectId: result.data.id }, screenshot, index);
-      } catch (uploadError) {
-        toast(
-          uploadError instanceof Error
-            ? uploadError.message
-            : "A screenshot could not be attached.",
-          "error",
-        );
-      }
+    /* The project exists now, so its staged files have somewhere to point and
+       go up unattended. Those that failed are named rather than reported as a
+       success. */
+    const upload = await uploadStagedAttachments(
+      { projectId: result.data.id },
+      attachments,
+    );
+    if (upload.failed.length > 0) {
+      toast(
+        `Created, but ${upload.failed.join(", ")} could not be attached.`,
+        "error",
+      );
     }
 
     setSubmitting(false);
-    setScreenshots([]);
+    setAttachments([]);
     onClose();
     toast(
       <>
@@ -214,7 +216,12 @@ export function CreateProjectDialog({
           />
         </div>
 
-        <ScreenshotAttachmentField value={screenshots} onChange={setScreenshots} />
+        <AttachmentField
+          value={attachments}
+          onChange={setAttachments}
+          maxImageBytes={MAX_IMAGE_BYTES}
+          maxUploadBytes={MAX_UPLOAD_BYTES}
+        />
 
         {selectable.length > 0 ? (
           <div className="prio-field">

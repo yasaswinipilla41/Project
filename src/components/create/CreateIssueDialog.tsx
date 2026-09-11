@@ -13,10 +13,11 @@ import { Alert, Button } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/Toast";
 import { IconWarning } from "@/components/ui/Icon";
 import {
-  ScreenshotAttachmentField,
-  type StagedScreenshot,
-} from "@/components/attachments/ScreenshotAttachmentField";
-import { uploadStagedScreenshot } from "@/lib/uploadAttachment";
+  AttachmentField,
+  type StagedAttachment,
+} from "@/components/attachments/AttachmentField";
+import { uploadStagedAttachments } from "@/lib/uploadAttachment";
+import { MAX_IMAGE_BYTES, MAX_UPLOAD_BYTES } from "@/server/upload-types";
 import {
   ISSUE_TYPES,
   ISSUE_TYPE_LABEL,
@@ -61,6 +62,8 @@ interface OptionMember {
   name: string;
   email: string;
   image: string | null;
+  /** Derived on the server from team membership; see `workRolesFor`. */
+  workRole: WorkRole;
 }
 interface OptionLabel {
   id: string;
@@ -192,11 +195,12 @@ export function CreateIssueDialog({
    * What this person may file work as, and how much of the form they get.
    *
    * The statuses come from the one table in `domain.ts`, asked with no current
-   * status because creating is not a transition. A pure tester also files
-   * without an assignee or a due date: handing work out and dating it are an
-   * administrator's, and `createIssue` drops both regardless of what arrives,
-   * so leaving the fields out is the form agreeing with the server rather than
-   * the form being the rule.
+   * status because creating is not a transition. A pure tester files without a
+   * due date — dating somebody's week is an administrator's, and `createIssue`
+   * drops the value regardless of what arrives, so leaving the field out is the
+   * form agreeing with the server rather than the form being the rule. They do
+   * choose an assignee: raising a defect and saying who should fix it are one
+   * act. See `assignableMembers` for who that may be.
    */
   const statusOptions = filableStatusesFor(workRole);
   const filesAsTester = workRole === "QA";
@@ -206,13 +210,29 @@ export function CreateIssueDialog({
     status: statusOptions[0] ?? EMPTY_FORM.status,
   });
   const [labelIds, setLabelIds] = useState<string[]>([]);
-  const [screenshots, setScreenshots] = useState<StagedScreenshot[]>([]);
+  const [attachments, setAttachments] = useState<StagedAttachment[]>([]);
   const spec = ISSUE_TYPE_FORM[type];
 
   const [projects, setProjects] = useState<OptionProject[]>([]);
   const [members, setMembers] = useState<OptionMember[]>([]);
   const [labels, setLabels] = useState<OptionLabel[]>([]);
   const [parents, setParents] = useState<OptionParent[]>([]);
+
+  /*
+   * Who this person may hand the work to.
+   *
+   * A tester hands work to somebody who builds, so their list is the project
+   * members who do — a developer or a full stack developer, and never another
+   * tester or an administrator. Everybody else may assign to any member, as
+   * they always could. `createIssue` applies the identical test, so this
+   * narrows what is offered and decides nothing.
+   */
+  const assignableMembers = filesAsTester
+    ? members.filter(
+        (member) =>
+          member.workRole === "DEVELOPER" || member.workRole === "FULLSTACK",
+      )
+    : members;
   /* Who is signed in, so "Assign to me" does not have to guess. It comes back
      with the options rather than from a second request. */
   const [viewerId, setViewerId] = useState<string | null>(null);
@@ -393,7 +413,7 @@ export function CreateIssueDialog({
       description: form.description,
       status: form.status,
       priority: form.priority,
-      assigneeId: filesAsTester ? null : form.assigneeId,
+      assigneeId: form.assigneeId,
       labelIds,
       dueDate: filesAsTester ? null : form.dueDate,
       parentId: form.parentId,
@@ -406,24 +426,24 @@ export function CreateIssueDialog({
       return;
     }
 
-    // The issue exists now, so the staged screenshots have somewhere to
-    // point. A failed attach never blocks navigation — the issue is real
-    // either way, and its own Attachments panel can retry the upload.
-    for (const [index, screenshot] of screenshots.entries()) {
-      try {
-        await uploadStagedScreenshot({ issueId: result.data.id }, screenshot, index);
-      } catch (uploadError) {
-        toast(
-          uploadError instanceof Error
-            ? uploadError.message
-            : "A screenshot could not be attached.",
-          "error",
-        );
-      }
+    /* The issue exists now, so the staged files have somewhere to point, and
+       they go up without anybody being asked to do anything further. A failed
+       attach never blocks navigation — the issue is real either way, and its
+       own Attachments panel is where a retry belongs. Those that failed are
+       named, so a partial success is never reported as a whole one. */
+    const upload = await uploadStagedAttachments(
+      { issueId: result.data.id },
+      attachments,
+    );
+    if (upload.failed.length > 0) {
+      toast(
+        `Created, but ${upload.failed.join(", ")} could not be attached.`,
+        "error",
+      );
     }
 
     setSubmitting(false);
-    setScreenshots([]);
+    setAttachments([]);
     onClose();
     toast(
       <>
@@ -612,10 +632,10 @@ export function CreateIssueDialog({
               </select>
             </FieldRow>
 
-            {/* Assignee and Due date, for whoever decides them. A tester
-                raising work is reporting something, not planning somebody's
-                week — see `filesAsTester` above. */}
-            {filesAsTester ? null : (
+            {/* Assignee, for everybody who files. A tester hands work to
+                somebody who builds; the list below is narrowed to them, and
+                `createIssue` applies the same test again. Due date stays an
+                administrator's — see `filesAsTester` above. */}
             <FieldRow label="Assignee" htmlFor="create-assignee">
               <select
                 id="create-assignee"
@@ -626,7 +646,12 @@ export function CreateIssueDialog({
                 aria-invalid={invalid("assigneeId")}
               >
                 <option value="">Unassigned</option>
-                {members.map((member) => (
+                {/* The person's name, and only their name. Which of them may
+                    be chosen is already decided by `assignableMembers`, so
+                    spelling the role out beside each one adds noise and — by
+                    changing what every option is called — breaks anything
+                    that selects a colleague by name. */}
+                {assignableMembers.map((member) => (
                   <option key={member.id} value={member.id}>
                     {member.name}
                   </option>
@@ -638,7 +663,7 @@ export function CreateIssueDialog({
                * who could not be chosen from the dropdown cannot be assigned by
                * this shortcut either, and the server checks again regardless.
                */}
-              {viewerId && members.some((m) => m.id === viewerId) ? (
+              {viewerId && assignableMembers.some((m) => m.id === viewerId) ? (
                 <button
                   type="button"
                   className="prio-assignself"
@@ -650,7 +675,6 @@ export function CreateIssueDialog({
               ) : null}
               <FieldError errors={errors} field="assigneeId" />
             </FieldRow>
-            )}
 
             {projectId ? (
               <FieldRow label="Labels" labelledById="create-labels-label">
@@ -731,10 +755,12 @@ export function CreateIssueDialog({
              * narrow control cell would cost the drop target most of its area.
              * The component itself is untouched — this is only where it sits.
              */}
-            <ScreenshotAttachmentField
+            <AttachmentField
               label="Attachments"
-              value={screenshots}
-              onChange={setScreenshots}
+              value={attachments}
+              onChange={setAttachments}
+              maxImageBytes={MAX_IMAGE_BYTES}
+              maxUploadBytes={MAX_UPLOAD_BYTES}
             />
           </div>
 

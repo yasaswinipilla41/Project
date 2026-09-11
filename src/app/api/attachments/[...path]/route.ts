@@ -6,7 +6,15 @@ import {
   AuthorizationError,
 } from "@/lib/authz";
 import { getCurrentUser } from "@/lib/session";
+import { renderKindFor } from "@/lib/attachments";
 import { storage } from "@/server/storage";
+import {
+  identifyUpload,
+  maxBytesFor,
+  megabytes,
+  renamedFilename,
+  SNIFF_BYTES,
+} from "@/server/upload-types";
 
 /** An attachment belongs to exactly one issue or one project — never both. */
 async function assertAttachmentAccess(
@@ -235,6 +243,229 @@ export async function GET(
       "Accept-Ranges": "bytes",
     },
   });
+}
+
+/**
+ * The one authorization rule for changing an attachment.
+ *
+ * Deliberately the same test `DELETE` applies: the uploader may change their
+ * own file, an administrator may change any, and a project member who can
+ * merely see it may not. Renaming and replacing are both edits to somebody
+ * else's evidence, so neither is opened wider than removing it already is.
+ *
+ * Returns the row when the caller may proceed, or a response to send back
+ * when they may not — so both handlers below share one answer rather than
+ * two that could drift apart.
+ */
+type EditTarget =
+  | { ok: false; response: NextResponse }
+  | {
+      ok: true;
+      attachment: {
+        id: string;
+        issueId: string | null;
+        projectId: string | null;
+        uploadedById: string;
+        storageKey: string;
+        filename: string;
+        mimeType: string;
+      };
+    };
+
+async function attachmentForEdit(id: string): Promise<EditTarget> {
+  const user = await getCurrentUser();
+  if (!user) {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: "Not signed in." }, { status: 401 }),
+    };
+  }
+
+  const attachment = await prisma.attachment.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      issueId: true,
+      projectId: true,
+      uploadedById: true,
+      storageKey: true,
+      filename: true,
+      mimeType: true,
+    },
+  });
+
+  const missing = {
+    ok: false,
+    response: NextResponse.json({ error: "Not found." }, { status: 404 }),
+  } as const;
+
+  if (!attachment) return missing;
+
+  try {
+    await assertAttachmentAccess(user, attachment);
+  } catch {
+    // Out of reach reads as missing, so the endpoint cannot be used to
+    // discover which ids exist.
+    return missing;
+  }
+
+  if (attachment.uploadedById !== user.id && user.role !== "ADMIN") {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { error: "You can only change files you uploaded." },
+        { status: 403 },
+      ),
+    };
+  }
+
+  return { ok: true, attachment };
+}
+
+/**
+ * Renaming an attachment.
+ *
+ * Only the label changes. The row keeps its id, its stored bytes, its verified
+ * type and its issue, so every link to it still resolves and the activity that
+ * mentions it still refers to the same thing. `renamedFilename` holds the
+ * extension steady — see the note there for why a rename must not be able to
+ * turn a spreadsheet into an executable.
+ */
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ path: string[] }> },
+) {
+  const id = attachmentId((await params).path);
+  const found = await attachmentForEdit(id);
+  if (!found.ok) return found.response;
+  const { attachment } = found;
+
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Malformed request." }, { status: 400 });
+  }
+
+  const raw =
+    typeof body === "object" && body !== null && "filename" in body
+      ? String((body as { filename: unknown }).filename ?? "")
+      : "";
+
+  const filename = renamedFilename(raw, attachment.filename);
+  if (!filename) {
+    return NextResponse.json({ error: "Give the file a name." }, { status: 400 });
+  }
+
+  const updated = await prisma.attachment.update({
+    where: { id: attachment.id },
+    data: { filename },
+    select: { id: true, filename: true },
+  });
+
+  return NextResponse.json(updated);
+}
+
+/**
+ * Replacing an attachment's contents, in place.
+ *
+ * This is what saving an edited screenshot does. The row keeps its id, its
+ * name and its issue; only the bytes behind it change. That is the whole
+ * point: one screenshot is one attachment, and marking it up is a new version
+ * of that attachment rather than a second file sitting beside the first.
+ *
+ * The new bytes go through exactly the checks a first upload goes through —
+ * identified from their own leading bytes, held to the same size ceiling —
+ * because a replacement is an upload and nothing about it is more trusted for
+ * having arrived this way. It is also refused unless the replacement is the
+ * same broad kind as the file it replaces, so "edit this screenshot" cannot
+ * quietly turn an image row into a video one.
+ *
+ * The old stored object is removed only after the row points at the new one,
+ * so a failure midway leaves the attachment readable rather than broken.
+ */
+export async function PUT(
+  request: Request,
+  { params }: { params: Promise<{ path: string[] }> },
+) {
+  const id = attachmentId((await params).path);
+  const found = await attachmentForEdit(id);
+  if (!found.ok) return found.response;
+  const { attachment } = found;
+
+  let form: FormData;
+  try {
+    form = await request.formData();
+  } catch {
+    return NextResponse.json({ error: "Malformed upload." }, { status: 400 });
+  }
+
+  const file = form.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    return NextResponse.json({ error: "That file is empty." }, { status: 400 });
+  }
+
+  const head = new Uint8Array(await file.slice(0, SNIFF_BYTES).arrayBuffer());
+  const kind = identifyUpload(head, file.type || null, attachment.filename);
+
+  if (!kind) {
+    return NextResponse.json(
+      { error: "That file type is not supported." },
+      { status: 415 },
+    );
+  }
+
+  if (kind.render !== renderKindFor(attachment.mimeType)) {
+    return NextResponse.json(
+      { error: "A file can only be replaced by one of the same kind." },
+      { status: 415 },
+    );
+  }
+
+  const limit = maxBytesFor(kind);
+  if (file.size > limit) {
+    return NextResponse.json(
+      { error: `${kind.label}s are limited to ${megabytes(limit)}.` },
+      { status: 413 },
+    );
+  }
+
+  const stored = await storage().put(file.stream(), {
+    extension: kind.extension,
+  });
+
+  if (stored.byteSize > limit) {
+    await storage().remove(stored.key);
+    return NextResponse.json({ error: "That file is too large." }, { status: 413 });
+  }
+
+  const previousKey = attachment.storageKey;
+
+  const updated = await prisma.attachment.update({
+    where: { id: attachment.id },
+    data: {
+      storageKey: stored.key,
+      mimeType: kind.mime,
+      byteSize: stored.byteSize,
+      /* Dimensions belonged to the bytes that have just been replaced. The
+         editor writes a different canvas size than it read often enough that
+         keeping the old pair would be stating something untrue; nothing reads
+         them for images served through this route. */
+      width: null,
+      height: null,
+    },
+    select: { id: true, filename: true, mimeType: true, byteSize: true },
+  });
+
+  await storage()
+    .remove(previousKey)
+    .catch((error) => {
+      // The row already points at the new object, so the attachment is
+      // correct. An unreferenced file left behind is a cleanup problem.
+      console.error("[prio] could not remove replaced file:", error);
+    });
+
+  return NextResponse.json(updated);
 }
 
 /**

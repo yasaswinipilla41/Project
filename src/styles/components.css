@@ -770,7 +770,16 @@ a.prio-key:hover {
 /* ------------------------------------------------------------------ menu */
 .prio-menu {
   position: absolute;
-  z-index: var(--prio-z-dropdown);
+  /*
+   * Popover level, not dropdown level.
+   *
+   * The panel is portalled to `document.body` and positioned with fixed
+   * coordinates, so it is a top-level layer rather than a child of whatever
+   * opened it. At dropdown level it sat *below* a modal, which is fine until
+   * a menu is opened from inside one — the Add files menu in Create Issue
+   * appeared behind the dialog that owns it. Toasts stay above both.
+   */
+  z-index: var(--prio-z-popover);
   min-width: 200px;
   max-height: 340px;
   overflow-y: auto;

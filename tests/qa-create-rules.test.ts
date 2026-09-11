@@ -374,19 +374,20 @@ describe("a tester filing work", () => {
     expect(row.status).toBe("BACKLOG");
   });
 
-  it("files without an assignee or a due date, whatever the request says", async () => {
+  it("hands work to a developer, but still files without a due date", async () => {
     await actAs(TESTER);
     const project = await projectByKey("ENG");
 
     const result = await createIssue({
       projectId: project.id,
       type: "BUG",
-      title: `Tester tries to hand work out ${Date.now()}`,
+      title: `Tester hands work out ${Date.now()}`,
       description: "x",
       status: "BACKLOG",
       priority: "MEDIUM",
-      // Exactly what a stale form, or a forged request, would carry.
       assigneeId: await userId(DEVELOPER),
+      // Dating somebody's week is still an administrator's, so this is
+      // dropped however it arrives.
       dueDate: "2099-03-01",
     });
 
@@ -399,10 +400,72 @@ describe("a tester filing work", () => {
       select: { assigneeId: true, dueDate: true, reporterId: true },
     });
 
-    expect(row.assigneeId).toBeNull();
+    expect(row.assigneeId).toBe(await userId(DEVELOPER));
     expect(row.dueDate).toBeNull();
     // …and the reporter is the person who filed it.
     expect(row.reporterId).toBe(await userId(TESTER));
+  });
+
+  it("hands work to a full stack developer, who also builds", async () => {
+    await actAs(TESTER);
+    const project = await projectByKey("ENG");
+
+    const result = await createIssue({
+      projectId: project.id,
+      type: "BUG",
+      title: `Tester hands work to a fullstack ${Date.now()}`,
+      description: "x",
+      status: "BACKLOG",
+      priority: "MEDIUM",
+      assigneeId: await userId(FULLSTACK),
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    created.push(result.data.id);
+
+    const row = await prisma.issue.findUniqueOrThrow({
+      where: { id: result.data.id },
+      select: { assigneeId: true },
+    });
+    expect(row.assigneeId).toBe(await userId(FULLSTACK));
+  });
+
+  it("refuses to hand work to somebody who does not build", async () => {
+    await actAs(TESTER);
+    const project = await projectByKey("ENG");
+
+    // Another tester is not a developer, so they cannot be handed the work.
+    const result = await createIssue({
+      projectId: project.id,
+      type: "BUG",
+      title: `Tester tries a tester ${Date.now()}`,
+      description: "x",
+      status: "BACKLOG",
+      priority: "MEDIUM",
+      assigneeId: await userId(TESTER),
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) created.push(result.data.id);
+  });
+
+  it("refuses to hand work to an administrator", async () => {
+    await actAs(TESTER);
+    const project = await projectByKey("ENG");
+
+    const result = await createIssue({
+      projectId: project.id,
+      type: "BUG",
+      title: `Tester tries an admin ${Date.now()}`,
+      description: "x",
+      status: "BACKLOG",
+      priority: "MEDIUM",
+      assigneeId: await userId(ADMIN),
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) created.push(result.data.id);
   });
 
   it("keeps both fields for an administrator", async () => {

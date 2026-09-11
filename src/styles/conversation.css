@@ -948,6 +948,69 @@
   opacity: 0.6;
 }
 
+/*
+ * "Rename", on every attachment its owner may change.
+ *
+ * Same shape and hover-reveal as Remove and Annotate, so the corner stays one
+ * set of controls. `data-slot` counts how many buttons sit to its right
+ * rather than naming them, which is what lets the three coexist without each
+ * new control needing to know about the others.
+ */
+.prio-attachment__rename-action {
+  position: absolute;
+  top: var(--prio-space-2);
+  right: var(--prio-space-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: var(--prio-radius-sm);
+  background: var(--prio-bg-surface);
+  color: var(--prio-text-muted);
+  box-shadow: var(--prio-shadow-sm);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-attachment__rename-action[data-slot="1"] {
+  right: calc(var(--prio-space-2) + 30px);
+}
+
+.prio-attachment__rename-action[data-slot="2"] {
+  right: calc(var(--prio-space-2) + 60px);
+}
+
+.prio-attachment:hover .prio-attachment__rename-action,
+.prio-attachment__rename-action:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .prio-attachment__rename-action {
+    opacity: 1;
+  }
+}
+
+.prio-attachment__rename-action:hover {
+  background: var(--prio-primary-50);
+  color: var(--prio-primary-700);
+}
+
+/* The name, while it is being edited in place. Sized to the row it replaces
+   so the card does not jump when the input appears. */
+.prio-attachment__rename {
+  display: block;
+  width: 100%;
+}
+
+.prio-attachment__rename .prio-input {
+  width: 100%;
+  font-size: var(--prio-text-sm);
+}
+
 /* ---------------------------------------------------- comment actions */
 /*
  * The reactions a comment has collected, under its body.
