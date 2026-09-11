@@ -14,7 +14,6 @@ import {
 } from "@/components/ui/Icon";
 import { ScreenshotEditor } from "@/components/attachments/ScreenshotEditor";
 import {
-
   formatBytes,
   renamedFilename,
   renderKindFor,
@@ -22,15 +21,11 @@ import {
   shortTypeLabel,
   type AttachmentRender,
 } from "@/lib/attachments";
+import { formatDuration } from "@/lib/screenCapture";
 import {
-  canCaptureScreen,
-  canRecordScreen,
-  captureScreenshot,
-  CaptureError,
-  formatDuration,
-  startScreenRecording,
-  type ActiveRecording,
-} from "@/lib/screenCapture";
+  useSnipReceiver,
+  type SnipTarget,
+} from "@/components/attachments/SnipTool";
 import styles from "./AttachmentField.module.css";
 
 /**
@@ -47,8 +42,14 @@ import styles from "./AttachmentField.module.css";
  * Three ways in, one list out:
  *
  *   Browse      the ordinary file picker, for every type Prio accepts
- *   Screenshot  the browser's own screen picker, then the editor
- *   Record      the same picker, then a recording of it
+ *   Screenshot  the Snip Tool, which captures the screen and hands one back
+ *   Record      the Snip Tool again, recording instead of snapping
+ *
+ * The last two are not done here. They belong to the Snip Tool window, which
+ * the shell mounts once and which therefore survives this form being closed,
+ * navigated away from or reopened — a capture in progress is not something a
+ * dialog should be able to destroy. This field only says what it will take,
+ * and takes what the window sends it.
  *
  * Each produces a `StagedAttachment`, and from that point on they are treated
  * identically — renamed the same way, removed the same way, uploaded the same
@@ -87,6 +88,11 @@ export interface AttachmentFieldProps {
    */
   maxImageBytes: number;
   maxUploadBytes: number;
+  /**
+   * What the Snip Tool should call this form when it holds a capture for it.
+   * Omitted, the Snip Tool is simply not offered.
+   */
+  snipTarget?: SnipTarget | null;
 }
 
 let nextStagedId = 0;
@@ -103,21 +109,14 @@ export function AttachmentField({
   label = "Attachments",
   maxImageBytes,
   maxUploadBytes,
+  snipTarget = null,
 }: AttachmentFieldProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
-
-  /* The recording in progress, and how long it has been running. Held in a
-     ref as well so the tick and the stop handler reach the same object. */
-  const recordingRef = useRef<ActiveRecording | null>(null);
-  const startedAtRef = useRef<number | null>(null);
-  const [recording, setRecording] = useState(false);
-  const [elapsedMs, setElapsedMs] = useState(0);
 
   /* Object URLs for previews, keyed by staged id so an edit swaps one URL
      rather than rebuilding every preview in the list. Revoked on the way out;
@@ -142,17 +141,6 @@ export function AttachmentField({
     };
   }, [value]);
 
-  /* Ticks the elapsed counter while recording, and only while recording. The
-     clock starts in `beginRecording`, so nothing is written here on mount. */
-  useEffect(() => {
-    if (!recording) return;
-    const timer = setInterval(
-      () => setElapsedMs(Date.now() - (startedAtRef.current ?? Date.now())),
-      250,
-    );
-    return () => clearInterval(timer);
-  }, [recording]);
-
   /* Paste a screenshot straight in, the way the system snipping tools work —
      no need to save it to disk just to pick it back up again. */
   useEffect(() => {
@@ -175,28 +163,26 @@ export function AttachmentField({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
 
-  /* Anything still running when the field goes away is stopped, so the
-     browser's sharing indicator does not outlive the form. */
-  useEffect(() => {
-    return () => {
-      recordingRef.current?.cancel();
-      recordingRef.current = null;
-    };
-  }, []);
-
   function limitFor(blobType: string): number {
     return blobType.startsWith("image/") ? maxImageBytes : maxUploadBytes;
   }
 
-  /** Adds one blob to the list, and hands back its id so a caller can act on it. */
-  function stage(blob: Blob, name: string, durationMs?: number): string | null {
+  /** Why this one cannot be staged, in the words shown for it — or nothing. */
+  function refusal(blob: Blob, name: string): string | null {
     const limit = limitFor(blob.type);
     if (blob.size > limit) {
-      setError(
-        `${name} is too large — ${
-          blob.type.startsWith("image/") ? "images are" : "files are"
-        } limited to ${megabytes(limit)}.`,
-      );
+      return `${name} is too large — ${
+        blob.type.startsWith("image/") ? "images are" : "files are"
+      } limited to ${megabytes(limit)}.`;
+    }
+    return null;
+  }
+
+  /** Adds one blob to the list, and hands back its id so a caller can act on it. */
+  function stage(blob: Blob, name: string, durationMs?: number): string | null {
+    const refused = refusal(blob, name);
+    if (refused) {
+      setError(refused);
       return null;
     }
 
@@ -230,13 +216,9 @@ export function AttachmentField({
     const refused: string[] = [];
 
     for (const file of files) {
-      const limit = limitFor(file.type);
-      if (file.size > limit) {
-        refused.push(
-          `${file.name} is too large — ${
-            file.type.startsWith("image/") ? "images are" : "files are"
-          } limited to ${megabytes(limit)}.`,
-        );
+      const tooBig = refusal(file, file.name);
+      if (tooBig) {
+        refused.push(tooBig);
         continue;
       }
       if (file.size === 0) {
@@ -256,77 +238,26 @@ export function AttachmentField({
     if (refused.length > 0) setError(refused.join(" "));
   }
 
-  async function takeScreenshot() {
-    setError(null);
-    setBusy("screenshot");
-    try {
-      const blob = await captureScreenshot();
-      const id = stage(blob, `screenshot-${value.length + 1}.png`);
-      /* Straight into the editor, because a screenshot is nearly always taken
-         in order to point at something in it. Cancelling there keeps the
-         unmarked capture rather than throwing it away. */
-      if (id) setEditing(id);
-    } catch (failure) {
-      setError(
-        failure instanceof CaptureError
-          ? failure.message
-          : "The screen could not be captured.",
-      );
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function beginRecording() {
-    setError(null);
-    setBusy("record");
-    try {
-      recordingRef.current = await startScreenRecording();
-      startedAtRef.current = Date.now();
-      setElapsedMs(0);
-      setRecording(true);
-    } catch (failure) {
-      setError(
-        failure instanceof CaptureError
-          ? failure.message
-          : "The screen could not be recorded.",
-      );
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function finishRecording() {
-    const active = recordingRef.current;
-    if (!active) return;
-
-    setBusy("record");
-    try {
-      const result = await active.stop();
-      stage(
-        result.blob,
-        `recording-${value.length + 1}.webm`,
-        result.durationMs,
-      );
-    } catch (failure) {
-      setError(
-        failure instanceof CaptureError
-          ? failure.message
-          : "The recording could not be saved.",
-      );
-    } finally {
-      recordingRef.current = null;
-      setRecording(false);
-      setBusy(null);
-    }
-  }
-
-  function discardRecording() {
-    recordingRef.current?.cancel();
-    recordingRef.current = null;
-    setRecording(false);
-    setError(null);
-  }
+  /*
+   * The Snip Tool's way back in.
+   *
+   * A capture arrives here as an ordinary file and becomes an ordinary staged
+   * row — same size limits, same rename, same upload. It is delivered once,
+   * by the window, when the person presses Attach there, which is what keeps
+   * one capture to one row however many times the form is reopened.
+   */
+  const { openSnipTool, available: snipAvailable } = useSnipReceiver(
+    snipTarget,
+    (file, meta) => {
+      setError(null);
+      /* Thrown rather than swallowed: the Snip Tool keeps hold of a capture
+         it could not hand over, and shows why. A refusal that only appeared
+         down here would have lost the capture on the way. */
+      const refused = refusal(file, file.name);
+      if (refused) throw new Error(refused);
+      stage(file, file.name, meta.durationMs);
+    },
+  );
 
   function removeAt(id: string) {
     onChange(value.filter((item) => item.id !== id));
@@ -347,9 +278,6 @@ export function AttachmentField({
   const editingItem = editing
     ? (value.find((item) => item.id === editing) ?? null)
     : null;
-
-  const captureSupported = canCaptureScreen();
-  const recordSupported = canRecordScreen();
 
   return (
     <div className="prio-field">
@@ -388,79 +316,47 @@ export function AttachmentField({
           if (files.length > 0) acceptFiles(files);
         }}
       >
-        {recording ? (
-          /* While recording, the field is the recorder: one obvious way to
-             stop, and the elapsed time beside it so nobody is left guessing
-             whether it is still running. */
-          <div className={styles.recording} role="status" aria-live="polite">
-            <span className={styles.recordingDot} aria-hidden />
-            <span className={styles.recordingTime}>
-              Recording {formatDuration(elapsedMs)}
-            </span>
-            <Button
+        <Menu
+          label="Add files"
+          trigger={(props) => (
+            <button
               type="button"
-              variant="primary"
-              size="sm"
-              onClick={() => void finishRecording()}
-              disabled={busy === "record"}
+              className="prio-btn prio-btn--secondary prio-btn--sm"
+              {...props}
             >
-              Stop recording
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={discardRecording}
-            >
-              Discard
-            </Button>
-          </div>
-        ) : (
-          <>
-            <Menu
-              label="Add files"
-              trigger={(props) => (
-                <button
-                  type="button"
-                  className="prio-btn prio-btn--secondary prio-btn--sm"
-                  disabled={busy !== null}
-                  {...props}
-                >
-                  <IconPlus size={14} />
-                  {busy === "screenshot" ? "Capturing…" : "Add files"}
-                </button>
-              )}
-            >
-              <MenuItem
-                icon={<IconExternal size={14} />}
-                onSelect={() => inputRef.current?.click()}
-              >
-                Browse…
-              </MenuItem>
-              <MenuSeparator />
-              <MenuLabel>Snip Tool</MenuLabel>
-              <MenuItem
-                icon={<IconImage size={14} />}
-                disabled={!captureSupported}
-                onSelect={() => void takeScreenshot()}
-              >
-                Screenshot
-              </MenuItem>
-              <MenuItem
-                icon={<IconClock size={14} />}
-                disabled={!recordSupported}
-                onSelect={() => void beginRecording()}
-              >
-                Record
-              </MenuItem>
-            </Menu>
-            <span className={styles.dropzoneHint}>
-              Drag files here, paste a screenshot, or use Snip Tool to capture
-              or record your screen. Up to {megabytes(maxUploadBytes)} per file,
-              and {megabytes(maxImageBytes)} for an image.
-            </span>
-          </>
-        )}
+              <IconPlus size={14} />
+              Add files
+            </button>
+          )}
+        >
+          <MenuItem
+            icon={<IconExternal size={14} />}
+            onSelect={() => inputRef.current?.click()}
+          >
+            Browse…
+          </MenuItem>
+          <MenuSeparator />
+          <MenuLabel>Snip Tool</MenuLabel>
+          <MenuItem
+            icon={<IconImage size={14} />}
+            disabled={!snipAvailable}
+            onSelect={() => openSnipTool("screenshot")}
+          >
+            Screenshot
+          </MenuItem>
+          <MenuItem
+            icon={<IconClock size={14} />}
+            disabled={!snipAvailable}
+            onSelect={() => openSnipTool("record")}
+          >
+            Record
+          </MenuItem>
+        </Menu>
+        <span className={styles.dropzoneHint}>
+          Drag files here, paste a screenshot, or use Snip Tool to capture or
+          record your screen. Up to {megabytes(maxUploadBytes)} per file, and{" "}
+          {megabytes(maxImageBytes)} for an image.
+        </span>
       </div>
 
       {value.length > 0 ? (

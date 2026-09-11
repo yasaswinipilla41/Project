@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Avatar, Button } from "@/components/ui/primitives";
 import { Dialog } from "@/components/ui/Dialog";
 import { useToast } from "@/components/ui/Toast";
@@ -11,7 +11,7 @@ import { ISSUE_TYPE_LABEL, STATUS_LABEL, WORK_ROLE_LABEL } from "@/lib/domain";
 import type { IssueStatus, IssueType } from "@prisma/client";
 import {
   issuesAssignedTo,
-  listProjectIssues,
+  listIssuesForProjects,
   loadRosterProfile,
   updateRosterAssignment,
 } from "@/server/roster";
@@ -56,11 +56,33 @@ export function RosterProfileDialog({
    * person whose profile is open. `updateRosterAssignment` re-checks all of it.
    */
   const [editing, setEditing] = useState(false);
-  const [projectId, setProjectId] = useState("");
-  const [issueIds, setIssueIds] = useState<string[]>([]);
+  /**
+   * Every project this person should be on, and what they should hold in each.
+   *
+   * Kept per project rather than as one flat list of issues, because the set
+   * of projects can change while the editor is open and a flat list gives no
+   * way to say which issues a removed project took with it. An issue past the
+   * picker's cap has no row to read a project id from, so a flat list would
+   * either strand it — the save then refuses it as belonging to no selected
+   * project — or drop it, which releases work nobody chose to release.
+   */
+  const [projectIds, setProjectIds] = useState<string[]>([]);
+  const [byProject, setByProject] = useState<Record<string, string[]>>({});
   const [options, setOptions] = useState<RosterIssueOption[] | null>(null);
   const [loadingIssues, setLoadingIssues] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  /** Everything selected, in the shape both the picker and the save want. */
+  const issueIds = Object.values(byProject).flat();
+
+  /*
+   * Which request is allowed to write its answer.
+   *
+   * Two quick changes to the projects field leave two loads in flight, and the
+   * slower one landing last would revive a project that had just been taken
+   * off. Only the most recent gets to finish.
+   */
+  const latest = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -76,64 +98,125 @@ export function RosterProfileDialog({
     };
   }, [personId]);
 
-  /** The issues of one project, and this person's among them pre-selected. */
-  async function chooseProject(nextId: string) {
-    setProjectId(nextId);
-    setIssueIds([]);
+  /**
+   * The projects this person should be on, and their work in each.
+   *
+   * Only the difference is fetched: a project just added is asked what they
+   * hold there, and one just removed simply drops out of the map along with
+   * its issues. Projects that were already selected keep whatever the
+   * administrator has chosen for them, which is what stops editing the second
+   * project from quietly rewriting the first.
+   */
+  async function chooseProjects(next: string[], previous = projectIds) {
+    const request = (latest.current += 1);
+    const added = next.filter((id) => !previous.includes(id));
+
+    setProjectIds(next);
+    setByProject((current) => {
+      const kept: Record<string, string[]> = {};
+      for (const id of next) kept[id] = previous.includes(id) ? (current[id] ?? []) : [];
+      return kept;
+    });
+
     setOptions(null);
-    if (!nextId) return;
-
-    setLoadingIssues(true);
-    const result = await listProjectIssues(nextId);
-    setLoadingIssues(false);
-
-    if (!result.ok) {
-      toast(result.error, "error");
-      setOptions([]);
+    if (next.length === 0) {
+      setLoadingIssues(false);
       return;
     }
-    setOptions(result.data);
 
-    /*
-     * Start from what they already hold there, so saving without touching the
-     * list is a no-op rather than an unassignment.
-     *
-     * Asked for directly rather than read off the rows above, for two reasons
-     * and both of them lost data. The rows were matched by the displayed
-     * assignee *name*, which is only the same answer while every name is
-     * unique and spelled identically. And the rows are capped at 500, while a
-     * real project holds more — the seed's Engineering project has 985 — so
-     * everything past the cap was invisible to the seeding and released on
-     * save.
-     *
-     * `issuesAssignedTo` answers with the whole set. An issue outside the
-     * visible rows stays selected and therefore stays theirs.
-     */
-    const current = await issuesAssignedTo(nextId, personId);
-    if (current.ok) setIssueIds(current.data);
-    else {
-      toast(current.error, "error");
-      /* Better to offer nothing than a selection that would release work. */
-      setEditing(false);
+    setLoadingIssues(true);
+    const [listed, ...held] = await Promise.all([
+      listIssuesForProjects(next),
+      /*
+       * Start each new project from what they already hold there, so saving
+       * without touching the list is a no-op rather than an unassignment.
+       *
+       * Asked for directly rather than read off the rows above, for two
+       * reasons and both of them lost data. The rows were matched by the
+       * displayed assignee *name*, which is only the same answer while every
+       * name is unique and spelled identically. And the rows are capped, while
+       * a real project holds more — the seed's Engineering project has 985 —
+       * so everything past the cap was invisible to the seeding and released
+       * on save. `issuesAssignedTo` answers with the whole set.
+       */
+      ...added.map((id) => issuesAssignedTo(id, personId)),
+    ]);
+    if (latest.current !== request) return;
+    setLoadingIssues(false);
+
+    if (!listed.ok) {
+      toast(listed.error, "error");
+      setOptions([]);
+    } else {
+      setOptions(listed.data);
     }
+
+    const seeded: Record<string, string[]> = {};
+    for (const [index, id] of added.entries()) {
+      const result = held[index];
+      if (result?.ok) {
+        seeded[id] = result.data;
+      } else {
+        if (result) toast(result.error, "error");
+        /* Better to close the editor than to offer a selection that would
+           release work nobody was shown. */
+        stopEditing();
+        return;
+      }
+    }
+    setByProject((current) => ({ ...current, ...seeded }));
+  }
+
+  /**
+   * The issue selection, put back into the project it belongs to.
+   *
+   * The picker hands back one flat list. An id it offered carries its project
+   * on the option row; an id it never offered — one past the cap, seeded from
+   * what this person already holds — keeps the project it is already filed
+   * under. Between them every id can be placed, so nothing is lost on the way
+   * back in.
+   */
+  function chooseIssues(next: string[]) {
+    const projectOf = new Map<string, string>();
+    for (const option of options ?? []) projectOf.set(option.id, option.projectId);
+    for (const [projectId, ids] of Object.entries(byProject)) {
+      for (const id of ids) if (!projectOf.has(id)) projectOf.set(id, projectId);
+    }
+
+    const grouped: Record<string, string[]> = {};
+    for (const id of projectIds) grouped[id] = [];
+    for (const id of next) {
+      const projectId = projectOf.get(id);
+      if (projectId && grouped[projectId]) grouped[projectId].push(id);
+    }
+    setByProject(grouped);
   }
 
   function startEditing() {
     setEditing(true);
-    // Their current project, when it is unambiguous, is the obvious start.
-    const first = profile?.projects[0];
-    void chooseProject(first ? first.id : "");
+    /* Everything they are on today, so an untouched save changes nothing.
+       The baseline is empty rather than whatever a cancelled edit left
+       behind, so every project is seeded from the database afresh. */
+    void chooseProjects(
+      profile ? profile.projects.map((project) => project.id) : [],
+      [],
+    );
+  }
+
+  function stopEditing() {
+    latest.current += 1;
+    setEditing(false);
+    setProjectIds([]);
+    setByProject({});
+    setOptions(null);
+    setLoadingIssues(false);
   }
 
   async function save() {
-    if (!projectId) {
-      toast("Choose a project.", "error");
-      return;
-    }
     setSaving(true);
     const result = await updateRosterAssignment({
       userId: personId,
-      projectId,
+      projectIds,
       issueIds,
     });
     setSaving(false);
@@ -143,17 +226,27 @@ export function RosterProfileDialog({
       return;
     }
 
+    /* Only what actually happened. A save that assigned nothing and released
+       nothing should not report two zeroes as though they were news. */
+    const { assigned, released, joined, left } = result.data;
+    const parts = [
+      assigned > 0 ? `${assigned} assigned` : null,
+      released > 0 ? `${released} released` : null,
+      joined > 0 ? `${joined} project${joined === 1 ? "" : "s"} added` : null,
+      left > 0 ? `${left} project${left === 1 ? "" : "s"} removed` : null,
+    ].filter(Boolean);
+
     toast(
-      result.data.released > 0
-        ? `${personName} updated · ${result.data.assigned} assigned, ${result.data.released} released`
-        : `${personName} updated · ${result.data.assigned} assigned`,
+      parts.length > 0
+        ? `${personName} updated · ${parts.join(", ")}`
+        : `${personName} is unchanged`,
     );
 
     // Reload the profile in place so the sections below show what was saved,
     // and refresh the page behind so the roster blocks agree with it.
     const reloaded = await loadRosterProfile(personId);
     if (reloaded.ok) setProfile(reloaded.data);
-    setEditing(false);
+    stopEditing();
     router.refresh();
   }
 
@@ -167,18 +260,14 @@ export function RosterProfileDialog({
       footer={
         editing ? (
           <>
-            <Button
-              variant="ghost"
-              onClick={() => setEditing(false)}
-              disabled={saving}
-            >
+            <Button variant="ghost" onClick={stopEditing} disabled={saving}>
               Cancel
             </Button>
             <Button
               variant="primary"
               onClick={() => void save()}
               loading={saving}
-              disabled={saving || !projectId}
+              disabled={saving}
             >
               Save changes
             </Button>
@@ -219,21 +308,33 @@ export function RosterProfileDialog({
           </div>
 
           <div className="prio-field" style={{ marginTop: "var(--prio-space-4)" }}>
-            <span className="prio-label">Assigned project</span>
+            <span className="prio-label">
+              Assigned projects
+              {editing && projectIds.length > 0 ? ` · ${projectIds.length}` : ""}
+            </span>
             {editing ? (
-              <SearchSelect
-                id="roster-edit-project"
-                ariaLabel="Search projects"
-                placeholder="Search projects…"
-                options={projects.map((project) => ({
-                  id: project.id,
-                  label: project.name,
-                  meta: project.key,
-                }))}
-                selected={projectId ? [projectId] : []}
-                onChange={(next) => void chooseProject(next[0] ?? "")}
-                disabled={saving}
-              />
+              <>
+                <SearchSelect
+                  id="roster-edit-project"
+                  multiple
+                  ariaLabel="Search projects"
+                  placeholder="Search projects…"
+                  options={projects.map((project) => ({
+                    id: project.id,
+                    label: project.name,
+                    meta: project.key,
+                  }))}
+                  selected={projectIds}
+                  onChange={(next) => void chooseProjects(next)}
+                  disabled={saving}
+                />
+                <p className="prio-hint">
+                  Every project {personName.split(" ")[0]} should be on. Adding
+                  one brings across whatever they already hold there; taking one
+                  off removes their access to it and puts down their work in it.
+                  Projects left alone here are not touched.
+                </p>
+              </>
             ) : profile.projects.length === 0 ? (
               <p className="prio-text-muted">
                 Not a member of any project yet.
@@ -266,9 +367,9 @@ export function RosterProfileDialog({
               Assigned work · {editing ? issueIds.length : profile.issues.length}
             </span>
             {editing ? (
-              !projectId ? (
+              projectIds.length === 0 ? (
                 <p className="prio-text-muted">
-                  Choose a project first — work is that project&rsquo;s only.
+                  Choose a project first — work belongs to one.
                 </p>
               ) : loadingIssues ? (
                 <p className="prio-text-muted">Loading issues…</p>
@@ -277,24 +378,30 @@ export function RosterProfileDialog({
                   <SearchSelect
                     id="roster-edit-issues"
                     multiple
-                    ariaLabel="Search issues in the chosen project"
+                    ariaLabel="Search issues in the chosen projects"
                     placeholder="Search issues by key or summary…"
-                    emptyHint="This project has no issues yet."
+                    emptyHint="These projects have no issues yet."
                     options={(options ?? []).map((issue) => ({
                       id: issue.id,
                       label: `${issue.key} — ${issue.title}`,
-                      meta: issue.assigneeName
-                        ? `Assigned to ${issue.assigneeName}`
-                        : "Unassigned",
+                      /* The project as well as the assignee: the list can now
+                         span several, and a key alone does not always say
+                         which one a row came from. */
+                      meta: `${issue.projectKey} · ${
+                        issue.assigneeName
+                          ? `Assigned to ${issue.assigneeName}`
+                          : "Unassigned"
+                      }`,
                     }))}
                     selected={issueIds}
-                    onChange={setIssueIds}
+                    onChange={chooseIssues}
                     disabled={saving}
                   />
                   <p className="prio-hint">
-                    What {personName.split(" ")[0]} should be holding in this
-                    project. Anything of theirs here that is taken off the list
-                    is put down; their work in other projects is untouched.
+                    What {personName.split(" ")[0]} should be holding across the
+                    projects above. Anything of theirs in those projects that is
+                    taken off the list is put down; work in any project not
+                    listed above is untouched.
                   </p>
                 </>
               )

@@ -761,6 +761,10 @@ export function CreateIssueDialog({
               onChange={setAttachments}
               maxImageBytes={MAX_IMAGE_BYTES}
               maxUploadBytes={MAX_UPLOAD_BYTES}
+              /* Named, not identified: there is one Create Issue form at a
+                 time, and this is what the Snip Tool calls it while it holds
+                 a capture for it. */
+              snipTarget={{ kind: "draft", label: "New issue" }}
             />
           </div>
 

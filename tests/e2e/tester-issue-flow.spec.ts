@@ -3,12 +3,19 @@ import { waitForNextFrame, watchForProblems } from "./support";
 
 /**
  * The Testing Team's path: Issues module → Create Issue → screenshot →
- * annotate → the issue's own detail page, with both images on it.
+ * annotate → the issue's own detail page, with the marked-up image on it.
  *
  * Nothing here is a second issue-creation system. The button opens the same
  * `CreateIssueDialog` every other surface opens, which calls the same
  * `createIssue` action; these tests exist to prove the *entry point* is
- * wired correctly and that annotating adds evidence rather than replacing it.
+ * wired correctly and that annotating a screenshot edits it.
+ *
+ * One screenshot is one attachment. Marking one up used to upload a second
+ * file beside it, so a tester who annotated twice finished with three copies
+ * of the same picture and no way to tell which was current. The edit is now
+ * written over the attachment itself, and these hold that line: the count
+ * stays at one, and what comes back is the edited image rather than the file
+ * that was chosen.
  */
 
 /** A real, tiny PNG — the server sniffs magic bytes, so this has to be genuine. */
@@ -128,7 +135,7 @@ test.describe("Create Issue from the Issues module", () => {
     ).toContain("Engineering");
   });
 
-  test("the whole tester flow: screenshot, annotate, create, and both images land on the issue", async ({
+  test("the whole tester flow: screenshot, annotate, create, and the marked-up image lands on the issue", async ({
     page,
   }) => {
     const { consoleErrors, failedRequests } = watchForProblems(page);
@@ -148,8 +155,11 @@ test.describe("Create Issue from the Issues module", () => {
       .getByRole("button", { name: "Save" })
       .click();
 
-    // …and changes once it does, so a second visit is clearly a continuation.
-    await expect(dialog.getByRole("button", { name: "Edit markup" })).toBeVisible();
+    /* Still one staged row, and still offering the same way back into the
+       editor: the markup went onto the screenshot rather than beside it. */
+    await expect(
+      dialog.getByRole("button", { name: "Annotate" }),
+    ).toHaveCount(1);
 
     await dialog.getByRole("button", { name: /^create (issue|task|bug|story|epic|feature)$/i }).click();
     await expect(dialog).toBeHidden();
@@ -158,29 +168,23 @@ test.describe("Create Issue from the Issues module", () => {
     await expect(page).toHaveURL(/\/issues\/eng-\d+$/i);
     await expect(page.getByRole("heading", { name: title })).toBeVisible();
 
-    // Two attachments, not one: the evidence and the commentary on it.
-    await expect(page.locator(".prio-attachment")).toHaveCount(2);
-    await expect(page.locator(".prio-attachment img")).toHaveCount(2);
+    // One attachment: the screenshot, with the circle on it.
+    await expect(page.locator(".prio-attachment")).toHaveCount(1);
+    await expect(page.locator(".prio-attachment img")).toHaveCount(1);
 
     const files = await attachmentBytes(page);
-    const original = files.find((f) => !/annotated/.test(f.name));
-    const annotated = files.find((f) => /annotated/.test(f.name));
-
-    expect(original, "the unmarked original must still be attached").toBeTruthy();
-    expect(annotated, "the annotated copy must be attached").toBeTruthy();
-
-    /* The strongest form of "the original was preserved": what comes back is
-       byte-for-byte the file that was uploaded, not a re-encoded or
-       drawn-over version of it. */
+    expect(files).toHaveLength(1);
+    /* It kept its name — a rename is the only thing that changes that — and
+       it is not the file that was chosen, because it now carries the oval. */
+    expect(files[0]!.name).toContain("screenshot");
     expect(
-      original!.size,
-      "the original must be byte-identical to the uploaded file",
-    ).toBe(PNG_BYTES.length);
-    expect(annotated!.size).not.toBe(original!.size);
+      files[0]!.size,
+      "the stored file must be the edited image, not the one uploaded",
+    ).not.toBe(PNG_BYTES.length);
 
     // And it survives a reload, which is what proves it was persisted.
     await page.reload();
-    await expect(page.locator(".prio-attachment img")).toHaveCount(2);
+    await expect(page.locator(".prio-attachment img")).toHaveCount(1);
 
     expect(consoleErrors).toEqual([]);
     expect(failedRequests).toEqual([]);
@@ -202,6 +206,9 @@ test.describe("Create Issue from the Issues module", () => {
     await expect(page).toHaveURL(/\/issues\/eng-\d+$/i);
     await expect(page.locator(".prio-attachment")).toHaveCount(1);
 
+    const before = await attachmentBytes(page);
+    expect(before[0]!.size).toBe(PNG_BYTES.length);
+
     // Reopen the attachment itself — same editor, reached from the issue.
     await page.getByRole("button", { name: /^Annotate screenshot/ }).click();
     const editor = page.getByRole("dialog", { name: "Edit screenshot" });
@@ -210,13 +217,22 @@ test.describe("Create Issue from the Issues module", () => {
     await editor.getByRole("button", { name: "Save" }).click();
     await expect(editor).toBeHidden();
 
-    // The marked-up copy joins the original rather than replacing it.
-    await expect(page.locator(".prio-attachment")).toHaveCount(2);
-    const files = await attachmentBytes(page);
-    expect(files.some((f) => /annotated/.test(f.name))).toBe(true);
-    expect(
-      files.find((f) => !/annotated/.test(f.name))!.size,
-      "re-annotating must not touch the original",
-    ).toBe(PNG_BYTES.length);
+    /* Still one attachment, under the same name, holding different bytes.
+       Editing a screenshot from the issue page is the same act as editing it
+       from the form: the file is rewritten, not copied. */
+    await expect(page.locator(".prio-attachment")).toHaveCount(1);
+    await expect
+      .poll(async () => (await attachmentBytes(page))[0]?.size)
+      .not.toBe(PNG_BYTES.length);
+
+    const after = await attachmentBytes(page);
+    expect(after).toHaveLength(1);
+    expect(after[0]!.name).toBe(before[0]!.name);
+
+    // …and that is what a reload serves, so the replacement really was stored.
+    await page.reload();
+    const reloaded = await attachmentBytes(page);
+    expect(reloaded).toHaveLength(1);
+    expect(reloaded[0]!.size).toBe(after[0]!.size);
   });
 });

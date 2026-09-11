@@ -102,9 +102,10 @@ export function AttachmentGrid({
   isAdmin: boolean;
   compact?: boolean;
   /**
-   * Enables "Annotate" on image attachments, saving the marked-up copy to
-   * this issue. Opt-in per surface: only the issue's own Attachments panel
-   * passes it, so comment and project grids are untouched.
+   * Enables "Annotate" on image attachments. The edit is written over the
+   * attachment itself, so this is the switch and not a destination — opt-in
+   * per surface, and only the issue's own Attachments panel passes it, which
+   * leaves comment and project grids untouched.
    */
   annotateIssueId?: string;
 }) {

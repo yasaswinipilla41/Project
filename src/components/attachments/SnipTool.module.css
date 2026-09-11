@@ -1,0 +1,186 @@
+/*
+ * The Snip Tool window.
+ *
+ * It floats over Prio rather than inside any one page, because it outlives
+ * every page: the shell mounts it once. Bottom-right keeps it clear of the
+ * topbar and of dialogs, which open centred.
+ *
+ * It sits above modals deliberately. A person opens the Create dialog, snips,
+ * and needs to see the capture while the dialog is still up — a window that
+ * hid behind the thing it exists to serve would be useless.
+ */
+.window {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: var(--prio-z-popover);
+  width: min(360px, calc(100vw - 40px));
+  display: flex;
+  flex-direction: column;
+  background: var(--prio-bg-surface-raised);
+  border: 1px solid var(--prio-border-strong);
+  border-radius: var(--prio-radius-lg);
+  box-shadow: var(--prio-shadow-xl);
+  overflow: hidden;
+}
+
+/* Minimised: the title bar and nothing else, still on screen so it can be
+   found again. The capture is untouched — this is a CSS state, not a
+   teardown. */
+.window[data-minimized] {
+  width: auto;
+  max-width: min(280px, calc(100vw - 40px));
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 8px 12px;
+  background: var(--prio-bg-subtle);
+  border-bottom: 1px solid var(--prio-border-subtle);
+  cursor: default;
+  user-select: none;
+}
+
+.window[data-minimized] .bar {
+  border-bottom: none;
+}
+
+.title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--prio-text-sm);
+  font-weight: 600;
+  color: var(--prio-text-primary);
+  white-space: nowrap;
+}
+
+/* Which form or issue the capture is bound for. Shown because the window
+   outlives the page it was opened from, so "for what?" is a real question. */
+.target {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--prio-radius-sm);
+  background: transparent;
+  color: var(--prio-text-secondary);
+  cursor: pointer;
+}
+
+.control:hover {
+  background: var(--prio-bg-hover);
+  color: var(--prio-text-primary);
+}
+
+.control:focus-visible {
+  outline: none;
+  box-shadow: var(--prio-shadow-focus);
+}
+
+.glyph {
+  font-size: 12px;
+  line-height: 1;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+.hint {
+  margin: 0;
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-muted);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-height: 200px;
+  overflow: hidden;
+  border: 1px solid var(--prio-border-subtle);
+  border-radius: var(--prio-radius-md);
+  background: var(--prio-bg-app);
+}
+
+.preview img,
+.preview video {
+  max-width: 100%;
+  max-height: 200px;
+  object-fit: contain;
+}
+
+.meta {
+  margin: 0;
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.recording {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--prio-red-600);
+  animation: snipPulse 1.4s ease-in-out infinite;
+}
+
+.elapsed {
+  font-size: var(--prio-text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--prio-text-primary);
+}
+
+.error {
+  margin: 0;
+  font-size: var(--prio-text-xs);
+  color: var(--prio-red-600);
+}
+
+@keyframes snipPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dot {
+    animation: none;
+  }
+}

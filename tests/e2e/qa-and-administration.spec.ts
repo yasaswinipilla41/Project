@@ -69,6 +69,43 @@ async function anIssueOfTheirs(): Promise<string> {
   return issue.key.toLowerCase();
 }
 
+/**
+ * The members of a project a tester may hand work to.
+ *
+ * `workRoleFromTeams` spelled out against the database, so this stays honest
+ * as the seed changes: an administrator is never offered, somebody on Testing
+ * alone is a tester and is not offered, and everybody else builds — whether
+ * they are on Development, on both teams, or on no team at all, which is what
+ * that rule already calls a developer.
+ */
+async function developersOnProject(key: string): Promise<string[]> {
+  const members = await prisma.projectMember.findMany({
+    where: { project: { key }, user: { isActive: true } },
+    select: {
+      user: {
+        select: {
+          name: true,
+          role: true,
+          teamMemberships: { select: { team: { select: { slug: true } } } },
+        },
+      },
+    },
+  });
+
+  return members
+    .filter(({ user }) => {
+      if (user.role === "ADMIN") return false;
+      const slugs = new Set(
+        user.teamMemberships.map((row) => row.team.slug),
+      );
+      const testsOnly =
+        slugs.has(TESTING_TEAM_SLUG) && !slugs.has(DEVELOPMENT_TEAM_SLUG);
+      return !testsOnly;
+    })
+    .map(({ user }) => user.name)
+    .sort();
+}
+
 /** The statuses the issue page's own status menu offers. */
 async function statusMenuOptions(page: Page): Promise<string[]> {
   await page.locator(".prio-fieldtrigger").first().click();
@@ -86,17 +123,44 @@ test.describe("A QA member", () => {
   test.use({ storageState: MEMBER_STATE });
   onTeam(TESTING_TEAM_SLUG);
 
-  test("files work without an assignee or a due date", async ({ page }) => {
+  test("hands work to a developer, and still sets no due date", async ({
+    page,
+  }) => {
+    /*
+     * A tester raising a defect knows who should look at it, and having to
+     * ask somebody else to make the assignment was the delay worth removing.
+     * So Assignee is offered — narrowed to the people who build.
+     *
+     * A due date is still not theirs to set: when work is promised is a
+     * planning decision, and it stays with whoever plans. `createIssue`
+     * enforces both rules again on the way in; this is only what is offered.
+     */
     await page.goto("/");
     await page.locator(".prio-create__main").click();
 
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
+    await dialog
+      .getByLabel("Project")
+      .selectOption({ label: "Engineering (ENG)" });
 
-    // Both fields are absent from the form, not merely disabled.
-    await expect(dialog.locator("#create-assignee")).toHaveCount(0);
+    const assignee = dialog.locator("#create-assignee");
+    await expect(assignee).toHaveCount(1);
+
+    /* Everybody offered is developer-capable. Read from the database rather
+       than hard-coded, so this stays true as the seed changes. */
+    await expect
+      .poll(async () => (await assignee.locator("option").count()) > 1)
+      .toBe(true);
+    const offered = (await assignee.locator("option").allInnerTexts())
+      .slice(1)
+      .map((text) => text.trim())
+      .sort();
+    expect(offered.length).toBeGreaterThan(0);
+    expect(offered).toEqual(await developersOnProject("ENG"));
+
+    // The due date is still not a tester's to set.
     await expect(dialog.locator("#create-due")).toHaveCount(0);
-    await expect(dialog.getByText("Assignee", { exact: true })).toHaveCount(0);
     await expect(dialog.getByText("Due date", { exact: true })).toHaveCount(0);
 
     // …and severity is gone for everybody, this form included.
@@ -296,20 +360,57 @@ test.describe("Severity", () => {
 test.describe("Administration", () => {
   test.use({ storageState: ADMIN_STATE });
 
-  test("puts Development and Testing side by side", async ({ page }) => {
+  test("puts Development, Testing and Full Stack side by side", async ({
+    page,
+  }) => {
     await page.goto("/admin");
 
-    const blocks = page.locator(".row > .col-lg-6:has(.prio-projectmembers__head)");
-    await expect(blocks).toHaveCount(2);
+    /* Three blocks now: the two team rosters, and the full stack roster that
+       follows from being on both. They share a row rather than the third
+       starting a new one underneath. */
+    const blocks = page.locator(
+      ".row > [class*='col-lg-']:has(.prio-projectmembers__head)",
+    );
+    await expect(blocks).toHaveCount(3);
 
-    const [first, second] = await blocks.evaluateAll((nodes) =>
+    const boxes = await blocks.evaluateAll((nodes) =>
       nodes.map((node) => node.getBoundingClientRect()),
     );
-    expect(first, "two blocks are laid out").toBeTruthy();
-    expect(second).toBeTruthy();
-    // Same row, equal width: side by side rather than stacked.
-    expect(Math.abs(first!.top - second!.top)).toBeLessThan(2);
-    expect(Math.abs(first!.width - second!.width)).toBeLessThan(2);
+    expect(boxes.length).toBe(3);
+    for (const box of boxes) {
+      expect(Math.abs(box.top - boxes[0]!.top)).toBeLessThan(2);
+      expect(Math.abs(box.width - boxes[0]!.width)).toBeLessThan(2);
+    }
+  });
+
+  test("derives the Full Stack block from both rosters, without a third team", async ({
+    page,
+  }) => {
+    await page.goto("/admin");
+
+    const block = page
+      .locator(".prio-issue__section")
+      .filter({
+        has: page.getByRole("heading", { name: /^Full Stack Developers · / }),
+      });
+    await expect(block).toBeVisible();
+    await expect(block).toContainText("Not a separate team");
+
+    /* Everybody it lists really is on both team rosters — it is a reading of
+       those, not a roster of its own. */
+    const names = await block
+      .locator(".prio-memberpicker__name")
+      .allInnerTexts();
+    for (const name of names) {
+      for (const team of ["Development", "Testing"]) {
+        const source = page
+          .locator(".prio-issue__section")
+          .filter({
+            has: page.getByRole("heading", { name: new RegExp(`^${team} · `) }),
+          });
+        await expect(source.getByText(name, { exact: true })).toHaveCount(1);
+      }
+    }
   });
 
   test("opens each block, and every one of them comes back", async ({ page }) => {
@@ -389,7 +490,10 @@ test.describe("Administration", () => {
     await page.goto("/admin");
 
     await page
-      .locator(".prio-issue__section:has-text('Development')")
+      /* By its heading: the Full Stack block names Development in its own
+         description, so matching the card on the word finds two. */
+      .locator(".prio-issue__section")
+      .filter({ has: page.getByRole("heading", { name: /^Development · / }) })
       .getByRole("button", { name: "Add members" })
       .click();
 
@@ -441,15 +545,41 @@ test.describe("Administration", () => {
     await page.keyboard.press("Escape");
   });
 
-  test("edits a roster member's project and work, and it persists", async ({
+  test("opens on every project the person is on, and edits work across them", async ({
     page,
   }) => {
-    await page.goto("/admin");
+    /*
+     * The editor used to hold one project. Somebody working on two could only
+     * be edited for one of them, and the save released their work in the
+     * other — so the safe thing to do with a person on several projects was
+     * not to edit them at all.
+     *
+     * It now opens on everything they are on. The load-bearing part is that
+     * first assertion: the projects they hold are already selected before
+     * anybody touches the form, which is what makes saving an untouched
+     * editor a no-op rather than a mass unassignment.
+     */
+    const person = await prisma.user.findFirstOrThrow({
+      where: {
+        isActive: true,
+        teamMemberships: { some: {} },
+        projectMemberships: { some: { project: { isArchived: false } } },
+      },
+      select: {
+        name: true,
+        projectMemberships: {
+          where: { project: { isArchived: false } },
+          select: { project: { select: { name: true } } },
+        },
+      },
+    });
+    const theirProjects = person.projectMemberships.map((m) => m.project.name);
 
-    // Somebody on a roster: the Testing block's first member, whoever that is.
-    const anyMember = page.locator(".prio-memberrow").first();
-    await expect(anyMember).toBeVisible();
-    await anyMember.getByRole("button", { name: /^Profile of / }).click();
+    await page.goto("/admin");
+    await page
+      .getByRole("button", { name: `Profile of ${person.name}` })
+      .first()
+      .click();
 
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
@@ -457,17 +587,25 @@ test.describe("Administration", () => {
     await dialog.getByRole("button", { name: "Edit" }).click();
     await expect(dialog.locator("#roster-edit-project")).toBeVisible();
 
-    // Choose a project, then a piece of its work.
+    // Every project they are on is already a chip, none of them added by hand.
+    for (const name of theirProjects) {
+      await expect(
+        dialog.locator(".prio-chipset__chip").filter({ hasText: name }),
+      ).toHaveCount(1);
+    }
+
+    /* And the work picker is open on those projects without a project having
+       to be chosen first — there is nothing left to choose. */
+    await expect(dialog.locator("#roster-edit-issues")).toBeVisible();
+
     const optionsOf = (field: string) =>
       page.locator(`#${field}-options`).getByRole("option");
 
-    await dialog.locator("#roster-edit-project").click();
-    await optionsOf("roster-edit-project").first().click();
-    await expect(dialog.locator("#roster-edit-issues")).toBeVisible();
-
     await dialog.locator("#roster-edit-issues").click();
     const issueOption = optionsOf("roster-edit-issues").first();
-    const chosen = (await issueOption.innerText()).split("—")[0]!.trim();
+    await expect(issueOption).toBeVisible();
+    const label = await issueOption.innerText();
+    const chosen = label.split("—")[0]!.trim();
     await issueOption.click();
 
     await dialog.getByRole("button", { name: "Save changes" }).click();
@@ -488,6 +626,21 @@ test.describe("Administration", () => {
       select: { assigneeId: true },
     });
     expect(assigned.assigneeId).not.toBeNull();
+
+    /* Nothing was taken away to make room for it: they are still on every
+       project they started on. */
+    const after = await prisma.user.findFirstOrThrow({
+      where: { name: person.name },
+      select: {
+        projectMemberships: {
+          where: { project: { isArchived: false } },
+          select: { project: { select: { name: true } } },
+        },
+      },
+    });
+    expect(
+      after.projectMemberships.map((m) => m.project.name).sort(),
+    ).toEqual([...theirProjects].sort());
   });
 });
 

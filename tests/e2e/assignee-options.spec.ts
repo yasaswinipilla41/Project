@@ -127,27 +127,29 @@ test.describe("Assignee options come from project membership", () => {
     const dialog = await openCreateDialog(page);
     const assignee = dialog.getByLabel("Assignee");
 
+    /*
+     * Polled on the names, not on how many there are.
+     *
+     * The two projects happen to have the same number of members, so waiting
+     * for a count could not tell the new list from the old one: the poll
+     * passed on the previous project's options still being on screen, and the
+     * comparison that followed then failed against a list nobody had waited
+     * for. What is being waited for is the list actually changing to this
+     * project's people, so that is what is asked.
+     */
+    const names = async () =>
+      (await assignee.locator("option").allInnerTexts())
+        .slice(1)
+        .map((text) => text.trim())
+        .sort();
+
     await dialog
       .getByLabel("Project")
       .selectOption({ label: "Engineering (ENG)" });
-    await expect
-      .poll(async () => (await assignee.locator("option").count()) - 1)
-      .toBe(eng.length);
-    const first = (await assignee.locator("option").allInnerTexts())
-      .slice(1)
-      .map((t) => t.trim())
-      .sort();
-    expect(first).toEqual(eng.map((m) => m.name).sort());
+    await expect.poll(names).toEqual(eng.map((m) => m.name).sort());
 
     await dialog.getByLabel("Project").selectOption({ label: "Website (WEB)" });
-    await expect
-      .poll(async () => (await assignee.locator("option").count()) - 1)
-      .toBe(web.length);
-    const second = (await assignee.locator("option").allInnerTexts())
-      .slice(1)
-      .map((t) => t.trim())
-      .sort();
-    expect(second).toEqual(web.map((m) => m.name).sort());
+    await expect.poll(names).toEqual(web.map((m) => m.name).sort());
   });
 
   test("Create Issue does not offer people from outside the project", async ({

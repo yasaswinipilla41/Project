@@ -2,7 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { assertAdmin, workRoleOf } from "@/lib/authz";
+import {
+  assertAdmin,
+  DEVELOPMENT_TEAM_SLUG,
+  TESTING_TEAM_SLUG,
+  workRoleOf,
+} from "@/lib/authz";
 import { ISSUE_TYPE_LABEL } from "@/lib/domain";
 import type { WorkRole } from "@/lib/domain";
 import { prisma } from "@/lib/prisma";
@@ -35,6 +40,14 @@ import { setUserRole } from "@/server/users";
  * tester on a project means both, and making them do it in two places was the
  * limitation being fixed — not because membership has grown a project
  * dimension. It has not, and `TeamMember` is unchanged.
+ *
+ * Full stack developers are the same two rows, not a third team. Somebody who
+ * both builds and checks is on Development and on Testing, which is already
+ * what `workRoleFromTeams` reads to answer "Full Stack Developer" everywhere
+ * else in Prio. Administration therefore *derives* that roster rather than
+ * storing it: adding writes both memberships, removing deletes both, and there
+ * is no third `Team` row that could disagree with the badge on somebody's own
+ * dashboard.
  */
 
 export type RosterActionResult<T = undefined> =
@@ -62,6 +75,19 @@ const developerAssignmentSchema = z.object({
   role: z.enum(["ADMIN", "MEMBER"]),
   userIds: z.array(z.string().min(1)).min(1),
 });
+
+/**
+ * The same request without a team.
+ *
+ * The full stack roster is derived, so there is no id for a caller to name and
+ * none for it to get wrong: the two teams are looked up here, by the slugs the
+ * role derivation itself reads.
+ */
+const fullStackAssignmentSchema = developerAssignmentSchema.omit({
+  teamId: true,
+});
+
+const fullStackRemovalSchema = z.object({ userId: z.string().min(1) });
 
 /* ------------------------------------------------------ shared validation */
 
@@ -151,7 +177,7 @@ export async function assignTeamMembers(
 /* -------------------------------------------------- developer assignment */
 
 /**
- * Onboard developers: team, project, account role, and the work itself.
+ * Onboard developers: teams, project, account role, and the work itself.
  *
  * Issues are dealt out to the chosen people in the order both were given —
  * round-robin, so four issues across two developers is two each and one
@@ -160,10 +186,161 @@ export async function assignTeamMembers(
  * out is the reading that neither drops a selection nor invents a second
  * assignee column.
  *
+ * `teamIds` is a list because the full stack roster is two teams and the
+ * developer roster is one. Everything else about the act is identical, and
+ * writing it twice is how the two would drift.
+ *
  * Every id is re-checked here. In particular each issue must belong to the
  * project that was chosen — the dialog filters the list, but a filtered list is
  * not what makes the write safe.
  */
+async function onboard(
+  actorId: string,
+  input: {
+    teamIds: string[];
+    projectId: string;
+    issueIds: string[];
+    role: "ADMIN" | "MEMBER";
+    userIds: string[];
+  },
+): Promise<RosterActionResult<{ added: number; assigned: number }>> {
+  const { teamIds, projectId, issueIds, role, userIds } = input;
+
+  const [teams, project] = await Promise.all([
+    prisma.team.findMany({
+      where: { id: { in: teamIds } },
+      select: { id: true },
+    }),
+    prisma.project.findUnique({
+      where: { id: projectId },
+      select: { id: true, key: true },
+    }),
+  ]);
+  if (teams.length !== teamIds.length) {
+    return { ok: false, error: "That team no longer exists." };
+  }
+  if (!project) return { ok: false, error: "That project no longer exists." };
+
+  const people = await activeUsers(userIds);
+  if (people.length === 0) {
+    return { ok: false, error: "None of those people are available." };
+  }
+
+  /* Every issue must be this project's. Checked against the database rather
+     than trusted from the payload: the dropdown narrows the choice, and this
+     is what makes the narrowing binding. */
+  const issues =
+    issueIds.length > 0
+      ? await prisma.issue.findMany({
+          where: { id: { in: issueIds }, projectId },
+          select: {
+            id: true,
+            key: true,
+            title: true,
+            type: true,
+            assigneeId: true,
+          },
+        })
+      : [];
+
+  if (issues.length !== issueIds.length) {
+    return {
+      ok: false,
+      error:
+        "One or more of those issues do not belong to the selected project.",
+    };
+  }
+
+  /*
+   * The account role goes through the existing People-screen mutation, which
+   * carries the rules this must not re-implement: nobody demotes themselves,
+   * and the organization is never left without an administrator.
+   *
+   * Done before the transaction rather than inside it, because `setUserRole`
+   * owns its own client and cannot join one. First is the right side of that
+   * trade: a refused role change is the likely failure, and taking it here
+   * means nothing else has been written when it happens. The reverse order
+   * would leave a rejected assignment having already changed somebody's role.
+   */
+  for (const userId of people) {
+    const current = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+    if (current && current.role !== role) {
+      const result = await setUserRole(userId, role);
+      if (!result.ok) return { ok: false, error: result.error };
+    }
+  }
+
+  let assigned = 0;
+
+  await prisma.$transaction(async (tx) => {
+    for (const userId of people) {
+      for (const teamId of teamIds) {
+        await tx.teamMember.upsert({
+          where: { teamId_userId: { teamId, userId } },
+          update: {},
+          create: { teamId, userId },
+        });
+      }
+      /* Project access first: an assignee must be a member of the project
+         they are assigned in, which is the rule `createIssue` already
+         enforces. Doing it in this order means the assignment below can
+         never create the state that rule forbids. */
+      await tx.projectMember.upsert({
+        where: { projectId_userId: { projectId, userId } },
+        update: {},
+        create: { projectId, userId },
+      });
+    }
+
+    for (const [index, issue] of issues.entries()) {
+      const userId = people[index % people.length]!;
+      if (issue.assigneeId === userId) continue;
+
+      await tx.issue.update({
+        where: { id: issue.id },
+        data: { assigneeId: userId },
+      });
+
+      await recordFieldChanges(tx, {
+        issueId: issue.id,
+        actorId,
+        changes: [
+          {
+            field: "assigneeId",
+            oldValue: issue.assigneeId,
+            newValue: userId,
+          },
+        ],
+      });
+
+      await notify(tx, {
+        issueId: issue.id,
+        actorId,
+        userIds: [userId, ...(await watcherIds(tx, issue.id))],
+        type: "ISSUE_ASSIGNED",
+        message: assignmentMessage({
+          issueKey: issue.key,
+          issueTitle: issue.title,
+          typeLabel: ISSUE_TYPE_LABEL[issue.type].toLowerCase(),
+          tester: await isTester(tx, userId),
+        }),
+      });
+
+      assigned += 1;
+    }
+  });
+
+  revalidatePath("/admin");
+  revalidatePath(`/projects/${project.key.toLowerCase()}`);
+  revalidatePath(`/projects/${project.key.toLowerCase()}/summary`);
+
+  return { ok: true, data: { added: people.length, assigned } };
+}
+
+/** Onboard developers onto the Development team. */
 export async function assignDevelopers(
   raw: unknown,
 ): Promise<RosterActionResult<{ added: number; assigned: number }>> {
@@ -178,133 +355,104 @@ export async function assignDevelopers(
         error: "Choose a project, a role and at least one person.",
       };
     }
-    const { teamId, projectId, issueIds, role, userIds } = parsed.data;
+    const { teamId, ...rest } = parsed.data;
+    return await onboard(actor.id, { teamIds: [teamId], ...rest });
+  } catch (error) {
+    return failure(error);
+  }
+}
 
-    const [team, project] = await Promise.all([
-      prisma.team.findUnique({ where: { id: teamId }, select: { id: true } }),
-      prisma.project.findUnique({
-        where: { id: projectId },
-        select: { id: true, key: true },
-      }),
-    ]);
-    if (!team) return { ok: false, error: "That team no longer exists." };
-    if (!project) return { ok: false, error: "That project no longer exists." };
+/* ------------------------------------------- the derived full stack roster */
 
-    const people = await activeUsers(userIds);
-    if (people.length === 0) {
-      return { ok: false, error: "None of those people are available." };
-    }
+/**
+ * The two teams a full stack developer is on, by the slugs the role derivation
+ * itself reads. Looked up rather than configured, so this cannot name a team
+ * that `workRoleFromTeams` would not count.
+ */
+async function fullStackTeamIds(): Promise<string[] | null> {
+  const teams = await prisma.team.findMany({
+    where: { slug: { in: [TESTING_TEAM_SLUG, DEVELOPMENT_TEAM_SLUG] } },
+    select: { id: true },
+  });
+  return teams.length === 2 ? teams.map((team) => team.id) : null;
+}
 
-    /* Every issue must be this project's. Checked against the database rather
-       than trusted from the payload: the dropdown narrows the choice, and this
-       is what makes the narrowing binding. */
-    const issues =
-      issueIds.length > 0
-        ? await prisma.issue.findMany({
-            where: { id: { in: issueIds }, projectId },
-            select: {
-              id: true,
-              key: true,
-              title: true,
-              type: true,
-              assigneeId: true,
-            },
-          })
-        : [];
+/**
+ * Onboard full stack developers.
+ *
+ * The same act as `assignDevelopers` against both teams at once, which is the
+ * whole of what "full stack" is here. Nothing new is stored: afterwards the
+ * person is on Development and on Testing, and every surface that asks what
+ * they do derives Full Stack Developer from exactly those two rows.
+ */
+export async function assignFullStackDevelopers(
+  raw: unknown,
+): Promise<RosterActionResult<{ added: number; assigned: number }>> {
+  try {
+    const actor = await requireUser();
+    assertAdmin(actor);
 
-    if (issues.length !== issueIds.length) {
+    const parsed = fullStackAssignmentSchema.safeParse(raw);
+    if (!parsed.success) {
       return {
         ok: false,
-        error:
-          "One or more of those issues do not belong to the selected project.",
+        error: "Choose a project, a role and at least one person.",
       };
     }
 
-    /*
-     * The account role goes through the existing People-screen mutation, which
-     * carries the rules this must not re-implement: nobody demotes themselves,
-     * and the organization is never left without an administrator.
-     *
-     * Done before the transaction rather than inside it, because `setUserRole`
-     * owns its own client and cannot join one. First is the right side of that
-     * trade: a refused role change is the likely failure, and taking it here
-     * means nothing else has been written when it happens. The reverse order
-     * would leave a rejected assignment having already changed somebody's role.
-     */
-    for (const userId of people) {
-      const current = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { role: true },
-      });
-      if (current && current.role !== role) {
-        const result = await setUserRole(userId, role);
-        if (!result.ok) return { ok: false, error: result.error };
-      }
+    const teamIds = await fullStackTeamIds();
+    if (!teamIds) {
+      return {
+        ok: false,
+        error: "The Development and Testing teams are not both set up.",
+      };
     }
 
-    let assigned = 0;
+    return await onboard(actor.id, { teamIds, ...parsed.data });
+  } catch (error) {
+    return failure(error);
+  }
+}
 
-    await prisma.$transaction(async (tx) => {
-      for (const userId of people) {
-        await tx.teamMember.upsert({
-          where: { teamId_userId: { teamId, userId } },
-          update: {},
-          create: { teamId, userId },
-        });
-        /* Project access first: an assignee must be a member of the project
-           they are assigned in, which is the rule `createIssue` already
-           enforces. Doing it in this order means the assignment below can
-           never create the state that rule forbids. */
-        await tx.projectMember.upsert({
-          where: { projectId_userId: { projectId, userId } },
-          update: {},
-          create: { projectId, userId },
-        });
-      }
+/**
+ * Take somebody off the full stack roster.
+ *
+ * Both memberships go, because one of them left behind is not a smaller
+ * version of the same thing — it is a different role. Removing a full stack
+ * developer and leaving the Testing row would quietly turn them into a tester,
+ * and their own dashboard would change under them without anybody having
+ * decided that.
+ *
+ * Project access and assigned work are deliberately untouched. Those are the
+ * other two facts, they are edited from the profile, and a team roster is not
+ * where they are taken away.
+ */
+export async function removeFullStackDeveloper(
+  raw: unknown,
+): Promise<RosterActionResult<{ removed: number }>> {
+  try {
+    const actor = await requireUser();
+    assertAdmin(actor);
 
-      for (const [index, issue] of issues.entries()) {
-        const userId = people[index % people.length]!;
-        if (issue.assigneeId === userId) continue;
+    const parsed = fullStackRemovalSchema.safeParse(raw);
+    if (!parsed.success) {
+      return { ok: false, error: "Choose someone to remove." };
+    }
 
-        await tx.issue.update({
-          where: { id: issue.id },
-          data: { assigneeId: userId },
-        });
+    const teamIds = await fullStackTeamIds();
+    if (!teamIds) {
+      return {
+        ok: false,
+        error: "The Development and Testing teams are not both set up.",
+      };
+    }
 
-        await recordFieldChanges(tx, {
-          issueId: issue.id,
-          actorId: actor.id,
-          changes: [
-            {
-              field: "assigneeId",
-              oldValue: issue.assigneeId,
-              newValue: userId,
-            },
-          ],
-        });
-
-        await notify(tx, {
-          issueId: issue.id,
-          actorId: actor.id,
-          userIds: [userId, ...(await watcherIds(tx, issue.id))],
-          type: "ISSUE_ASSIGNED",
-          message: assignmentMessage({
-            issueKey: issue.key,
-            issueTitle: issue.title,
-            typeLabel: ISSUE_TYPE_LABEL[issue.type].toLowerCase(),
-            tester: await isTester(tx, userId),
-          }),
-        });
-
-        assigned += 1;
-      }
+    const removed = await prisma.teamMember.deleteMany({
+      where: { userId: parsed.data.userId, teamId: { in: teamIds } },
     });
 
     revalidatePath("/admin");
-    revalidatePath(`/projects/${project.key.toLowerCase()}`);
-    revalidatePath(`/projects/${project.key.toLowerCase()}/summary`);
-
-    return { ok: true, data: { added: people.length, assigned } };
+    return { ok: true, data: { removed: removed.count } };
   } catch (error) {
     return failure(error);
   }
@@ -330,6 +478,16 @@ export interface RosterIssueOption {
    */
   assigneeId: string | null;
   assigneeName: string | null;
+  /**
+   * Which project it is in.
+   *
+   * The picker used to be one project's issues, so this was implicit. It can
+   * now show several at once, and an issue key on its own does not always say
+   * which — so the project travels with the row rather than being inferred
+   * from whatever was last selected.
+   */
+  projectId: string;
+  projectKey: string;
 }
 
 /**
@@ -348,36 +506,86 @@ export async function listProjectIssues(
 
     if (!projectId) return { ok: true, data: [] };
 
-    const issues = await prisma.issue.findMany({
-      where: { projectId },
-      orderBy: [{ status: "asc" }, { key: "asc" }],
-      select: {
-        id: true,
-        key: true,
-        title: true,
-        type: true,
-        status: true,
-        assigneeId: true,
-        assignee: { select: { name: true } },
-      },
-      take: 500,
-    });
-
-    return {
-      ok: true,
-      data: issues.map((issue) => ({
-        id: issue.id,
-        key: issue.key,
-        title: issue.title,
-        type: issue.type,
-        status: issue.status,
-        assigneeId: issue.assigneeId,
-        assigneeName: issue.assignee?.name ?? null,
-      })),
-    };
+    return await issueOptionsIn([projectId]);
   } catch (error) {
     return failure(error);
   }
+}
+
+/**
+ * The issues of several projects at once, for the profile editor.
+ *
+ * One query rather than one per project, and each row says which project it
+ * belongs to, so the picker can group what it offers and the save below can
+ * check every id against the set of projects actually being edited.
+ *
+ * The cap is per request and applies to the whole selection. It is a picker,
+ * not an export; the selection the editor *starts* from comes from
+ * `issuesAssignedAcross`, which has no cap, so nothing a person holds can fall
+ * off the end of this list and be released for never having been shown.
+ */
+export async function listIssuesForProjects(
+  projectIds: string[],
+): Promise<RosterActionResult<RosterIssueOption[]>> {
+  try {
+    const user = await requireUser();
+    assertAdmin(user);
+
+    return await issueOptionsIn(projectIds);
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/**
+ * The shared query behind both pickers. Caller has already checked the actor.
+ *
+ * One query per project rather than one across all of them, because the cap
+ * has to be per project. A single capped query ordered by project hands back
+ * the first project's rows until the limit runs out — Engineering alone has
+ * 985 — and the second project simply never appears in the picker. Each
+ * project bringing its own 500 means every project asked for is represented.
+ */
+async function issueOptionsIn(
+  projectIds: string[],
+): Promise<RosterActionResult<RosterIssueOption[]>> {
+  const wanted = [...new Set(projectIds.filter((id) => id.length > 0))];
+  if (wanted.length === 0) return { ok: true, data: [] };
+
+  const perProject = await Promise.all(
+    wanted.map((projectId) =>
+      prisma.issue.findMany({
+        where: { projectId },
+        orderBy: [{ status: "asc" }, { key: "asc" }],
+        select: {
+          id: true,
+          key: true,
+          title: true,
+          type: true,
+          status: true,
+          assigneeId: true,
+          assignee: { select: { name: true } },
+          project: { select: { id: true, key: true } },
+        },
+        take: 500,
+      }),
+    ),
+  );
+
+  return {
+    ok: true,
+    data: perProject.flat().map((issue) => ({
+      id: issue.id,
+      key: issue.key,
+      title: issue.title,
+      type: issue.type,
+      status: issue.status,
+      assigneeId: issue.assigneeId,
+      assigneeName: issue.assignee?.name ?? null,
+      projectId: issue.project.id,
+      projectKey: issue.project.key,
+    })),
+  };
 }
 
 /**
@@ -408,6 +616,36 @@ export async function issuesAssignedTo(
 
     const rows = await prisma.issue.findMany({
       where: { projectId, assigneeId: userId },
+      select: { id: true },
+    });
+
+    return { ok: true, data: rows.map((row) => row.id) };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/**
+ * The same answer across several projects.
+ *
+ * What the profile editor starts from once it can show more than one project
+ * at a time. Uncapped, for the reason above: the save replaces this person's
+ * assignments across every project being edited, so a selection that began
+ * short of what they hold would release the difference.
+ */
+export async function issuesAssignedAcross(
+  projectIds: string[],
+  userId: string,
+): Promise<RosterActionResult<string[]>> {
+  try {
+    const admin = await requireUser();
+    assertAdmin(admin);
+
+    const wanted = projectIds.filter((id) => id.length > 0);
+    if (wanted.length === 0 || !userId) return { ok: true, data: [] };
+
+    const rows = await prisma.issue.findMany({
+      where: { projectId: { in: wanted }, assigneeId: userId },
       select: { id: true },
     });
 
@@ -528,8 +766,16 @@ export async function loadRosterProfile(
 
 const rosterEditSchema = z.object({
   userId: z.string().min(1),
-  projectId: z.string().min(1),
-  /** The issues in that project this person should end up holding. */
+  /**
+   * Every project this person should be on when the save finishes.
+   *
+   * A set rather than one id, because somebody works on more than one project
+   * and editing the second used to mean losing the first. Empty is a legal
+   * answer — it means "on nothing" — and it is the only way the editor can
+   * express taking away the last project somebody has.
+   */
+  projectIds: z.array(z.string().min(1)),
+  /** The issues, across those projects, this person should end up holding. */
   issueIds: z.array(z.string().min(1)),
 });
 
@@ -540,72 +786,108 @@ const rosterEditSchema = z.object({
  * going back to somebody already on a roster and moving them. It writes the
  * same three facts, with the same rules, for one person:
  *
- *   `ProjectMember`  they are put on the project named, if they are not on it
+ *   `ProjectMember`  they are put on every project named
+ *   `ProjectMember`  projects they were on and are no longer named are dropped
  *   `Issue.assignee` the issues named become theirs
- *   `Issue.assignee` issues of that project that were theirs and are no longer
- *                    named are put down
+ *   `Issue.assignee` issues in the projects being edited that were theirs and
+ *                    are no longer named are put down
  *
- * The last line is what makes this an edit rather than another add. The dialog
- * hands over the full set for one project, so an issue disappearing from that
- * set is an instruction, not an omission — and scoping the unassignment to the
- * one project is what stops an edit here silently emptying somebody's queue
- * everywhere else.
+ * The removals are what make this an edit rather than another add. The editor
+ * hands over the full picture, so something disappearing from it is an
+ * instruction, not an omission.
  *
- * Membership of other projects is left alone. Moving somebody to a new project
- * is adding them to it; taking their access away is a separate act, done from
- * the project's own members list, and quietly performing it here because the
- * field happens to be a single choice would be a surprise.
+ * What it will not touch is anything outside that picture. A person's work in
+ * a project they are being taken off is released, because an assignee has to
+ * be a member of the project they are assigned in and leaving those rows would
+ * break that rule quietly — but nothing else moves, and a project that was
+ * never in the request is neither joined nor left.
  *
- * Every id is re-checked: the person exists and is active, the project exists,
- * and every issue named belongs to that project. Administrator-only, like the
- * rest of this file.
+ * Every id is re-checked: the person exists and is active, every project
+ * exists, and every issue named belongs to one of the projects named. The
+ * editor filters its own lists; this is what makes the filtering binding.
+ * Administrator-only, like the rest of this file.
  */
 export async function updateRosterAssignment(
   raw: unknown,
-): Promise<RosterActionResult<{ assigned: number; released: number }>> {
+): Promise<
+  RosterActionResult<{
+    assigned: number;
+    released: number;
+    joined: number;
+    left: number;
+  }>
+> {
   try {
     const actor = await requireUser();
     assertAdmin(actor);
 
     const parsed = rosterEditSchema.safeParse(raw);
     if (!parsed.success) {
-      return { ok: false, error: "Choose a project for this person." };
+      return { ok: false, error: "Choose the projects for this person." };
     }
-    const { userId, projectId, issueIds } = parsed.data;
+    const { userId, issueIds } = parsed.data;
+    // Duplicates in the payload would inflate every count reported back.
+    const projectIds = [...new Set(parsed.data.projectIds)];
 
-    const [person] = await Promise.all([
-      prisma.user.findFirst({
-        where: { id: userId, isActive: true },
-        select: { id: true },
-      }),
-    ]);
+    const person = await prisma.user.findFirst({
+      where: { id: userId, isActive: true },
+      select: { id: true },
+    });
     if (!person) return { ok: false, error: "That person is not available." };
 
-    const project = await prisma.project.findUnique({
-      where: { id: projectId },
+    const projects = await prisma.project.findMany({
+      where: { id: { in: projectIds } },
       select: { id: true, key: true },
     });
-    if (!project) return { ok: false, error: "That project no longer exists." };
+    if (projects.length !== projectIds.length) {
+      return { ok: false, error: "One of those projects no longer exists." };
+    }
 
-    /* What they should hold, and what they hold now — both scoped to this one
-       project, which is the whole of what this edit may touch. */
+    /* What they are on now. The difference against the request is the whole
+       of what this edit does to their access. */
+    const memberships = await prisma.projectMember.findMany({
+      where: { userId },
+      select: { projectId: true, project: { select: { key: true } } },
+    });
+
+    const wanted = new Set(projectIds);
+    const held = new Set(memberships.map((row) => row.projectId));
+    const joining = projectIds.filter((id) => !held.has(id));
+    const leaving = memberships.filter((row) => !wanted.has(row.projectId));
+
+    /*
+     * The projects whose assignments this edit may rewrite: the ones named,
+     * and the ones being left. Work in any other project is not in the
+     * picture the editor showed and is therefore not its to touch.
+     */
+    const scope = [...projectIds, ...leaving.map((row) => row.projectId)];
+
     const [named, currentlyTheirs] = await Promise.all([
       issueIds.length > 0
         ? prisma.issue.findMany({
-            where: { id: { in: issueIds }, projectId },
-            select: { id: true, key: true, title: true, type: true, assigneeId: true },
+            where: { id: { in: issueIds }, projectId: { in: projectIds } },
+            select: {
+              id: true,
+              key: true,
+              title: true,
+              type: true,
+              assigneeId: true,
+            },
           })
         : Promise.resolve([]),
-      prisma.issue.findMany({
-        where: { projectId, assigneeId: userId },
-        select: { id: true, assigneeId: true },
-      }),
+      scope.length > 0
+        ? prisma.issue.findMany({
+            where: { projectId: { in: scope }, assigneeId: userId },
+            select: { id: true },
+          })
+        : Promise.resolve([]),
     ]);
 
-    if (named.length !== issueIds.length) {
+    if (named.length !== new Set(issueIds).size) {
       return {
         ok: false,
-        error: "One or more of those issues do not belong to the selected project.",
+        error:
+          "One or more of those issues do not belong to the selected projects.",
       };
     }
 
@@ -615,13 +897,15 @@ export async function updateRosterAssignment(
     let assigned = 0;
 
     await prisma.$transaction(async (tx) => {
-      // Access before assignment, the order `assignDevelopers` uses and for
-      // the same reason: an assignee must be a member of the project.
-      await tx.projectMember.upsert({
-        where: { projectId_userId: { projectId, userId } },
-        update: {},
-        create: { projectId, userId },
-      });
+      // Access before assignment, the order `onboard` uses and for the same
+      // reason: an assignee must be a member of the project.
+      for (const projectId of projectIds) {
+        await tx.projectMember.upsert({
+          where: { projectId_userId: { projectId, userId } },
+          update: {},
+          create: { projectId, userId },
+        });
+      }
 
       for (const issue of named) {
         if (issue.assigneeId === userId) continue;
@@ -634,7 +918,11 @@ export async function updateRosterAssignment(
           issueId: issue.id,
           actorId: actor.id,
           changes: [
-            { field: "assigneeId", oldValue: issue.assigneeId, newValue: userId },
+            {
+              field: "assigneeId",
+              oldValue: issue.assigneeId,
+              newValue: userId,
+            },
           ],
         });
         await notify(tx, {
@@ -660,19 +948,42 @@ export async function updateRosterAssignment(
         await recordFieldChanges(tx, {
           issueId: issue.id,
           actorId: actor.id,
-          changes: [
-            { field: "assigneeId", oldValue: userId, newValue: null },
-          ],
+          changes: [{ field: "assigneeId", oldValue: userId, newValue: null }],
+        });
+      }
+
+      /* Membership last. Everything they held in these projects has just been
+         released above, so nothing is left assigned to somebody who can no
+         longer open it. */
+      if (leaving.length > 0) {
+        await tx.projectMember.deleteMany({
+          where: {
+            userId,
+            projectId: { in: leaving.map((row) => row.projectId) },
+          },
         });
       }
     });
 
     revalidatePath("/admin");
     revalidatePath("/my-work");
-    revalidatePath(`/projects/${project.key.toLowerCase()}`);
-    revalidatePath(`/projects/${project.key.toLowerCase()}/summary`);
+    for (const key of [
+      ...projects.map((project) => project.key),
+      ...leaving.map((row) => row.project.key),
+    ]) {
+      revalidatePath(`/projects/${key.toLowerCase()}`);
+      revalidatePath(`/projects/${key.toLowerCase()}/summary`);
+    }
 
-    return { ok: true, data: { assigned, released: release.length } };
+    return {
+      ok: true,
+      data: {
+        assigned,
+        released: release.length,
+        joined: joining.length,
+        left: leaving.length,
+      },
+    };
   } catch (error) {
     return failure(error);
   }

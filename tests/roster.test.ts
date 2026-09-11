@@ -7,10 +7,14 @@ import {
 import { prisma } from "@/lib/prisma";
 import {
   assignDevelopers,
+  assignFullStackDevelopers,
   assignTeamMembers,
+  issuesAssignedAcross,
   issuesAssignedTo,
+  listIssuesForProjects,
   listProjectIssues,
   loadRosterProfile,
+  removeFullStackDeveloper,
   updateRosterAssignment,
 } from "@/server/roster";
 import { actAs, joinTestingTeam, projectByKey } from "./helpers";
@@ -35,6 +39,17 @@ const TESTER = "priya.nair@symbiosystech.com";
 const createdMemberships: string[] = [];
 const createdProjectMemberships: string[] = [];
 const restoreAssignees: { id: string; assigneeId: string | null }[] = [];
+
+/**
+ * Project access, as it was before this file ran.
+ *
+ * These tests both add memberships and — now that an edit can take a project
+ * away — delete them, including ones the seed created. Tracking only what was
+ * added is no longer enough: a deleted seed row left deleted changes what
+ * every later file sees, and an assignee who is no longer a member of their
+ * project is exactly the inconsistency the dashboard figures notice.
+ */
+const projectAccessBefore: { projectId: string; userId: string }[] = [];
 
 async function developmentTeam() {
   return prisma.team.findUniqueOrThrow({
@@ -70,6 +85,16 @@ async function trackNewMemberships(teamId: string, userIds: string[]) {
 
 beforeAll(async () => {
   await actAs(ADMIN);
+
+  const people = await prisma.user.findMany({
+    where: { email: { in: [ADMIN, DEVELOPER, TESTER] } },
+    select: { id: true },
+  });
+  const rows = await prisma.projectMember.findMany({
+    where: { userId: { in: people.map((person) => person.id) } },
+    select: { projectId: true, userId: true },
+  });
+  projectAccessBefore.push(...rows);
 });
 
 afterAll(async () => {
@@ -88,6 +113,16 @@ afterAll(async () => {
     await prisma.projectMember.deleteMany({
       where: { id: { in: createdProjectMemberships } },
     });
+  }
+
+  /* Project access back to exactly what was found: rows these tests added are
+     dropped, and rows they deleted are put back. */
+  const userIds = [...new Set(projectAccessBefore.map((row) => row.userId))];
+  if (userIds.length > 0) {
+    await prisma.projectMember.deleteMany({ where: { userId: { in: userIds } } });
+    for (const row of projectAccessBefore) {
+      await prisma.projectMember.create({ data: row });
+    }
   }
 });
 
@@ -447,6 +482,206 @@ describe("listProjectIssues", () => {
 
     expect(result.ok).toBe(false);
   });
+
+  it("says which project each issue came from once several are asked for", async () => {
+    /* The editor can show more than one project at a time, and it puts each
+       chosen issue back into the project it belongs to. That is only possible
+       because the row carries the project rather than the caller assuming it. */
+    const eng = await projectByKey("ENG");
+    const web = await projectByKey("WEB");
+
+    const result = await listIssuesForProjects([eng.id, web.id]);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const keys = new Set(result.data.map((issue) => issue.projectKey));
+    expect(keys.has("ENG")).toBe(true);
+    expect(keys.has("WEB")).toBe(true);
+
+    const foreign = await prisma.issue.count({
+      where: {
+        id: { in: result.data.map((issue) => issue.id) },
+        NOT: { projectId: { in: [eng.id, web.id] } },
+      },
+    });
+    expect(foreign).toBe(0);
+  });
+
+  it("reports what somebody holds across several projects, uncapped", async () => {
+    /* What the editor's selection starts from once it spans projects. It has
+       to be the whole set: the save replaces their assignments in every
+       project named, so a short answer here would release the difference. */
+    const eng = await projectByKey("ENG");
+    const web = await projectByKey("WEB");
+    const person = await userByEmail(DEVELOPER);
+
+    const result = await issuesAssignedAcross([eng.id, web.id], person.id);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const expected = await prisma.issue.findMany({
+      where: { projectId: { in: [eng.id, web.id] }, assigneeId: person.id },
+      select: { id: true },
+    });
+    expect([...result.data].sort()).toEqual(
+      expected.map((issue) => issue.id).sort(),
+    );
+  });
+
+  it("refuses a multi-project listing for a caller who is not an administrator", async () => {
+    const project = await projectByKey("ENG");
+
+    await actAs(DEVELOPER);
+    const result = await listIssuesForProjects([project.id]);
+    await actAs(ADMIN);
+
+    expect(result.ok).toBe(false);
+  });
+});
+
+describe("the derived Full Stack Developer roster", () => {
+  /*
+   * There is no third team, and these are what keep it that way. Full Stack
+   * Developer is what `workRoleOf` derives from being on both Development and
+   * Testing, so onboarding one has to write exactly those two rows and taking
+   * one off has to remove exactly those two.
+   */
+
+  async function teamIds() {
+    const teams = await prisma.team.findMany({
+      where: { slug: { in: [TESTING_TEAM_SLUG, DEVELOPMENT_TEAM_SLUG] } },
+      select: { id: true },
+    });
+    return teams.map((team) => team.id);
+  }
+
+  /*
+   * These tests both add and *remove* team rows, including ones the seed
+   * created, and the file-wide cleanup only deletes what a test added. The
+   * rosters are restored to exactly what was found so the shared database is
+   * left as it was for every other file.
+   */
+  let restoreTeams: { teamId: string; userId: string }[] = [];
+
+  beforeAll(async () => {
+    const person = await userByEmail(DEVELOPER);
+    const ids = await teamIds();
+    restoreTeams = (
+      await prisma.teamMember.findMany({
+        where: { userId: person.id, teamId: { in: ids } },
+        select: { teamId: true, userId: true },
+      })
+    ).map((row) => ({ teamId: row.teamId, userId: row.userId }));
+  });
+
+  afterAll(async () => {
+    const person = await userByEmail(DEVELOPER);
+    const ids = await teamIds();
+    await prisma.teamMember.deleteMany({
+      where: { userId: person.id, teamId: { in: ids } },
+    });
+    for (const row of restoreTeams) {
+      await prisma.teamMember.create({ data: row });
+    }
+  });
+
+  it("puts somebody on both teams, and Prio then calls them a full stack developer", async () => {
+    const project = await projectByKey("ENG");
+    const person = await userByEmail(DEVELOPER);
+    const ids = await teamIds();
+
+    const result = await assignFullStackDevelopers({
+      projectId: project.id,
+      issueIds: [],
+      role: "MEMBER",
+      userIds: [person.id],
+    });
+
+    expect(result.ok).toBe(true);
+
+    const memberships = await prisma.teamMember.findMany({
+      where: { userId: person.id, teamId: { in: ids } },
+      select: { teamId: true },
+    });
+    expect(memberships.length).toBe(2);
+
+    const refreshed = await userByEmail(DEVELOPER);
+    expect(await workRoleOf(refreshed)).toBe("FULLSTACK");
+  });
+
+  it("creates no third team", async () => {
+    const teams = await prisma.team.findMany({ select: { slug: true } });
+    expect(teams.some((team) => team.slug === "fullstack")).toBe(false);
+  });
+
+  it("removing takes both memberships away, not one", async () => {
+    /* One left behind would not be a lesser full stack developer — it would
+       silently be a different role. */
+    const project = await projectByKey("ENG");
+    const person = await userByEmail(DEVELOPER);
+    const ids = await teamIds();
+
+    await assignFullStackDevelopers({
+      projectId: project.id,
+      issueIds: [],
+      role: "MEMBER",
+      userIds: [person.id],
+    });
+
+    const result = await removeFullStackDeveloper({ userId: person.id });
+    expect(result.ok).toBe(true);
+
+    const left = await prisma.teamMember.count({
+      where: { userId: person.id, teamId: { in: ids } },
+    });
+    expect(left).toBe(0);
+  });
+
+  it("leaves project access and assigned work alone when it removes the role", async () => {
+    const project = await projectByKey("ENG");
+    const person = await userByEmail(DEVELOPER);
+
+    await assignFullStackDevelopers({
+      projectId: project.id,
+      issueIds: [],
+      role: "MEMBER",
+      userIds: [person.id],
+    });
+
+    const membershipsBefore = await prisma.projectMember.count({
+      where: { userId: person.id },
+    });
+    const assignedBefore = await prisma.issue.count({
+      where: { assigneeId: person.id },
+    });
+
+    expect((await removeFullStackDeveloper({ userId: person.id })).ok).toBe(true);
+
+    expect(await prisma.projectMember.count({ where: { userId: person.id } })).toBe(
+      membershipsBefore,
+    );
+    expect(await prisma.issue.count({ where: { assigneeId: person.id } })).toBe(
+      assignedBefore,
+    );
+  });
+
+  it("refuses both calls for somebody who is not an administrator", async () => {
+    const project = await projectByKey("ENG");
+    const person = await userByEmail(DEVELOPER);
+
+    await actAs(DEVELOPER);
+    const added = await assignFullStackDevelopers({
+      projectId: project.id,
+      issueIds: [],
+      role: "MEMBER",
+      userIds: [person.id],
+    });
+    const removed = await removeFullStackDeveloper({ userId: person.id });
+    await actAs(ADMIN);
+
+    expect(added.ok).toBe(false);
+    expect(removed.ok).toBe(false);
+  });
 });
 
 describe("loadRosterProfile", () => {
@@ -609,20 +844,39 @@ describe("updateRosterAssignment — an edit changes what was edited, and nothin
   });
 
   it("saving without changing anything releases nothing", async () => {
-    /* The non-negotiable one. Open, save, and everything is still theirs. */
+    /*
+     * The non-negotiable one. Open, save, and everything is still theirs.
+     *
+     * "Without changing anything" now means every project they are on and
+     * everything they hold across all of them, because that is what the editor
+     * opens with. Naming a subset is a real edit and is covered below.
+     */
     const project = await projectByKey("ENG");
     const person = await userByEmail(DEVELOPER);
     const before = await held(project.id, person.id);
     expect(before.length).toBeGreaterThan(0);
 
+    const memberships = await prisma.projectMember.findMany({
+      where: { userId: person.id },
+      select: { projectId: true },
+    });
+    const projectIds = memberships.map((row) => row.projectId);
+    const everything = await prisma.issue.findMany({
+      where: { projectId: { in: projectIds }, assigneeId: person.id },
+      select: { id: true },
+    });
+
     const result = await updateRosterAssignment({
       userId: person.id,
-      projectId: project.id,
-      issueIds: before,
+      projectIds,
+      issueIds: everything.map((issue) => issue.id),
     });
 
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.data.released).toBe(0);
+    if (result.ok) {
+      expect(result.data.released).toBe(0);
+      expect(result.data.left).toBe(0);
+    }
     expect(await held(project.id, person.id)).toEqual(before);
   });
 
@@ -640,7 +894,7 @@ describe("updateRosterAssignment — an edit changes what was edited, and nothin
 
     const result = await updateRosterAssignment({
       userId: person.id,
-      projectId: project.id,
+      projectIds: [project.id],
       issueIds: [...before, extra.id],
     });
 
@@ -661,7 +915,7 @@ describe("updateRosterAssignment — an edit changes what was edited, and nothin
 
     const result = await updateRosterAssignment({
       userId: person.id,
-      projectId: project.id,
+      projectIds: [project.id],
       issueIds: kept,
     });
 
@@ -673,11 +927,15 @@ describe("updateRosterAssignment — an edit changes what was edited, and nothin
     expect(after).not.toContain(dropped);
   });
 
-  it("leaves another project's assignments alone", async () => {
+  it("edits one project's work while both are on the list, and leaves the other's alone", async () => {
     /*
-     * The edit names one project, and that project is the whole of what it may
-     * touch. Work this person holds elsewhere is not in the request and must
-     * not be collateral.
+     * The point of the editor holding several projects at once.
+     *
+     * Both are named, so both are in the picture, and the save may rewrite
+     * either. Releasing everything in one is the most destructive edit
+     * available for that project — and it must not reach across into the
+     * other, which is what the single-project editor could not even be asked
+     * to do.
      */
     const eng = await projectByKey("ENG");
     const web = await projectByKey("WEB");
@@ -691,15 +949,102 @@ describe("updateRosterAssignment — an edit changes what was edited, and nothin
     const elsewhere = await give(web.id, person.id, 1);
     if (elsewhere.length === 0) return;
 
-    /* Release everything in ENG — the most destructive edit available. */
     const result = await updateRosterAssignment({
       userId: person.id,
-      projectId: eng.id,
-      issueIds: [],
+      projectIds: [eng.id, web.id],
+      issueIds: elsewhere,
     });
     expect(result.ok).toBe(true);
 
+    expect(await held(eng.id, person.id)).toEqual([]);
     expect(await held(web.id, person.id)).toEqual(elsewhere.sort());
+  });
+
+  it("assigns across two projects in one save", async () => {
+    const eng = await projectByKey("ENG");
+    const web = await projectByKey("WEB");
+    const person = await userByEmail(DEVELOPER);
+
+    const pickOne = async (projectId: string) => {
+      const issue = await prisma.issue.findFirst({
+        where: { projectId, NOT: { assigneeId: person.id } },
+        select: { id: true, assigneeId: true },
+        orderBy: { key: "asc" },
+      });
+      if (issue) restoreAssignees.push({ id: issue.id, assigneeId: issue.assigneeId });
+      return issue?.id ?? null;
+    };
+
+    const fromEng = await pickOne(eng.id);
+    const fromWeb = await pickOne(web.id);
+    if (!fromEng || !fromWeb) return;
+
+    const result = await updateRosterAssignment({
+      userId: person.id,
+      projectIds: [eng.id, web.id],
+      issueIds: [fromEng, fromWeb],
+    });
+
+    expect(result.ok).toBe(true);
+    expect(await held(eng.id, person.id)).toEqual([fromEng]);
+    expect(await held(web.id, person.id)).toEqual([fromWeb]);
+  });
+
+  it("taking a project off the list removes the access and puts down the work in it", async () => {
+    /*
+     * The other half of "add or remove projects". The editor hands over every
+     * project this person should be on, so one missing from that set is an
+     * instruction — and an assignee who can no longer open the project must
+     * not still be holding its issues, or the rule `createIssue` enforces
+     * would be broken behind everybody's back.
+     */
+    const eng = await projectByKey("ENG");
+    const web = await projectByKey("WEB");
+    const person = await userByEmail(DEVELOPER);
+
+    await prisma.projectMember.upsert({
+      where: { projectId_userId: { projectId: web.id, userId: person.id } },
+      update: {},
+      create: { projectId: web.id, userId: person.id },
+    });
+    const inWeb = await give(web.id, person.id, 1);
+    if (inWeb.length === 0) return;
+
+    const result = await updateRosterAssignment({
+      userId: person.id,
+      projectIds: [eng.id],
+      issueIds: [],
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data.left).toBeGreaterThan(0);
+
+    expect(await held(web.id, person.id)).toEqual([]);
+    const membership = await prisma.projectMember.findUnique({
+      where: { projectId_userId: { projectId: web.id, userId: person.id } },
+      select: { userId: true },
+    });
+    expect(membership).toBeNull();
+  });
+
+  it("refuses an issue that belongs to a project not on the list", async () => {
+    const eng = await projectByKey("ENG");
+    const web = await projectByKey("WEB");
+    const person = await userByEmail(DEVELOPER);
+
+    const foreign = await prisma.issue.findFirst({
+      where: { projectId: web.id },
+      select: { id: true },
+    });
+    if (!foreign) return;
+
+    const result = await updateRosterAssignment({
+      userId: person.id,
+      projectIds: [eng.id],
+      issueIds: [foreign.id],
+    });
+
+    expect(result.ok).toBe(false);
   });
 
   it("changes nothing about the person themselves", async () => {
@@ -714,7 +1059,7 @@ describe("updateRosterAssignment — an edit changes what was edited, and nothin
 
     const result = await updateRosterAssignment({
       userId: before.id,
-      projectId: project.id,
+      projectIds: [project.id],
       issueIds: [],
     });
     expect(result.ok).toBe(true);
@@ -737,7 +1082,7 @@ describe("updateRosterAssignment — an edit changes what was edited, and nothin
     await actAs(DEVELOPER);
     const result = await updateRosterAssignment({
       userId: person.id,
-      projectId: project.id,
+      projectIds: [project.id],
       issueIds: [],
     });
     await actAs(ADMIN);

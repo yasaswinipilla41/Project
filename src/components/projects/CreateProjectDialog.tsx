@@ -221,6 +221,7 @@ export function CreateProjectDialog({
           onChange={setAttachments}
           maxImageBytes={MAX_IMAGE_BYTES}
           maxUploadBytes={MAX_UPLOAD_BYTES}
+          snipTarget={{ kind: "draft", label: "New project" }}
         />
 
         {selectable.length > 0 ? (

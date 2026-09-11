@@ -287,11 +287,19 @@ export function SearchSelect({
           aria-controls={matches.length > 0 ? listId : undefined}
           aria-activedescendant={active >= 0 ? `${listId}-${active}` : undefined}
           disabled={disabled}
-          /* While the list is open, Escape belongs to the list. Without this
-             the key bubbles to the dialog's own handler and shuts the whole
-             popup when the person only meant to dismiss the options. The
-             attribute is the hook `Dialog` already offers for exactly this. */
-          data-local-escape={matches.length > 0 ? "true" : undefined}
+          /*
+           * While the field is open, Escape belongs to the field. Without this
+           * the key bubbles to the dialog's own handler and shuts the whole
+           * popup when the person only meant to dismiss the options. The
+           * attribute is the hook `Dialog` already offers for exactly this.
+           *
+           * Keyed on the field being open rather than on there being anything
+           * to show. They are not the same: a field with nothing left to offer
+           * is still open, and an Escape there closed the dialog and lost
+           * whatever was half-edited behind it. The second Escape still
+           * closes the dialog, because the first one shuts the field.
+           */
+          data-local-escape={open ? "true" : undefined}
           onChange={(event) => {
             setQuery(event.target.value);
             setHighlight(0);

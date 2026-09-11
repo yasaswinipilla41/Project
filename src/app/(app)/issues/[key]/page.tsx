@@ -478,6 +478,7 @@ export default async function IssueDetailPage({
             <CardBody>
               <IssueAttachments
                 issueId={issue.id}
+                issueKey={issue.key}
                 attachments={issue.attachments}
                 currentUserId={user.id}
                 isAdmin={user.role === "ADMIN"}

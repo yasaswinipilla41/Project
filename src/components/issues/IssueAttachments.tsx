@@ -3,7 +3,15 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type DragEvent } from "react";
 import { useToast } from "@/components/ui/Toast";
-import { IconPlus, IconWarning } from "@/components/ui/Icon";
+import {
+  IconClock,
+  IconExternal,
+  IconImage,
+  IconPlus,
+  IconWarning,
+} from "@/components/ui/Icon";
+import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/Menu";
+import { useSnipReceiver } from "@/components/attachments/SnipTool";
 import {
   AttachmentGrid,
   type AttachmentView,
@@ -29,6 +37,12 @@ import {
  * batch never reports a silent partial success. Nothing is ever listed as
  * attached unless the server said so.
  *
+ * The same three ways in as the Create form — Browse, and the Snip Tool's
+ * screenshot and recording — so evidence can be added to an issue that already
+ * exists without leaving it. The Snip Tool is the shell's single window, and a
+ * capture it holds is addressed to this issue and no other, so walking off to
+ * read something else and coming back attaches it here and nowhere else.
+ *
  * The size limits are stated next to the control rather than only enforced on
  * the server, so nobody spends a minute uploading something that was never
  * going to be accepted. They are read from the same constants the server
@@ -40,11 +54,14 @@ import {
 
 export function IssueAttachments({
   issueId,
+  issueKey,
   attachments,
   currentUserId,
   isAdmin,
 }: {
   issueId: string;
+  /** Only so the Snip Tool can say which issue it is holding a capture for. */
+  issueKey: string;
   attachments: AttachmentView[];
   currentUserId: string;
   isAdmin: boolean;
@@ -72,8 +89,9 @@ export function IssueAttachments({
   const [errors, setErrors] = useState<string[]>([]);
   const nextId = useRef(0);
 
+  /** Uploads each file, and hands back the reason for every one refused. */
   const upload = useCallback(
-    async (files: File[]) => {
+    async (files: File[]): Promise<string[]> => {
       setErrors([]);
       const refused: string[] = [];
 
@@ -153,8 +171,22 @@ export function IssueAttachments({
       }
 
       router.refresh();
+      return refused;
     },
     [issueId, router, toast],
+  );
+
+  /* A capture goes up the moment it is handed over, exactly as a browsed file
+     does — the issue already exists, so there is nothing to stage it for. */
+  const { openSnipTool, available: snipAvailable } = useSnipReceiver(
+    { kind: "issue", issueId, label: issueKey },
+    async (file) => {
+      /* Thrown rather than swallowed, so a refused upload leaves the capture
+         in the Snip Tool to try again with. Reported here as well, in the
+         panel's own error list, exactly as a browsed file would be. */
+      const refused = await upload([file]);
+      if (refused.length > 0) throw new Error(refused.join(" "));
+    },
   );
 
   function handleDrop(event: DragEvent<HTMLDivElement>) {
@@ -224,14 +256,42 @@ export function IssueAttachments({
             event.target.value = "";
           }}
         />
-        <button
-          type="button"
-          className="prio-btn prio-btn--ghost prio-btn--sm"
-          onClick={() => input.current?.click()}
+        <Menu
+          label="Add files"
+          trigger={(props) => (
+            <button
+              type="button"
+              className="prio-btn prio-btn--ghost prio-btn--sm"
+              {...props}
+            >
+              <IconPlus size={13} />
+              Add files
+            </button>
+          )}
         >
-          <IconPlus size={13} />
-          Add files
-        </button>
+          <MenuItem
+            icon={<IconExternal size={14} />}
+            onSelect={() => input.current?.click()}
+          >
+            Browse…
+          </MenuItem>
+          <MenuSeparator />
+          <MenuLabel>Snip Tool</MenuLabel>
+          <MenuItem
+            icon={<IconImage size={14} />}
+            disabled={!snipAvailable}
+            onSelect={() => openSnipTool("screenshot")}
+          >
+            Screenshot
+          </MenuItem>
+          <MenuItem
+            icon={<IconClock size={14} />}
+            disabled={!snipAvailable}
+            onSelect={() => openSnipTool("record")}
+          >
+            Record
+          </MenuItem>
+        </Menu>
       </div>
 
       <p className="prio-dropzone__limit">
@@ -242,8 +302,8 @@ export function IssueAttachments({
       {attachments.length === 0 && progress.length === 0 ? (
         <p className="prio-dropzone__empty">
           Drop screenshots, screen recordings or documents here — or use{" "}
-          <strong>Add files</strong>. Images and video preview in place;
-          everything else is offered as a download.
+          <strong>Add files</strong> to browse, capture or record. Images and
+          video preview in place; everything else is offered as a download.
         </p>
       ) : (
         <AttachmentGrid

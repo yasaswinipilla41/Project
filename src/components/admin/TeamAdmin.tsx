@@ -13,8 +13,10 @@ import { RosterProfileDialog } from "@/components/admin/RosterProfileDialog";
 import { removeTeamMember } from "@/server/teams";
 import {
   assignDevelopers,
+  assignFullStackDevelopers,
   assignTeamMembers,
   listProjectIssues,
+  removeFullStackDeveloper,
 } from "@/server/roster";
 import type { RosterIssueOption } from "@/server/roster";
 
@@ -42,8 +44,28 @@ export interface AdminTeam {
   members: TeamPerson[];
 }
 
-/** The one team whose dialog also hands out work. */
 const DEVELOPMENT_SLUG = "development";
+const TESTING_SLUG = "testing";
+
+/**
+ * The full stack roster, which is not a team.
+ *
+ * A full stack developer is somebody on Development *and* on Testing — that
+ * is already how `workRoleFromTeams` answers the question everywhere else in
+ * Prio. Giving Administration a third `Team` row would create a second answer
+ * that could disagree with the first, so the block below is derived from the
+ * two rosters that are really there and writes back to both.
+ *
+ * The id is deliberately not a database id and never reaches the server: the
+ * two actions this block calls look their teams up by slug for themselves.
+ */
+const FULLSTACK_SLUG = "fullstack";
+const DERIVED_FULLSTACK_ID = "derived:fullstack";
+
+/** The teams whose dialog also hands out work. */
+function handsOutWork(slug: string): boolean {
+  return slug === DEVELOPMENT_SLUG || slug === FULLSTACK_SLUG;
+}
 
 /**
  * Teams, and who is on them.
@@ -93,7 +115,38 @@ export function TeamAdmin({
   const [issues, setIssues] = useState<RosterIssueOption[] | null>(null);
   const [loadingIssues, setLoadingIssues] = useState(false);
 
-  const isDeveloperTeam = addingTo?.slug === DEVELOPMENT_SLUG;
+  const isDeveloperTeam = addingTo ? handsOutWork(addingTo.slug) : false;
+  const isFullStack = addingTo?.slug === FULLSTACK_SLUG;
+
+  /*
+   * The three rosters: the two that exist, and the one that follows from them.
+   *
+   * Somebody on both teams appears in all three blocks, which is the truth
+   * rather than a duplicate — they really are on Development, really are on
+   * Testing, and Prio really does call them a full stack developer because of
+   * it. Hiding them from the two source blocks would make those blocks
+   * disagree with the team rows they are showing.
+   */
+  const blocks = useMemo<AdminTeam[]>(() => {
+    const development = teams.find((team) => team.slug === DEVELOPMENT_SLUG);
+    const testing = teams.find((team) => team.slug === TESTING_SLUG);
+    if (!development || !testing) return teams;
+
+    const testers = new Set(testing.members.map((member) => member.id));
+    return [
+      ...teams,
+      {
+        id: DERIVED_FULLSTACK_ID,
+        slug: FULLSTACK_SLUG,
+        name: "Full Stack Developers",
+        description:
+          "Everybody on both Development and Testing. Not a separate team — adding here writes both memberships, and removing takes both away.",
+        members: development.members.filter((member) =>
+          testers.has(member.id),
+        ),
+      },
+    ];
+  }, [teams]);
 
   /*
    * The issue list follows the project, and nothing survives the change.
@@ -172,7 +225,7 @@ export function TeamAdmin({
   const candidates = useMemo(() => {
     if (!addingTo) return [];
     const already = new Set(addingTo.members.map((m) => m.id));
-    const filtersByRole = addingTo.slug === DEVELOPMENT_SLUG;
+    const filtersByRole = handsOutWork(addingTo.slug);
     return everyone
       .filter((person) => !already.has(person.id) || chosen.includes(person.id))
       .filter(
@@ -194,19 +247,28 @@ export function TeamAdmin({
     }
 
     setSaving(true);
-    const result = isDeveloperTeam
-      ? await assignDevelopers({
-          teamId: addingTo.id,
+    const result = isFullStack
+      ? /* No team id: this roster is derived, and the action resolves both
+           real teams from the slugs the role rule itself reads. */
+        await assignFullStackDevelopers({
           projectId,
           issueIds: chosenIssues,
           role,
           userIds: chosen,
         })
-      : await assignTeamMembers({
-          teamId: addingTo.id,
-          projectId,
-          userIds: chosen,
-        });
+      : isDeveloperTeam
+        ? await assignDevelopers({
+            teamId: addingTo.id,
+            projectId,
+            issueIds: chosenIssues,
+            role,
+            userIds: chosen,
+          })
+        : await assignTeamMembers({
+            teamId: addingTo.id,
+            projectId,
+            userIds: chosen,
+          });
     setSaving(false);
 
     if (!result.ok) {
@@ -228,14 +290,24 @@ export function TeamAdmin({
 
   async function remove(teamId: string, userId: string, name: string) {
     setBusyId(userId);
-    const result = await removeTeamMember({ teamId, userId });
+    /* The derived block has no team row to delete from. Both memberships go
+       instead, because leaving one behind would not make somebody a lesser
+       full stack developer — it would make them a tester. */
+    const result =
+      teamId === DERIVED_FULLSTACK_ID
+        ? await removeFullStackDeveloper({ userId })
+        : await removeTeamMember({ teamId, userId });
     setBusyId(null);
 
     if (!result.ok) {
       toast(result.error, "error");
       return;
     }
-    toast(`${name} removed from the team`);
+    toast(
+      teamId === DERIVED_FULLSTACK_ID
+        ? `${name} is no longer a full stack developer`
+        : `${name} removed from the team`,
+    );
     router.refresh();
   }
 
@@ -253,8 +325,16 @@ export function TeamAdmin({
        * other.
        */}
       <div className="row g-3">
-        {teams.map((team) => (
-          <div key={team.id} className="col-12 col-lg-6">
+        {blocks.map((team) => (
+          <div
+            key={team.id}
+            /* Two abreast while there are two, three while there are three —
+               the derived block joins the row rather than starting a second
+               one under it. */
+            className={
+              blocks.length > 2 ? "col-12 col-lg-4" : "col-12 col-lg-6"
+            }
+          >
         <Card className="prio-issue__section h-100">
           <CardBody>
             <div className="prio-projectmembers__head">
@@ -279,8 +359,9 @@ export function TeamAdmin({
 
             {team.members.length === 0 ? (
               <p className="prio-text-muted">
-                Nobody is on this team yet. Members added here gain the views
-                that belong to it.
+                {team.slug === FULLSTACK_SLUG
+                  ? "Nobody is on both teams yet. Adding somebody here puts them on Development and Testing at once."
+                  : "Nobody is on this team yet. Members added here gain the views that belong to it."}
               </p>
             ) : (
               <div>
@@ -329,9 +410,11 @@ export function TeamAdmin({
           title={`Add to ${addingTo.name}`}
           busy={saving}
           description={
-            isDeveloperTeam
-              ? "Choose a project, the work to hand over, the account role and the people. Issues can only come from the project chosen above them."
-              : "Choose a project and the people to put on it. Team membership and project access are separate facts; this writes both."
+            isFullStack
+              ? "Choose a project, the work to hand over, the account role and the people. Everybody chosen goes onto Development and Testing, which is what makes them a full stack developer."
+              : isDeveloperTeam
+                ? "Choose a project, the work to hand over, the account role and the people. Issues can only come from the project chosen above them."
+                : "Choose a project and the people to put on it. Team membership and project access are separate facts; this writes both."
           }
           footer={
             <>

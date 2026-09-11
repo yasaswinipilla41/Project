@@ -23,49 +23,6 @@
   max-width: 360px;
 }
 
-/* While recording, the field becomes the recorder: the elapsed time, and the
-   one control that ends it. */
-.recording {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  justify-content: center;
-}
-
-.recordingDot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--prio-red-600);
-  animation: recordingPulse 1.4s ease-in-out infinite;
-}
-
-/* Reduced-motion is respected: the dot still marks the state, it just stops
-   drawing attention to itself. */
-@media (prefers-reduced-motion: reduce) {
-  .recordingDot {
-    animation: none;
-  }
-}
-
-@keyframes recordingPulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.25;
-  }
-}
-
-.recordingTime {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--prio-text);
-  font-variant-numeric: tabular-nums;
-}
-
 .grid {
   display: flex;
   flex-direction: column;

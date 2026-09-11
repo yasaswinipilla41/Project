@@ -73,7 +73,9 @@ test.describe("Administration summary blocks", () => {
 test.describe("the Development block", () => {
   test.use({ storageState: ADMIN_STATE });
 
-  test("is a block of its own, beside Testing", async ({ page }) => {
+  test("is a block of its own, beside Testing and Full Stack", async ({
+    page,
+  }) => {
     await page.goto("/admin");
 
     await expect(
@@ -81,6 +83,9 @@ test.describe("the Development block", () => {
     ).toBeVisible();
     await expect(
       page.getByRole("heading", { name: /^Development · \d+$/ }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /^Full Stack Developers · \d+$/ }),
     ).toBeVisible();
   });
 
@@ -265,7 +270,7 @@ test.describe("a roster member's profile", () => {
 
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
-    await expect(dialog.getByText("Assigned project")).toBeVisible();
+    await expect(dialog.getByText("Assigned projects")).toBeVisible();
     await expect(dialog.getByText(/^Assigned work · \d+$/)).toBeVisible();
     await expect(dialog.locator(".prio-rolebadge")).toBeVisible();
 
