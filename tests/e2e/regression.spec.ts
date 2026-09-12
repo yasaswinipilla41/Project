@@ -241,7 +241,7 @@ test.describe("inline editing", () => {
     await page.getByRole("button", { name: "Edit title" }).click();
     const editor = page.locator(".prio-editable__form");
     await editor.getByLabel("Issue title", { exact: true }).fill(`${restored} ${marker}`);
-    await editor.getByRole("button", { name: "Save" }).click();
+    await editor.getByRole("button", { name: "Save", exact: true }).click();
     // Wait for the write to be acknowledged before reloading, or the reload
     // can race the save and read back the previous title.
     await expect(page.locator(".prio-toast")).toContainText("Title updated");
@@ -268,7 +268,7 @@ test.describe("inline editing", () => {
     await page.getByRole("button", { name: "Edit title" }).click();
     const restoreEditor = page.locator(".prio-editable__form");
     await restoreEditor.getByLabel("Issue title", { exact: true }).fill(restored);
-    await restoreEditor.getByRole("button", { name: "Save" }).click();
+    await restoreEditor.getByRole("button", { name: "Save", exact: true }).click();
     await expect(page.locator(".prio-toast").last()).toContainText("Title updated");
 
     await page.reload();

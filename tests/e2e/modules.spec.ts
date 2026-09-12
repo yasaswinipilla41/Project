@@ -384,22 +384,34 @@ test.describe("Project settings", () => {
     // The key is immutable.
     await expect(page.getByLabel("Project key")).toBeDisabled();
 
-    // Details save.
+    /*
+     * Details save.
+     *
+     * The edit replaces the description rather than appending to it, and the
+     * restore runs whether or not the assertion holds. Appending grew the
+     * field by a sentence on every run that failed before reaching the
+     * restore below, and after enough of those it reached the 2000-character
+     * limit on the column — at which point the text was silently truncated,
+     * the assertion could never pass again, and each further run made it
+     * worse. A fixed-length edit cannot do that, and a restore in `finally`
+     * cannot be skipped.
+     */
     const description = page.getByLabel("Description");
     const original = await description.inputValue();
-    await description.fill(`${original} Verified by E2E.`);
-    await page.getByRole("button", { name: "Save details" }).click();
-    await expect(page.locator(".prio-toast").last()).toContainText("saved");
+    const edited = `Verified by E2E at ${Date.now()}.`;
 
-    await page.reload();
-    await expect(page.getByLabel("Description")).toHaveValue(
-      `${original} Verified by E2E.`,
-    );
+    try {
+      await description.fill(edited);
+      await page.getByRole("button", { name: "Save details" }).click();
+      await expect(page.locator(".prio-toast").last()).toContainText("saved");
 
-    // Restore.
-    await page.getByLabel("Description").fill(original);
-    await page.getByRole("button", { name: "Save details" }).click();
-    await expect(page.locator(".prio-toast").last()).toContainText("saved");
+      await page.reload();
+      await expect(page.getByLabel("Description")).toHaveValue(edited);
+    } finally {
+      await page.getByLabel("Description").fill(original);
+      await page.getByRole("button", { name: "Save details" }).click();
+      await expect(page.locator(".prio-toast").last()).toContainText("saved");
+    }
 
     /*
      * Add a uniquely-named label, and take it away again.

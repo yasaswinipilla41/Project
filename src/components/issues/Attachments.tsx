@@ -13,7 +13,12 @@ import {
 } from "@/components/ui/Icon";
 import { ScreenshotEditor } from "@/components/attachments/ScreenshotEditor";
 
-import { formatBytes, renderKindFor, shortTypeLabel } from "@/lib/attachments";
+import {
+  extensionOf,
+  formatBytes,
+  renderKindFor,
+  shortTypeLabel,
+} from "@/lib/attachments";
 import { formatRelative } from "@/lib/format";
 
 /**
@@ -207,6 +212,50 @@ export function AttachmentGrid({
   );
 
   /*
+   * The other reading of an edit: keep both.
+   *
+   * Save writes over the screenshot because that is nearly always what an
+   * edit means. Occasionally it is not — the plain capture is the evidence
+   * and the arrows are the explanation, and a defect report is worse for
+   * having lost either. This posts the marked-up picture as a new attachment
+   * on the same issue and leaves the original untouched, which is the
+   * behaviour the old annotate had, offered now as a choice rather than
+   * imposed on every edit.
+   */
+  const saveAnnotationAsCopy = useCallback(
+    async (blob: Blob) => {
+      if (!annotating || !annotateIssueId) return;
+      const source = annotating.attachment;
+      setAnnotating(null);
+
+      const extension = extensionOf(source.filename);
+      const base = source.filename.slice(
+        0,
+        source.filename.length - extension.length,
+      );
+
+      const form = new FormData();
+      form.append("issueId", annotateIssueId);
+      form.append("file", blob, `${base}-annotated${extension}`);
+
+      const response = await fetch("/api/attachments", {
+        method: "POST",
+        body: form,
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        toast(<>{payload.error ?? "That copy could not be saved."}</>);
+        return;
+      }
+
+      toast(<>Saved a copy of {source.filename}</>);
+      router.refresh();
+    },
+    [annotating, annotateIssueId, router, toast],
+  );
+
+  /*
    * Renaming is the label and nothing else — the same file, the same row, the
    * same link. The extension is held steady on the server, so a rename cannot
    * change what the file claims to be; see `renamedFilename`.
@@ -363,6 +412,12 @@ export function AttachmentGrid({
         source={annotating.blob}
         onCancel={() => setAnnotating(null)}
         onSave={(blob) => void saveAnnotation(blob)}
+        onSaveAs={
+          /* Only where there is somewhere to put a second file. A comment's
+             attachments and a project's are shown by this same grid, and
+             neither is a destination this knows how to post to. */
+          annotateIssueId ? (blob) => void saveAnnotationAsCopy(blob) : undefined
+        }
       />
     ) : null}
     </>

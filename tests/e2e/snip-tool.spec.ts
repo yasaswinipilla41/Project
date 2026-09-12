@@ -83,7 +83,7 @@ test.describe("Snip Tool", () => {
     const editor = page.getByRole("dialog", { name: "Edit screenshot" });
     await expect(editor).toBeVisible();
     await expect(editor.locator("canvas").first()).toBeVisible();
-    await editor.getByRole("button", { name: "Save" }).click();
+    await editor.getByRole("button", { name: "Save", exact: true }).click();
     await expect(editor).toBeHidden();
 
     // The window is holding it, and says what it is holding it for.
@@ -160,7 +160,7 @@ test.describe("Snip Tool", () => {
 
     const editor = page.getByRole("dialog", { name: "Edit screenshot" });
     await expect(editor).toBeVisible();
-    await editor.getByRole("button", { name: "Save" }).click();
+    await editor.getByRole("button", { name: "Save", exact: true }).click();
 
     const snip = snipWindow(page);
     await expect(snip.getByRole("button", { name: "Attach" })).toBeVisible();

@@ -392,6 +392,24 @@ export interface ScreenshotEditorProps {
   source: Blob;
   onCancel: () => void;
   onSave: (blob: Blob) => void;
+  /**
+   * Keep the picture this started from, and add the marked-up one beside it.
+   *
+   * Editing a screenshot normally means the screenshot was wrong and this is
+   * what it should have been, so Save writes over it: one screenshot, one
+   * attachment, however often it is edited. Sometimes the opposite is true —
+   * the plain capture is the evidence and the arrows are the explanation, and
+   * both are worth keeping. That is what this is for, and it is offered only
+   * where a second attachment is a thing the surface can actually hold.
+   */
+  onSaveAs?: (blob: Blob) => void;
+  /**
+   * The tool armed when the editor opens. Defaults to the pen.
+   *
+   * The Snip Tool opens on `crop`, because a capture is a whole screen or
+   * window and the first thing somebody wants is the part of it that matters.
+   */
+  initialTool?: Tool;
 }
 
 export function ScreenshotEditor({
@@ -399,6 +417,8 @@ export function ScreenshotEditor({
   source,
   onCancel,
   onSave,
+  onSaveAs,
+  initialTool = "pen",
 }: ScreenshotEditorProps) {
   const canvasWrapRef = useRef<HTMLDivElement>(null);
   const baseCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -414,7 +434,7 @@ export function ScreenshotEditor({
   const [zoomPercent, setZoomPercent] = useState(100);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [tool, setTool] = useState<Tool>("pen");
+  const [tool, setTool] = useState<Tool>(initialTool);
   const [color, setColor] = useState("#ef4444");
   const [strokeWidth, setStrokeWidth] = useState(4);
   const fontSize = Math.max(16, strokeWidth * 5);
@@ -915,10 +935,16 @@ export function ScreenshotEditor({
     pushHistory();
   }
 
-  function handleSave() {
-    // A crop the user dragged out but never explicitly applied should still
-    // take effect on Save — "I selected an area and saved" is the natural
-    // expectation, and skipping this silently discarded the crop before.
+  /**
+   * Flattens what is on screen and hands it to whoever asked for it.
+   *
+   * Both buttons produce exactly the same picture; all that differs is what
+   * the caller does with it, so there is one function and the destination is
+   * the argument. A crop the person dragged out but never explicitly applied
+   * still takes effect — "I selected an area and saved" is the natural
+   * expectation, and skipping it silently discarded the crop.
+   */
+  function flattenTo(deliver: (blob: Blob) => void) {
     if (tool === "crop" && cropRect) {
       performCrop(cropRect);
       setCropRect(null);
@@ -938,8 +964,12 @@ export function ScreenshotEditor({
 
     out.toBlob((blob) => {
       setSaving(false);
-      if (blob) onSave(blob);
+      if (blob) deliver(blob);
     }, "image/png");
+  }
+
+  function handleSave() {
+    flattenTo(onSave);
   }
 
   const cropVisible = tool === "crop" && cropRect && cropRect.w > 4 && cropRect.h > 4;
@@ -951,12 +981,28 @@ export function ScreenshotEditor({
       size="lg"
       busy={saving}
       title="Edit screenshot"
-      description="Draw, highlight, add text or shapes, crop, then save."
+      description={
+        onSaveAs
+          ? "Draw, highlight, add text or shapes, crop, then save over this screenshot or save a copy beside it."
+          : "Draw, highlight, add text or shapes, crop, then save."
+      }
       footer={
         <>
           <Button variant="ghost" onClick={onCancel} disabled={saving}>
             Cancel
           </Button>
+          {onSaveAs ? (
+            /* Named for what it leaves behind rather than for the dialog it
+               does not open: nothing is asked, a second attachment simply
+               appears beside the one this started from. */
+            <Button
+              variant="secondary"
+              onClick={() => flattenTo(onSaveAs)}
+              disabled={!ready || saving}
+            >
+              Save as copy
+            </Button>
+          ) : null}
           <Button
             variant="brand"
             onClick={handleSave}

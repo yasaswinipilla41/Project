@@ -342,7 +342,7 @@ test.describe("Screenshot editor — every tool", () => {
     const painted = await samplePixel(editor, ANNOTATION, 0.3, 0.31);
     expect(painted.a).toBeGreaterThan(0);
 
-    await editor.getByRole("button", { name: "Save" }).click();
+    await editor.getByRole("button", { name: "Save", exact: true }).click();
     await expect(editor).toBeHidden();
   });
 
@@ -540,7 +540,7 @@ test.describe("Screenshot editor — every tool", () => {
     await editor.getByRole("button", { name: "Rectangle" }).click();
     await dragOnCanvas(page, editor, { xFrac: 0.2, yFrac: 0.5 }, { xFrac: 0.5, yFrac: 0.7 });
 
-    await editor.getByRole("button", { name: "Save" }).click();
+    await editor.getByRole("button", { name: "Save", exact: true }).click();
     await expect(editor).toBeHidden();
 
     const dialog = page.getByRole("dialog");

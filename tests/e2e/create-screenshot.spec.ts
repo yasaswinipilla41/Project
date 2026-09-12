@@ -130,7 +130,7 @@ test.describe("Screenshot attachments in Create flows", () => {
     });
     await page.mouse.up();
 
-    await editor.getByRole("button", { name: "Save" }).click();
+    await editor.getByRole("button", { name: "Save", exact: true }).click();
     await expect(editor).toBeHidden();
 
     // Back on the Create form, the edited image is still staged.

@@ -525,6 +525,14 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
         <ScreenshotEditor
           open
           source={capture.file}
+          /*
+           * Opened on the crop tool, which is what "select the region" means
+           * here. The browser's picker hands back a whole screen, window or
+           * tab — a sub-region is not something it can be asked for — so the
+           * region is chosen immediately afterwards by dragging it out on the
+           * capture, and every other tool is one click away as usual.
+           */
+          initialTool="crop"
           onCancel={() => setEditing(false)}
           onSave={(blob) => {
             /* Written over the capture being held, so marking one up does

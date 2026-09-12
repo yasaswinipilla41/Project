@@ -192,6 +192,65 @@ export function assignmentMessage(params: {
   return `assigned ${params.typeLabel} ${params.issueKey} to you`;
 }
 
+/**
+ * What to tell the tester who raised a piece of work when it comes back.
+ *
+ * A developer moving an issue to Ready for QA is handing it to somebody
+ * specific — the person who asked for it — so this is an assignment notice and
+ * uses the assignment row, the assignment type and the assignment destination.
+ * It reads differently from `assignmentMessage` because the event is
+ * different: nobody has decided to give them new work, the work they already
+ * raised has come back with something to check.
+ *
+ * The same convention as everything else here: `NotificationList` renders
+ * `<strong>{actor.name}</strong> {message}`, so the developer's name is
+ * already in front of this and must not be repeated inside it.
+ */
+export function readyForQaReturnMessage(params: {
+  issueKey: string;
+  issueTitle: string;
+}): string {
+  return (
+    `finished ${params.issueKey} and returned it to you to test — ` +
+    `${params.issueTitle}`
+  );
+}
+
+/**
+ * The tester a piece of work should go back to when it is ready to be checked.
+ *
+ * It is whoever raised it, and nobody else. Not the first tester on the
+ * project, not every tester, not anybody the request happened to name: the
+ * person who wrote the issue is the person who knows what "fixed" would look
+ * like, and they are already recorded on the row as its reporter. That
+ * identifier is read here from the database rather than taken from the caller,
+ * so no request can redirect somebody else's work.
+ *
+ * Three things have to be true, or the work stays where it is. They must still
+ * be a tester, because somebody who has moved off testing is not who to ask.
+ * They must still be active. And they must still be a member of the project,
+ * because an assignee who cannot open the issue is a state the rest of Prio
+ * refuses to create. Where any of those fails this returns null and the
+ * ordinary notice to the project's testers is the whole of what happens —
+ * which is exactly the behaviour that existed before this rule.
+ */
+export async function testerToReturnWorkTo(
+  db: Db,
+  params: { reporterId: string; projectId: string },
+): Promise<string | null> {
+  const reporter = await db.user.findFirst({
+    where: {
+      id: params.reporterId,
+      isActive: true,
+      teamMemberships: { some: { team: { slug: TESTING_TEAM_SLUG } } },
+      projectMemberships: { some: { projectId: params.projectId } },
+    },
+    select: { id: true },
+  });
+
+  return reporter?.id ?? null;
+}
+
 /** Unread notification count for the chrome badge. */
 export async function unreadCount(userId: string): Promise<number> {
   return prisma.notification.count({ where: { userId, readAt: null } });

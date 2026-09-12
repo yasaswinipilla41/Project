@@ -152,7 +152,7 @@ test.describe("Create Issue from the Issues module", () => {
     await dialog.getByRole("button", { name: "Annotate" }).click();
     await circleTheProblem(page, page.getByRole("dialog", { name: "Edit screenshot" }));
     await page.getByRole("dialog", { name: "Edit screenshot" })
-      .getByRole("button", { name: "Save" })
+      .getByRole("button", { name: "Save", exact: true })
       .click();
 
     /* Still one staged row, and still offering the same way back into the
@@ -214,7 +214,7 @@ test.describe("Create Issue from the Issues module", () => {
     const editor = page.getByRole("dialog", { name: "Edit screenshot" });
     await expect(editor).toBeVisible();
     await circleTheProblem(page, editor);
-    await editor.getByRole("button", { name: "Save" }).click();
+    await editor.getByRole("button", { name: "Save", exact: true }).click();
     await expect(editor).toBeHidden();
 
     /* Still one attachment, under the same name, holding different bytes.

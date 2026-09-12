@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/Icon";
 import { ScreenshotEditor } from "@/components/attachments/ScreenshotEditor";
 import {
+  extensionOf,
   formatBytes,
   renamedFilename,
   renderKindFor,
@@ -97,6 +98,20 @@ export interface AttachmentFieldProps {
 
 let nextStagedId = 0;
 const stagedId = () => `staged-${(nextStagedId += 1)}`;
+
+/**
+ * What to call the marked-up copy of a screenshot.
+ *
+ * Beside its original in a list, and obviously the same picture: the name it
+ * came from with a word added before the extension, which is also what keeps
+ * the file openable as what it is. Renameable afterwards like anything else,
+ * so this only has to be a sensible place to start.
+ */
+function copyOf(filename: string): string {
+  const extension = extensionOf(filename);
+  const base = filename.slice(0, filename.length - extension.length);
+  return `${base}-annotated${extension}`;
+}
 
 /** Whole megabytes — these limits are round numbers by definition. */
 function megabytes(bytes: number): string {
@@ -465,6 +480,20 @@ export function AttachmentField({
                   : entry,
               ),
             );
+            setEditing(null);
+          }}
+          onSaveAs={(blob) => {
+            /* The other reading of an edit: the plain capture is the evidence
+               and the marked-up one is the explanation. A second row, named
+               after the first so the pair reads as a pair, and the original
+               left exactly as it was. */
+            const copy: StagedAttachment = {
+              id: stagedId(),
+              blob,
+              name: copyOf(editingItem.name),
+              render: renderKindFor(blob.type),
+            };
+            onChange([...value, copy]);
             setEditing(null);
           }}
         />

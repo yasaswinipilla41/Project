@@ -37,8 +37,10 @@ import {
   isTester,
   notify,
   projectTesterIds,
+  readyForQaReturnMessage,
   recordFieldChanges,
   recordIssueCreated,
+  testerToReturnWorkTo,
   watcherIds,
 } from "@/server/activity";
 import {
@@ -457,6 +459,9 @@ export async function updateIssue(
         title: true,
         description: true,
         assigneeId: true,
+        /* Who raised it. Read here so Ready for QA can hand the work back to
+           them without the request being allowed to say who that is. */
+        reporterId: true,
         dueDate: true,
         parentId: true,
         environment: true,
@@ -730,10 +735,77 @@ export async function updateIssue(
          * a tester moving an issue there themselves is not told about it.
          */
         if (nextStatus === "IN_REVIEW") {
+          /*
+           * And the work goes back to whoever asked for it.
+           *
+           * A tester who raises a defect and hands it to a developer should
+           * not have to go looking for it again when the developer is
+           * finished. The issue returns to them, so it appears in their queue
+           * the way anything assigned to them does, and the notice below is
+           * addressed to them by name rather than broadcast.
+           *
+           * Who that is comes from the issue's own reporter, checked against
+           * the database — never from the request. `testerToReturnWorkTo`
+           * refuses anybody who is no longer a tester, no longer active, or no
+           * longer on the project; where it does, nothing is reassigned and
+           * the broadcast below is the whole of what happens, exactly as
+           * before this rule existed.
+           *
+           * An explicit assignee in the same request wins. Somebody who said
+           * where the work should go has made a decision, and quietly
+           * overruling it would be worse than not helping at all.
+           */
+          const askedFor =
+            "assigneeId" in input && input.assigneeId !== undefined;
+          const returnTo = askedFor
+            ? null
+            : await testerToReturnWorkTo(tx, {
+                reporterId: existing.reporterId,
+                projectId,
+              });
+
+          if (returnTo && returnTo !== existing.assigneeId) {
+            await tx.issue.update({
+              where: { id: issueId },
+              data: { assigneeId: returnTo },
+            });
+            /* The same activity row any reassignment writes, so the handover
+               reads as one move in the history rather than appearing from
+               nowhere. The actor is the developer who finished the work. */
+            await recordFieldChanges(tx, {
+              issueId,
+              actorId: user.id,
+              changes: [
+                {
+                  field: "assigneeId",
+                  oldValue: existing.assigneeId,
+                  newValue: returnTo,
+                },
+              ],
+            });
+            await addWatchers(tx, issueId, [returnTo]);
+            await notify(tx, {
+              issueId,
+              actorId: user.id,
+              userIds: [returnTo],
+              type: "ISSUE_ASSIGNED",
+              message: readyForQaReturnMessage({
+                issueKey: existing.key,
+                issueTitle: existing.title,
+              }),
+            });
+          }
+
+          /* Everybody else who could pick it up. The tester it went back to is
+             left out: they have the line above, which says the same thing and
+             also says it is theirs. */
+          const testers = (await projectTesterIds(tx, projectId)).filter(
+            (id) => id !== returnTo,
+          );
           await notify(tx, {
             issueId,
             actorId: user.id,
-            userIds: await projectTesterIds(tx, projectId),
+            userIds: testers,
             type: "STATUS_CHANGED",
             message: `marked ${existing.key} ready for QA — ${existing.title}`,
           });
