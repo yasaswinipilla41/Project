@@ -170,7 +170,7 @@ test.describe("A QA member", () => {
     await page.keyboard.press("Escape");
   });
 
-  test("can file work into the Backlog, and into nothing else", async ({
+  test("can file work into the Backlog or as New, and into nothing else", async ({
     page,
   }) => {
     await page.goto("/");
@@ -183,9 +183,10 @@ test.describe("A QA member", () => {
 
     /* Raising work is a separate decision from moving it, and for a tester the
        filing list is the narrower of the two. What they file is a request for
-       somebody to pick up; whether it is next, being built or finished is not
-       theirs to declare at the moment they raise it. */
-    expect(options.map((o) => o.trim())).toEqual(["Backlog"]);
+       somebody to pick up — parked in the Backlog or ready as New; whether it
+       is being built or finished is not theirs to declare at the moment they
+       raise it. Backlog stays first, so it is what a tester gets by default. */
+    expect(options.map((o) => o.trim())).toEqual(["Backlog", "New"]);
     await page.keyboard.press("Escape");
   });
 

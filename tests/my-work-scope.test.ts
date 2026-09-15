@@ -1,9 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { issueScope } from "@/lib/authz";
-import { CLOSED_STATUSES, OPEN_STATUSES } from "@/lib/domain";
+import { OPEN_STATUSES } from "@/lib/domain";
 import type { CurrentUser } from "@/lib/session";
 import { createIssue, updateIssue } from "@/server/issues";
+import { completedByFilter } from "@/server/queries/completedWork";
 import { dueThisWeekFilter, overdueFilter } from "@/server/queries/due";
 import { actAs, joinTestingTeam, projectByKey } from "./helpers";
 
@@ -234,39 +235,25 @@ describe("every My Work figure is the same rule with a category on it", () => {
     /* Each pair is the page's count beside the page's rows. Written as two
        calls on one fragment, so the only way they can disagree is if the
        fragment stopped being shared. */
-    const [assigned, bugs, overdue, dueThisWeek, waiting, completed] =
-      await Promise.all([
-        prisma.issue.findMany({ where: base, select: { id: true, type: true } }),
-        prisma.issue.count({ where: { ...base, type: "BUG" } }),
-        prisma.issue.count({ where: { ...base, ...overdueFilter() } }),
-        prisma.issue.count({ where: { ...base, ...dueThisWeekFilter() } }),
-        prisma.issue.findMany({
-          where: { ...base, status: "IN_REVIEW", testResult: "NOT_TESTED" },
-          select: { id: true, assigneeId: true },
-        }),
-        prisma.issue.count({
-          where: {
-            ...issueScope(user),
-            assigneeId: user.id,
-            status: { in: [...CLOSED_STATUSES] },
-          },
-        }),
-      ]);
-
-    // Bugs is the assigned set narrowed by type, exactly as the page does it.
-    expect(bugs).toBe(assigned.filter((i) => i.type === "BUG").length);
+    const [assigned, overdue, dueThisWeek, completed] = await Promise.all([
+      prisma.issue.findMany({ where: base, select: { id: true, type: true } }),
+      prisma.issue.count({ where: { ...base, ...overdueFilter() } }),
+      prisma.issue.count({ where: { ...base, ...dueThisWeekFilter() } }),
+      /* Completed replaced Bugs, and Waiting for testing is gone: it was the
+         same state as Ready for QA, which keeps its own card. */
+      prisma.issue.findMany({
+        where: { ...issueScope(user), ...completedByFilter([user.id]) },
+        select: { id: true, status: true },
+      }),
+    ]);
 
     // Overdue and Due this week are subsets of the same assigned set.
     expect(overdue).toBeLessThanOrEqual(assigned.length);
     expect(dueThisWeek).toBeLessThanOrEqual(assigned.length);
-    expect(completed).toBeGreaterThanOrEqual(0);
 
-    /* Waiting for testing is the one that used to invert the rule. Every row
-       must be this person's. */
-    for (const row of waiting) {
-      expect(row.assigneeId, "waiting for testing is the reader's own").toBe(
-        user.id,
-      );
+    // Completed is finished work and nothing else.
+    for (const row of completed) {
+      expect(row.status).toBe("DONE");
     }
 
     // And every row of the assigned set really is theirs, in a project of theirs.

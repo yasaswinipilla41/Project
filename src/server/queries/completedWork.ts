@@ -1,5 +1,49 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { CompletedByPerson } from "@/components/projects/CompletedWork";
+
+/**
+ * "Work I completed" — My Work's Completed tile, and the list it opens.
+ *
+ * One fragment, read by both, so the figure and the rows beneath it are the
+ * same query with a different projection.
+ *
+ * Completed means DONE, the definition every other completed figure in Prio
+ * uses. What makes it *mine* is the part of the workflow the person actually
+ * carried, read from the issue row and the append-only activity trail — never
+ * from a request, and never from merely being near the work:
+ *
+ *   - it is assigned to me and it is done — work I hold that finished, which
+ *     includes work handed back to the tester who raised it and closed;
+ *   - I moved it to Done — the tester's verdict, which `completersFor` above
+ *     already reads as "who completed it";
+ *   - I moved it to Ready for QA and it has since been completed — the
+ *     developer's hand-off. After Ready for QA the work goes back to the
+ *     tester, so without this arm a developer's finished work would never
+ *     count as theirs.
+ *
+ * Reporting an issue, commenting on it or belonging to its project is none of
+ * these, so none of them counts. It asks what each person *did* rather than
+ * which role they hold, so there is no role name in here to keep in step.
+ * Callers add the reader's `issueScope`; this narrows, it never widens.
+ */
+export function completedByFilter(userIds: string[]): Prisma.IssueWhereInput {
+  return {
+    status: "DONE",
+    OR: [
+      { assigneeId: { in: userIds } },
+      {
+        activity: {
+          some: {
+            field: "status",
+            newValue: { in: ["DONE", "IN_REVIEW"] },
+            actorId: { in: userIds },
+          },
+        },
+      },
+    ],
+  };
+}
 
 /**
  * Who completed the work — read from the activity trail, never from

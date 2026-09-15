@@ -60,6 +60,7 @@ export function parseIssueParams(params: SearchParams): IssueFilters {
     priorities: many(params.priority),
     assigneeIds: many(params.assignee),
     reporterIds: many(params.reporter),
+    completedByIds: many(params.completedBy),
     labelIds: many(params.label),
     resolution:
       resolution === "open" || resolution === "closed" ? resolution : undefined,

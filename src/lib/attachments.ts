@@ -59,6 +59,18 @@ export function extensionOf(filename: string): string {
 }
 
 /**
+ * What to call the marked-up copy of a file, saved beside its original.
+ *
+ * The name it came from with "-annotated" before the extension, so the pair
+ * reads as a pair in a list and the copy still opens as what it is.
+ */
+export function annotatedFilename(filename: string): string {
+  const extension = extensionOf(filename);
+  const base = filename.slice(0, filename.length - extension.length);
+  return `${base}-annotated${extension}`;
+}
+
+/**
  * What an attachment should be called after somebody renames it.
  *
  * A rename changes the label and nothing else, so the extension that arrives

@@ -37,6 +37,7 @@ import {
   isTester,
   notify,
   projectTesterIds,
+  readyForQaMessage,
   readyForQaReturnMessage,
   recordFieldChanges,
   recordIssueCreated,
@@ -196,9 +197,9 @@ export async function createIssue(
      *
      * Raising work and moving it are separate decisions, so this is not the
      * transition list and, for a pure tester, not the settable list either. A
-     * tester raises work into the Backlog and nowhere else — what they file is
-     * a request for somebody to pick up, and whether it is next, being built
-     * or finished is not theirs to declare at the moment they raise it.
+     * tester raises work into the Backlog or as New — what they file is a
+     * request for somebody to pick up, and whether it is being built or
+     * finished is not theirs to declare at the moment they raise it.
      *
      * Enforced here rather than by the form offering one option: a stale form,
      * a copied request or a clone of a finished issue would otherwise put a
@@ -469,7 +470,7 @@ export async function updateIssue(
         operatingSystem: true,
         versionBuild: true,
         affectedModule: true,
-        project: { select: { key: true } },
+        project: { select: { key: true, name: true } },
       },
     });
     if (!existing) throw new NotFoundError("This issue no longer exists.");
@@ -486,8 +487,10 @@ export async function updateIssue(
      *
      *   ADMIN      assigns anyone to anything.
      *   DEVELOPER  may set the assignee to themselves, whether the issue is
-     *              unassigned or held by another developer, and may hand back
-     *              work that is currently theirs. Nothing else.
+     *              unassigned or held by another developer, may hand back
+     *              work that is currently theirs, and may hand work that is
+     *              currently theirs to a tester on the project — the QA
+     *              hand-off. Nothing else.
      *   QA         raises work and verifies it; it does not decide who builds
      *              it, so it does not touch the assignee at all.
      *
@@ -515,8 +518,23 @@ export async function updateIssue(
         const takingItThemselves = next === user.id;
         const puttingDownTheirOwn =
           next === null && existing.assigneeId === user.id;
+        /*
+         * Handing their own finished work to QA.
+         *
+         * Only work they hold, and only to somebody whose job is testing — a
+         * QA member or a full stack developer. Never to another developer and
+         * never to an administrator: deciding who *builds* something is still
+         * an administrator's act. The person's role is read from the database
+         * here, and project membership was already checked above.
+         */
+        const handingTheirsToQa =
+          next !== null &&
+          existing.assigneeId === user.id &&
+          ["QA", "FULLSTACK"].includes(
+            (await workRolesFor([next])).get(next) ?? "",
+          );
 
-        if (!takingItThemselves && !puttingDownTheirOwn) {
+        if (!takingItThemselves && !puttingDownTheirOwn && !handingTheirsToQa) {
           throw new AuthorizationError(
             "You can take work for yourself, but only an administrator can assign it to somebody else.",
           );
@@ -678,6 +696,11 @@ export async function updateIssue(
         changes,
       });
 
+      const nextStatus = statusChange
+        ? (statusChange.newValue as IssueStatus)
+        : null;
+      const readyForQa = nextStatus === "IN_REVIEW";
+
       /*
        * Assignment, and the tester case of it.
        *
@@ -691,50 +714,55 @@ export async function updateIssue(
        *
        * When that new holder is on the Testing team the wording says so; the
        * row, its type, its actor and where it opens are identical either way.
+       *
+       * One exception: a tester given the work *and* asked to test it in the
+       * same save. The Ready for QA notice below is addressed to them and says
+       * both, so the plain assignment line would only be the same event twice.
        */
       const assigneeChange = changes.find((c) => c.field === "assigneeId");
       if (assigneeChange?.newValue) {
         await addWatchers(tx, issueId, [assigneeChange.newValue]);
-        await notify(tx, {
-          issueId,
-          actorId: user.id,
-          userIds: [assigneeChange.newValue],
-          type: "ISSUE_ASSIGNED",
-          message: assignmentMessage({
-            issueKey: existing.key,
-            issueTitle: existing.title,
-            typeLabel: ISSUE_TYPE_LABEL[existing.type].toLowerCase(),
-            tester: await isTester(tx, assigneeChange.newValue),
-          }),
-        });
+        const tester = await isTester(tx, assigneeChange.newValue);
+
+        if (!(readyForQa && tester)) {
+          await notify(tx, {
+            issueId,
+            actorId: user.id,
+            userIds: [assigneeChange.newValue],
+            type: "ISSUE_ASSIGNED",
+            message: assignmentMessage({
+              issueKey: existing.key,
+              issueTitle: existing.title,
+              typeLabel: ISSUE_TYPE_LABEL[existing.type].toLowerCase(),
+              tester,
+            }),
+          });
+        }
       }
 
-      if (statusChange) {
-        const nextStatus = statusChange.newValue as IssueStatus;
-
-        await notify(tx, {
-          issueId,
-          actorId: user.id,
-          userIds: await watcherIds(tx, issueId),
-          type: "STATUS_CHANGED",
-          message: `moved ${existing.key} to ${STATUS_LABEL[nextStatus] ?? nextStatus}`,
-        });
-
+      if (statusChange && nextStatus) {
         /*
          * Ready for QA is the one status that is a request rather than a
          * report: a developer has finished and is asking for the work to be
-         * checked. The people who have to act on it are the project's testers,
-         * and at this moment the issue is not assigned to any of them — often
-         * it never is — so watching it is exactly what they have not done.
-         * Hence a second notice, addressed to who can pick the work up rather
-         * than to who was already following it.
+         * checked. So it is addressed to whoever has to do the checking.
          *
-         * Whoever is both a watcher and a tester has the line above as well.
-         * That row says the status moved; this one asks for something, and the
-         * two are not the same sentence. The actor is filtered out of both, so
-         * a tester moving an issue there themselves is not told about it.
+         * Who that is, in order:
+         *
+         *   1. the tester the work was raised by, when it goes back to them
+         *      (`testerToReturnWorkTo`, below);
+         *   2. otherwise the QA member the issue is assigned to — named in
+         *      this request, or already holding it;
+         *   3. otherwise nobody in particular, and every tester on the project
+         *      is asked, as before.
+         *
+         * Only the third is a broadcast. Once a QA member holds the work it is
+         * theirs to test, and telling every other tester would be telling
+         * people about work that is not theirs.
          */
-        if (nextStatus === "IN_REVIEW") {
+        let returnTo: string | null = null;
+        let qaAssignee: string | null = null;
+
+        if (readyForQa) {
           /*
            * And the work goes back to whoever asked for it.
            *
@@ -747,9 +775,7 @@ export async function updateIssue(
            * Who that is comes from the issue's own reporter, checked against
            * the database — never from the request. `testerToReturnWorkTo`
            * refuses anybody who is no longer a tester, no longer active, or no
-           * longer on the project; where it does, nothing is reassigned and
-           * the broadcast below is the whole of what happens, exactly as
-           * before this rule existed.
+           * longer on the project; where it does, nothing is reassigned.
            *
            * An explicit assignee in the same request wins. Somebody who said
            * where the work should go has made a decision, and quietly
@@ -757,7 +783,7 @@ export async function updateIssue(
            */
           const askedFor =
             "assigneeId" in input && input.assigneeId !== undefined;
-          const returnTo = askedFor
+          returnTo = askedFor
             ? null
             : await testerToReturnWorkTo(tx, {
                 reporterId: existing.reporterId,
@@ -784,31 +810,74 @@ export async function updateIssue(
               ],
             });
             await addWatchers(tx, issueId, [returnTo]);
+          } else {
+            returnTo = null;
+          }
+
+          /* Who holds it once this save is done. */
+          const holder =
+            returnTo ??
+            (assigneeChange ? assigneeChange.newValue : existing.assigneeId);
+          qaAssignee = holder && (await isTester(tx, holder)) ? holder : null;
+        }
+
+        /* The ordinary line to everybody following the issue — less the QA
+           member the targeted notice below is for, who would otherwise be told
+           the same move twice. */
+        await notify(tx, {
+          issueId,
+          actorId: user.id,
+          userIds: (await watcherIds(tx, issueId)).filter(
+            (id) => id !== qaAssignee,
+          ),
+          type: "STATUS_CHANGED",
+          message: `moved ${existing.key} to ${STATUS_LABEL[nextStatus] ?? nextStatus}`,
+        });
+
+        if (readyForQa) {
+          if (returnTo) {
             await notify(tx, {
               issueId,
+              projectId,
               actorId: user.id,
               userIds: [returnTo],
               type: "ISSUE_ASSIGNED",
               message: readyForQaReturnMessage({
                 issueKey: existing.key,
                 issueTitle: existing.title,
+                projectName: existing.project.name,
               }),
             });
+          } else if (qaAssignee) {
+            await notify(tx, {
+              issueId,
+              projectId,
+              actorId: user.id,
+              userIds: [qaAssignee],
+              /* Given the work in this same save, it is their assignment
+                 notice too — Home reads unread assignments to surface new
+                 work, so it must stay one. Already holding it, it is the
+                 status news it is. */
+              type:
+                assigneeChange?.newValue === qaAssignee
+                  ? "ISSUE_ASSIGNED"
+                  : "STATUS_CHANGED",
+              message: readyForQaMessage({
+                issueKey: existing.key,
+                issueTitle: existing.title,
+                projectName: existing.project.name,
+              }),
+            });
+          } else {
+            /* Nobody on QA holds it, so whoever could pick it up. */
+            await notify(tx, {
+              issueId,
+              actorId: user.id,
+              userIds: await projectTesterIds(tx, projectId),
+              type: "STATUS_CHANGED",
+              message: `marked ${existing.key} ready for QA — ${existing.title}`,
+            });
           }
-
-          /* Everybody else who could pick it up. The tester it went back to is
-             left out: they have the line above, which says the same thing and
-             also says it is theirs. */
-          const testers = (await projectTesterIds(tx, projectId)).filter(
-            (id) => id !== returnTo,
-          );
-          await notify(tx, {
-            issueId,
-            actorId: user.id,
-            userIds: testers,
-            type: "STATUS_CHANGED",
-            message: `marked ${existing.key} ready for QA — ${existing.title}`,
-          });
         }
       }
     });

@@ -142,9 +142,11 @@ test.describe("Admin → QA → Developer → QA, end to end", () => {
     await create.getByLabel("Project").selectOption({ label: `${projectName} (${projectKey})` });
     await create.getByLabel("Summary").fill(summary);
 
-    /* A tester files into the backlog — the one status raising work may use —
-       and says who should fix it in the same act. */
-    await expect(create.locator("#create-status option")).toHaveText(["Backlog"]);
+    /* A tester files into the Backlog (the default) or as New — the two
+       statuses raising work may use — and says who should fix it in the same
+       act. */
+    await expect(create.locator("#create-status option")).toHaveText(["Backlog", "New"]);
+    await expect(create.locator("#create-status")).toHaveValue("BACKLOG");
     await create.getByLabel("Assignee").selectOption({ label: "Kiran Das" });
 
     await create

@@ -943,6 +943,62 @@ a.prio-key:hover {
   max-width: 420px;
 }
 
+/* ------------------------------------------------ dialog window controls
+   Only dialogs that opt in to `windowControls` ever reach these states. */
+
+/* Maximised: the panel fills the window, less a margin, and its body takes the
+   extra height. */
+.prio-dialog-backdrop[data-maximized] {
+  align-items: stretch;
+  padding: var(--prio-space-4);
+}
+
+.prio-dialog--maximized {
+  max-width: none;
+  height: calc(100dvh - (2 * var(--prio-space-4)));
+  max-height: calc(100dvh - (2 * var(--prio-space-4)));
+}
+
+/* Minimised: the title bar alone, at the bottom centre of the window and clear
+   of the Snip Tool's corner. The backdrop shrinks to it and stops catching the
+   pointer, so the page behind is usable; the body and footer stay mounted and
+   are only hidden, which is what keeps the form's contents. */
+.prio-dialog-backdrop[data-minimized] {
+  inset: auto auto var(--prio-space-5) 50%;
+  transform: translateX(-50%);
+  padding: 0;
+  overflow: visible;
+  background: transparent;
+  backdrop-filter: none;
+  pointer-events: none;
+  animation: none;
+}
+
+.prio-dialog[data-minimized] {
+  width: min(360px, calc(100vw - (2 * var(--prio-space-5))));
+  max-width: none;
+  pointer-events: auto;
+  animation: none;
+  box-shadow: var(--prio-shadow-xl);
+}
+
+.prio-dialog[data-minimized] .prio-dialog__header {
+  padding: var(--prio-space-3) var(--prio-space-4);
+  border-bottom: 0;
+}
+
+.prio-dialog[data-minimized] .prio-dialog__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--prio-text-sm);
+}
+
+.prio-dialog[data-minimized] .prio-dialog__body,
+.prio-dialog[data-minimized] .prio-dialog__footer {
+  display: none;
+}
+
 .prio-dialog__header {
   display: flex;
   align-items: center;

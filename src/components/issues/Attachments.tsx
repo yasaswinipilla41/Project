@@ -450,6 +450,17 @@ export function AttachmentGrid({
  * Escape closes it and focus starts on the close button, so it behaves like
  * the rest of Prio's dialogs without pulling in the full dialog machinery for
  * what is really just a picture.
+ *
+ * `Ctrl` / `⌘` with `+` or `-` is the keyboard's "look closer", and it reaches
+ * the image the same way the wheel does: the key is matched by what it types
+ * *and* by which key it is, so the number-pad keys and layouts where `+` needs
+ * Shift all count, and the browser's own page zoom is held off only while the
+ * viewer is open.
+ *
+ * Exported, because it is also the viewer an attachment link opens: following
+ * a picture or a video out of the Excel export lands on a page that shows this
+ * and nothing else. A video is shown in the same frame, with the browser's
+ * own player controls and no zoom — there is nothing to magnify in a player.
  */
 
 const MIN_SCALE = 1;
@@ -460,13 +471,38 @@ function clampScale(value: number): number {
   return Math.min(MAX_SCALE, Math.max(MIN_SCALE, value));
 }
 
-function Lightbox({
+/** Which zoom a key press is asking for, if any. */
+function zoomKey(event: KeyboardEvent): "in" | "out" | "reset" | null {
+  if (
+    event.key === "+" ||
+    event.key === "=" ||
+    event.code === "Equal" ||
+    event.code === "NumpadAdd"
+  ) {
+    return "in";
+  }
+  if (
+    event.key === "-" ||
+    event.key === "_" ||
+    event.code === "Minus" ||
+    event.code === "NumpadSubtract"
+  ) {
+    return "out";
+  }
+  if (event.key === "0" || event.code === "Digit0" || event.code === "Numpad0") {
+    return "reset";
+  }
+  return null;
+}
+
+export function Lightbox({
   attachment,
   onClose,
 }: {
   attachment: AttachmentView;
   onClose: () => void;
 }) {
+  const isVideo = renderKindFor(attachment.mimeType) === "video";
   const viewport = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
@@ -498,20 +534,17 @@ function Lightbox({
         onClose();
         return;
       }
-      if (event.key === "+" || event.key === "=") {
-        event.preventDefault();
-        zoomTo(scale + STEP);
-        return;
-      }
-      if (event.key === "-" || event.key === "_") {
-        event.preventDefault();
-        zoomTo(scale - STEP);
-        return;
-      }
-      if (event.key === "0") {
-        event.preventDefault();
-        reset();
-      }
+      /* A player has nothing to zoom, and its own keys belong to it. */
+      if (isVideo) return;
+
+      const zoom = zoomKey(event);
+      if (!zoom) return;
+      /* With or without Ctrl/⌘. Held off from the browser either way, which
+         is what keeps Ctrl + and Ctrl - on the picture rather than the page. */
+      event.preventDefault();
+      if (zoom === "in") zoomTo(scale + STEP);
+      else if (zoom === "out") zoomTo(scale - STEP);
+      else reset();
     };
     document.addEventListener("keydown", onKey);
 
@@ -522,7 +555,7 @@ function Lightbox({
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = previous;
     };
-  }, [onClose, reset, scale, zoomTo]);
+  }, [isVideo, onClose, reset, scale, zoomTo]);
 
   /*
    * The wheel, and the browser zoom it would otherwise trigger.
@@ -534,7 +567,7 @@ function Lightbox({
    */
   useEffect(() => {
     const element = viewport.current;
-    if (!element) return;
+    if (!element || isVideo) return;
 
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
@@ -556,7 +589,7 @@ function Lightbox({
       document.removeEventListener("gesturestart", onGesture);
       document.removeEventListener("gesturechange", onGesture);
     };
-  }, [scale, zoomTo]);
+  }, [isVideo, scale, zoomTo]);
 
   function startPan(event: React.PointerEvent<HTMLImageElement>) {
     if (!zoomed) return;
@@ -606,6 +639,7 @@ function Lightbox({
 
       {/* The zoom controls sit on the overlay, not on the image, so they stay
           put and stay the same size however far the picture is scaled. */}
+      {isVideo ? null : (
       <div
         className="prio-lightbox__zoom"
         onClick={(event) => event.stopPropagation()}
@@ -635,6 +669,7 @@ function Lightbox({
           +
         </button>
       </div>
+      )}
 
       {/*
         * The frame the image is scaled inside. It clips, so a magnified
@@ -648,7 +683,17 @@ function Lightbox({
         data-zoomed={zoomed || undefined}
         onClick={(event) => event.stopPropagation()}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
+        {isVideo ? (
+          <video
+            className="prio-lightbox__video"
+            src={`/api/attachments/${attachment.id}`}
+            controls
+            autoPlay
+            playsInline
+            preload="metadata"
+          />
+        ) : (
+        /* eslint-disable-next-line @next/next/no-img-element */
         <img
           className="prio-lightbox__image"
           src={`/api/attachments/${attachment.id}`}
@@ -663,6 +708,7 @@ function Lightbox({
           onPointerUp={endPan}
           onPointerCancel={endPan}
         />
+        )}
       </div>
 
       <div className="prio-lightbox__caption">

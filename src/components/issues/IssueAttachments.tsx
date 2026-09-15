@@ -55,6 +55,7 @@ import {
 export function IssueAttachments({
   issueId,
   issueKey,
+  projectName,
   attachments,
   currentUserId,
   isAdmin,
@@ -62,6 +63,8 @@ export function IssueAttachments({
   issueId: string;
   /** Only so the Snip Tool can say which issue it is holding a capture for. */
   issueKey: string;
+  /** And which project that issue is in, for the same reason. */
+  projectName?: string;
   attachments: AttachmentView[];
   currentUserId: string;
   isAdmin: boolean;
@@ -176,18 +179,22 @@ export function IssueAttachments({
     [issueId, router, toast],
   );
 
-  /* A capture goes up the moment it is handed over, exactly as a browsed file
-     does — the issue already exists, so there is nothing to stage it for. */
-  const { openSnipTool, available: snipAvailable } = useSnipReceiver(
-    { kind: "issue", issueId, label: issueKey },
-    async (file) => {
-      /* Thrown rather than swallowed, so a refused upload leaves the capture
-         in the Snip Tool to try again with. Reported here as well, in the
-         panel's own error list, exactly as a browsed file would be. */
-      const refused = await upload([file]);
-      if (refused.length > 0) throw new Error(refused.join(" "));
-    },
-  );
+  /*
+   * The Snip Tool, opened for this issue.
+   *
+   * No receiver: the issue already exists, so the window uploads a saved snip
+   * or a recording straight to it, through the same `/api/attachments` route
+   * Browse uses. That is what keeps a capture tied to the issue it was taken
+   * for even after the person has walked off to another page to take it —
+   * the issue's id is fixed when the window opens, not looked up when it
+   * saves, and the server still authorizes every upload.
+   */
+  const { openSnipTool, available: snipAvailable } = useSnipReceiver({
+    kind: "issue",
+    issueId,
+    label: issueKey,
+    projectName,
+  });
 
   function handleDrop(event: DragEvent<HTMLDivElement>) {
     event.preventDefault();

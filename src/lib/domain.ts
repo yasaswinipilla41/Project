@@ -216,15 +216,18 @@ export function allowedStatusesFor(
  *
  * Raising work and moving it are separate decisions, so this is not the
  * transition list — and for a pure tester it is not the settable list either.
- * A tester raises work into the backlog and nowhere else: what they file is a
- * request for somebody to pick up, and the person who decides whether it is
- * next, already being built, or finished is not the person who raised it.
- * Filing straight into In QA or a verdict would let a tester walk work past
- * every hand-off the workflow exists to record.
+ * A tester raises work into the Backlog, or as New: what they file is a
+ * request for somebody to pick up, either parked for planning or ready to be
+ * picked up now. The person who decides whether it is already being built or
+ * finished is not the person who raised it. Filing straight into In Progress,
+ * Ready for QA, In QA or a verdict would let a tester walk work past every
+ * hand-off the workflow exists to record.
  *
- * One status, therefore, and the create form offers exactly it. Everybody else
- * files in whatever their own half may set: a developer or a full stack
- * developer starts work at New, and an administrator may file anything.
+ * Backlog stays first, so a tester who does not say still files there. New is
+ * the same status everybody else starts work at (`TODO`, labelled "New"), not
+ * a second one. Everybody else files in whatever their own half may set: a
+ * developer or a full stack developer starts work at New, and an administrator
+ * may file anything.
  *
  * Exported because the create and clone dialogs offer these and `createIssue`
  * enforces them; one definition is what keeps the offer and the refusal in
@@ -232,6 +235,7 @@ export function allowedStatusesFor(
  */
 export const QA_FILABLE_STATUSES = [
   "BACKLOG",
+  "TODO",
 ] as const satisfies readonly IssueStatus[];
 
 export function filableStatusesFor(role: WorkRole): readonly IssueStatus[] {

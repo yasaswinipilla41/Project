@@ -121,6 +121,12 @@ export interface NotifyParams {
   type: "ISSUE_ASSIGNED" | "MENTIONED" | "STATUS_CHANGED" | "COMMENT_ADDED";
   message: string;
   commentId?: string | null;
+  /**
+   * The issue's project, for a notice that should name it in the detail view
+   * as well as open the issue. Optional: most notices are only about the
+   * issue, and the issue is still what every notification opens.
+   */
+  projectId?: string | null;
 }
 
 export async function notify(db: Db, params: NotifyParams): Promise<void> {
@@ -137,6 +143,7 @@ export async function notify(db: Db, params: NotifyParams): Promise<void> {
       actorId: params.actorId,
       issueId: params.issueId,
       commentId: params.commentId ?? null,
+      projectId: params.projectId ?? null,
       message: params.message,
     })),
   });
@@ -209,11 +216,38 @@ export function assignmentMessage(params: {
 export function readyForQaReturnMessage(params: {
   issueKey: string;
   issueTitle: string;
+  projectName?: string;
 }): string {
   return (
-    `finished ${params.issueKey} and returned it to you to test — ` +
-    `${params.issueTitle}`
+    `finished ${params.issueKey}, marked it Ready for QA and returned it to ` +
+    `you to test — ${params.issueTitle}${inProject(params.projectName)}`
   );
+}
+
+/**
+ * What to tell the QA member an issue is assigned to when it is marked Ready
+ * for QA.
+ *
+ * The developer handing work over names who tests it by assigning it, so the
+ * notice goes to that person and nobody else. It carries what they need to act
+ * without opening anything first: the issue's key and title, its project, the
+ * status it is now in, and that it is theirs to test. The same convention as
+ * the rest: the actor's name is already rendered in front of it.
+ */
+export function readyForQaMessage(params: {
+  issueKey: string;
+  issueTitle: string;
+  projectName?: string;
+}): string {
+  return (
+    `marked ${params.issueKey} Ready for QA and assigned it to you to test — ` +
+    `${params.issueTitle}${inProject(params.projectName)}`
+  );
+}
+
+/** " (Engineering)", or nothing when there is no name to give. */
+function inProject(projectName: string | undefined): string {
+  return projectName ? ` (${projectName})` : "";
 }
 
 /**

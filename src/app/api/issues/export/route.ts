@@ -115,6 +115,7 @@ function attachmentLinkColumns(count: number): Column[] {
         // Excel's own link styling, so it reads as a link before it is clicked.
         textColor: "#0563C1",
         textDecoration: { underline: true },
+        alignVertical: "top",
       };
     },
   }));
@@ -134,6 +135,15 @@ function attachmentLinkColumns(count: number): Column[] {
  * Multiple attachments are newline-separated within their cell, which keeps
  * every filename and every link present and lines them up row for row between
  * the two columns. An issue with no attachments gets 0 and two empty cells.
+ *
+ * Lining up only holds while every name and every URL fits on its own line.
+ * At a fixed width a long URL wrapped part-way through, so two links read as
+ * one run of text with its halves on different lines, and every filename
+ * beside it drifted out of step with its link. The two columns are therefore
+ * sized to the longest entry this export actually holds (see
+ * `ATTACHMENT_TEXT_WIDTH`), so each URL starts, runs and ends on a line of its
+ * own at the same left edge — and each file still has its own clickable cell
+ * in `Attachment 1 … n`, which is where one link per file genuinely lives.
  */
 const ATTACHMENT_COLUMNS: Column[] = [
   {
@@ -153,6 +163,19 @@ const ATTACHMENT_COLUMNS: Column[] = [
       r.attachments.map((a) => `${origin}/api/attachments/${a.id}`).join("\n"),
   },
 ];
+
+/**
+ * How wide `Attachment files` and `Attachment links` may grow, in characters.
+ *
+ * At least the column's own width, so a sheet with short names looks as it
+ * always did; at most this, so one absurd filename cannot push the rest of the
+ * sheet off screen. Anything longer than the ceiling still wraps, inside its
+ * own cell, rather than being cut.
+ */
+const ATTACHMENT_TEXT_WIDTH: Record<string, number> = {
+  "Attachment files": 90,
+  "Attachment links": 120,
+};
 
 /** Only fields the Issue model actually carries — nothing derived or invented. */
 const COLUMNS: Column[] = [
@@ -235,6 +258,31 @@ export async function GET(request: Request) {
     );
     const columns = [...COLUMNS, ...attachmentLinkColumns(linkColumns)];
 
+    /* The longest name and the longest link in this export, measured in the
+       same form each cell writes them. */
+    let longestName = 0;
+    let longestLink = 0;
+    for (const row of rows) {
+      for (const file of row.attachments) {
+        longestName = Math.max(longestName, file.filename.length);
+        longestLink = Math.max(
+          longestLink,
+          `${origin}/api/attachments/${file.id}`.length,
+        );
+      }
+    }
+    const longest: Record<string, number> = {
+      "Attachment files": longestName,
+      "Attachment links": longestLink,
+    };
+
+    const widthOf = (column: Column): number => {
+      const ceiling = ATTACHMENT_TEXT_WIDTH[column.header];
+      if (!ceiling) return column.width;
+      // A little breathing room past the text, as Excel's own autofit leaves.
+      return Math.min(ceiling, Math.max(column.width, (longest[column.header] ?? 0) + 3));
+    };
+
     const header: Row = columns.map((column) => ({
       value: column.header,
       fontWeight: "bold",
@@ -245,23 +293,34 @@ export async function GET(request: Request) {
         if (column.cell) return column.cell(row, origin);
 
         const value = column.value(row, origin);
+        /*
+         * Every cell reads from the top of its row. A row holding three
+         * attachments is three lines tall, and Excel's default of sitting at
+         * the bottom left the key, the dates and the first filename and link
+         * on three different lines of the same row.
+         */
         // A typed cell, so Excel sorts and filters dates and counts as dates
         // and numbers rather than as text that merely looks like them.
         if (value instanceof Date) {
-          return { type: Date, value, format: column.format };
+          return { type: Date, value, format: column.format, alignVertical: "top" };
         }
         if (typeof value === "number") {
-          return { type: Number, value };
+          return { type: Number, value, alignVertical: "top" };
         }
         const text = value ?? "";
         // Several attachments share one cell, so it has to be allowed to
         // wrap or Excel shows only the first line.
-        return { type: String, value: text, wrap: text.includes("\n") };
+        return {
+          type: String,
+          value: text,
+          wrap: text.includes("\n") || ATTACHMENT_TEXT_WIDTH[column.header] !== undefined,
+          alignVertical: "top",
+        };
       }),
     );
 
     const file = writeXlsxFile([header, ...body], {
-      columns: columns.map((column) => ({ width: column.width })),
+      columns: columns.map((column) => ({ width: widthOf(column) })),
       sheet: "Issues",
     });
     const buffer = await file.toBuffer();

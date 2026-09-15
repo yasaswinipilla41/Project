@@ -43,7 +43,7 @@ import {
   IconSubIssue,
   IconWarning,
 } from "@/components/ui/Icon";
-import { issueScope, workRoleOf } from "@/lib/authz";
+import { issueScope, workRoleOf, workRolesFor } from "@/lib/authz";
 import {
   ISSUE_TYPE_LABEL,
   canEditDueDate,
@@ -244,6 +244,30 @@ export default async function IssueDetailPage({
     orderBy: { user: { name: "asc" } },
   });
 
+  /*
+   * Who this reader may hand the work to from the assignee field.
+   *
+   * An administrator: anybody on the project, as always. A developer holding
+   * the work: the project's testers — QA members and full stack developers —
+   * which is the QA hand-off `updateIssue` allows, and nobody else. Everybody
+   * else sees who has it and cannot change it here.
+   */
+  const holdsIt =
+    doesDeveloperWork(workRole) &&
+    workRole !== "ADMIN" &&
+    issue.assignee?.id === user.id;
+  const handoffRoles = holdsIt
+    ? await workRolesFor(members.map((m) => m.user.id))
+    : null;
+  const assignableMembers =
+    workRole === "ADMIN"
+      ? members.map((m) => m.user)
+      : members
+          .map((m) => m.user)
+          .filter((member) =>
+            ["QA", "FULLSTACK"].includes(handoffRoles?.get(member.id) ?? ""),
+          );
+
   // Activity stores ids for relational fields; resolve them to names once.
   const names: NameLookup = {};
   for (const m of members) names[m.user.id] = m.user.name;
@@ -372,8 +396,8 @@ export default async function IssueDetailPage({
           <AssigneeControl
             issueId={issue.id}
             assignee={issue.assignee}
-            members={members.map((m) => m.user)}
-            canAssign={workRole === "ADMIN"}
+            members={assignableMembers}
+            canAssign={workRole === "ADMIN" || holdsIt}
           />
           {/*
             * Due date sits with the other things that get changed about an
@@ -479,6 +503,7 @@ export default async function IssueDetailPage({
               <IssueAttachments
                 issueId={issue.id}
                 issueKey={issue.key}
+                projectName={issue.project.name}
                 attachments={issue.attachments}
                 currentUserId={user.id}
                 isAdmin={user.role === "ADMIN"}

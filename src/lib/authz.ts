@@ -81,6 +81,33 @@ export async function assertIssueAccess(
   return issue.projectId;
 }
 
+/**
+ * Throws unless the user may read an attachment.
+ *
+ * An attachment belongs to exactly one issue or one project — never both — so
+ * reading it needs exactly what reading that issue or project needs. Shared by
+ * the file route and the viewer page, so the two can never disagree about who
+ * may see a file.
+ *
+ * Both columns are nullable, so "belongs to neither" is a shape the database
+ * permits even though nothing writes it. Refusing explicitly is the safe
+ * reading of an unowned file: there is no project whose membership could grant
+ * it, so nobody may have it.
+ */
+export async function assertAttachmentAccess(
+  user: CurrentUser,
+  attachment: { issueId: string | null; projectId: string | null },
+): Promise<void> {
+  if (attachment.issueId) {
+    await assertIssueAccess(user, attachment.issueId);
+    return;
+  }
+  if (!attachment.projectId) {
+    throw new AuthorizationError("This file has no owner.");
+  }
+  await assertProjectAccess(user, attachment.projectId);
+}
+
 /** Organization-level administration (users, invitations) is admin-only. */
 export function assertAdmin(user: CurrentUser): void {
   if (user.role !== "ADMIN") {

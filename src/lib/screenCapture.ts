@@ -86,7 +86,39 @@ function stopStream(stream: MediaStream): void {
   for (const track of stream.getTracks()) track.stop();
 }
 
-async function requestDisplayStream(): Promise<MediaStream> {
+/**
+ * What the browser's picker should lead with.
+ *
+ *   this-tab  the Prio tab itself — the browser offers it first ("share this
+ *             tab"), which is what "capture this page" means;
+ *   any       another tab, a window or a whole screen, with this tab left out
+ *             of the list because it has its own choice.
+ *
+ * Both are hints. The picker is the browser's, the person still chooses in it,
+ * and a browser that does not know a hint ignores it — which is why neither
+ * can be used to capture anything the person did not pick.
+ */
+export type CaptureSource = "this-tab" | "any";
+
+export interface CaptureOptions {
+  source?: CaptureSource;
+}
+
+/** The newer picker hints, which not every DOM typing knows about yet. */
+type DisplayMediaHints = DisplayMediaStreamOptions & {
+  preferCurrentTab?: boolean;
+  selfBrowserSurface?: "include" | "exclude";
+  surfaceSwitching?: "include" | "exclude";
+  controller?: unknown;
+};
+
+interface FocusController {
+  setFocusBehavior?: (behavior: "focus-captured-surface" | "no-focus-change") => void;
+}
+
+async function requestDisplayStream(
+  options: CaptureOptions = {},
+): Promise<MediaStream> {
   if (!canCaptureScreen()) {
     throw new CaptureError(
       "unsupported",
@@ -94,11 +126,32 @@ async function requestDisplayStream(): Promise<MediaStream> {
     );
   }
 
+  const hints: DisplayMediaHints = { video: true, audio: false };
+  if (options.source === "this-tab") {
+    hints.video = { displaySurface: "browser" } as MediaTrackConstraints;
+    hints.preferCurrentTab = true;
+    hints.selfBrowserSurface = "include";
+    hints.surfaceSwitching = "exclude";
+  } else if (options.source === "any") {
+    hints.selfBrowserSurface = "exclude";
+  }
+
+  /* Capturing another tab would normally switch the browser to it. A snip
+     is one frame, taken for the Prio tab, so focus stays here where the
+     capture is going — where the browser supports saying so. */
+  const Controller = (globalThis as { CaptureController?: new () => FocusController })
+    .CaptureController;
+  const controller = options.source === "any" && Controller ? new Controller() : null;
+  if (controller) hints.controller = controller;
+
   try {
-    return await navigator.mediaDevices.getDisplayMedia({
-      video: true,
-      audio: false,
-    });
+    const stream = await navigator.mediaDevices.getDisplayMedia(hints);
+    try {
+      controller?.setFocusBehavior?.("no-focus-change");
+    } catch {
+      /* Too late or unsupported: the browser simply keeps its default. */
+    }
+    return stream;
   } catch (error) {
     throw asCaptureError(error);
   }
@@ -112,8 +165,10 @@ async function requestDisplayStream(): Promise<MediaStream> {
  * because this is a screenshot destined for annotation: lossless, and the
  * format the editor and the upload allowlist already expect.
  */
-export async function captureScreenshot(): Promise<Blob> {
-  const stream = await requestDisplayStream();
+export async function captureScreenshot(
+  options: CaptureOptions = {},
+): Promise<Blob> {
+  const stream = await requestDisplayStream(options);
 
   try {
     const video = document.createElement("video");

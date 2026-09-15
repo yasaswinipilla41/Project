@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/Icon";
 import { ScreenshotEditor } from "@/components/attachments/ScreenshotEditor";
 import {
-  extensionOf,
+  annotatedFilename,
   formatBytes,
   renamedFilename,
   renderKindFor,
@@ -99,20 +99,6 @@ export interface AttachmentFieldProps {
 let nextStagedId = 0;
 const stagedId = () => `staged-${(nextStagedId += 1)}`;
 
-/**
- * What to call the marked-up copy of a screenshot.
- *
- * Beside its original in a list, and obviously the same picture: the name it
- * came from with a word added before the extension, which is also what keeps
- * the file openable as what it is. Renameable afterwards like anything else,
- * so this only has to be a sensible place to start.
- */
-function copyOf(filename: string): string {
-  const extension = extensionOf(filename);
-  const base = filename.slice(0, filename.length - extension.length);
-  return `${base}-annotated${extension}`;
-}
-
 /** Whole megabytes — these limits are round numbers by definition. */
 function megabytes(bytes: number): string {
   return `${Math.round(bytes / (1024 * 1024))} MB`;
@@ -193,28 +179,6 @@ export function AttachmentField({
     return null;
   }
 
-  /** Adds one blob to the list, and hands back its id so a caller can act on it. */
-  function stage(blob: Blob, name: string, durationMs?: number): string | null {
-    const refused = refusal(blob, name);
-    if (refused) {
-      setError(refused);
-      return null;
-    }
-
-    const id = stagedId();
-    onChange([
-      ...value,
-      {
-        id,
-        blob,
-        name: safeFilename(name),
-        render: renderKindFor(blob.type),
-        ...(durationMs === undefined ? {} : { durationMs }),
-      },
-    ]);
-    return id;
-  }
-
   /**
    * Files chosen through Browse or dropped on the field.
    *
@@ -257,20 +221,61 @@ export function AttachmentField({
    * The Snip Tool's way back in.
    *
    * A capture arrives here as an ordinary file and becomes an ordinary staged
-   * row — same size limits, same rename, same upload. It is delivered once,
-   * by the window, when the person presses Attach there, which is what keeps
-   * one capture to one row however many times the form is reopened.
+   * row — same size limits, same rename, same upload. It is delivered by the
+   * window when the person saves it there, which is what keeps one snip to
+   * one row however many times the form is reopened.
+   *
+   * Two things a delivery can ask for beyond that. `replaces` is a snip saved
+   * again after another edit: its row is written over, as Save does everywhere
+   * else, rather than a second row appearing. And several files may come in
+   * one delivery — Save as copy on a snip not yet saved sends the original and
+   * its "-annotated" copy together — so they are staged in one change and
+   * neither can overwrite the other.
+   *
+   * The staged ids go back to the window so a later Save can name its row.
    */
   const { openSnipTool, available: snipAvailable } = useSnipReceiver(
     snipTarget,
-    (file, meta) => {
+    (deliveries) => {
       setError(null);
-      /* Thrown rather than swallowed: the Snip Tool keeps hold of a capture
-         it could not hand over, and shows why. A refusal that only appeared
+      /* Thrown rather than swallowed: the Snip Tool keeps hold of a snip it
+         could not hand over, and shows why. A refusal that only appeared
          down here would have lost the capture on the way. */
-      const refused = refusal(file, file.name);
-      if (refused) throw new Error(refused);
-      stage(file, file.name, meta.durationMs);
+      for (const { file } of deliveries) {
+        const refused = refusal(file, file.name);
+        if (refused) throw new Error(refused);
+      }
+
+      let next = value;
+      const ids: string[] = [];
+      for (const delivery of deliveries) {
+        const { file, durationMs, replaces } = delivery;
+        if (replaces && next.some((item) => item.id === replaces)) {
+          next = next.map((item) =>
+            item.id === replaces
+              ? { ...item, blob: file, render: renderKindFor(file.type) }
+              : item,
+          );
+          ids.push(replaces);
+          continue;
+        }
+
+        const id = stagedId();
+        next = [
+          ...next,
+          {
+            id,
+            blob: file,
+            name: safeFilename(file.name),
+            render: renderKindFor(file.type),
+            ...(durationMs === undefined ? {} : { durationMs }),
+          },
+        ];
+        ids.push(id);
+      }
+
+      onChange(next);
+      return ids;
     },
   );
 
@@ -490,7 +495,7 @@ export function AttachmentField({
             const copy: StagedAttachment = {
               id: stagedId(),
               blob,
-              name: copyOf(editingItem.name),
+              name: annotatedFilename(editingItem.name),
               render: renderKindFor(blob.type),
             };
             onChange([...value, copy]);

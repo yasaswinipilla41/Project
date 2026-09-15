@@ -245,23 +245,22 @@ describe("the statuses each job may set", () => {
     expect(canSetStatus("QA", "IN_REVIEW", "DONE")).toBe(false);
   });
 
-  it("lets a tester file work into the Backlog, and nowhere else", () => {
+  it("lets a tester file work into the Backlog or as New, and nowhere else", () => {
     /*
      * Filing and moving are separate decisions, and for a pure tester the
      * filing list is narrower than the moving one. A tester raises work into
-     * the Backlog: what they file is a request for somebody to pick up, and
-     * whether it is next, being built or finished is not theirs to declare at
-     * the moment they raise it.
+     * the Backlog or as New: what they file is a request for somebody to pick
+     * up, and whether it is being built or finished is not theirs to declare
+     * at the moment they raise it.
      *
-     * One status, so a tester who does not say gets it.
+     * Backlog first, so a tester who does not say still gets it.
      */
-    expect([...filableStatusesFor("QA")]).toEqual(["BACKLOG"]);
+    expect([...filableStatusesFor("QA")]).toEqual(["BACKLOG", "TODO"]);
 
     /* Not a way round the verdict rule, round the build, or round the
        hand-off — even though In QA and the two verdicts are statuses this
        person may *set* on work that already exists. */
     for (const status of [
-      "TODO",
       "IN_PROGRESS",
       "IN_REVIEW",
       "IN_QA",
@@ -347,6 +346,30 @@ describe("a tester filing work", () => {
 
     expect(result.ok).toBe(false);
     expect(await prisma.issue.count({ where: { title } })).toBe(0);
+  });
+
+  it("files as New when it asks to, and the status persists", async () => {
+    await actAs(TESTER);
+    const project = await projectByKey("ENG");
+
+    const result = await createIssue({
+      projectId: project.id,
+      type: "BUG",
+      title: `Tester files as New ${Date.now()}`,
+      description: "x",
+      status: "TODO",
+      priority: "MEDIUM",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    created.push(result.data.id);
+
+    const row = await prisma.issue.findUniqueOrThrow({
+      where: { id: result.data.id },
+      select: { status: true },
+    });
+    expect(row.status).toBe("TODO");
   });
 
   it("files into the Backlog when it does not say", async () => {

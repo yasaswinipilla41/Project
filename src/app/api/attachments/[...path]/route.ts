@@ -1,10 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import {
-  assertIssueAccess,
-  assertProjectAccess,
-  AuthorizationError,
-} from "@/lib/authz";
+import { assertAttachmentAccess } from "@/lib/authz";
 import { getCurrentUser } from "@/lib/session";
 import { renderKindFor } from "@/lib/attachments";
 import { storage } from "@/server/storage";
@@ -15,30 +11,6 @@ import {
   renamedFilename,
   SNIFF_BYTES,
 } from "@/server/upload-types";
-
-/** An attachment belongs to exactly one issue or one project — never both. */
-async function assertAttachmentAccess(
-  user: NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>,
-  attachment: { issueId: string | null; projectId: string | null },
-): Promise<void> {
-  if (attachment.issueId) {
-    await assertIssueAccess(user, attachment.issueId);
-    return;
-  }
-  /*
-   * Both columns are nullable, so "belongs to neither" is a shape the database
-   * permits even though nothing writes it. Refusing explicitly is the safe
-   * reading of an unowned file: there is no project whose membership could
-   * grant it, so nobody may have it. Asserting non-null here instead would
-   * have asked the authorization layer about `null`, which answers "no
-   * access" for everyone — the same outcome, reached by accident rather than
-   * on purpose, and reported as a mysterious 404 to administrators.
-   */
-  if (!attachment.projectId) {
-    throw new AuthorizationError("This file has no owner.");
-  }
-  await assertProjectAccess(user, attachment.projectId);
-}
 
 /**
  * Serving and removing one attachment.
@@ -161,6 +133,47 @@ export async function GET(
     return NextResponse.json({ error: "Not found." }, { status: 404 });
   }
 
+  const inline = INLINE_TYPES.has(attachment.mimeType);
+  const kind = renderKindFor(attachment.mimeType);
+  /* Pictures and video, which a browser shows rather than downloads. */
+  const media = inline && (kind === "image" || kind === "video");
+
+  /*
+   * A person opening a picture or a video, rather than a page showing one.
+   *
+   * Following an attachment link out of the Excel export, or a filename link
+   * inside Prio, is a top-level navigation to this URL. Answered with the raw
+   * bytes, the browser draws the file with its own built-in viewer document —
+   * and that document runs under the Content-Security-Policy below. The
+   * policy is right for the bytes and wrong for the viewer: an image came out
+   * pinned to the top-left corner, because the browser's centring styles were
+   * refused, and an MP4 came out as a black player, because the browser's own
+   * `<video>` was refused permission to load the very file it was showing.
+   *
+   * So a navigation is sent to Prio's own viewer instead: the same full-screen
+   * image viewer the issue page opens, with its image-only zoom, and a plain
+   * `<video>` for video. That page asks for these bytes with `<img>` and
+   * `<video>`, which are not navigations and are answered below as before —
+   * as are `fetch`, downloads and every other caller, so nothing else changes.
+   *
+   * `Sec-Fetch-Dest` is what the browser says about its own request. A caller
+   * that does not send it gets the bytes, exactly as it always did.
+   *
+   * Only after the access check, so the redirect cannot be used to learn which
+   * ids exist. Relative, because behind a proxy this request's own URL is the
+   * address the server bound to rather than the one the person used.
+   */
+  if (media && request.headers.get("sec-fetch-dest") === "document") {
+    return new NextResponse(null, {
+      status: 303,
+      headers: {
+        Location: `/attachments/${attachment.id}`,
+        "Cache-Control": "no-store",
+        Vary: "Sec-Fetch-Dest",
+      },
+    });
+  }
+
   /*
    * Range requests, which is what makes a video playable.
    *
@@ -212,7 +225,6 @@ export async function GET(
     );
   }
 
-  const inline = INLINE_TYPES.has(attachment.mimeType);
   const length = range ? range.end - range.start + 1 : attachment.byteSize;
 
   return new NextResponse(body, {
@@ -234,13 +246,31 @@ export async function GET(
        * behaviour that turns an uploaded file into a script.
        */
       "X-Content-Type-Options": "nosniff",
-      // Belt and braces: nothing served from here may execute or frame.
-      "Content-Security-Policy": "default-src 'none'; sandbox; frame-ancestors 'self'",
+      /*
+       * Belt and braces: nothing served from here may execute or frame.
+       *
+       * Pictures and video are the exception to one clause of it. Should one
+       * still be opened as a page of its own — by a browser that does not say
+       * what it is requesting, so is not sent to the viewer above — the
+       * browser's own media page has to be allowed to load this one file from
+       * this one origin (`img-src` / `media-src 'self'`), or a video is a black
+       * box. The sandbox is dropped for them only: an image or a video cannot
+       * run script, `nosniff` stops the browser re-guessing either as
+       * something that can, and SVG is not an inline type. Everything else
+       * keeps the full lock-down it always had.
+       */
+      "Content-Security-Policy": media
+        ? "default-src 'none'; img-src 'self'; media-src 'self'; frame-ancestors 'self'"
+        : "default-src 'none'; sandbox; frame-ancestors 'self'",
       // Attachments are immutable once written, but they are private, so the
       // cache must be the user's own.
       "Cache-Control": "private, max-age=31536000, immutable",
       // Advertised, and honoured above. A player checks this before it seeks.
       "Accept-Ranges": "bytes",
+      /* The same URL is a redirect for a navigation and the bytes for an
+         `<img>` or `<video>`, so a cached copy of one must never be handed
+         back for the other. */
+      ...(media ? { Vary: "Sec-Fetch-Dest" } : {}),
     },
   });
 }

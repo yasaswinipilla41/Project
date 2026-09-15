@@ -462,6 +462,10 @@ export function CreateIssueDialog({
       onClose={onClose}
       size="lg"
       busy={submitting}
+      /* Minimise and Maximise beside Close. Filing an issue often means
+         going to look at something else first — to snip it, to copy a detail
+         — and the form has to still be there afterwards. */
+      windowControls
       title={showTypeSelector ? spec.heading : "Create Issue"}
       description={
         showTypeSelector

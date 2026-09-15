@@ -12,7 +12,7 @@ export async function uploadStagedAttachment(
   target: { issueId: string } | { projectId: string },
   file: Blob,
   filename = "attachment",
-): Promise<void> {
+): Promise<{ id: string; filename: string }> {
   const form = new FormData();
   if ("issueId" in target) form.append("issueId", target.issueId);
   else form.append("projectId", target.projectId);
@@ -23,9 +23,43 @@ export async function uploadStagedAttachment(
     body: form,
   });
 
+  const body = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(body?.error ?? "That file could not be attached.");
+  }
+
+  /* The new row, so a caller that keeps working on the same file — the Snip
+     Tool saving an edit over a snip it already saved — can address it. */
+  return {
+    id: String(body?.id ?? ""),
+    filename: String(body?.filename ?? filename),
+  };
+}
+
+/**
+ * Writing new bytes over an attachment that already exists.
+ *
+ * `PUT /api/attachments/<id>`, the route the issue page's Save already uses:
+ * the row keeps its id, its name and its issue, and the server re-identifies
+ * and re-checks the new bytes exactly as it would a first upload. Only the
+ * uploader or an administrator may do it, which the route decides.
+ */
+export async function replaceAttachment(
+  attachmentId: string,
+  file: Blob,
+  filename = "attachment",
+): Promise<void> {
+  const form = new FormData();
+  form.append("file", file, filename);
+
+  const response = await fetch(`/api/attachments/${attachmentId}`, {
+    method: "PUT",
+    body: form,
+  });
+
   if (!response.ok) {
     const body = await response.json().catch(() => null);
-    throw new Error(body?.error ?? "That file could not be attached.");
+    throw new Error(body?.error ?? "That file could not be updated.");
   }
 }
 

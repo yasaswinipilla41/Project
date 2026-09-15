@@ -14,7 +14,7 @@
   right: 20px;
   bottom: 20px;
   z-index: var(--prio-z-popover);
-  width: min(360px, calc(100vw - 40px));
+  width: min(380px, calc(100vw - 40px));
   display: flex;
   flex-direction: column;
   background: var(--prio-bg-surface-raised);
@@ -25,22 +25,47 @@
 }
 
 /* Minimised: the title bar and nothing else, still on screen so it can be
-   found again. The capture is untouched — this is a CSS state, not a
+   found again. The session is untouched — this is a CSS state, not a
    teardown. */
 .window[data-minimized] {
   width: auto;
-  max-width: min(280px, calc(100vw - 40px));
+  max-width: min(300px, calc(100vw - 40px));
+}
+
+/* Maximised: the window fills most of the screen, so the sources and the snips
+   taken so far have room. Restoring returns it to where it was floating. */
+.window[data-maximized] {
+  inset: 5vh 5vw;
+  width: auto;
+  max-width: none;
 }
 
 .bar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   padding: 8px 8px 8px 12px;
   background: var(--prio-bg-subtle);
   border-bottom: 1px solid var(--prio-border-subtle);
-  cursor: default;
   user-select: none;
+  touch-action: none;
+}
+
+/* The title bar is the handle, as it is on any other window. Said in the
+   cursor so it looks draggable before anybody tries it. A maximised window
+   has nowhere to be dragged to, so it does not say it. */
+.bar[data-draggable] {
+  cursor: grab;
+}
+
+.bar[data-draggable]:active {
+  cursor: grabbing;
+}
+
+/* The controls in the bar are pressed, not dragged. Without this a slip of a
+   few pixels while clicking Close would start a move instead. */
+.bar .control {
+  cursor: pointer;
 }
 
 .window[data-minimized] .bar {
@@ -93,16 +118,18 @@
   box-shadow: var(--prio-shadow-focus);
 }
 
-.glyph {
-  font-size: 12px;
-  line-height: 1;
-}
-
 .body {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   padding: 12px;
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+}
+
+.window[data-maximized] .body {
+  flex: 1;
+  max-height: none;
 }
 
 .hint {
@@ -116,6 +143,201 @@
   flex-wrap: wrap;
   gap: 8px;
 }
+
+/* -------------------------------------------------------------- sources */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.sectionLabel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  font-size: var(--prio-text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--prio-text-muted);
+}
+
+.sourceGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.window[data-maximized] .sourceGrid {
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+}
+
+/* One place to capture from. A real radio underneath, so the group is one tab
+   stop and the arrow keys move through it, and the card is its label. */
+.source {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  align-items: center;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-md);
+  background: var(--prio-bg-surface);
+  color: var(--prio-text-secondary);
+  cursor: pointer;
+}
+
+.source:hover {
+  border-color: var(--prio-border-strong);
+  color: var(--prio-text-primary);
+}
+
+.source[data-selected] {
+  border-color: var(--prio-primary-500);
+  background: var(--prio-primary-50);
+  color: var(--prio-text-primary);
+  box-shadow: 0 0 0 1px var(--prio-primary-500);
+}
+
+.source:focus-within {
+  box-shadow: var(--prio-shadow-focus);
+}
+
+.sourceIcon {
+  grid-row: 1 / span 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--prio-radius-sm);
+  background: var(--prio-bg-subtle);
+  color: var(--prio-primary-600);
+}
+
+.sourceName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--prio-text-xs);
+  font-weight: 600;
+}
+
+.sourceHint {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--prio-text-2xs);
+  color: var(--prio-text-muted);
+}
+
+/* ---------------------------------------------------------------- snips */
+
+.snipList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.window[data-maximized] .snipList {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+}
+
+.snipRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px;
+  border: 1px solid var(--prio-border-subtle);
+  border-radius: var(--prio-radius-md);
+  background: var(--prio-bg-surface);
+}
+
+.snipThumb {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 40px;
+  overflow: hidden;
+  border-radius: var(--prio-radius-sm);
+  background: var(--prio-bg-app);
+}
+
+.snipThumb img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.snipMeta {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.snipName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--prio-text-xs);
+  font-weight: 600;
+  color: var(--prio-text-primary);
+}
+
+.snipStatus {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--prio-text-2xs);
+  color: var(--prio-text-muted);
+}
+
+.snipRow[data-saved] .snipStatus {
+  color: var(--prio-green-600, var(--prio-text-muted));
+}
+
+.snipActions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 4px;
+}
+
+.backLink {
+  font-size: var(--prio-text-2xs);
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.notice {
+  margin: 0;
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------- held recording */
 
 .preview {
   display: flex;
@@ -167,6 +389,85 @@
   margin: 0;
   font-size: var(--prio-text-xs);
   color: var(--prio-red-600);
+}
+
+/* -------------------------------------------------------- area selector */
+
+/* The capture, full screen, to drag the area out on. Above every dialog and
+   the window itself, because it is the one thing on screen that matters
+   until an area is chosen or the snip is cancelled. */
+.selector {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--prio-z-popover) + 1);
+  display: flex;
+  flex-direction: column;
+  background: rgba(6, 10, 18, 0.92);
+}
+
+.selectorBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.selectorHint {
+  flex: 1;
+  min-width: 200px;
+  font-size: var(--prio-text-sm);
+  color: rgba(255, 255, 255, 0.86);
+}
+
+/* The bar is always dark, whatever the theme, so its quiet Cancel button
+   takes light text rather than the page's own. */
+.selectorBar :global(.prio-btn--ghost) {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.selectorBar :global(.prio-btn--ghost):hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+
+.selectorStage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.selectorFrame {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  max-height: 100%;
+  overflow: hidden;
+  line-height: 0;
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+}
+
+.selectorImage {
+  display: block;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 96px);
+  object-fit: contain;
+  -webkit-user-drag: none;
+}
+
+/* What is being kept, with everything else dimmed around it. */
+.selection {
+  position: absolute;
+  border: 2px solid var(--prio-primary-500);
+  box-shadow: 0 0 0 9999px rgba(6, 10, 18, 0.55);
+  pointer-events: none;
 }
 
 @keyframes snipPulse {

@@ -1231,12 +1231,34 @@
   background: rgba(255, 255, 255, 0.2);
 }
 
+/* Out of the flow, along the bottom edge, so the picture above it is centred
+   on the whole window rather than on the window less the caption's height. */
 .prio-lightbox__caption {
+  position: absolute;
+  bottom: var(--prio-space-5);
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100vw - 2 * var(--prio-space-6));
   display: flex;
   align-items: center;
   gap: var(--prio-space-3);
   color: rgba(255, 255, 255, 0.86);
   font-size: var(--prio-text-sm);
+  white-space: nowrap;
+}
+
+.prio-lightbox__caption > span:not(.prio-lightbox__size) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A video in the same frame: fitted to the window like a picture, never
+   stretched, letterboxed on black. */
+.prio-lightbox__video {
+  display: block;
+  max-width: min(100vw - 2 * var(--prio-space-6), 1200px);
+  max-height: 78vh;
+  background: #000;
 }
 
 .prio-lightbox__size {

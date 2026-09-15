@@ -8,8 +8,8 @@ import {
   StatusPill,
 } from "@/components/ui/Indicators";
 import {
-  IconBug,
   IconCalendar,
+  IconCheck,
   IconEmptyBox,
   IconMyWork,
   IconWarning,
@@ -22,6 +22,7 @@ import {
 } from "@/lib/domain";
 import { formatDateCompact, isOverdue } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { completedByFilter } from "@/server/queries/completedWork";
 import { dueThisWeekFilter, overdueFilter } from "@/server/queries/due";
 import { requireUser } from "@/lib/session";
 import type { IssueStatus } from "@prisma/client";
@@ -47,7 +48,8 @@ export const dynamic = "force-dynamic";
  * else's work on a page called My Work:
  *
  *  - **Waiting for testing** listed what other people had handed over,
- *    `NOT assigneeId`. It now lists work handed to *this* person.
+ *    `NOT assigneeId`. It is gone from here altogether now: it was the same
+ *    workflow state as Ready for QA, which already has its own card below.
  *  - **Reported by me, assigned to someone else** was, by its own name, other
  *    people's assignments. Raising an issue is not being given it. It is gone
  *    from here; `/issues?reporter=<id>` is where that question is answered.
@@ -85,7 +87,7 @@ export default async function MyWorkPage() {
     overdueCount,
     dueSoonCount,
     resolvedCount,
-    waitingForTesting,
+    completedCount,
     handedBack,
   ] = await Promise.all([
       prisma.issue.findMany({
@@ -126,40 +128,15 @@ export default async function MyWorkPage() {
       }),
 
       /*
-       * The two QA-shaped questions, both of them about this person's own
-       * work: what they have handed over and are waiting on, and what came
-       * back. Neither is a project queue.
-       */
-
-      /*
-       * Handed to this person and not yet judged.
+       * Completed, for this person.
        *
-       * It used to be the opposite — `NOT assigneeId`, every issue in reach
-       * that somebody *else* had submitted, on the strength of the reader
-       * being on the Testing team. That is a project queue, and this page is
-       * not one: it put other people's work under a heading that says My Work,
-       * and the count beside it counted other people's work too.
-       *
-       * The category is unchanged: Ready for QA, no verdict yet. Only who
-       * qualifies changed, which is the whole of what was wrong.
+       * The same fragment the list behind the tile filters on
+       * (`completedBy=<id>`), so the number and the rows it opens cannot
+       * disagree. Scoped like everything else on the page; see
+       * `completedByFilter` for what makes finished work somebody's own.
        */
-      prisma.issue.findMany({
-        where: {
-          ...assignedWhere,
-          status: "IN_REVIEW",
-          testResult: "NOT_TESTED",
-        },
-        orderBy: [{ priority: "asc" }, { updatedAt: "desc" }],
-        take: 10,
-        select: {
-          id: true,
-          key: true,
-          type: true,
-          title: true,
-          priority: true,
-          updatedAt: true,
-          project: { select: { name: true } },
-        },
+      prisma.issue.count({
+        where: { ...scope, ...completedByFilter([user.id]) },
       }),
 
       // Their own work that QA has handed back: the developer's queue.
@@ -185,8 +162,6 @@ export default async function MyWorkPage() {
         },
       }),
     ]);
-
-  const bugCount = assigned.filter((i) => i.type === "BUG").length;
 
   // Group in memory: this is one person's open work, not a large set.
   const byStatus = new Map<IssueStatus, typeof assigned>();
@@ -224,13 +199,16 @@ export default async function MyWorkPage() {
           />
         </div>
         <div className="col-6 col-xl-3">
+          {/* Where Bugs used to be. Completed work is the other half of the
+              answer to "what is mine", and it is this person's alone — the
+              list it opens is filtered on who the session says they are. */}
           <Stat
-            label="Bugs"
-            value={bugCount}
-            icon={<IconBug size={13} />}
-            tone={bugCount > 0 ? "danger" : "default"}
-            hint="Open, assigned to me"
-            href={`/issues?assignee=${user.id}&resolution=open&type=BUG`}
+            label="Completed"
+            value={completedCount}
+            icon={<IconCheck size={13} />}
+            tone={completedCount > 0 ? "success" : "default"}
+            hint="Completed by me"
+            href={`/issues?completedBy=${user.id}`}
           />
         </div>
         <div className="col-6 col-xl-3">
@@ -258,7 +236,7 @@ export default async function MyWorkPage() {
       {/* ------------------------------------------------ QA collaboration */}
       {/* Shown only when there is something to act on, so the page stays a
           to-do list rather than a wall of empty sections. */}
-      {handedBack.length > 0 || waitingForTesting.length > 0 ? (
+      {handedBack.length > 0 ? (
         <div className="row g-4" style={{ marginBottom: "var(--prio-space-4)" }}>
           {handedBack.length > 0 ? (
             <div className="col-12 col-xl-6">
@@ -302,43 +280,6 @@ export default async function MyWorkPage() {
             </div>
           ) : null}
 
-          {waitingForTesting.length > 0 ? (
-            <div className="col-12 col-xl-6">
-              <Card style={{ height: "100%" }}>
-                <CardBody>
-                  <h2 className="prio-issue__section-title">
-                    Waiting for testing
-                    <span className="prio-text-muted">
-                      {waitingForTesting.length}
-                    </span>
-                  </h2>
-                  {waitingForTesting.map((issue) => (
-                    <Link
-                      key={issue.id}
-                      href={`/issues/${issue.key.toLowerCase()}`}
-                      className="prio-worklink"
-                    >
-                      <IssueTypeIcon type={issue.type} size={17} />
-                      <span className="prio-worklink__body">
-                        <span className="prio-worklink__title prio-truncate">
-                          {issue.title}
-                        </span>
-                        <span className="prio-worklink__meta">
-                          <IssueKey issueKey={issue.key} />
-                          <span className="prio-text-muted">
-                            {issue.project.name}
-                          </span>
-                          {/* The holder is the reader, so naming them here
-                              would only ever say "from yourself". */}
-                        </span>
-                      </span>
-                      <PriorityIndicator priority={issue.priority} showLabel={false} />
-                    </Link>
-                  ))}
-                </CardBody>
-              </Card>
-            </div>
-          ) : null}
         </div>
       ) : null}
 

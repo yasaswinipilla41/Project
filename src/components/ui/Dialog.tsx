@@ -5,10 +5,16 @@ import {
   useEffect,
   useId,
   useRef,
+  useState,
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { IconClose } from "@/components/ui/Icon";
+import {
+  IconClose,
+  IconMaximize,
+  IconMinimize,
+  IconRestoreWindow,
+} from "@/components/ui/Icon";
 
 /**
  * Accessible modal dialog (§42).
@@ -29,6 +35,17 @@ export interface DialogProps {
   /** Prevents closing by backdrop click / Escape — used while submitting. */
   busy?: boolean;
   description?: string;
+  /**
+   * Adds Minimise and Maximise beside Close, for a dialog somebody works in
+   * for a while rather than answers and dismisses.
+   *
+   * Both are presentation only. The dialog stays mounted and so does
+   * everything in it — a form keeps every value and every staged file — and
+   * Close is untouched. Minimised, it folds to its title bar at the bottom of
+   * the window and stops being modal, so the rest of Prio can be used; restored,
+   * it is modal again. Opt-in, so every other dialog is exactly as it was.
+   */
+  windowControls?: boolean;
 }
 
 const FOCUSABLE =
@@ -63,6 +80,7 @@ export function Dialog({
   size = "md",
   busy = false,
   description,
+  windowControls = false,
 }: DialogProps) {
   const titleId = useId();
   const descId = useId();
@@ -70,6 +88,12 @@ export function Dialog({
   const openerRef = useRef<HTMLElement | null>(null);
   const dialogIdRef = useRef<symbol | null>(null);
   dialogIdRef.current ??= Symbol("dialog");
+
+  /* Window state. Only ever set when `windowControls` is on, so every other
+     dialog renders exactly as before. Minimised wins over maximised, and
+     restoring from minimised returns to whichever size it had. */
+  const [minimized, setMinimized] = useState(false);
+  const [maximized, setMaximized] = useState(false);
 
   const requestClose = useCallback(() => {
     if (busy) return;
@@ -135,9 +159,10 @@ export function Dialog({
   }, [open]);
 
   /* The page lock belongs with the opening too, not with the key handler:
-     applied and undone on every keystroke it would flicker the scrollbar. */
+     applied and undone on every keystroke it would flicker the scrollbar.
+     A minimised dialog is not modal, so it releases the page. */
   useEffect(() => {
-    if (!open) return;
+    if (!open || minimized) return;
 
     /*
      * Lock the page behind the dialog, without moving it.
@@ -167,10 +192,12 @@ export function Dialog({
       document.body.style.overflow = overflow;
       document.body.style.paddingRight = paddingRight;
     };
-  }, [open]);
+  }, [open, minimized]);
 
   useEffect(() => {
-    if (!open) return;
+    /* Minimised, it neither traps focus nor answers Escape: the rest of Prio
+       is in use, and a stray Escape there must not throw the form away. */
+    if (!open || minimized) return;
 
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
@@ -208,31 +235,69 @@ export function Dialog({
     return () => {
       document.removeEventListener("keydown", onKeyDown, true);
     };
-  }, [open, requestClose]);
+  }, [open, minimized, requestClose]);
 
   if (!open) return null;
   if (typeof document === "undefined") return null;
 
+  const panelClass = [
+    "prio-dialog",
+    size !== "md" ? `prio-dialog--${size}` : "",
+    maximized && !minimized ? "prio-dialog--maximized" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return createPortal(
     <div
       className="prio-dialog-backdrop"
+      data-minimized={minimized || undefined}
+      data-maximized={(maximized && !minimized) || undefined}
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) requestClose();
+        if (!minimized && event.target === event.currentTarget) requestClose();
       }}
     >
       <div
         ref={panelRef}
         role="dialog"
-        aria-modal="true"
+        aria-modal={minimized ? "false" : "true"}
         aria-labelledby={titleId}
         aria-describedby={description ? descId : undefined}
-        className={`prio-dialog${size !== "md" ? ` prio-dialog--${size}` : ""}`}
+        className={panelClass}
+        data-minimized={minimized || undefined}
         tabIndex={-1}
       >
         <div className="prio-dialog__header">
           <h2 id={titleId} className="prio-dialog__title">
             {title}
           </h2>
+          {windowControls ? (
+            <>
+              <button
+                type="button"
+                className="prio-btn prio-btn--ghost prio-btn--icon prio-btn--sm"
+                onClick={() => setMinimized((value) => !value)}
+                aria-label={minimized ? "Restore dialog" : "Minimize dialog"}
+                title={minimized ? "Restore" : "Minimize"}
+              >
+                {minimized ? <IconRestoreWindow /> : <IconMinimize />}
+              </button>
+              <button
+                type="button"
+                className="prio-btn prio-btn--ghost prio-btn--icon prio-btn--sm"
+                onClick={() => {
+                  setMaximized((value) => !value);
+                  setMinimized(false);
+                }}
+                aria-label={
+                  maximized && !minimized ? "Restore dialog size" : "Maximize dialog"
+                }
+                title={maximized && !minimized ? "Restore size" : "Maximize"}
+              >
+                {maximized && !minimized ? <IconRestoreWindow /> : <IconMaximize />}
+              </button>
+            </>
+          ) : null}
           <button
             type="button"
             className="prio-btn prio-btn--ghost prio-btn--icon prio-btn--sm"
@@ -250,6 +315,8 @@ export function Dialog({
           </p>
         ) : null}
 
+        {/* Hidden rather than unmounted while minimised, so nothing inside —
+            typed text, a chosen project, staged files — is lost. */}
         <div className="prio-dialog__body prio-scroll">{children}</div>
 
         {footer ? <div className="prio-dialog__footer">{footer}</div> : null}

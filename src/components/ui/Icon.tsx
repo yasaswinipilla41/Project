@@ -181,6 +181,26 @@ export const IconClose = (p: IconProps) => (
   </Svg>
 );
 
+/* Window controls: minimise to a bar, maximise to fill, restore from either. */
+export const IconMinimize = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M3.6 11.8h8.8" />
+  </Svg>
+);
+
+export const IconMaximize = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="3.4" y="3.4" width="9.2" height="9.2" rx="1.2" />
+  </Svg>
+);
+
+export const IconRestoreWindow = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="3.2" y="5.6" width="7.2" height="7.2" rx="1" />
+    <path d="M5.6 3.2h6.2a1 1 0 0 1 1 1v6.2" />
+  </Svg>
+);
+
 export const IconCheck = (p: IconProps) => (
   <Svg {...p}>
     <path d="m3.5 8.4 3 3 6-6.8" />

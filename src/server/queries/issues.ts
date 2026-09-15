@@ -1,7 +1,10 @@
 import type { Prisma } from "@prisma/client";
 import type { IssueType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { completersFor } from "@/server/queries/completedWork";
+import {
+  completedByFilter,
+  completersFor,
+} from "@/server/queries/completedWork";
 import { issueScope } from "@/lib/authz";
 import { monthWindow } from "@/lib/format";
 import {
@@ -52,6 +55,11 @@ export interface IssueFilters {
   severities?: string[];
   assigneeIds?: string[];
   reporterIds?: string[];
+  /**
+   * Restricts to work these people completed — My Work's Completed tile.
+   * Implies DONE; see `completedByFilter` for what counts as theirs.
+   */
+  completedByIds?: string[];
   labelIds?: string[];
   /** "open" | "closed" | undefined (all) */
   resolution?: string;
@@ -149,6 +157,12 @@ export function buildIssueWhere(
 
   if (filters.reporterIds?.length) {
     where.reporterId = { in: filters.reporterIds };
+  }
+
+  if (filters.completedByIds?.length) {
+    /* The same fragment My Work counts its Completed tile with, so clicking
+       the figure opens exactly the issues it counted. */
+    and.push(completedByFilter(filters.completedByIds));
   }
 
   if (filters.labelIds?.length) {

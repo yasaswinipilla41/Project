@@ -212,22 +212,33 @@ export function NotificationList({
                   </span>
                 ) : null}
 
+                {/* Mark read sits where the time used to, beside the type,
+                    and the time sits where Mark read used to — on the right.
+                    Only the two swapped places; what each does is unchanged. */}
                 <span className="prio-notification__meta">
                   <span className="prio-badge">{TYPE_LABEL[n.type]}</span>
-                  <time dateTime={new Date(n.createdAt).toISOString()}>
-                    {formatRelative(n.createdAt)}
-                  </time>
+                  <button
+                    type="button"
+                    className="prio-btn prio-btn--ghost prio-btn--sm prio-notification__mark"
+                    onClick={() => toggle(n.id, read)}
+                    disabled={busyId === n.id}
+                  >
+                    {read ? "Mark unread" : "Mark read"}
+                  </button>
                 </span>
               </div>
 
-              <button
-                type="button"
-                className="prio-btn prio-btn--ghost prio-btn--sm"
-                onClick={() => toggle(n.id, read)}
-                disabled={busyId === n.id}
+              <time
+                className="prio-notification__time"
+                dateTime={new Date(n.createdAt).toISOString()}
+                title={formatDateTime(n.createdAt)}
+                /* "Just now" on the server can be "1m ago" by the time the
+                   page hydrates. The text is meant to follow the clock, so a
+                   difference here is not a fault. */
+                suppressHydrationWarning
               >
-                {read ? "Mark unread" : "Mark read"}
-              </button>
+                {formatRelative(n.createdAt)}
+              </time>
             </li>
           );
         })}

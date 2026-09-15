@@ -470,6 +470,25 @@
   color: var(--prio-text-muted);
 }
 
+/* Mark read, in the meta line where the time used to be. Kept to the line's
+   own height so moving it there does not make the row taller. */
+.prio-notification__mark {
+  height: auto;
+  min-height: 0;
+  padding: 2px var(--prio-space-2);
+  font-size: var(--prio-text-2xs);
+}
+
+/* The time, on the right where Mark read used to be. */
+.prio-notification__time {
+  flex-shrink: 0;
+  padding-top: var(--prio-space-1);
+  font-size: var(--prio-text-2xs);
+  color: var(--prio-text-muted);
+  white-space: nowrap;
+  text-align: right;
+}
+
 /* ------------------------------------------------------------- work link */
 .prio-worklink {
   display: flex;

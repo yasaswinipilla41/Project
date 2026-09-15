@@ -142,15 +142,13 @@ describe("QA-03 / QA-04  each half of the job is offered its own statuses", () =
     expect(new Set(offered).size).toBe(offered.length);
   });
 
-  it("offers New on the create form to everybody it is a status for", async () => {
+  it("offers New on the create form to everybody, testers included", async () => {
     /*
-     * The reported "only Backlog is selectable" is the tester's create form,
-     * and it is the rule rather than a fault: a tester raises a request for
-     * somebody to pick up, and New says somebody already has. Everybody who
-     * builds — and the administrator, who is unrestricted — is offered it,
-     * which is what this pins. Filing and working are separate lists on
+     * The tester's create form used to offer Backlog alone. New is now on it
+     * too — the same `TODO` status everybody else files as, not a second one —
+     * with Backlog still first. Filing and working are separate lists on
      * purpose; the tester's working list is asserted above and is untouched
-     * by this.
+     * by this: a tester may file as New but still may not move work there.
      */
     expect(filableStatusesFor("DEVELOPER").map((s) => STATUS_LABEL[s])).toContain(
       "New",
@@ -163,6 +161,7 @@ describe("QA-03 / QA-04  each half of the job is offered its own statuses", () =
     );
     expect(filableStatusesFor("QA").map((s) => STATUS_LABEL[s])).toEqual([
       "Backlog",
+      "New",
     ]);
   });
 
@@ -290,7 +289,7 @@ describe("QA-05 / QA-06  Ready for QA returns the work to whoever raised it", ()
 });
 
 describe("QA-08 / QA-09  the tester is told, and it is in their queue", () => {
-  it("notifies the reporter by name, and the other testers separately", async () => {
+  it("notifies the reporter by name, and not every other tester", async () => {
     const issue = await raisedByTester(`Notifies reporter ${Date.now()}`);
 
     await actAs(DEVELOPER);
@@ -315,12 +314,14 @@ describe("QA-08 / QA-09  the tester is told, and it is in their queue", () => {
     );
     expect(broadcast).toHaveLength(0);
 
-    /* The other tester on the project still gets the notice they always got. */
+    /* The work is the reporter's to test now, so the rest of the project's
+       testers are not asked — that broadcast is only for work nobody on QA
+       holds. */
     const theirs = await prisma.notification.findMany({
       where: { issueId: issue.id, userId: otherTesterId },
       select: { message: true },
     });
-    expect(theirs.some((row) => row.message.includes("ready for QA"))).toBe(true);
+    expect(theirs.some((row) => /ready for qa/i.test(row.message))).toBe(false);
   });
 
   it("puts it in the reporter's own assigned work", async () => {

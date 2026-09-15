@@ -241,6 +241,9 @@ export function IssueFilters({
        something more than the chips show — and `clearAll` drops every param, so
        Clear removes it along with the rest. */
     (params.get("completedWithin") ? 1 : 0) +
+    /* Arrived at from My Work's Completed tile, and chip-less for the same
+       reason as the line above. */
+    values("completedBy").length +
     (params.get("q") ? 1 : 0);
 
   const clearAll = () => {
