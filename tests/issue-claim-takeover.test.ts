@@ -1,7 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { workRoleOf } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
 import { claimIssue, createIssue, updateIssue } from "@/server/issues";
-import { actAs, joinTestingTeam, projectByKey } from "./helpers";
+import {
+  actAs,
+  holdWorkRole,
+  joinProject,
+  joinTestingTeam,
+  projectByKey,
+} from "./helpers";
 
 /**
  * Picking work up, and taking it off somebody.
@@ -11,18 +18,44 @@ import { actAs, joinTestingTeam, projectByKey } from "./helpers";
  * move together, that the handover is written down, that the person who lost
  * the work stops holding it, and — the part a race would break — that two
  * developers pressing Start on the same issue cannot both win.
+ *
+ * Every precondition is established below rather than assumed. `claimIssue`
+ * asks two questions before it does anything — does this person do development
+ * work, and may they open the project — and both are answered by rows other
+ * suites also write. Left to chance, a stray Testing row makes a developer a QA
+ * member and every claim here is refused for a reason none of the assertions
+ * mention. Both people are therefore given the role and the access they are
+ * described as having, and both are put back afterwards.
  */
 
 const ADMIN = "admin@symbiosystech.com";
+/**
+ * Two developers, and both of them MEMBER accounts.
+ *
+ * `rahul.menon` stood here until this suite was isolated, and is an
+ * administrator — so "a developer takes it from another developer" was really
+ * an administrator taking it, which succeeds because administrators may do
+ * anything and proves nothing about developers. `holdWorkRole` now refuses an
+ * administrator outright, so that substitution cannot happen again quietly.
+ */
 const DEV_A = "kiran.das@symbiosystech.com";
-const DEV_B = "rahul.menon@symbiosystech.com";
+const DEV_B = "vikram.shetty@symbiosystech.com";
 const TESTER = "priya.nair@symbiosystech.com";
 
-let leaveTeam: () => Promise<void> = async () => {};
+const undo: (() => Promise<void>)[] = [];
 const createdIssueIds: string[] = [];
 
 beforeAll(async () => {
-  ({ leave: leaveTeam } = await joinTestingTeam(TESTER));
+  /* The two roles this suite turns on, set rather than inherited. The tester
+     keeps `joinTestingTeam`, which already made them a pure one. */
+  undo.push((await holdWorkRole(DEV_A, "DEVELOPER")).leave);
+  undo.push((await holdWorkRole(DEV_B, "DEVELOPER")).leave);
+  undo.push((await joinTestingTeam(TESTER)).leave);
+
+  /* And the access half of what `assertIssueAccess` checks. */
+  for (const email of [DEV_A, DEV_B, TESTER]) {
+    undo.push((await joinProject("ENG", email)).leave);
+  }
 });
 
 afterAll(async () => {
@@ -32,7 +65,9 @@ afterAll(async () => {
     });
     await prisma.issue.deleteMany({ where: { id: { in: createdIssueIds } } });
   }
-  await leaveTeam();
+  /* Newest first, so a membership added on top of a role change is removed
+     before the role it was added under is put back. */
+  for (const leave of undo.reverse()) await leave();
   await prisma.$disconnect();
 });
 
@@ -74,6 +109,61 @@ function stateOf(issueId: string) {
     select: { assigneeId: true, status: true },
   });
 }
+
+describe("the ground this suite stands on", () => {
+  it("has two developers and a tester, each really holding that role", async () => {
+    /*
+     * Asserted rather than assumed, and first, so a fixture that drifted fails
+     * here — saying which person holds what — instead of surfacing as nine
+     * refused claims further down.
+     */
+    for (const email of [DEV_A, DEV_B]) {
+      const person = await prisma.user.findUniqueOrThrow({
+        where: { email },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          image: true,
+          role: true,
+          jobTitle: true,
+          isActive: true,
+        },
+      });
+      expect(person.role, `${email} is a member account`).toBe("MEMBER");
+      expect(await workRoleOf(person), `${email} builds`).toBe("DEVELOPER");
+    }
+
+    const tester = await prisma.user.findUniqueOrThrow({
+      where: { email: TESTER },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        image: true,
+        role: true,
+        jobTitle: true,
+        isActive: true,
+      },
+    });
+    expect(await workRoleOf(tester), `${TESTER} tests`).toBe("QA");
+
+    // And all three can open the project every fixture below is filed in.
+    const project = await projectByKey("ENG");
+    for (const email of [DEV_A, DEV_B, TESTER]) {
+      const user = await prisma.user.findUniqueOrThrow({
+        where: { email },
+        select: { id: true },
+      });
+      expect(
+        await prisma.projectMember.count({
+          where: { projectId: project.id, userId: user.id },
+        }),
+        `${email} is on ENG`,
+      ).toBe(1);
+    }
+  });
+});
 
 describe("claiming unassigned work", () => {
   it("takes it and starts it, in one step", async () => {
