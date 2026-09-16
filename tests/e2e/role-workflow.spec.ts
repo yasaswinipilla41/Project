@@ -62,7 +62,7 @@ test.describe("A developer", () => {
     });
   });
 
-  test("is named as one on their dashboard, and is not offered the create control", async ({
+  test("is named as one on their dashboard, and is offered the create control", async ({
     page,
   }) => {
     await page.goto("/");
@@ -70,8 +70,10 @@ test.describe("A developer", () => {
       "Developer",
     );
 
-    // Raising work is an administrator's or a tester's act.
-    await expect(page.locator(".prio-create")).toHaveCount(0);
+    /* Raising work used to be an administrator's or a tester's act, and this
+       control was hidden from a developer entirely. It is everybody's now; a
+       developer who finds a defect files it themselves. */
+    await expect(page.locator(".prio-create")).toHaveCount(1);
   });
 
   test("sees the team list, without the controls that act on people", async ({

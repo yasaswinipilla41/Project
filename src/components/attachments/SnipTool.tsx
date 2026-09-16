@@ -10,7 +10,6 @@ import {
   useMemo,
   useRef,
   useState,
-  useTransition,
   type ComponentType,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
@@ -31,13 +30,6 @@ import {
   IconTrash,
   type IconProps,
 } from "@/components/ui/Icon";
-import {
-  detectNavigation,
-  navigationSignature,
-  SNIP_TOOL_MARKER,
-  type NavGroup,
-  type NavItem,
-} from "@/lib/appNavigation";
 import { ScreenshotEditor } from "@/components/attachments/ScreenshotEditor";
 import { annotatedFilename, formatBytes } from "@/lib/attachments";
 import {
@@ -51,8 +43,10 @@ import {
   captureScreenshot,
   CaptureError,
   formatDuration,
+  retainCaptureSource,
   startScreenRecording,
   type ActiveRecording,
+  type RetainedSource,
 } from "@/lib/screenCapture";
 
 /**
@@ -149,20 +143,19 @@ interface SnipToolValue {
   target: SnipTarget | null;
 }
 
-/** This tab as it is, another tab or window, or one of Prio's own pages. */
-type SourceChoice = "this-tab" | "other" | `/${string}`;
-
-/*
- * The pages this tab can be taken to are not listed here.
+/**
+ * Where a snip comes from: this tab as it is, or a tab or window chosen in the
+ * browser's own picker.
  *
- * They used to be: five routes typed into this file by hand, which was wrong in
- * both directions the moment anything moved — a page added to the sidebar never
- * appeared, a page taken off it still did, and a project's own tab strip was
- * invisible because nobody had written it down. What is offered now is whatever
- * the page actually has, read from its navigation landmarks by
- * `detectNavigation`. Choosing one takes this tab there, and the snip is of
- * that page.
+ * Prio's own pages were briefly offered here as a third kind of source — first
+ * as a hand-written list of routes, then read from the page's navigation
+ * landmarks. Both were the same mistake: a second, worse copy of navigation the
+ * application already has. Going to a page is something the person does in the
+ * application, in the ordinary way; this window's business is what to point the
+ * camera at, which is either the tab they are on or a surface the browser let
+ * them pick.
  */
+type SourceChoice = "this-tab" | "other";
 
 const SnipToolContext = createContext<SnipToolValue | null>(null);
 
@@ -230,7 +223,6 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
   const router = useRouter();
   const pathname = usePathname();
-  const [navigating, startNavigation] = useTransition();
 
   const [target, setTarget] = useState<SnipTarget | null>(null);
   const [open, setOpen] = useState(false);
@@ -238,8 +230,15 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
   const [maximized, setMaximized] = useState(false);
 
   const [source, setSource] = useState<SourceChoice>("this-tab");
-  /** What the page itself says it can navigate to. Never a list kept here. */
-  const [navigation, setNavigation] = useState<NavGroup[]>([]);
+  /**
+   * The tab or window chosen in the browser's picker, kept between snips.
+   *
+   * A ref rather than state: the stream has to survive every re-render
+   * untouched, and what the window actually draws is `sharing` below.
+   */
+  const retained = useRef<RetainedSource | null>(null);
+  /** What the browser calls the retained surface, or null when there is none. */
+  const [sharing, setSharing] = useState<string | null>(null);
   const [snips, setSnips] = useState<Snip[]>([]);
   /** The snip the editor is open on. */
   const [editing, setEditing] = useState<string | null>(null);
@@ -247,8 +246,14 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
   const [selecting, setSelecting] = useState<Blob | null>(null);
 
   const [capture, setCapture] = useState<Capture | null>(null);
+  /*
+   * What is in flight. `screenshot` is the one that hides the window — it is
+   * about to be in the picture — which is why arranging a *source* is its own
+   * state: the browser's picker is a dialog of its own, and the window
+   * vanishing behind it would be a flicker for no reason.
+   */
   const [busy, setBusy] = useState<
-    "screenshot" | "record" | "attach" | "save" | null
+    "screenshot" | "source" | "record" | "attach" | "save" | null
   >(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -332,6 +337,11 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
     recordingRef.current?.cancel();
     recordingRef.current = null;
     setRecording(false);
+    /* Closing lets go of the shared tab or window as well: the browser's
+       sharing indicator should not outlive the window that asked for it. */
+    retained.current?.stop();
+    retained.current = null;
+    setSharing(null);
     setOpen(false);
     setMinimized(false);
     setMaximized(false);
@@ -372,57 +382,10 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
     return () => {
       recordingRef.current?.cancel();
       recordingRef.current = null;
+      retained.current?.stop();
+      retained.current = null;
     };
   }, []);
-
-  /*
-   * What this page offers as navigation, kept current while the window is open.
-   *
-   * Three things change the answer, and each is listened for once. A route
-   * change arrives as a new `pathname` and re-runs this effect. A resize is how
-   * a responsive bar appears and disappears. Elements coming and going is how a
-   * dropdown's contents exist at all — they are not in the document until it is
-   * opened.
-   *
-   * The observer is bounded on every side: it runs only while the window is
-   * open and un-minimised, watches `childList` rather than attributes, debounces
-   * to at most one scan a quarter second however much arrives, and is
-   * disconnected on cleanup. There is no polling and nothing survives the
-   * window closing.
-   *
-   * `navigationSignature` is what stops it feeding itself. Re-rendering mutates
-   * the DOM, which notifies the observer, which would scan again — a slow loop,
-   * but a loop. Keeping the previous array when nothing has moved means React
-   * skips the render, so it settles rather than spinning.
-   */
-  useEffect(() => {
-    if (!open || minimized) return;
-
-    let timer = 0;
-    const rescan = () => {
-      window.clearTimeout(timer);
-      timer = window.setTimeout(() => {
-        const next = detectNavigation();
-        setNavigation((current) =>
-          navigationSignature(current) === navigationSignature(next)
-            ? current
-            : next,
-        );
-      }, 250);
-    };
-
-    rescan();
-
-    const observer = new MutationObserver(rescan);
-    observer.observe(document.body, { childList: true, subtree: true });
-    window.addEventListener("resize", rescan);
-
-    return () => {
-      window.clearTimeout(timer);
-      observer.disconnect();
-      window.removeEventListener("resize", rescan);
-    };
-  }, [open, minimized, pathname]);
 
   const floating = !(maximized && !minimized);
 
@@ -509,33 +472,71 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
       ? `${target.label} (${target.projectName})`
       : (target?.label ?? "");
 
+  /** Lets go of the shared tab or window, if one is being held. */
+  function releaseSource() {
+    retained.current?.stop();
+    retained.current = null;
+    setSharing(null);
+    setSource("this-tab");
+  }
+
   /**
    * Choosing where to capture from.
    *
-   * One of the page's own destinations takes this tab there, so the snip is of
-   * that page; the window and the issue it is for come along unchanged, because
-   * the window is not part of the page.
+   * "This tab" shares nothing until a snip is actually taken, which is why it
+   * is the one that costs nothing to leave selected.
    *
-   * Only this navigates. Detecting a page does not visit it — the tab moves
-   * because somebody chose somewhere for it to go, and never as a side effect
-   * of having found it.
+   * "Another tab or window" opens the browser's own picker *now* and keeps what
+   * comes back. That is the whole point: the surface somebody wants a picture
+   * of is usually one they have to go and find first, and asking for it at snip
+   * time would both prompt again and give them no chance to get there. So the
+   * share is arranged once, the person navigates wherever they need to — in
+   * that tab, in this one, however they like — and New snip copies whatever the
+   * chosen surface is showing by then.
+   *
+   * Nothing here navigates anything. The picker is the browser's, the choice in
+   * it is the person's, and Prio never sees a surface they did not pick.
    */
-  function chooseSource(choice: SourceChoice) {
-    setSource(choice);
+  async function chooseSource(choice: SourceChoice) {
     setError(null);
-    if (choice !== "this-tab" && choice !== "other" && pathname !== choice) {
-      startNavigation(() => router.push(choice));
+
+    if (choice === "this-tab") {
+      releaseSource();
+      return;
+    }
+
+    // Already sharing something: keep it rather than asking again.
+    if (retained.current) {
+      setSource("other");
+      return;
+    }
+
+    setBusy("source");
+    try {
+      const picked = await retainCaptureSource({ source: "any" });
+      retained.current = picked;
+      setSharing(picked.label);
+      setSource("other");
+
+      /* The browser's own "Stop sharing" bar can end it at any moment. When it
+         does, the window says so and falls back rather than failing at the
+         next snip. */
+      picked.onEnded(() => {
+        retained.current = null;
+        setSharing(null);
+        setSource("this-tab");
+      });
+    } catch (failure) {
+      setSource("this-tab");
+      setError(
+        failure instanceof CaptureError
+          ? failure.message
+          : "That tab or window could not be shared.",
+      );
+    } finally {
+      setBusy(null);
     }
   }
-
-  /* A page stays chosen while this tab is on it (or on its way there). Once
-     the person has gone somewhere else, what a snip captures is this tab. */
-  const selectedSource: SourceChoice =
-    source === "this-tab" || source === "other"
-      ? source
-      : pathname === source || navigating
-        ? source
-        : "this-tab";
 
   /** + New snip: a fresh capture, then the area to keep. */
   async function newSnip() {
@@ -544,9 +545,13 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
     setNotice(null);
     setBusy("screenshot");
     try {
-      const frame = await captureScreenshot({
-        source: selectedSource === "other" ? "any" : "this-tab",
-      });
+      /* The tab or window already being shared, if one was chosen — sampled
+         as it looks right now, wherever the person has got to. Otherwise this
+         tab, asked for fresh, so "This tab" never holds a share open between
+         snips. */
+      const frame = retained.current
+        ? await retained.current.grab()
+        : await captureScreenshot({ source: "this-tab" });
       setSelecting(frame);
     } catch (failure) {
       setError(
@@ -832,10 +837,6 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
         <div
           ref={windowRef}
           className={styles.window}
-          /* Keeps the window out of its own detection: it floats over the page
-             and has links of its own, and offering the Snip Tool as a place to
-             navigate to would be a small infinite regress. */
-          {...{ [SNIP_TOOL_MARKER]: "true" }}
           data-minimized={minimized || undefined}
           data-maximized={!floating || undefined}
           /* Placed from the top left once it has been moved; until then the
@@ -959,52 +960,42 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
                   <fieldset className={styles.section}>
                     <legend className={styles.sectionLabel}>Capture from</legend>
 
-                    {/* The two that are true whatever the page turns out to
-                        hold: what is on screen now, and the browser's own
-                        picker. Detection can find nothing at all and both of
-                        these still work. */}
                     <div className={styles.sourceGrid}>
                       <SourceOption
                         label="This tab"
                         hint="The page on screen now"
                         Icon={IconImage}
-                        selected={selectedSource === "this-tab"}
-                        onChoose={() => chooseSource("this-tab")}
+                        selected={source === "this-tab"}
+                        onChoose={() => void chooseSource("this-tab")}
                       />
                       <SourceOption
                         label="Another tab or window"
-                        hint="Choose in the browser"
+                        hint={
+                          sharing ? "Shared — ready to snip" : "Choose in the browser"
+                        }
                         Icon={IconExternal}
-                        selected={selectedSource === "other"}
-                        onChoose={() => chooseSource("other")}
+                        selected={source === "other"}
+                        onChoose={() => void chooseSource("other")}
                       />
                     </div>
 
-                    {navigation.length > 0 ? (
-                      <div className={styles.navScroll}>
-                        {navigation.map((group) => (
-                          <div key={group.id} className={styles.navGroup}>
-                            <p className={styles.navGroupLabel}>{group.label}</p>
-                            <ul className={styles.navList}>
-                              {group.items.map((item) => (
-                                <NavOption
-                                  key={item.href}
-                                  item={item}
-                                  depth={0}
-                                  selected={selectedSource}
-                                  onChoose={chooseSource}
-                                />
-                              ))}
-                            </ul>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className={styles.hint}>
-                        No navigation was found on this page. This tab captures
-                        whatever is on screen now.
+                    {/* What is being shared, and the way out of it. The browser
+                        shows its own indicator as well; this is the one inside
+                        Prio, next to the choice that started it. */}
+                    {sharing ? (
+                      <p className={styles.sharing}>
+                        <span className={styles.sharingName} title={sharing}>
+                          Sharing {sharing}
+                        </span>
+                        <button
+                          type="button"
+                          className="prio-btn prio-btn--ghost prio-btn--sm"
+                          onClick={releaseSource}
+                        >
+                          Stop sharing
+                        </button>
                       </p>
-                    )}
+                    ) : null}
                   </fieldset>
 
                   <div className={styles.actions}>
@@ -1041,10 +1032,11 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
                       be able to; what it can do is ask the browser to ask you,
                       which is what "Another tab or window" does. */}
                   <p className={styles.hint}>
-                    Another tab or window opens the browser&rsquo;s own picker.
-                    A page cannot list your tabs or read one you have not
-                    shared, so that choice is made there — Prio only ever
-                    receives the surface you pick in it.
+                    Another tab or window opens the browser&rsquo;s own picker
+                    once and keeps what you choose — go to the page you want,
+                    then New snip. A page cannot list your tabs or read one you
+                    have not shared, so the choice is made there, and Prio only
+                    ever receives the surface you picked.
                   </p>
                   {!captureSupported && !recordSupported ? (
                     <p className={styles.error}>
@@ -1153,65 +1145,6 @@ function SourceOption({
       <span className={styles.sourceName}>{label}</span>
       <span className={styles.sourceHint}>{hint}</span>
     </label>
-  );
-}
-
-/**
- * One detected page, and whatever nests under it.
- *
- * Recursive, because the navigation is: a project's tab strip sits under the
- * project, which sits under Projects. Depth is an indent rather than a
- * different control — every row is the same choice, made at a different level.
- *
- * The monogram stands in for an icon. The page told us what it is called and
- * where it goes; it did not tell us which glyph it uses in the sidebar, and
- * inventing one would be a guess wearing the clothes of knowledge.
- */
-function NavOption({
-  item,
-  depth,
-  selected,
-  onChoose,
-}: {
-  item: NavItem;
-  depth: number;
-  selected: SourceChoice;
-  onChoose: (choice: SourceChoice) => void;
-}) {
-  return (
-    <li>
-      <label
-        className={styles.navItem}
-        data-selected={selected === item.href || undefined}
-        style={depth > 0 ? { paddingLeft: 8 + depth * 14 } : undefined}
-      >
-        <input
-          type="radio"
-          name="prio-snip-source"
-          className="prio-visually-hidden"
-          checked={selected === item.href}
-          onChange={() => onChoose(item.href as SourceChoice)}
-        />
-        <span className={styles.navText}>
-          <span className={styles.navName}>{item.label}</span>
-          <span className={styles.navPath}>{item.href}</span>
-        </span>
-      </label>
-
-      {item.children.length > 0 ? (
-        <ul className={styles.navList}>
-          {item.children.map((child) => (
-            <NavOption
-              key={child.href}
-              item={child}
-              depth={depth + 1}
-              selected={selected}
-              onChoose={onChoose}
-            />
-          ))}
-        </ul>
-      ) : null}
-    </li>
   );
 }
 
@@ -1494,7 +1427,6 @@ function SnipAreaSelector({
   return createPortal(
     <div
       className={styles.selector}
-      {...{ [SNIP_TOOL_MARKER]: "true" }}
       role="dialog"
       aria-modal="true"
       aria-label="Select area to snip"

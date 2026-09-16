@@ -160,9 +160,20 @@ export function buildIssueWhere(
   }
 
   if (filters.completedByIds?.length) {
-    /* The same fragment My Work counts its Completed tile with, so clicking
-       the figure opens exactly the issues it counted. */
-    and.push(completedByFilter(filters.completedByIds));
+    /*
+     * "Completed by me" — and only ever me.
+     *
+     * My Work's tile links here carrying the reader's own id, and the value
+     * that arrives is deliberately ignored in favour of the session's. A URL is
+     * something anybody can type, and whose work is finished is not a question
+     * a query string gets to answer; an administrator opening their own tile
+     * sees their own work rather than the organisation's.
+     *
+     * The parameter survives as the switch that turns the filter on, so the
+     * figure and the rows it opens remain the same query — `completedByFilter`
+     * is exactly what My Work counts with.
+     */
+    and.push(completedByFilter([user.id]));
   }
 
   if (filters.labelIds?.length) {

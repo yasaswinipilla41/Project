@@ -171,54 +171,133 @@ export async function captureScreenshot(
   const stream = await requestDisplayStream(options);
 
   try {
-    const video = document.createElement("video");
-    video.srcObject = stream;
-    video.muted = true;
-    video.playsInline = true;
-
-    await video.play();
-
-    /* One rendered frame. Without this the first frame is occasionally blank:
-       `play()` resolves when playback starts, not when there is a painted
-       picture to copy. */
-    await new Promise<void>((resolve) => {
-      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-    });
-
-    const width = video.videoWidth;
-    const height = video.videoHeight;
-    if (width === 0 || height === 0) {
-      throw new CaptureError(
-        "empty",
-        "The capture came back empty. Please try again.",
-      );
-    }
-
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-
-    const context = canvas.getContext("2d");
-    if (!context) {
-      throw new CaptureError("failed", "The screenshot could not be prepared.");
-    }
-    context.drawImage(video, 0, 0, width, height);
-
-    const blob = await new Promise<Blob | null>((resolve) => {
-      canvas.toBlob(resolve, "image/png");
-    });
-
-    if (!blob || blob.size === 0) {
-      throw new CaptureError(
-        "empty",
-        "The capture came back empty. Please try again.",
-      );
-    }
-
-    return blob;
+    return await frameFrom(await playing(stream));
   } finally {
     stopStream(stream);
   }
+}
+
+/** A video element playing the stream, with a painted frame ready to copy. */
+async function playing(stream: MediaStream): Promise<HTMLVideoElement> {
+  const video = document.createElement("video");
+  video.srcObject = stream;
+  video.muted = true;
+  video.playsInline = true;
+
+  await video.play();
+
+  /* One rendered frame. Without this the first frame is occasionally blank:
+     `play()` resolves when playback starts, not when there is a painted
+     picture to copy. */
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  });
+
+  return video;
+}
+
+/**
+ * Whatever the video is showing right now, as a PNG.
+ *
+ * The canvas is the source's own pixel dimensions — `videoWidth` and
+ * `videoHeight` are the physical resolution the browser is sharing, not a CSS
+ * size — so nothing here scales the picture. PNG because a screenshot is going
+ * to be annotated: lossless, and the format the editor and the upload
+ * allowlist already expect.
+ */
+async function frameFrom(video: HTMLVideoElement): Promise<Blob> {
+  const width = video.videoWidth;
+  const height = video.videoHeight;
+  if (width === 0 || height === 0) {
+    throw new CaptureError(
+      "empty",
+      "The capture came back empty. Please try again.",
+    );
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+
+  const context = canvas.getContext("2d");
+  if (!context) {
+    throw new CaptureError("failed", "The screenshot could not be prepared.");
+  }
+  context.drawImage(video, 0, 0, width, height);
+
+  const blob = await new Promise<Blob | null>((resolve) => {
+    canvas.toBlob(resolve, "image/png");
+  });
+
+  if (!blob || blob.size === 0) {
+    throw new CaptureError(
+      "empty",
+      "The capture came back empty. Please try again.",
+    );
+  }
+
+  return blob;
+}
+
+/**
+ * A capture source chosen once and kept, so several snips can come from it.
+ *
+ * `captureScreenshot` opens the browser's picker, takes one frame and stops —
+ * right for "this tab", and wrong for anything else: choosing another tab or
+ * window would ask the picker again for every snip, and the person would have
+ * to re-find their window each time. Worse, the thing they wanted to capture is
+ * usually something they have to *navigate to first*, which the one-shot
+ * version gives them no opportunity to do.
+ *
+ * So the stream is kept alive and sampled on demand. The picker appears once,
+ * when the source is chosen; after that the person goes wherever they need to
+ * and presses New snip, and `grab` copies whatever that surface is showing at
+ * that moment.
+ *
+ * Nothing here reaches into the chosen surface. It is a `MediaStream` the
+ * browser handed over because somebody picked it in the browser's own dialog —
+ * there is no DOM access, no script injection and no way to capture anything
+ * that was not chosen. `onEnded` is how the browser's "Stop sharing" bar gets
+ * to end it, which it can do at any time.
+ */
+export interface RetainedSource {
+  /** What the browser calls the shared surface, for saying so on screen. */
+  label: string;
+  /** One frame of it, as it looks now. */
+  grab: () => Promise<Blob>;
+  /** Ends the share, and with it the browser's sharing indicator. */
+  stop: () => void;
+  /** Called if the browser or the person ends the share first. */
+  onEnded: (handler: () => void) => void;
+}
+
+export async function retainCaptureSource(
+  options: CaptureOptions = {},
+): Promise<RetainedSource> {
+  const stream = await requestDisplayStream(options);
+
+  let video: HTMLVideoElement;
+  try {
+    video = await playing(stream);
+  } catch (error) {
+    /* Nothing keeps sharing on account of a failure to start reading it. */
+    stopStream(stream);
+    throw error instanceof CaptureError ? error : asCaptureError(error);
+  }
+
+  const track = stream.getVideoTracks()[0] ?? null;
+
+  return {
+    label: track?.label || "the chosen tab or window",
+    grab: () => frameFrom(video),
+    stop: () => {
+      video.srcObject = null;
+      stopStream(stream);
+    },
+    onEnded: (handler) => {
+      track?.addEventListener("ended", handler, { once: true });
+    },
+  };
 }
 
 export interface ScreenRecording {

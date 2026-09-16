@@ -67,13 +67,7 @@ function snipWindow(page: Page) {
   return page.getByRole("dialog", { name: "Snip Tool" });
 }
 
-/**
- * The snips taken in this session.
- *
- * Scoped to the snips list rather than every `<li>` in the window: the sources
- * read off the page are a list as well, so an unscoped lookup counts a dozen
- * navigation entries as snips.
- */
+/** The snips taken in this session, scoped to the list that holds them. */
 function snipRows(snip: Locator) {
   return snip.locator('[class*="snipList"] > li');
 }
@@ -194,23 +188,20 @@ test.describe("Snip Tool — screenshot workflow on an issue", () => {
     await expect(snip.getByRole("radio", { name: /^This tab/ })).toBeChecked();
 
     /*
-     * Everything else is read off the page rather than listed in the source.
-     * These are the sidebar's own entries, under the name the sidebar gives
-     * itself — `<nav aria-label="Primary">` — and nothing in the Snip Tool has
-     * heard of any of them, so finding them here is the detection working.
+     * And those two are the whole of it. Prio's own pages were briefly offered
+     * here as a third kind of source, under a "Primary" heading read off the
+     * sidebar — a second, worse copy of navigation the application already
+     * has. Going to a page is something you do in the application; this window
+     * only decides what to point the camera at.
      */
-    await expect(snip.getByText("Primary", { exact: true })).toBeVisible();
+    await expect(snip.getByText("Primary", { exact: true })).toHaveCount(0);
+    await expect(snip.getByRole("radio")).toHaveCount(2);
     for (const name of ["Home", "Projects", "Issues", "Reports"]) {
       await expect(
         snip.getByRole("radio", { name: new RegExp(`^${name}`) }),
-      ).toHaveCount(1);
+        `${name} is not a capture source`,
+      ).toHaveCount(0);
     }
-
-    /* And a page this reader does not have is not offered: My Work is absent
-       from an administrator's sidebar, so it is absent here. The list this
-       replaced offered it to everybody, because it was typed in rather than
-       looked up. */
-    await expect(snip.getByRole("radio", { name: /^My Work/ })).toHaveCount(0);
     await expect(snip.getByRole("button", { name: "New snip" })).toBeEnabled();
 
     // Minimise, restore, maximise, restore — the choice survives all of it.
@@ -233,50 +224,6 @@ test.describe("Snip Tool — screenshot workflow on an issue", () => {
     // Close still closes.
     await snip.getByRole("button", { name: "Close Snip Tool" }).click();
     await expect(snip).toBeHidden();
-
-    expect(consoleErrors).toEqual([]);
-  });
-
-  test("the sources are read off the page, and follow it when the tab moves", async ({
-    page,
-  }) => {
-    const { consoleErrors } = watchForProblems(page);
-    const { projectKey } = await openAnIssue(page);
-    await openScreenshot(page);
-    const snip = snipWindow(page);
-
-    // The sidebar, under the name the sidebar gives itself.
-    await expect(snip.getByText("Primary", { exact: true })).toBeVisible();
-    // A project's own tab strip is not on this page, so it is not offered.
-    await expect(
-      snip.getByText("Project views", { exact: true }),
-    ).toHaveCount(0);
-
-    /*
-     * The breadcrumb on an issue page leads to the project itself, and is a
-     * landmark of its own — so it is offered too. Choosing it is an ordinary
-     * source choice, and it is the only thing here that navigates.
-     */
-    const projectPath = `/projects/${projectKey.toLowerCase()}`;
-    await snip
-      .locator("label")
-      .filter({ hasText: new RegExp(`${projectPath}$`) })
-      .click();
-    /* The project's base path redirects to its Summary view. Either is inside
-       the project, which is what this is about. */
-    await expect(page).toHaveURL(new RegExp(projectPath));
-
-    /*
-     * A project view carries a second navigation landmark,
-     * `<nav aria-label="Project views">`, and the Snip Tool has never heard of
-     * it or of any of its tabs. It appears because the page now has it — which
-     * is also why it was correctly absent above, and absent on Welcome, where
-     * `ProjectShellChrome` deliberately hides the strip.
-     */
-    await expect(snip.getByText("Project views", { exact: true })).toBeVisible();
-    await expect(
-      snip.getByRole("radio", { name: new RegExp(`${projectPath}/summary`) }),
-    ).toHaveCount(1);
 
     expect(consoleErrors).toEqual([]);
   });
@@ -405,12 +352,13 @@ test.describe("Snip Tool — screenshot workflow on an issue", () => {
     await expect(editor).toBeHidden();
     await expect.poll(() => prisma.attachment.count({ where: { issueId } })).toBe(before + 1);
 
-    /* Choose another of Prio's pages: this tab goes there, the window comes
+    /* Walk off to another page, the ordinary way — through Prio's own sidebar.
+       The window is mounted by the shell rather than by the page, so it comes
        along, and it is still for the issue it was opened on. */
-    await chooseSource(snip, "Projects");
+    await page.locator('.prio-sidebar a[href="/projects"]').click();
     await expect(page).toHaveURL(/\/projects$/);
     await expect(snip).toContainText(key);
-    await expect(snip.getByRole("radio", { name: /^Projects/ })).toBeChecked();
+    await expect(snip.getByRole("radio", { name: /^This tab/ })).toBeChecked();
 
     // Snip two, of that page, saved while the issue is not on screen.
     editor = await newSnip(page);
@@ -448,25 +396,54 @@ test.describe("Snip Tool — screenshot workflow on an issue", () => {
     await openScreenshot(page);
     const snip = snipWindow(page);
 
-    await chooseSource(snip, "Another tab or window");
-    await snip.getByRole("button", { name: "New snip" }).click();
+    const pickerCalls = () =>
+      page.evaluate(
+        () =>
+          (
+            window as unknown as {
+              __displayMediaCalls: {
+                preferCurrentTab?: boolean;
+                selfBrowserSurface?: string;
+              }[];
+            }
+          ).__displayMediaCalls,
+      );
 
+    /* Choosing the source is what opens the picker — the share is arranged up
+       front, so the person can go and find what they want a picture of. */
+    await chooseSource(snip, "Another tab or window");
+
+    const afterChoosing = await pickerCalls();
+    expect(afterChoosing).toHaveLength(1);
+    expect(afterChoosing.at(-1)?.preferCurrentTab).not.toBe(true);
+    expect(afterChoosing.at(-1)?.selfBrowserSurface).toBe("exclude");
+
+    // The window says what it is holding, and offers the way out of it.
+    await expect(snip.getByText(/^Sharing/)).toBeVisible();
+
+    await snip.getByRole("button", { name: "New snip" }).click();
     const selector = page.getByRole("dialog", { name: "Select area to snip" });
     await expect(selector).toBeVisible();
-    const calls = await page.evaluate(
-      () =>
-        (window as unknown as {
-          __displayMediaCalls: { preferCurrentTab?: boolean; selfBrowserSurface?: string }[];
-        }).__displayMediaCalls,
-    );
-    expect(calls.at(-1)?.preferCurrentTab).not.toBe(true);
-    expect(calls.at(-1)?.selfBrowserSurface).toBe("exclude");
 
-    // Escape cancels the snip without making one.
+    /*
+     * And the snip came from the surface already being shared: the picker was
+     * not asked a second time. That is the whole point of retaining it — being
+     * re-prompted per snip would both interrupt and undo the navigation the
+     * person just did to reach what they wanted.
+     */
+    expect(await pickerCalls()).toHaveLength(1);
+
+    // Escape cancels the snip without making one, and keeps the share.
     await page.keyboard.press("Escape");
     await expect(selector).toBeHidden();
     await expect(snip).toBeVisible();
     await expect(snipRows(snip)).toHaveCount(0);
+    await expect(snip.getByText(/^Sharing/)).toBeVisible();
+
+    /* Stopping is the person's to do, and hands the source back to this tab. */
+    await snip.getByRole("button", { name: "Stop sharing" }).click();
+    await expect(snip.getByText(/^Sharing/)).toHaveCount(0);
+    await expect(snip.getByRole("radio", { name: /^This tab/ })).toBeChecked();
   });
 });
 

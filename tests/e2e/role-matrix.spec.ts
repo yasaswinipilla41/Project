@@ -226,13 +226,16 @@ test.describe("effective role resolution, as the application reports it", () => 
 });
 
 test.describe("what each role is offered", () => {
-  test("Create is offered to whoever raises work, and withheld from a pure developer", async ({
+  test("Create is offered to every role that raises work", async ({
     browser,
   }) => {
+    /* Raising work was the QA half's alone, and the control was hidden from a
+       pure developer. Every working role raises work now, so all three are
+       offered it — what stays a tester's is the verdict, not the filing. */
     for (const [email, expected] of [
       [QA1, true],
       [FSD1, true],
-      [DEV1, false],
+      [DEV1, true],
     ] as const) {
       const { page, close } = await pageAs(browser, email);
       try {

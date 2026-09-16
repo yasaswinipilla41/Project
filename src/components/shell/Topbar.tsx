@@ -31,10 +31,10 @@ import { CreateIssueDialog } from "@/components/create/CreateIssueDialog";
 import { SprintFormDialog } from "@/components/sprints/SprintFormDialog";
 import { ThemeSwitcher } from "@/components/theme/ThemeSwitcher";
 import {
-  ISSUE_TYPES,
   ISSUE_TYPE_LABEL,
   WORK_ROLE_LABEL,
-  doesQaWork,
+  canCreateSprint,
+  creatableWorkItems,
 } from "@/lib/domain";
 import type { IssueType, Role } from "@prisma/client";
 
@@ -133,6 +133,9 @@ export function Topbar({
   const currentProject = projectInPath
     ? projects.find((p) => p.key.toLowerCase() === projectInPath.toLowerCase())
     : undefined;
+
+  /* What this reader may raise, from the one table that decides it. */
+  const creatable = creatableWorkItems(workRole);
 
   const [signingOut, setSigningOut] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -288,13 +291,14 @@ export function Topbar({
         {/*
           * Split control: the button creates a Task, the caret picks the type.
           *
-          * Absent for a pure developer, who does not file work — it is raised
-          * for them, and a control that always answered "you may not" would be
-          * worse than no control. A full stack developer keeps it: they are on
-          * Testing, and raising work is that half of their job. `createIssue` refuses the call regardless,
-          * so this is the offer and not the rule.
+          * What it offers is `creatableWorkItems` — the approved matrix, the
+          * same table `assertCanCreateWork` refuses against, so the menu and the
+          * server cannot come to disagree. It used to be hidden from a pure
+          * developer, who could not file work at all; every role raises work
+          * now. `createIssue` still refuses the call on its own, so this is the
+          * offer and not the rule.
           */}
-        {doesQaWork(workRole) ? (
+        {creatable.length > 0 ? (
         <div className="prio-create">
           <button
             type="button"
@@ -321,7 +325,7 @@ export function Topbar({
             )}
           >
             <MenuLabel>Create</MenuLabel>
-            {ISSUE_TYPES.map((type) => (
+            {creatable.map((type) => (
               <MenuItem
                 key={type}
                 icon={<IssueTypeIcon type={type} size={18} />}
@@ -338,8 +342,9 @@ export function Topbar({
               * and otherwise asks which project it belongs to.
               */}
             {/* A sprint commits everybody's fortnight, so creating one is an
-                administrator's act; `createSprint` asserts it too. */}
-            {user.role === "ADMIN" ? (
+                administrator's act. `canCreateSprint` is the same rule
+                `assertCanCreateSprint` refuses against on the server. */}
+            {canCreateSprint(workRole) ? (
               <>
                 <MenuSeparator />
                 <MenuItem

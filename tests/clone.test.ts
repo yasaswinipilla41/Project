@@ -616,15 +616,16 @@ describe("the parent of an issue", () => {
 /* ------------------------------------------------------------ permissions */
 
 describe("who may clone", () => {
-  it("lets a tester clone an issue, and refuses a developer", async () => {
+  it("lets a developer and a tester both clone an issue", async () => {
     /*
-     * Cloning creates an issue, so it is governed by whoever may create one:
-     * an administrator or a tester. It is that same permission reached through
-     * a different door — no wider — and it is re-checked on the server rather
-     * than assumed from the button being visible.
+     * Cloning creates an issue, so it is governed by whoever may create one —
+     * the same permission reached through a different door, no wider, and
+     * re-checked on the server rather than assumed from the button.
      *
-     * Both halves are asserted together because the pair is the rule: the door
-     * being open to a tester is only meaningful if it is shut to a developer.
+     * That door used to be shut to a developer, because raising work was the
+     * QA half's alone. Every working role raises work now, so both halves are
+     * asserted: the rule is that cloning tracks creation, not that it has a
+     * guest list of its own.
      */
     await actAs(ADMIN);
     const source = await makeIssue({ description: "Member clones this." });
@@ -639,18 +640,25 @@ describe("who may clone", () => {
       copyAttachments: false,
     };
 
-    // A developer — a member who is not on the Testing team — may not.
+    // A developer — a member who is not on the Testing team — may.
     await actAs(MEMBER);
-    const refused = await cloneIssue({ ...draft, title: "Cloned by a developer" });
-    expect(refused.ok).toBe(false);
+    const asDeveloper = await cloneIssue({
+      ...draft,
+      title: `Cloned by a developer ${Date.now()}`,
+    });
+    expect(asDeveloper.ok, asDeveloper.ok ? "" : asDeveloper.error).toBe(true);
+    if (asDeveloper.ok) createdIssues.push(asDeveloper.data.id);
 
-    // The same person, once they are a tester, may.
+    // And so may the same person once they are a tester.
     const { leave } = await joinTestingTeam(MEMBER);
     try {
       await actAs(MEMBER);
-      const allowed = await cloneIssue({ ...draft, title: "Cloned by a tester" });
-      expect(allowed.ok).toBe(true);
-      if (allowed.ok) createdIssues.push(allowed.data.id);
+      const asTester = await cloneIssue({
+        ...draft,
+        title: `Cloned by a tester ${Date.now()}`,
+      });
+      expect(asTester.ok).toBe(true);
+      if (asTester.ok) createdIssues.push(asTester.data.id);
     } finally {
       await leave();
     }

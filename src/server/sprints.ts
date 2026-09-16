@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import {
   assertAdmin,
+  assertCanCreateSprint,
   AuthorizationError,
   NotFoundError,
 } from "@/lib/authz";
@@ -119,7 +120,9 @@ export async function createSprint(
     }
     const { projectId, ...input } = parsed.data;
 
-    assertAdmin(user);
+    /* The same `canCreateSprint` the create menu reads, so what is offered and
+       what is accepted are one rule rather than two that agree today. */
+    await assertCanCreateSprint(user);
     const project = await prisma.project.findUnique({
       where: { id: projectId },
       select: { id: true, key: true },

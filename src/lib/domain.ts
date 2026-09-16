@@ -569,6 +569,60 @@ export function doesDeveloperWork(role: WorkRole): boolean {
   return role === "ADMIN" || role === "DEVELOPER" || role === "FULLSTACK";
 }
 
+/* ------------------------------------------------------- raising new work */
+
+/**
+ * Which kinds of work each role may raise.
+ *
+ * Written as a table rather than a condition because it *is* a table: the
+ * approved matrix, in one place, read by the control that offers the choice and
+ * by the action that accepts it. A restriction arriving later has somewhere
+ * obvious to go, and cannot be added to one of those two without the other.
+ *
+ * Every working role may raise every type today. That is a deliberate change:
+ * raising work used to be the QA half's alone, so a developer who found a
+ * defect had to ask somebody else to file it. What stays a tester's is the
+ * *verdict* — `allowedStatusesFor` is unmoved, and a developer still cannot
+ * declare work tested or done.
+ *
+ * Note what a row is. Prio has no `ISSUE` type: an issue is the record, and
+ * Task, Bug, Story, Epic and Feature are what it can be. A Bug is
+ * `Issue.type = BUG` and stays its own kind of thing — "create a bug" and
+ * "create an issue" are the same act with a different type on it.
+ */
+const CREATABLE_WORK_ITEMS: Record<WorkRole, readonly IssueType[]> = {
+  ADMIN: ISSUE_TYPES,
+  DEVELOPER: ISSUE_TYPES,
+  QA: ISSUE_TYPES,
+  FULLSTACK: ISSUE_TYPES,
+};
+
+/** What this role may raise — what a create menu should offer. */
+export function creatableWorkItems(role: WorkRole): readonly IssueType[] {
+  return CREATABLE_WORK_ITEMS[role];
+}
+
+/** May this role raise work of this kind? The one question, asked once. */
+export function canCreateWorkItem(role: WorkRole, type: IssueType): boolean {
+  return creatableWorkItems(role).includes(type);
+}
+
+/**
+ * Who may create a sprint: an administrator, and nobody else.
+ *
+ * Deliberately narrower than raising work. A sprint commits everybody working
+ * in it to a period and a scope, which is a decision about the team rather than
+ * about a piece of work — so it is the one thing on the create menu that is not
+ * everybody's.
+ *
+ * It is only *creating* one that is restricted. Reading a sprint, planning into
+ * it, moving issues through it and reporting on it are untouched, and belong to
+ * whoever can open the project.
+ */
+export function canCreateSprint(role: WorkRole): boolean {
+  return role === "ADMIN";
+}
+
 // ------------------------------------------------------------------ guards
 
 export function isIssueStatus(value: unknown): value is IssueStatus {

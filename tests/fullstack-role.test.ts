@@ -326,24 +326,26 @@ describe("the QA half", () => {
     if (!intoQa.ok) expect(intoQa.error).toMatch(/tester or an administrator/i);
   });
 
-  it("still refuses a pure developer raising work", async () => {
+  it("no longer withholds raising work from a pure developer", async () => {
+    /* Raising work was once the QA half's alone, and was one of the things
+       full stack gained by holding it. It is everybody's now, so this is no
+       longer a difference between the roles — the QA half's remaining claim is
+       the verdict, which the case above still asserts. */
     await actAs(DEVELOPER);
     const project = await projectByKey("ENG");
 
+    const title = `Developer may now file this ${Date.now()}`;
     const result = await createIssue({
       projectId: project.id,
       type: "BUG",
-      title: "Developer still may not file this",
+      title,
       description: "x",
       priority: "MEDIUM",
     });
 
-    expect(result.ok).toBe(false);
-    expect(
-      await prisma.issue.count({
-        where: { title: "Developer still may not file this" },
-      }),
-    ).toBe(0);
+    expect(result.ok, result.ok ? "" : result.error).toBe(true);
+    if (result.ok) createdIssueIds.push(result.data.id);
+    expect(await prisma.issue.count({ where: { title } })).toBe(1);
   });
 });
 
@@ -430,10 +432,15 @@ describe("what full stack is not", () => {
     await actAs(FULLSTACK);
     const project = await projectByKey("ENG");
 
+    /* Both dates supplied on purpose: the schema requires them, so a payload
+       without them is refused before authorization is reached — and this would
+       have passed whatever the permission rule said. */
     const result = await createSprint({
       projectId: project.id,
       name: `Full stack should not create ${Date.now()}`,
       goal: "x",
+      startDate: new Date().toISOString(),
+      endDate: new Date(Date.now() + 14 * 864e5).toISOString(),
     });
 
     expect(result.ok).toBe(false);

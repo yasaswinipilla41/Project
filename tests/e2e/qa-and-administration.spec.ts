@@ -626,6 +626,14 @@ test.describe("Administration", () => {
     const chosen = label.split("—")[0]!.trim();
     await issueOption.click();
 
+    /* The picker stays open after a choice, ready for the next search, and
+       takes the room the window has — so it covers what is beneath it, Save
+       included, as any open dropdown does. Escape dismisses it, which is what
+       the field's own `data-local-escape` is for and what a person does before
+       reaching for Save. */
+    await page.keyboard.press("Escape");
+    await expect(optionsOf("roster-edit-issues")).toHaveCount(0);
+
     await dialog.getByRole("button", { name: "Save changes" }).click();
 
     /* The toast is what says the write landed. Asserting the key is still on

@@ -103,13 +103,17 @@ describe("Developer → QA: Ready for QA", () => {
   it("notifies the assigned QA member, with the issue, project and status", async () => {
     const issue = await developersIssue(`Handed to QA ${Date.now()}`);
 
-    await actAs(DEVELOPER);
+    /* An administrator decides who tests it — a developer cannot put somebody
+       else's name on an issue. The developer then marks it ready, which is the
+       act this file is actually about. */
+    await actAs(ADMIN);
     const assigned = await updateIssue({
       issueId: issue.id,
       assigneeId: ids[QA_MEMBER],
     });
     expect(assigned.ok, assigned.ok ? "" : assigned.error).toBe(true);
 
+    await actAs(DEVELOPER);
     const moved = await updateIssue({ issueId: issue.id, status: "IN_REVIEW" });
     expect(moved.ok).toBe(true);
 
@@ -134,8 +138,10 @@ describe("Developer → QA: Ready for QA", () => {
   it("does not notify other testers, other developers or administrators", async () => {
     const issue = await developersIssue(`Only the assignee ${Date.now()}`);
 
-    await actAs(DEVELOPER);
+    await actAs(ADMIN);
     await updateIssue({ issueId: issue.id, assigneeId: ids[QA_MEMBER] });
+
+    await actAs(DEVELOPER);
     await updateIssue({ issueId: issue.id, status: "IN_REVIEW" });
 
     const notices = await readyForQaNotices(issue.id);
@@ -156,13 +162,15 @@ describe("Developer → QA: Ready for QA", () => {
   it("says it once when assigned and marked ready in the same save", async () => {
     const issue = await developersIssue(`One save ${Date.now()}`);
 
-    await actAs(DEVELOPER);
+    /* One save carrying both, which is an administrator's to make: they are
+       the only role that may name somebody else as the assignee. */
+    await actAs(ADMIN);
     const moved = await updateIssue({
       issueId: issue.id,
       assigneeId: ids[QA_MEMBER],
       status: "IN_REVIEW",
     });
-    expect(moved.ok).toBe(true);
+    expect(moved.ok, moved.ok ? "" : moved.error).toBe(true);
 
     const toQa = await prisma.notification.findMany({
       where: { issueId: issue.id, userId: ids[QA_MEMBER] },
@@ -175,15 +183,17 @@ describe("Developer → QA: Ready for QA", () => {
   it("does not repeat itself when the same state is saved again", async () => {
     const issue = await developersIssue(`Saved twice ${Date.now()}`);
 
-    await actAs(DEVELOPER);
+    await actAs(ADMIN);
     await updateIssue({ issueId: issue.id, assigneeId: ids[QA_MEMBER] });
+
+    await actAs(DEVELOPER);
     await updateIssue({ issueId: issue.id, status: "IN_REVIEW" });
     const before = await prisma.notification.count({
       where: { issueId: issue.id, userId: ids[QA_MEMBER] },
     });
 
-    /* The developer no longer holds it, so re-sending the assignee would be
-       refused as a reassignment; the status alone is what a re-save carries. */
+    /* A developer may not name an assignee at all, so the status alone is what
+       a re-save from them carries. */
     const again = await updateIssue({ issueId: issue.id, status: "IN_REVIEW" });
     expect(again.ok).toBe(true);
 
@@ -207,14 +217,31 @@ describe("Developer → QA: Ready for QA", () => {
 });
 
 describe("the developer's hand-off, and what it does not open up", () => {
-  it("lets a developer hand work they hold to a QA member", async () => {
-    const issue = await developersIssue(`Hand-off allowed ${Date.now()}`);
+  it("refuses a developer handing work to a QA member", async () => {
+    /*
+     * This was allowed once: a developer could choose who tested their work.
+     * Deciding who a piece of work belongs to is an administrator's now, so
+     * naming anybody — even a tester, even work they hold — is refused.
+     *
+     * The hand-off itself is unaffected. Marking work Ready for QA still
+     * returns it to the tester who raised it, without the developer naming
+     * anyone; `qa-return-to-reporter.test.ts` is where that is asserted.
+     */
+    const issue = await developersIssue(`Hand-off refused ${Date.now()}`);
     await actAs(DEVELOPER);
     const result = await updateIssue({
       issueId: issue.id,
       assigneeId: ids[QA_MEMBER],
     });
-    expect(result.ok).toBe(true);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/only an administrator/i);
+
+    const row = await prisma.issue.findUniqueOrThrow({
+      where: { id: issue.id },
+      select: { assigneeId: true },
+    });
+    expect(row.assigneeId, "it is still the developer's").toBe(ids[DEVELOPER]);
   });
 
   it("still refuses handing it to another developer", async () => {

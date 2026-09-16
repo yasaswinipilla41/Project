@@ -100,26 +100,39 @@ describe("who somebody is", () => {
 /* ------------------------------------------------------------- creating work */
 
 describe("raising work", () => {
-  it("is refused to a developer", async () => {
+  it("is allowed to a developer", async () => {
+    /* This used to be refused: raising work was the QA half's alone, so a
+       developer who found a defect had to ask somebody else to file it. Every
+       role raises work now — what stays a tester's is the verdict, which the
+       statuses below still enforce. */
     await actAs(DEVELOPER);
     const project = await projectByKey("ENG");
 
+    const title = `Developer files work ${Date.now()}`;
     const result = await createIssue({
       projectId: project.id,
       type: "BUG",
-      title: "Developer should not be able to file this",
+      title,
       description: "x",
       priority: "MEDIUM",
     });
 
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toMatch(/administrator or a tester/i);
+    expect(result.ok, result.ok ? "" : result.error).toBe(true);
+    if (result.ok) createdIssueIds.push(result.data.id);
 
-    // Refused means nothing was written.
-    const filed = await prisma.issue.count({
-      where: { title: "Developer should not be able to file this" },
+    // Allowed means it really was written, with the developer as its reporter.
+    const filed = await prisma.issue.findFirstOrThrow({
+      where: { title },
+      select: { reporterId: true },
     });
-    expect(filed).toBe(0);
+    expect(filed.reporterId).toBe(
+      (
+        await prisma.user.findUniqueOrThrow({
+          where: { email: DEVELOPER },
+          select: { id: true },
+        })
+      ).id,
+    );
   });
 
   it("is allowed to a tester", async () => {

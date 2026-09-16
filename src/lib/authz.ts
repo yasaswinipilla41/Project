@@ -1,6 +1,11 @@
+import type { IssueType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { CurrentUser } from "@/lib/session";
-import { doesQaWork } from "@/lib/domain";
+import {
+  ISSUE_TYPE_LABEL,
+  canCreateSprint,
+  canCreateWorkItem,
+} from "@/lib/domain";
 import type { WorkRole } from "@/lib/domain";
 
 /**
@@ -422,22 +427,43 @@ export async function workRolesFor(
 }
 
 /**
- * Who may file work: anybody who does the QA half of the job.
+ * Who may file work of a given kind.
  *
- * Raising work is QA's job in this model — a defect found, a task that needs
- * doing — and a pure developer's job is to build what has been raised. A
- * developer who needs something filed asks for it; the alternative is a backlog
- * nobody has agreed to.
+ * The decision itself is `canCreateWorkItem` in `domain.ts`, which is the
+ * approved matrix written down once; this resolves the caller's working role
+ * from the database and applies it. The role is never taken from the request,
+ * so a payload naming a role decides nothing.
  *
- * Asked as a capability rather than `=== "DEVELOPER"`, so a Full Stack
- * Developer — who is on Testing and therefore does raise work — is not refused
- * by a check that only knew two role names.
+ * This used to refuse anybody who did not do the QA half — raising work was a
+ * tester's act, and a developer who found a defect had to ask for it to be
+ * filed. Every role raises work now. What a developer still cannot do is
+ * declare it tested or done, which is `allowedStatusesFor`'s business and is
+ * unchanged.
+ *
+ * Project access is a separate question and is asserted separately by every
+ * caller; this narrows what may be raised, never where.
  */
-export async function assertCanCreateWork(user: CurrentUser): Promise<void> {
-  if (!doesQaWork(await workRoleOf(user))) {
+export async function assertCanCreateWork(
+  user: CurrentUser,
+  type: IssueType,
+): Promise<void> {
+  if (!canCreateWorkItem(await workRoleOf(user), type)) {
     throw new AuthorizationError(
-      "Only an administrator or a tester can create work items.",
+      `${ISSUE_TYPE_LABEL[type]} is not something you can raise.`,
     );
+  }
+}
+
+/**
+ * Who may create a sprint: an administrator, and nobody else.
+ *
+ * The same `canCreateSprint` the create menu reads, so the control that offers
+ * it and the action that accepts it cannot disagree. Every other sprint
+ * operation keeps the authorization it already had.
+ */
+export async function assertCanCreateSprint(user: CurrentUser): Promise<void> {
+  if (!canCreateSprint(await workRoleOf(user))) {
+    throw new AuthorizationError("Only an administrator can create a sprint.");
   }
 }
 

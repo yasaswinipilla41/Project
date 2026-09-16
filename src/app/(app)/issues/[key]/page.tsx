@@ -43,7 +43,7 @@ import {
   IconSubIssue,
   IconWarning,
 } from "@/components/ui/Icon";
-import { issueScope, workRoleOf, workRolesFor } from "@/lib/authz";
+import { issueScope, workRoleOf } from "@/lib/authz";
 import {
   ISSUE_TYPE_LABEL,
   canEditDueDate,
@@ -247,26 +247,19 @@ export default async function IssueDetailPage({
   /*
    * Who this reader may hand the work to from the assignee field.
    *
-   * An administrator: anybody on the project, as always. A developer holding
-   * the work: the project's testers — QA members and full stack developers —
-   * which is the QA hand-off `updateIssue` allows, and nobody else. Everybody
-   * else sees who has it and cannot change it here.
+   * An administrator: anybody on the project. Nobody else, and there is no
+   * list to draw for them.
+   *
+   * A developer or a full stack developer holding the work used to be offered
+   * the project's testers here, so they could hand their own work on. That is
+   * gone, along with the server rule behind it — deciding who a piece of work
+   * belongs to is an administrator's act. They still take work *for
+   * themselves* through Start and Take over, which can only ever name them.
+   * A tester never had this control: `updateIssue` has always refused them the
+   * assignee outright.
    */
-  const holdsIt =
-    doesDeveloperWork(workRole) &&
-    workRole !== "ADMIN" &&
-    issue.assignee?.id === user.id;
-  const handoffRoles = holdsIt
-    ? await workRolesFor(members.map((m) => m.user.id))
-    : null;
   const assignableMembers =
-    workRole === "ADMIN"
-      ? members.map((m) => m.user)
-      : members
-          .map((m) => m.user)
-          .filter((member) =>
-            ["QA", "FULLSTACK"].includes(handoffRoles?.get(member.id) ?? ""),
-          );
+    workRole === "ADMIN" ? members.map((m) => m.user) : [];
 
   // Activity stores ids for relational fields; resolve them to names once.
   const names: NameLookup = {};
@@ -397,7 +390,7 @@ export default async function IssueDetailPage({
             issueId={issue.id}
             assignee={issue.assignee}
             members={assignableMembers}
-            canAssign={workRole === "ADMIN" || holdsIt}
+            canAssign={workRole === "ADMIN"}
           />
           {/*
             * Due date sits with the other things that get changed about an

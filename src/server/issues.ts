@@ -187,10 +187,10 @@ export async function createIssue(
     const input = parsed.data;
 
     await assertProjectAccess(user, input.projectId);
-    /* Raising work is an administrator's or a tester's act, not a
-       developer's. Enforced here rather than by hiding the button, because
-       the button is not what stops a direct call. */
-    await assertCanCreateWork(user);
+    /* What may be raised, by this person, of this kind — the approved matrix,
+       applied on the server because a hidden button is not what stops a direct
+       call. Where it may be raised was settled on the line above. */
+    await assertCanCreateWork(user, input.type);
 
     const role = await workRoleOf(user);
 
@@ -520,23 +520,19 @@ export async function updateIssue(
         const takingItThemselves = next === user.id;
         const puttingDownTheirOwn =
           next === null && existing.assigneeId === user.id;
-        /*
-         * Handing their own finished work to QA.
-         *
-         * Only work they hold, and only to somebody whose job is testing — a
-         * QA member or a full stack developer. Never to another developer and
-         * never to an administrator: deciding who *builds* something is still
-         * an administrator's act. The person's role is read from the database
-         * here, and project membership was already checked above.
-         */
-        const handingTheirsToQa =
-          next !== null &&
-          existing.assigneeId === user.id &&
-          ["QA", "FULLSTACK"].includes(
-            (await workRolesFor([next])).get(next) ?? "",
-          );
 
-        if (!takingItThemselves && !puttingDownTheirOwn && !handingTheirsToQa) {
+        /*
+         * Handing their own work to a QA member used to be allowed here, so a
+         * developer could choose who tested it.
+         *
+         * Deciding who a piece of work belongs to is an administrator's now,
+         * for everybody who builds — developer and full stack alike. The
+         * hand-off still happens, and without anybody naming a recipient:
+         * marking work Ready for QA returns it to the tester who raised it,
+         * which `testerToReturnWorkTo` does further down. What is gone is the
+         * ability to put somebody else's name on an issue.
+         */
+        if (!takingItThemselves && !puttingDownTheirOwn) {
           throw new AuthorizationError(
             "You can take work for yourself, but only an administrator can assign it to somebody else.",
           );
