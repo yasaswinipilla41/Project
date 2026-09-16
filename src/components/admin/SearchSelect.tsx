@@ -11,6 +11,15 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
+/**
+ * The tallest the option list is ever drawn, in px.
+ *
+ * Eight rows is the most `matches` produces, and this is roughly what eight
+ * rows need. It is a ceiling on the list, not a substitute for measuring the
+ * window: `place()` takes the smaller of this and the room actually available.
+ */
+const MAX_LIST_HEIGHT = 320;
+
 export interface SearchOption {
   id: string;
   /** What is matched against, and what the chip and the row show. */
@@ -148,7 +157,24 @@ export function SearchSelect({
        roomier — otherwise a list that merely got short would jump sides. */
     const natural = panel.scrollHeight;
     const flip = natural > below && above > below;
-    const maxHeight = Math.min(220, Math.max(120, flip ? above : below));
+
+    /*
+     * The height is the room that is actually there, never a number decided in
+     * advance.
+     *
+     * It used to be `min(220, max(120, room))`, which ignored the window twice
+     * over. The floor handed the list 120px even where fewer than 120 existed,
+     * so on a short viewport it ran off the edge rather than fitting or
+     * flipping. The ceiling capped it at 220px — about four rows — however much
+     * space was going spare, which is what made a project's issue list read as
+     * cut off: eight rows of content shown four at a time with several hundred
+     * pixels unused beneath it.
+     *
+     * Whichever side it opens on, it now takes what that side has, up to the
+     * eight rows this ever draws, and scrolls within it.
+     */
+    const room = Math.max(0, flip ? above : below);
+    const maxHeight = Math.min(room, MAX_LIST_HEIGHT);
 
     panel.style.width = `${rect.width}px`;
     panel.style.left = `${rect.left}px`;

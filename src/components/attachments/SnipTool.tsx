@@ -23,19 +23,21 @@ import {
   IconClose,
   IconEdit,
   IconExternal,
-  IconHome,
   IconImage,
-  IconIssues,
   IconMaximize,
   IconMinimize,
-  IconMyWork,
   IconPlus,
-  IconProjects,
-  IconReports,
   IconRestoreWindow,
   IconTrash,
   type IconProps,
 } from "@/components/ui/Icon";
+import {
+  detectNavigation,
+  navigationSignature,
+  SNIP_TOOL_MARKER,
+  type NavGroup,
+  type NavItem,
+} from "@/lib/appNavigation";
 import { ScreenshotEditor } from "@/components/attachments/ScreenshotEditor";
 import { annotatedFilename, formatBytes } from "@/lib/attachments";
 import {
@@ -150,25 +152,17 @@ interface SnipToolValue {
 /** This tab as it is, another tab or window, or one of Prio's own pages. */
 type SourceChoice = "this-tab" | "other" | `/${string}`;
 
-/**
- * Prio's own pages, offered as places to capture from.
+/*
+ * The pages this tab can be taken to are not listed here.
  *
- * The browser cannot list other tabs to a web page, and would be right not to.
- * What Prio can offer is itself: choosing one of these takes this tab there,
- * and the snip is then of that page. Every one of them is a page every
- * signed-in person already has in the sidebar.
+ * They used to be: five routes typed into this file by hand, which was wrong in
+ * both directions the moment anything moved — a page added to the sidebar never
+ * appeared, a page taken off it still did, and a project's own tab strip was
+ * invisible because nobody had written it down. What is offered now is whatever
+ * the page actually has, read from its navigation landmarks by
+ * `detectNavigation`. Choosing one takes this tab there, and the snip is of
+ * that page.
  */
-const APP_PAGES: {
-  href: `/${string}`;
-  label: string;
-  Icon: ComponentType<IconProps>;
-}[] = [
-  { href: "/", label: "Home", Icon: IconHome },
-  { href: "/my-work", label: "My Work", Icon: IconMyWork },
-  { href: "/projects", label: "Projects", Icon: IconProjects },
-  { href: "/issues", label: "Issues", Icon: IconIssues },
-  { href: "/reports", label: "Reports", Icon: IconReports },
-];
 
 const SnipToolContext = createContext<SnipToolValue | null>(null);
 
@@ -244,6 +238,8 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
   const [maximized, setMaximized] = useState(false);
 
   const [source, setSource] = useState<SourceChoice>("this-tab");
+  /** What the page itself says it can navigate to. Never a list kept here. */
+  const [navigation, setNavigation] = useState<NavGroup[]>([]);
   const [snips, setSnips] = useState<Snip[]>([]);
   /** The snip the editor is open on. */
   const [editing, setEditing] = useState<string | null>(null);
@@ -379,6 +375,55 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  /*
+   * What this page offers as navigation, kept current while the window is open.
+   *
+   * Three things change the answer, and each is listened for once. A route
+   * change arrives as a new `pathname` and re-runs this effect. A resize is how
+   * a responsive bar appears and disappears. Elements coming and going is how a
+   * dropdown's contents exist at all — they are not in the document until it is
+   * opened.
+   *
+   * The observer is bounded on every side: it runs only while the window is
+   * open and un-minimised, watches `childList` rather than attributes, debounces
+   * to at most one scan a quarter second however much arrives, and is
+   * disconnected on cleanup. There is no polling and nothing survives the
+   * window closing.
+   *
+   * `navigationSignature` is what stops it feeding itself. Re-rendering mutates
+   * the DOM, which notifies the observer, which would scan again — a slow loop,
+   * but a loop. Keeping the previous array when nothing has moved means React
+   * skips the render, so it settles rather than spinning.
+   */
+  useEffect(() => {
+    if (!open || minimized) return;
+
+    let timer = 0;
+    const rescan = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        const next = detectNavigation();
+        setNavigation((current) =>
+          navigationSignature(current) === navigationSignature(next)
+            ? current
+            : next,
+        );
+      }, 250);
+    };
+
+    rescan();
+
+    const observer = new MutationObserver(rescan);
+    observer.observe(document.body, { childList: true, subtree: true });
+    window.addEventListener("resize", rescan);
+
+    return () => {
+      window.clearTimeout(timer);
+      observer.disconnect();
+      window.removeEventListener("resize", rescan);
+    };
+  }, [open, minimized, pathname]);
+
   const floating = !(maximized && !minimized);
 
   /**
@@ -467,9 +512,13 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
   /**
    * Choosing where to capture from.
    *
-   * One of Prio's own pages takes this tab there, so the snip is of that page;
-   * the window and the issue it is for come along unchanged, because the
-   * window is not part of the page.
+   * One of the page's own destinations takes this tab there, so the snip is of
+   * that page; the window and the issue it is for come along unchanged, because
+   * the window is not part of the page.
+   *
+   * Only this navigates. Detecting a page does not visit it — the tab moves
+   * because somebody chose somewhere for it to go, and never as a side effect
+   * of having found it.
    */
   function chooseSource(choice: SourceChoice) {
     setSource(choice);
@@ -783,6 +832,10 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
         <div
           ref={windowRef}
           className={styles.window}
+          /* Keeps the window out of its own detection: it floats over the page
+             and has links of its own, and offering the Snip Tool as a place to
+             navigate to would be a small infinite regress. */
+          {...{ [SNIP_TOOL_MARKER]: "true" }}
           data-minimized={minimized || undefined}
           data-maximized={!floating || undefined}
           /* Placed from the top left once it has been moved; until then the
@@ -905,6 +958,11 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
                 <>
                   <fieldset className={styles.section}>
                     <legend className={styles.sectionLabel}>Capture from</legend>
+
+                    {/* The two that are true whatever the page turns out to
+                        hold: what is on screen now, and the browser's own
+                        picker. Detection can find nothing at all and both of
+                        these still work. */}
                     <div className={styles.sourceGrid}>
                       <SourceOption
                         label="This tab"
@@ -913,16 +971,6 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
                         selected={selectedSource === "this-tab"}
                         onChoose={() => chooseSource("this-tab")}
                       />
-                      {APP_PAGES.map((page) => (
-                        <SourceOption
-                          key={page.href}
-                          label={page.label}
-                          hint="Opens here, then snip"
-                          Icon={page.Icon}
-                          selected={selectedSource === page.href}
-                          onChoose={() => chooseSource(page.href)}
-                        />
-                      ))}
                       <SourceOption
                         label="Another tab or window"
                         hint="Choose in the browser"
@@ -931,6 +979,32 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
                         onChoose={() => chooseSource("other")}
                       />
                     </div>
+
+                    {navigation.length > 0 ? (
+                      <div className={styles.navScroll}>
+                        {navigation.map((group) => (
+                          <div key={group.id} className={styles.navGroup}>
+                            <p className={styles.navGroupLabel}>{group.label}</p>
+                            <ul className={styles.navList}>
+                              {group.items.map((item) => (
+                                <NavOption
+                                  key={item.href}
+                                  item={item}
+                                  depth={0}
+                                  selected={selectedSource}
+                                  onChoose={chooseSource}
+                                />
+                              ))}
+                            </ul>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className={styles.hint}>
+                        No navigation was found on this page. This tab captures
+                        whatever is on screen now.
+                      </p>
+                    )}
                   </fieldset>
 
                   <div className={styles.actions}>
@@ -959,7 +1033,18 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
                     Pick what to capture, then New snip. Drag over the capture
                     to keep the part that matters, mark it up, and Save — it
                     goes to {destination || "where you opened this"}. Each New
-                    snip is a separate capture.
+                    snip is a separate capture, and taking one never discards
+                    the snips already listed.
+                  </p>
+                  {/* The genuine limit, said plainly rather than worked
+                      around. A page cannot enumerate your tabs and should not
+                      be able to; what it can do is ask the browser to ask you,
+                      which is what "Another tab or window" does. */}
+                  <p className={styles.hint}>
+                    Another tab or window opens the browser&rsquo;s own picker.
+                    A page cannot list your tabs or read one you have not
+                    shared, so that choice is made there — Prio only ever
+                    receives the surface you pick in it.
                   </p>
                   {!captureSupported && !recordSupported ? (
                     <p className={styles.error}>
@@ -1068,6 +1153,65 @@ function SourceOption({
       <span className={styles.sourceName}>{label}</span>
       <span className={styles.sourceHint}>{hint}</span>
     </label>
+  );
+}
+
+/**
+ * One detected page, and whatever nests under it.
+ *
+ * Recursive, because the navigation is: a project's tab strip sits under the
+ * project, which sits under Projects. Depth is an indent rather than a
+ * different control — every row is the same choice, made at a different level.
+ *
+ * The monogram stands in for an icon. The page told us what it is called and
+ * where it goes; it did not tell us which glyph it uses in the sidebar, and
+ * inventing one would be a guess wearing the clothes of knowledge.
+ */
+function NavOption({
+  item,
+  depth,
+  selected,
+  onChoose,
+}: {
+  item: NavItem;
+  depth: number;
+  selected: SourceChoice;
+  onChoose: (choice: SourceChoice) => void;
+}) {
+  return (
+    <li>
+      <label
+        className={styles.navItem}
+        data-selected={selected === item.href || undefined}
+        style={depth > 0 ? { paddingLeft: 8 + depth * 14 } : undefined}
+      >
+        <input
+          type="radio"
+          name="prio-snip-source"
+          className="prio-visually-hidden"
+          checked={selected === item.href}
+          onChange={() => onChoose(item.href as SourceChoice)}
+        />
+        <span className={styles.navText}>
+          <span className={styles.navName}>{item.label}</span>
+          <span className={styles.navPath}>{item.href}</span>
+        </span>
+      </label>
+
+      {item.children.length > 0 ? (
+        <ul className={styles.navList}>
+          {item.children.map((child) => (
+            <NavOption
+              key={child.href}
+              item={child}
+              depth={depth + 1}
+              selected={selected}
+              onChoose={onChoose}
+            />
+          ))}
+        </ul>
+      ) : null}
+    </li>
   );
 }
 
@@ -1350,6 +1494,7 @@ function SnipAreaSelector({
   return createPortal(
     <div
       className={styles.selector}
+      {...{ [SNIP_TOOL_MARKER]: "true" }}
       role="dialog"
       aria-modal="true"
       aria-label="Select area to snip"

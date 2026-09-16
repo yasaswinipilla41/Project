@@ -2,12 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import {
-  assertAdmin,
-  DEVELOPMENT_TEAM_SLUG,
-  TESTING_TEAM_SLUG,
-  workRoleOf,
-} from "@/lib/authz";
+import { assertAdmin, FULLSTACK_TEAM_SLUG, workRoleOf } from "@/lib/authz";
 import { ISSUE_TYPE_LABEL } from "@/lib/domain";
 import type { WorkRole } from "@/lib/domain";
 import { prisma } from "@/lib/prisma";
@@ -41,13 +36,16 @@ import { setUserRole } from "@/server/users";
  * limitation being fixed — not because membership has grown a project
  * dimension. It has not, and `TeamMember` is unchanged.
  *
- * Full stack developers are the same two rows, not a third team. Somebody who
- * both builds and checks is on Development and on Testing, which is already
- * what `workRoleFromTeams` reads to answer "Full Stack Developer" everywhere
- * else in Prio. Administration therefore *derives* that roster rather than
- * storing it: adding writes both memberships, removing deletes both, and there
- * is no third `Team` row that could disagree with the badge on somebody's own
- * dashboard.
+ * Full stack developers are a roster of their own. They used to be those same
+ * two rows read together — on Development and on Testing — so adding one wrote
+ * both memberships and removing one deleted both, and taking somebody off the
+ * full stack list quietly took away a Testing row that had been granted
+ * deliberately, separately, and for its own reasons. The three memberships are
+ * independent now: adding here writes the Full Stack row and nothing else,
+ * removing here deletes the Full Stack row and nothing else, and whatever else
+ * a person holds is theirs. `workRoleFromTeams` still reads
+ * Development-and-Testing as full stack as well, so nobody who was one before
+ * this changed has stopped being one.
  */
 
 export type RosterActionResult<T = undefined> =
@@ -365,25 +363,39 @@ export async function assignDevelopers(
 /* ------------------------------------------- the derived full stack roster */
 
 /**
- * The two teams a full stack developer is on, by the slugs the role derivation
- * itself reads. Looked up rather than configured, so this cannot name a team
- * that `workRoleFromTeams` would not count.
+ * The Full Stack Developers team, created the first time one is needed.
+ *
+ * Its own row now, rather than two other rosters read together, so there is
+ * something to put people on. `upsert` by slug because an installation that
+ * predates the team should grow one the first time an administrator adds
+ * somebody, rather than refusing until a seed has been run — team rows are
+ * created on demand everywhere else here too. The slug is the one
+ * `workRoleFromTeams` reads, so what this writes is what the role rule counts.
  */
-async function fullStackTeamIds(): Promise<string[] | null> {
-  const teams = await prisma.team.findMany({
-    where: { slug: { in: [TESTING_TEAM_SLUG, DEVELOPMENT_TEAM_SLUG] } },
+async function fullStackTeamId(): Promise<string> {
+  const team = await prisma.team.upsert({
+    where: { slug: FULLSTACK_TEAM_SLUG },
+    update: {},
+    create: {
+      slug: FULLSTACK_TEAM_SLUG,
+      name: "Full Stack Developers",
+      description:
+        "Builds and verifies. A membership of its own — holding it changes nothing about Development or Testing.",
+    },
     select: { id: true },
   });
-  return teams.length === 2 ? teams.map((team) => team.id) : null;
+  return team.id;
 }
 
 /**
  * Onboard full stack developers.
  *
- * The same act as `assignDevelopers` against both teams at once, which is the
- * whole of what "full stack" is here. Nothing new is stored: afterwards the
- * person is on Development and on Testing, and every surface that asks what
- * they do derives Full Stack Developer from exactly those two rows.
+ * The same act as `assignDevelopers`, against the Full Stack roster. One
+ * membership is written and one only: somebody added here is a Full Stack
+ * Developer because of *this* row, and whether they are also on Development or
+ * on Testing is a separate question nobody has been asked. It used to write
+ * both of those, which meant onboarding a full stack developer silently
+ * enrolled them in two other rosters they had never been put on.
  */
 export async function assignFullStackDevelopers(
   raw: unknown,
@@ -400,15 +412,10 @@ export async function assignFullStackDevelopers(
       };
     }
 
-    const teamIds = await fullStackTeamIds();
-    if (!teamIds) {
-      return {
-        ok: false,
-        error: "The Development and Testing teams are not both set up.",
-      };
-    }
-
-    return await onboard(actor.id, { teamIds, ...parsed.data });
+    return await onboard(actor.id, {
+      teamIds: [await fullStackTeamId()],
+      ...parsed.data,
+    });
   } catch (error) {
     return failure(error);
   }
@@ -417,15 +424,17 @@ export async function assignFullStackDevelopers(
 /**
  * Take somebody off the full stack roster.
  *
- * Both memberships go, because one of them left behind is not a smaller
- * version of the same thing — it is a different role. Removing a full stack
- * developer and leaving the Testing row would quietly turn them into a tester,
- * and their own dashboard would change under them without anybody having
- * decided that.
+ * The Full Stack row goes, and nothing else does. This used to delete the
+ * Development and Testing rows as well, reasoning that leaving one behind would
+ * silently turn a full stack developer into a tester — but those rows are
+ * memberships somebody was granted deliberately and separately, and deleting
+ * them here destroyed a decision this action was never asked about. Somebody
+ * who is on Testing in their own right and is taken off this list reads as a
+ * tester afterwards because that is what they still are.
  *
- * Project access and assigned work are deliberately untouched. Those are the
- * other two facts, they are edited from the profile, and a team roster is not
- * where they are taken away.
+ * Project access and assigned work are untouched for the same reason, as they
+ * always have been: they are other facts, they are edited from the profile, and
+ * a team roster is not where they are taken away.
  */
 export async function removeFullStackDeveloper(
   raw: unknown,
@@ -439,16 +448,11 @@ export async function removeFullStackDeveloper(
       return { ok: false, error: "Choose someone to remove." };
     }
 
-    const teamIds = await fullStackTeamIds();
-    if (!teamIds) {
-      return {
-        ok: false,
-        error: "The Development and Testing teams are not both set up.",
-      };
-    }
-
     const removed = await prisma.teamMember.deleteMany({
-      where: { userId: parsed.data.userId, teamId: { in: teamIds } },
+      where: {
+        userId: parsed.data.userId,
+        team: { slug: FULLSTACK_TEAM_SLUG },
+      },
     });
 
     revalidatePath("/admin");

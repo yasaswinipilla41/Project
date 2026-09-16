@@ -34,6 +34,7 @@ import {
 import {
   addWatchers,
   assignmentMessage,
+  developerToReturnWorkTo,
   isTester,
   notify,
   projectTesterIds,
@@ -41,6 +42,7 @@ import {
   readyForQaReturnMessage,
   recordFieldChanges,
   recordIssueCreated,
+  reopenedMessage,
   testerToReturnWorkTo,
   watcherIds,
 } from "@/server/activity";
@@ -700,6 +702,7 @@ export async function updateIssue(
         ? (statusChange.newValue as IssueStatus)
         : null;
       const readyForQa = nextStatus === "IN_REVIEW";
+      const reopened = nextStatus === "REOPENED";
 
       /*
        * Assignment, and the tester case of it.
@@ -730,6 +733,7 @@ export async function updateIssue(
             actorId: user.id,
             userIds: [assigneeChange.newValue],
             type: "ISSUE_ASSIGNED",
+            workflowActivity: true,
             message: assignmentMessage({
               issueKey: existing.key,
               issueTitle: existing.title,
@@ -761,6 +765,8 @@ export async function updateIssue(
          */
         let returnTo: string | null = null;
         let qaAssignee: string | null = null;
+        /** The developer a reopen has handed the work back to, if any. */
+        let backToDeveloper: string | null = null;
 
         if (readyForQa) {
           /*
@@ -821,16 +827,65 @@ export async function updateIssue(
           qaAssignee = holder && (await isTester(tx, holder)) ? holder : null;
         }
 
-        /* The ordinary line to everybody following the issue — less the QA
-           member the targeted notice below is for, who would otherwise be told
-           the same move twice. */
+        /*
+         * Reopened work goes back to whoever built it.
+         *
+         * The mirror of the hand-off above. A developer asked for the work to
+         * be checked, the checking found a fault, and the fault is theirs to
+         * fix. Without this the issue stays with the tester who reopened it —
+         * sitting on the QA member's own queue, which is the one place it
+         * certainly does not belong — until somebody notices and hands it back
+         * by hand.
+         *
+         * Who that developer is comes from the trail rather than from the row;
+         * see `developerToReturnWorkTo`. The actor recorded for the status
+         * change and for the reassignment is whoever reopened it, so the
+         * history says testing sent it back rather than that the developer
+         * took it.
+         *
+         * An explicit assignee in the same request wins, exactly as it does for
+         * Ready for QA: somebody who said where the work should go has made a
+         * decision, and quietly overruling it would be worse than not helping.
+         */
+        if (reopened) {
+          const askedFor =
+            "assigneeId" in input && input.assigneeId !== undefined;
+          const developer = askedFor
+            ? null
+            : await developerToReturnWorkTo(tx, { issueId, projectId });
+
+          if (developer && developer !== existing.assigneeId) {
+            await tx.issue.update({
+              where: { id: issueId },
+              data: { assigneeId: developer },
+            });
+            await recordFieldChanges(tx, {
+              issueId,
+              actorId: user.id,
+              changes: [
+                {
+                  field: "assigneeId",
+                  oldValue: existing.assigneeId,
+                  newValue: developer,
+                },
+              ],
+            });
+            await addWatchers(tx, issueId, [developer]);
+            backToDeveloper = developer;
+          }
+        }
+
+        /* The ordinary line to everybody following the issue — less whoever one
+           of the targeted notices below is addressed to, who would otherwise be
+           told the same move twice. */
         await notify(tx, {
           issueId,
           actorId: user.id,
           userIds: (await watcherIds(tx, issueId)).filter(
-            (id) => id !== qaAssignee,
+            (id) => id !== qaAssignee && id !== backToDeveloper,
           ),
           type: "STATUS_CHANGED",
+          workflowActivity: true,
           message: `moved ${existing.key} to ${STATUS_LABEL[nextStatus] ?? nextStatus}`,
         });
 
@@ -842,6 +897,7 @@ export async function updateIssue(
               actorId: user.id,
               userIds: [returnTo],
               type: "ISSUE_ASSIGNED",
+              workflowActivity: true,
               message: readyForQaReturnMessage({
                 issueKey: existing.key,
                 issueTitle: existing.title,
@@ -862,6 +918,7 @@ export async function updateIssue(
                 assigneeChange?.newValue === qaAssignee
                   ? "ISSUE_ASSIGNED"
                   : "STATUS_CHANGED",
+              workflowActivity: true,
               message: readyForQaMessage({
                 issueKey: existing.key,
                 issueTitle: existing.title,
@@ -875,9 +932,28 @@ export async function updateIssue(
               actorId: user.id,
               userIds: await projectTesterIds(tx, projectId),
               type: "STATUS_CHANGED",
+              workflowActivity: true,
               message: `marked ${existing.key} ready for QA — ${existing.title}`,
             });
           }
+        }
+
+        /* And the developer it has just gone back to is told by name, rather
+           than having to spot it in the status line everybody else gets. */
+        if (backToDeveloper) {
+          await notify(tx, {
+            issueId,
+            projectId,
+            actorId: user.id,
+            userIds: [backToDeveloper],
+            type: "ISSUE_ASSIGNED",
+            workflowActivity: true,
+            message: reopenedMessage({
+              issueKey: existing.key,
+              issueTitle: existing.title,
+              projectName: existing.project.name,
+            }),
+          });
         }
       }
     });
@@ -1018,6 +1094,7 @@ export async function claimIssue(
           actorId: user.id,
           userIds: [previousAssigneeId],
           type: "ISSUE_ASSIGNED",
+          workflowActivity: true,
           message: `took over ${existing.key} — ${existing.title} — from you`,
         });
       }

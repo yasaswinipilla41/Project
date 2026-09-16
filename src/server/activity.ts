@@ -1,5 +1,10 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
-import { TESTING_TEAM_SLUG } from "@/lib/authz";
+import {
+  QA_TEAM_SLUGS,
+  WORK_TEAM_SLUGS,
+  workRoleFromTeams,
+} from "@/lib/authz";
+import { doesDeveloperWork } from "@/lib/domain";
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -118,7 +123,12 @@ export interface NotifyParams {
   actorId: string;
   /** Recipients; the actor is always filtered out — nobody notifies themselves. */
   userIds: (string | null | undefined)[];
-  type: "ISSUE_ASSIGNED" | "MENTIONED" | "STATUS_CHANGED" | "COMMENT_ADDED";
+  type:
+    | "ISSUE_ASSIGNED"
+    | "MENTIONED"
+    | "STATUS_CHANGED"
+    | "COMMENT_ADDED"
+    | "TEST_RESULT";
   message: string;
   commentId?: string | null;
   /**
@@ -127,14 +137,36 @@ export interface NotifyParams {
    * issue, and the issue is still what every notification opens.
    */
   projectId?: string | null;
+  /**
+   * This notice reports a Developer or QA workflow activity — a status moving
+   * through the build or the checking, a hand-off, a claim, a verdict.
+   *
+   * It is what `workflowAudience` below keys on, and it is set at the call
+   * site rather than guessed from `type`: an `ISSUE_ASSIGNED` row is raised
+   * both by the workflow and by an administrator onboarding somebody, and only
+   * the caller knows which of those just happened. Commenting and mentioning
+   * are not workflow activities and never set it.
+   */
+  workflowActivity?: boolean;
 }
 
-export async function notify(db: Db, params: NotifyParams): Promise<void> {
-  const recipients = [
+/**
+ * Writes the notifications and answers who actually received them.
+ *
+ * The return value matters for callers that mirror the audience on another
+ * channel — `recordTestResult` sends email to the same people — so the two
+ * cannot address different sets.
+ */
+export async function notify(db: Db, params: NotifyParams): Promise<string[]> {
+  const intended = [
     ...new Set(params.userIds.filter((id): id is string => Boolean(id))),
   ].filter((id) => id !== params.actorId);
 
-  if (recipients.length === 0) return;
+  const recipients = params.workflowActivity
+    ? await workflowAudience(db, params.actorId, intended)
+    : intended;
+
+  if (recipients.length === 0) return [];
 
   await db.notification.createMany({
     data: recipients.map((userId) => ({
@@ -147,17 +179,89 @@ export async function notify(db: Db, params: NotifyParams): Promise<void> {
       message: params.message,
     })),
   });
+
+  return recipients;
 }
 
 /**
- * Is this person a tester — that is, on the Testing team?
+ * Who hears about a Developer or QA workflow activity.
  *
- * "Tester" is not a `Role` and not a field on the issue: it is membership of
- * the team that owns the testing surfaces, which is how `authz.ts` and
- * `/my-work` already decide it. This asks the same question of the same rows;
- * what it adds is a `Db`, so the check can run inside the transaction that is
- * about to write the notification rather than against a second connection
- * that might not see the same state.
+ * For everybody else this is the audience the caller worked out, untouched —
+ * a developer handing work over still tells the tester, a tester's verdict
+ * still reaches the developer, and nothing about those paths has moved.
+ *
+ * A full stack member is the exception, and deliberately a narrow one. They
+ * hold both halves of the job, so the people an ordinary hand-off would tell
+ * are frequently themselves in the other half, or colleagues with no part in
+ * the work: the notice lands on developers and testers who were not involved
+ * and cannot act on it, which is the pattern that teaches everybody to ignore
+ * the bell. Their workflow activity is reported to the administrators instead,
+ * who are the people who oversee it.
+ *
+ * The role is resolved here, from the actor's own team rows, through the same
+ * `workRoleFromTeams` every other surface reads. Nothing about it comes from
+ * the request: `actorId` is the session user at every call site, so a client
+ * cannot nominate a role, an activity or a recipient.
+ */
+async function workflowAudience(
+  db: Db,
+  actorId: string,
+  intended: string[],
+): Promise<string[]> {
+  if (!(await isFullStack(db, actorId))) return intended;
+  return administratorIds(db, actorId);
+}
+
+/** Does this person's authoritative working role come out as Full Stack? */
+async function isFullStack(db: Db, userId: string): Promise<boolean> {
+  const person = await db.user.findUnique({
+    where: { id: userId },
+    select: {
+      role: true,
+      teamMemberships: {
+        where: { team: { slug: { in: [...WORK_TEAM_SLUGS] } } },
+        select: { team: { select: { slug: true } } },
+      },
+    },
+  });
+  if (!person) return false;
+
+  return (
+    workRoleFromTeams(
+      person.role,
+      person.teamMemberships.map((row) => row.team.slug),
+    ) === "FULLSTACK"
+  );
+}
+
+/**
+ * The administrators, by the lookup Prio already uses for an org-wide notice —
+ * see `notifyAdminsOfNewUser`. Active accounts only, and never the actor: an
+ * administrator is never full stack, so that last clause is belt and braces
+ * rather than a case that arises.
+ */
+async function administratorIds(db: Db, exclude: string): Promise<string[]> {
+  const admins = await db.user.findMany({
+    where: { role: "ADMIN", isActive: true, id: { not: exclude } },
+    select: { id: true },
+  });
+  return admins.map((admin) => admin.id);
+}
+
+/**
+ * Is this person a tester — that is, does a membership of theirs carry the QA
+ * half of the job?
+ *
+ * "Tester" is not a `Role` and not a field on the issue: it is membership of a
+ * team that does the testing, which is how `authz.ts` and `/my-work` already
+ * decide it. Two memberships carry it — Testing, and Full Stack Developers —
+ * so both are asked for; a full stack developer tests, and a check that knew
+ * only the Testing row would quietly leave them out of every notice addressed
+ * to whoever has to do the checking.
+ *
+ * What this adds over the rule in `authz.ts` is a `Db`, so the check can run
+ * inside the transaction that is about to write the notification rather than
+ * against a second connection that might not see the same state.
  *
  * A user id that is null, or belongs to nobody, is not a tester — an
  * unassignment has no one to be one.
@@ -168,7 +272,7 @@ export async function isTester(
 ): Promise<boolean> {
   if (!userId) return false;
   const count = await db.teamMember.count({
-    where: { userId, team: { slug: TESTING_TEAM_SLUG } },
+    where: { userId, team: { slug: { in: [...QA_TEAM_SLUGS] } } },
   });
   return count > 0;
 }
@@ -276,13 +380,120 @@ export async function testerToReturnWorkTo(
     where: {
       id: params.reporterId,
       isActive: true,
-      teamMemberships: { some: { team: { slug: TESTING_TEAM_SLUG } } },
+      teamMemberships: { some: { team: { slug: { in: [...QA_TEAM_SLUGS] } } } },
       projectMemberships: { some: { projectId: params.projectId } },
     },
     select: { id: true },
   });
 
   return reporter?.id ?? null;
+}
+
+/**
+ * The developer a reopened issue belongs back with.
+ *
+ * When testing sends work back it goes to whoever built it — not to whoever
+ * happens to hold it, not to whoever raised it, and not to whoever created it.
+ * That person is not on the issue row at all: after a QA cycle `assigneeId` is
+ * the tester doing the checking, which is the one answer that is certainly
+ * wrong. It is in the append-only trail, which records who moved the work
+ * through the build.
+ *
+ * Two entries can say it, tried in that order:
+ *
+ *   1. whoever last moved it to Ready for QA — the hand-off, the moment a
+ *      developer declared the build finished and asked for it to be checked;
+ *   2. otherwise whoever last moved it to In Progress — the build itself, for
+ *      work that reached QA some other way.
+ *
+ * Most recent first, so work built, reopened and built again by somebody else
+ * goes back to whoever built it last: the cycle being reopened, rather than the
+ * first one ever run.
+ *
+ * Three things then have to be true of that person, or the work stays where it
+ * is and this answers null. They must still do development, because somebody
+ * who has since moved to testing is not who to hand a build back to. They must
+ * still be active. And they must still be a member of the project — which is
+ * not politeness: `updateIssue` refuses an assignee who is not one, so writing
+ * one here would create exactly the state the rest of Prio rejects.
+ */
+export async function developerToReturnWorkTo(
+  db: Db,
+  params: { issueId: string; projectId: string },
+): Promise<string | null> {
+  const entries = await db.activityLogEntry.findMany({
+    where: {
+      issueId: params.issueId,
+      field: "status",
+      newValue: { in: ["IN_REVIEW", "IN_PROGRESS"] },
+    },
+    select: { actorId: true, newValue: true },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const candidates = [
+    entries.find((entry) => entry.newValue === "IN_REVIEW")?.actorId,
+    entries.find((entry) => entry.newValue === "IN_PROGRESS")?.actorId,
+  ];
+
+  for (const actorId of candidates) {
+    if (!actorId) continue;
+    if (await stillBuildsOnProject(db, actorId, params.projectId)) {
+      return actorId;
+    }
+  }
+  return null;
+}
+
+/** Still active, still on the project, and still doing development work. */
+async function stillBuildsOnProject(
+  db: Db,
+  userId: string,
+  projectId: string,
+): Promise<boolean> {
+  const person = await db.user.findFirst({
+    where: {
+      id: userId,
+      isActive: true,
+      projectMemberships: { some: { projectId } },
+    },
+    select: {
+      role: true,
+      teamMemberships: {
+        where: { team: { slug: { in: [...WORK_TEAM_SLUGS] } } },
+        select: { team: { select: { slug: true } } },
+      },
+    },
+  });
+  if (!person) return false;
+
+  /* The same derivation every other surface uses, so "does development work"
+     cannot come to mean something different here — and a full stack developer
+     qualifies for the same reason they build everywhere else. */
+  return doesDeveloperWork(
+    workRoleFromTeams(
+      person.role,
+      person.teamMemberships.map((row) => row.team.slug),
+    ),
+  );
+}
+
+/**
+ * What to tell the developer a reopened issue has gone back to.
+ *
+ * Testing has looked at the build and sent it back, so this is an assignment
+ * notice: the work is theirs again and there is something to do. The actor's
+ * name is already rendered in front of it, as everywhere else here.
+ */
+export function reopenedMessage(params: {
+  issueKey: string;
+  issueTitle: string;
+  projectName?: string;
+}): string {
+  return (
+    `reopened ${params.issueKey} and sent it back to you — ` +
+    `${params.issueTitle}${inProject(params.projectName)}`
+  );
 }
 
 /** Unread notification count for the chrome badge. */
@@ -341,7 +552,9 @@ export async function projectTesterIds(
       projectId,
       user: {
         isActive: true,
-        teamMemberships: { some: { team: { slug: TESTING_TEAM_SLUG } } },
+        teamMemberships: {
+          some: { team: { slug: { in: [...QA_TEAM_SLUGS] } } },
+        },
       },
     },
     select: { userId: true },

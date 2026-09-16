@@ -5,11 +5,16 @@ import { useRef, useState } from "react";
 import { Avatar, Button } from "@/components/ui/primitives";
 import { Dialog } from "@/components/ui/Dialog";
 import { SearchSelect } from "@/components/admin/SearchSelect";
-import { StatusPill } from "@/components/ui/Indicators";
+import { IssueKey, StatusPill } from "@/components/ui/Indicators";
 import { useToast } from "@/components/ui/Toast";
 import { IconMyWork } from "@/components/ui/Icon";
 import { STATUS_LABEL, WORK_ROLE_LABEL } from "@/lib/domain";
 import { assignWork, laneIssues, laneMembers } from "@/server/workStatus";
+import {
+  applyBacklogAllocation,
+  previewBacklogAllocation,
+} from "@/server/backlogAssignment";
+import type { BacklogPlan } from "@/lib/backlogAllocation";
 import { WORK_LANE_LABEL } from "@/lib/workLanes";
 import type {
   WorkLane,
@@ -55,7 +60,18 @@ export function WorkStatusCard({ data }: { data: WorkStatusData }) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  /* Auto-assignment has its own dialog, its own project and its own plan. It
+     sits beside the two lanes rather than inside them: dealing a backlog out in
+     bulk and choosing one person for one issue are different acts, and the
+     manual dialog is deliberately left exactly as it was. */
+  const [autoOpen, setAutoOpen] = useState(false);
+  const [autoProjectId, setAutoProjectId] = useState("");
+  const [plan, setPlan] = useState<BacklogPlan | null>(null);
+  const [planning, setPlanning] = useState(false);
+  const [applying, setApplying] = useState(false);
+
   const latestProject = useRef("");
+  const latestAutoProject = useRef("");
 
   const current: WorkStatusLane | null =
     lane === "QA" ? data.qa : lane === "DEVELOPER" ? data.developer : null;
@@ -129,6 +145,62 @@ export function WorkStatusCard({ data }: { data: WorkStatusData }) {
     router.refresh();
   }
 
+  function openAuto() {
+    latestAutoProject.current = "";
+    setAutoProjectId("");
+    setPlan(null);
+    setAutoOpen(true);
+  }
+
+  /** Choosing a project asks the server what it would do, and shows it. */
+  async function chooseAutoProject(nextId: string) {
+    latestAutoProject.current = nextId;
+
+    setAutoProjectId(nextId);
+    setPlan(null);
+    if (!nextId) return;
+
+    setPlanning(true);
+    const result = await previewBacklogAllocation({ projectId: nextId });
+
+    /* A different project was chosen while this was in flight. */
+    if (latestAutoProject.current !== nextId) return;
+    setPlanning(false);
+
+    if (!result.ok) {
+      toast(result.error, "error");
+      return;
+    }
+    setPlan(result.data);
+  }
+
+  /**
+   * Applying recomputes the plan on the server rather than posting this one
+   * back to it, so what gets written is what was true at the moment of writing
+   * — and so this dialog cannot be used to assign whatever it likes.
+   */
+  async function applyPlan() {
+    if (!autoProjectId) return;
+
+    setApplying(true);
+    const result = await applyBacklogAllocation({ projectId: autoProjectId });
+    setApplying(false);
+
+    if (!result.ok) {
+      toast(result.error, "error");
+      return;
+    }
+
+    const { assigned } = result.data;
+    toast(
+      assigned === 0
+        ? "Nothing was left to assign."
+        : `${assigned} ${assigned === 1 ? "issue" : "issues"} assigned`,
+    );
+    setAutoOpen(false);
+    router.refresh();
+  }
+
   return (
     <>
       <div className="prio-kpi prio-workstatus" data-tone="brand">
@@ -162,6 +234,20 @@ export function WorkStatusCard({ data }: { data: WorkStatusData }) {
             </span>
             <span className="prio-workstatus__count">
               {data.developer.count}
+            </span>
+          </Button>
+
+          {/* A third way to hand work out, beside the two that choose one
+              person for one issue rather than instead of them. */}
+          <Button
+            variant="ghost"
+            size="sm"
+            block
+            onClick={openAuto}
+            disabled={data.developer.count === 0}
+          >
+            <span className="prio-workstatus__btntext">
+              Auto-assign backlog
             </span>
           </Button>
         </div>
@@ -311,6 +397,114 @@ export function WorkStatusCard({ data }: { data: WorkStatusData }) {
               })()}
             </p>
           ) : null}
+        </Dialog>
+      ) : null}
+
+      {autoOpen ? (
+        <Dialog
+          open
+          onClose={() => setAutoOpen(false)}
+          title="Auto-assign backlog"
+          size="lg"
+          busy={applying}
+          description="Deals a project's backlog out across the developers on it: most urgent work first, each issue to whoever has the lightest queue at the time."
+          footer={
+            <>
+              <Button
+                variant="ghost"
+                onClick={() => setAutoOpen(false)}
+                disabled={applying}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                onClick={applyPlan}
+                loading={applying}
+                disabled={applying || !plan || plan.allocations.length === 0}
+              >
+                {plan && plan.allocations.length > 0
+                  ? `Assign ${plan.allocations.length} ${
+                      plan.allocations.length === 1 ? "issue" : "issues"
+                    }`
+                  : "Assign"}
+              </Button>
+            </>
+          }
+        >
+          <div className="prio-field">
+            <label className="prio-label" htmlFor="autoassign-project">
+              Project
+            </label>
+            <SearchSelect
+              id="autoassign-project"
+              ariaLabel="Search projects"
+              placeholder="Search projects by name or key…"
+              emptyHint="No project has work waiting for a developer."
+              /* The projects with work waiting for a developer — the same list
+                 the manual dialog offers, because it is the same question. */
+              options={data.developer.projects.map((project) => ({
+                id: project.id,
+                label: project.name,
+                meta: `${project.key} · ${project.count} waiting`,
+                keywords: project.key,
+              }))}
+              selected={autoProjectId ? [autoProjectId] : []}
+              onChange={(next) => void chooseAutoProject(next[0] ?? "")}
+            />
+          </div>
+
+          {/* The plan is shown before anything is written, because an
+              assignment nobody could inspect first is just an opaque write. */}
+          {!autoProjectId ? (
+            <p className="prio-text-muted">
+              Choose a project to see what would be assigned, before any of it
+              is.
+            </p>
+          ) : planning ? (
+            <p className="prio-text-muted">Working out the plan…</p>
+          ) : plan && plan.allocations.length > 0 ? (
+            <>
+              <p className="prio-hint">
+                {plan.waiting > plan.allocations.length
+                  ? `${plan.waiting} backlog issues are waiting. The ${plan.allocations.length} most urgent are placed in this run.`
+                  : `${plan.allocations.length} backlog ${
+                      plan.allocations.length === 1 ? "issue is" : "issues are"
+                    } waiting, and all of them are placed here.`}
+              </p>
+
+              <ul className="prio-autoassign">
+                {plan.allocations.map((row) => (
+                  <li key={row.issueId} className="prio-autoassign__row">
+                    <span className="prio-autoassign__issue">
+                      <IssueKey issueKey={row.issueKey} />
+                      <span className="prio-truncate">{row.issueTitle}</span>
+                    </span>
+                    <span className="prio-autoassign__who">
+                      {row.assigneeName}
+                      {/* The queue this issue moved, which is the whole of why
+                          it went to this person rather than another. */}
+                      <span className="prio-text-muted">
+                        {" "}
+                        {row.workloadBefore} → {row.workloadAfter}
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+
+              <p className="prio-hint">
+                {plan.totals
+                  .map((person) => `${person.name} +${person.added}`)
+                  .join(" · ")}
+              </p>
+            </>
+          ) : (
+            <p className="prio-text-muted">
+              Nothing in this project&rsquo;s backlog is waiting for a
+              developer, or nobody on the project does development work.
+            </p>
+          )}
         </Dialog>
       ) : null}
     </>

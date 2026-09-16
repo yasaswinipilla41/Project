@@ -13,7 +13,7 @@ import {
   TEST_RESULT_LABEL,
   needsDeveloperAttention,
 } from "@/lib/domain";
-import { recordFieldChanges } from "@/server/activity";
+import { notify, recordFieldChanges } from "@/server/activity";
 import { sendIssueMailInBackground } from "@/server/mailer";
 import { fieldErrors, type FieldErrors } from "@/server/schemas";
 
@@ -109,6 +109,11 @@ export async function recordTestResult(
     const now = new Date();
     const previous = issue.testResult;
 
+    /* Who was actually told, so the email below addresses the same people the
+       in-app notice reached rather than working the audience out a second
+       time and risking the two disagreeing. */
+    let told: string[] = [];
+
     await prisma.$transaction(async (tx) => {
       await tx.issue.update({
         where: { id: issueId },
@@ -146,49 +151,54 @@ export async function recordTestResult(
         audience.add(issue.assigneeId);
       }
       if (needsDeveloperAttention(result)) audience.add(issue.reporterId);
-      audience.delete(user.id);
 
-      if (audience.size > 0) {
-        await tx.notification.createMany({
-          data: [...audience].map((userId) => ({
-            userId,
-            type: "TEST_RESULT" as const,
-            actorId: user.id,
-            issueId,
-            message: `marked ${issue.key} as ${TEST_RESULT_LABEL[result].toLowerCase()}`,
-          })),
-        });
-      }
+      /*
+       * Through `notify` rather than writing the rows here.
+       *
+       * A verdict is QA's own workflow activity, and `notify` is where the rule
+       * about who hears about one lives — including that a full stack member's
+       * Developer or QA activity is reported to the administrators. It drops
+       * the actor and de-duplicates exactly as this set did, so the audience is
+       * unchanged for everybody else; what it adds is that this path cannot
+       * drift away from the rest of the workflow's.
+       */
+      told = await notify(tx, {
+        issueId,
+        actorId: user.id,
+        userIds: [...audience],
+        type: "TEST_RESULT",
+        workflowActivity: true,
+        message: `marked ${issue.key} as ${TEST_RESULT_LABEL[result].toLowerCase()}`,
+      });
     });
 
     /*
-     * Email mirrors the in-app audience, and only for a verdict that asks for
-     * action. `sendIssueMailInBackground` already swallows its own failures,
-     * so a dead SMTP host cannot fail a QA verdict that is already committed.
+     * Email mirrors the in-app audience exactly — `told` is who received the
+     * notification — and only for a verdict that asks for action. Reading it
+     * back rather than recomputing is what keeps the two channels from
+     * contradicting each other when the audience rule decides something.
+     *
+     * `sendIssueMailInBackground` already swallows its own failures, so a dead
+     * SMTP host cannot fail a QA verdict that is already committed.
      */
-    if (needsDeveloperAttention(result)) {
-      const ids = [issue.assigneeId, issue.reporterId].filter(
-        (id): id is string => Boolean(id) && id !== user.id,
-      );
-      if (ids.length > 0) {
-        const recipients = await prisma.user.findMany({
-          where: {
-            id: { in: [...new Set(ids)] },
-            isActive: true,
-            emailNotificationsEnabled: true,
-          },
-          select: { email: true, name: true },
-        });
+    if (needsDeveloperAttention(result) && told.length > 0) {
+      const recipients = await prisma.user.findMany({
+        where: {
+          id: { in: told },
+          isActive: true,
+          emailNotificationsEnabled: true,
+        },
+        select: { email: true, name: true },
+      });
 
-        if (recipients.length > 0) {
-          sendIssueMailInBackground(recipients, {
-            issueKey: issue.key,
-            issueTitle: issue.title,
-            projectName: issue.project.name,
-            actorName: user.name,
-            event: `marked this ${TEST_RESULT_LABEL[result].toLowerCase()} in testing`,
-          });
-        }
+      if (recipients.length > 0) {
+        sendIssueMailInBackground(recipients, {
+          issueKey: issue.key,
+          issueTitle: issue.title,
+          projectName: issue.project.name,
+          actorName: user.name,
+          event: `marked this ${TEST_RESULT_LABEL[result].toLowerCase()} in testing`,
+        });
       }
     }
 

@@ -67,6 +67,17 @@ function snipWindow(page: Page) {
   return page.getByRole("dialog", { name: "Snip Tool" });
 }
 
+/**
+ * The snips taken in this session.
+ *
+ * Scoped to the snips list rather than every `<li>` in the window: the sources
+ * read off the page are a list as well, so an unscoped lookup counts a dozen
+ * navigation entries as snips.
+ */
+function snipRows(snip: Locator) {
+  return snip.locator('[class*="snipList"] > li');
+}
+
 /** Drags out an area on the capture, as a fraction of its shown size. */
 async function dragArea(
   page: Page,
@@ -119,9 +130,14 @@ async function openAnIssue(page: Page) {
   const key = /\/issues\/([a-z]+-\d+)/i.exec(page.url())![1]!.toUpperCase();
   const issue = await prisma.issue.findUniqueOrThrow({
     where: { key },
-    select: { id: true, project: { select: { name: true } } },
+    select: { id: true, project: { select: { name: true, key: true } } },
   });
-  return { key, issueId: issue.id, projectName: issue.project.name };
+  return {
+    key,
+    issueId: issue.id,
+    projectName: issue.project.name,
+    projectKey: issue.project.key,
+  };
 }
 
 async function openScreenshot(page: Page) {
@@ -168,19 +184,33 @@ test.describe("Snip Tool — screenshot workflow on an issue", () => {
       ),
     ).toBe(0);
 
-    // The sources are there to choose from, and this tab is chosen.
-    for (const name of [
-      "This tab",
-      "Home",
-      "My Work",
-      "Projects",
-      "Issues",
-      "Reports",
-      "Another tab or window",
-    ]) {
-      await expect(snip.getByRole("radio", { name: new RegExp(`^${name}`) })).toHaveCount(1);
+    /* The two that are offered whatever the page turns out to hold, and this
+       tab is the one chosen. */
+    for (const name of ["This tab", "Another tab or window"]) {
+      await expect(
+        snip.getByRole("radio", { name: new RegExp(`^${name}`) }),
+      ).toHaveCount(1);
     }
     await expect(snip.getByRole("radio", { name: /^This tab/ })).toBeChecked();
+
+    /*
+     * Everything else is read off the page rather than listed in the source.
+     * These are the sidebar's own entries, under the name the sidebar gives
+     * itself — `<nav aria-label="Primary">` — and nothing in the Snip Tool has
+     * heard of any of them, so finding them here is the detection working.
+     */
+    await expect(snip.getByText("Primary", { exact: true })).toBeVisible();
+    for (const name of ["Home", "Projects", "Issues", "Reports"]) {
+      await expect(
+        snip.getByRole("radio", { name: new RegExp(`^${name}`) }),
+      ).toHaveCount(1);
+    }
+
+    /* And a page this reader does not have is not offered: My Work is absent
+       from an administrator's sidebar, so it is absent here. The list this
+       replaced offered it to everybody, because it was typed in rather than
+       looked up. */
+    await expect(snip.getByRole("radio", { name: /^My Work/ })).toHaveCount(0);
     await expect(snip.getByRole("button", { name: "New snip" })).toBeEnabled();
 
     // Minimise, restore, maximise, restore — the choice survives all of it.
@@ -203,6 +233,50 @@ test.describe("Snip Tool — screenshot workflow on an issue", () => {
     // Close still closes.
     await snip.getByRole("button", { name: "Close Snip Tool" }).click();
     await expect(snip).toBeHidden();
+
+    expect(consoleErrors).toEqual([]);
+  });
+
+  test("the sources are read off the page, and follow it when the tab moves", async ({
+    page,
+  }) => {
+    const { consoleErrors } = watchForProblems(page);
+    const { projectKey } = await openAnIssue(page);
+    await openScreenshot(page);
+    const snip = snipWindow(page);
+
+    // The sidebar, under the name the sidebar gives itself.
+    await expect(snip.getByText("Primary", { exact: true })).toBeVisible();
+    // A project's own tab strip is not on this page, so it is not offered.
+    await expect(
+      snip.getByText("Project views", { exact: true }),
+    ).toHaveCount(0);
+
+    /*
+     * The breadcrumb on an issue page leads to the project itself, and is a
+     * landmark of its own — so it is offered too. Choosing it is an ordinary
+     * source choice, and it is the only thing here that navigates.
+     */
+    const projectPath = `/projects/${projectKey.toLowerCase()}`;
+    await snip
+      .locator("label")
+      .filter({ hasText: new RegExp(`${projectPath}$`) })
+      .click();
+    /* The project's base path redirects to its Summary view. Either is inside
+       the project, which is what this is about. */
+    await expect(page).toHaveURL(new RegExp(projectPath));
+
+    /*
+     * A project view carries a second navigation landmark,
+     * `<nav aria-label="Project views">`, and the Snip Tool has never heard of
+     * it or of any of its tabs. It appears because the page now has it — which
+     * is also why it was correctly absent above, and absent on Welcome, where
+     * `ProjectShellChrome` deliberately hides the strip.
+     */
+    await expect(snip.getByText("Project views", { exact: true })).toBeVisible();
+    await expect(
+      snip.getByRole("radio", { name: new RegExp(`${projectPath}/summary`) }),
+    ).toHaveCount(1);
 
     expect(consoleErrors).toEqual([]);
   });
@@ -310,7 +384,7 @@ test.describe("Snip Tool — screenshot workflow on an issue", () => {
     expect(names).toContain(original.replace(/\.png$/, "-annotated.png"));
 
     // Both are rows in the window, and both say where they went.
-    await expect(snip.locator("li")).toHaveCount(2);
+    await expect(snipRows(snip)).toHaveCount(2);
 
     expect(consoleErrors).toEqual([]);
   });
@@ -345,7 +419,7 @@ test.describe("Snip Tool — screenshot workflow on an issue", () => {
     await expect.poll(() => prisma.attachment.count({ where: { issueId } })).toBe(before + 2);
 
     // Two rows, two different files, both on that issue and no other.
-    const rows = snip.locator("li");
+    const rows = snipRows(snip);
     await expect(rows).toHaveCount(2);
     const saved = await prisma.attachment.findMany({
       where: { issueId },
@@ -392,7 +466,7 @@ test.describe("Snip Tool — screenshot workflow on an issue", () => {
     await page.keyboard.press("Escape");
     await expect(selector).toBeHidden();
     await expect(snip).toBeVisible();
-    await expect(snip.locator("li")).toHaveCount(0);
+    await expect(snipRows(snip)).toHaveCount(0);
   });
 });
 
@@ -456,7 +530,7 @@ test.describe("Snip Tool — on the Create form", () => {
     expect(names.filter((name) => /-annotated\.png/.test(name ?? ""))).toHaveLength(1);
 
     /* Saving a staged snip again writes over its row rather than adding one. */
-    const first = (await snip.locator("li").first().locator("[title]").first().getAttribute("title"))!;
+    const first = (await snipRows(snip).first().locator("[title]").first().getAttribute("title"))!;
     await snip.getByRole("button", { name: `Edit ${first}` }).click();
     editor = page.getByRole("dialog", { name: "Edit screenshot" });
     await editor.getByRole("button", { name: "Save", exact: true }).click();

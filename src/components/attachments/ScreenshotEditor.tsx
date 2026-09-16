@@ -132,9 +132,22 @@ const HIGHLIGHT_ALPHA = 0.4;
 
 const WIDTHS = [2, 4, 6, 10, 16];
 
-/** Downscale ceiling for the working canvas — keeps a phone-camera photo or
- * a 4K capture fast to draw on without visibly degrading a normal screenshot. */
-const MAX_DIMENSION = 1600;
+/*
+ * There is deliberately no downscale ceiling here.
+ *
+ * The working canvas used to be capped at 1600px on its longest side, and that
+ * made this the one lossy step in an otherwise lossless pipeline: the capture
+ * is taken at the source's own resolution, the area is cropped in source
+ * pixels, PNG is lossless, and the upload streams the bytes untouched — and
+ * then every snip that passed through this editor was resampled down on load
+ * and saved from the smaller canvas. A 4K capture came back 1600px wide.
+ *
+ * The canvas is the picture's own size now. How big it *looks* is a CSS
+ * question — `zoomPercent` on the stack below — and every tool already
+ * converts pointer coordinates through `canvas.width / rect.width`, so the
+ * displayed size has never decided anything about the pixels. What is saved is
+ * what was captured.
+ */
 
 /** Bounds memory: each entry is a pair of PNG data URLs. */
 const MAX_HISTORY = 20;
@@ -474,12 +487,9 @@ export function ScreenshotEditor({
       .then((img) => {
         if (cancelled) return;
 
-        const scale = Math.min(
-          1,
-          MAX_DIMENSION / Math.max(img.naturalWidth, img.naturalHeight),
-        );
-        const width = Math.max(1, Math.round(img.naturalWidth * scale));
-        const height = Math.max(1, Math.round(img.naturalHeight * scale));
+        /* The picture's own pixels, one for one. */
+        const width = Math.max(1, img.naturalWidth);
+        const height = Math.max(1, img.naturalHeight);
 
         const base = baseCanvasRef.current;
         const annotation = annotationCanvasRef.current;
@@ -520,13 +530,33 @@ export function ScreenshotEditor({
     };
   }, [open, source]);
 
-  function pushHistory() {
+  /**
+   * Remembers the current state.
+   *
+   * `baseChanged` says whether the photo layer itself moved, which only a crop
+   * does — every other tool paints on the annotation layer alone. When it has
+   * not, the previous base snapshot is reused rather than re-encoded, so
+   * twenty undo steps of a 4K screenshot share one copy of the photo instead
+   * of keeping twenty of it. That is what makes holding the capture at its own
+   * resolution affordable, and why removing the downscale above costs nothing.
+   *
+   * The dimensions are compared as well as the flag: a reused snapshot has to
+   * describe a canvas of the same size, or restoring it would stretch.
+   */
+  function pushHistory(baseChanged = false) {
     const base = baseCanvasRef.current;
     const annotation = annotationCanvasRef.current;
     if (!base || !annotation) return;
 
+    const previous = history.entries[history.index];
+    const reusable =
+      !baseChanged &&
+      previous !== undefined &&
+      previous.width === base.width &&
+      previous.height === base.height;
+
     const entry: HistoryEntry = {
-      base: base.toDataURL("image/png"),
+      base: reusable ? previous.base : base.toDataURL("image/png"),
       annotation: annotation.toDataURL("image/png"),
       width: base.width,
       height: base.height,
@@ -932,7 +962,8 @@ export function ScreenshotEditor({
     setCropRect(null);
     if (!rect || !performCrop(rect)) return;
     setTool("pen");
-    pushHistory();
+    // A crop is the one operation that rewrites the photo layer.
+    pushHistory(true);
   }
 
   /**

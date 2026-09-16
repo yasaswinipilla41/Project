@@ -156,9 +156,10 @@ describe("My Work → Completed", () => {
     expect((await completedFor(TESTER)).counted).not.toContain(raised.data.id);
   });
 
-  it("does not count work somebody merely raised", async () => {
-    /* Raised by the tester, finished by an administrator on the developer's
-       behalf. The tester raised it and did nothing else with it. */
+  it("does not count work somebody merely raised, or merely holds", async () => {
+    /* Raised by the tester, assigned to the developer, and finished by an
+       administrator. The tester only raised it; the developer only holds it.
+       Neither of those is work either of them did to it. */
     const developer = await userByEmail(DEVELOPER);
     await actAs(TESTER);
     const raised = await createIssue({
@@ -177,9 +178,12 @@ describe("My Work → Completed", () => {
     expect(closed.ok).toBe(true);
 
     expect((await completedFor(TESTER)).counted).not.toContain(raised.data.id);
-    // Still the developer's: it is assigned to them and it is done.
-    expect((await completedFor(DEVELOPER)).counted).toContain(raised.data.id);
-    // And the administrator's, who is the one who closed it.
+    /* Nor the developer's. It is assigned to them and it is done, and neither
+       of those is something they did — they never moved it. Holding finished
+       work is not finishing it, which is exactly what crediting the assignee
+       got wrong. */
+    expect((await completedFor(DEVELOPER)).counted).not.toContain(raised.data.id);
+    // The administrator's alone: they are the one who closed it.
     expect((await completedFor(ADMIN)).counted).toContain(raised.data.id);
   });
 

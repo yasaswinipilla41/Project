@@ -1089,3 +1089,49 @@ a.prio-worktile:hover {
 .prio-workstatus button:disabled .prio-workstatus__count {
   color: inherit;
 }
+
+/* ------------------------------------------------ auto-assigned backlog
+
+   The plan an administrator is shown before any of it is written: one row per
+   issue, who it goes to, and what that does to their queue. Bounded and
+   scrollable so a full run does not push the dialog's footer off the screen. */
+.prio-autoassign {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 320px;
+  overflow-y: auto;
+  margin: 0 0 var(--prio-space-3);
+  padding: 0;
+  list-style: none;
+}
+
+.prio-autoassign__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--prio-space-3);
+  min-width: 0;
+  padding: var(--prio-space-2);
+  border-bottom: 1px solid var(--prio-border-subtle);
+}
+
+.prio-autoassign__row:last-child {
+  border-bottom: none;
+}
+
+.prio-autoassign__issue {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  min-width: 0;
+  font-size: var(--prio-text-sm);
+}
+
+.prio-autoassign__who {
+  flex-shrink: 0;
+  font-size: var(--prio-text-sm);
+  font-weight: 600;
+  color: var(--prio-text-primary);
+  white-space: nowrap;
+}

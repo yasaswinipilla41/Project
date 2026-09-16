@@ -9,39 +9,43 @@ import type { CompletedByPerson } from "@/components/projects/CompletedWork";
  * same query with a different projection.
  *
  * Completed means DONE, the definition every other completed figure in Prio
- * uses. What makes it *mine* is the part of the workflow the person actually
- * carried, read from the issue row and the append-only activity trail — never
- * from a request, and never from merely being near the work:
+ * uses. What makes it *mine* is something I actually did to it, read from the
+ * append-only activity trail and from nowhere else — never from a request:
  *
- *   - it is assigned to me and it is done — work I hold that finished, which
- *     includes work handed back to the tester who raised it and closed;
- *   - I moved it to Done — the tester's verdict, which `completersFor` above
+ *   - I moved it to Done — the tester's verdict, which `completersFor` below
  *     already reads as "who completed it";
  *   - I moved it to Ready for QA and it has since been completed — the
  *     developer's hand-off. After Ready for QA the work goes back to the
  *     tester, so without this arm a developer's finished work would never
  *     count as theirs.
  *
- * Reporting an issue, commenting on it or belonging to its project is none of
- * these, so none of them counts. It asks what each person *did* rather than
- * which role they hold, so there is no role name in here to keep in step.
+ * Holding the issue is deliberately not one of them, and used to be.
+ * `assigneeId` answers a different question — who has it *now* — and the two
+ * are routinely different people: work is reassigned, handed on, and closed by
+ * somebody else entirely. Counting the current holder credited people with work
+ * they never touched, so an issue assigned to a developer and closed by an
+ * administrator appeared on that developer's Completed tile. It is the same
+ * mistake `loadCompletedByPerson` below exists to avoid, and this is the
+ * fragment that was still making it.
+ *
+ * Reporting an issue, commenting on it or belonging to its project are not
+ * among them either. Asking what each person *did* is also what keeps any role
+ * name out of here: a developer, a tester and a full stack developer are each
+ * credited for the half of the workflow they carried, without this having to
+ * know which of them is asking.
+ *
  * Callers add the reader's `issueScope`; this narrows, it never widens.
  */
 export function completedByFilter(userIds: string[]): Prisma.IssueWhereInput {
   return {
     status: "DONE",
-    OR: [
-      { assigneeId: { in: userIds } },
-      {
-        activity: {
-          some: {
-            field: "status",
-            newValue: { in: ["DONE", "IN_REVIEW"] },
-            actorId: { in: userIds },
-          },
-        },
+    activity: {
+      some: {
+        field: "status",
+        newValue: { in: ["DONE", "IN_REVIEW"] },
+        actorId: { in: userIds },
       },
-    ],
+    },
   };
 }
 

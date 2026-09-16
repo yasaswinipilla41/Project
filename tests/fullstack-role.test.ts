@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   DEVELOPMENT_TEAM_SLUG,
+  FULLSTACK_TEAM_SLUG,
   TESTING_TEAM_SLUG,
   workRoleOf,
 } from "@/lib/authz";
@@ -33,6 +34,21 @@ const TESTER = "priya.nair@symbiosystech.com";
 const DEVELOPER = "kiran.das@symbiosystech.com";
 /** On both teams. */
 const FULLSTACK = "meera.pillai@symbiosystech.com";
+/**
+ * On the Full Stack roster alone, and on neither half of it.
+ *
+ * A MEMBER deliberately: `workRoleOf` answers ADMIN for an administrator
+ * whatever teams they hold, so an admin here would pass the capability cases
+ * for the wrong reason and fail the role case outright.
+ */
+const EXPLICIT_FULLSTACK = "vikram.shetty@symbiosystech.com";
+
+/** Proper names for the rosters, for the one that may not exist yet. */
+const TEAM_NAMES: Record<string, string> = {
+  [TESTING_TEAM_SLUG]: "Testing",
+  [DEVELOPMENT_TEAM_SLUG]: "Development",
+  [FULLSTACK_TEAM_SLUG]: "Full Stack Developers",
+};
 
 const createdIssueIds: string[] = [];
 const createdSprintIds: string[] = [];
@@ -47,9 +63,17 @@ async function userId(email: string): Promise<string> {
 }
 
 async function join(email: string, slug: string): Promise<void> {
+  /* Find *or create* the roster. The Full Stack team is made on demand by
+     `assignFullStackDevelopers`, so an installation that has never had one
+     should grow it here rather than failing the fixture. */
   const [user, team] = await Promise.all([
     prisma.user.findUniqueOrThrow({ where: { email }, select: { id: true } }),
-    prisma.team.findUniqueOrThrow({ where: { slug }, select: { id: true } }),
+    prisma.team.upsert({
+      where: { slug },
+      update: {},
+      create: { slug, name: TEAM_NAMES[slug] ?? slug },
+      select: { id: true },
+    }),
   ]);
   const row = await prisma.teamMember.upsert({
     where: { teamId_userId: { teamId: team.id, userId: user.id } },
@@ -118,10 +142,16 @@ beforeAll(async () => {
   await join(FULLSTACK, TESTING_TEAM_SLUG);
   await join(FULLSTACK, DEVELOPMENT_TEAM_SLUG);
 
+  /* Somebody whose only claim to the role is the Full Stack row itself: on
+     neither half, so nothing else can be producing the answer. */
+  await leaveFor(EXPLICIT_FULLSTACK, TESTING_TEAM_SLUG);
+  await leaveFor(EXPLICIT_FULLSTACK, DEVELOPMENT_TEAM_SLUG);
+  await join(EXPLICIT_FULLSTACK, FULLSTACK_TEAM_SLUG);
+
   /* Everybody involved must be able to open the project they are working in;
      team membership grants no project access on its own. */
   const project = await projectByKey("ENG");
-  for (const email of [TESTER, DEVELOPER, FULLSTACK]) {
+  for (const email of [TESTER, DEVELOPER, FULLSTACK, EXPLICIT_FULLSTACK]) {
     await prisma.projectMember.upsert({
       where: {
         projectId_userId: { projectId: project.id, userId: await userId(email) },
@@ -177,6 +207,77 @@ describe("who a full stack developer is", () => {
     expect(role).toBe("FULLSTACK");
     expect(role).not.toBe("QA");
     expect(role).not.toBe("DEVELOPER");
+  });
+});
+
+describe("the Full Stack membership on its own", () => {
+  /*
+   * The roster is a membership now, not only a combination. Somebody holding
+   * it and neither half has to get the whole role — if the capabilities below
+   * only held for people on Development and Testing, the new roster would be a
+   * label that granted nothing.
+   */
+
+  it("resolves to FULLSTACK without either half", async () => {
+    const person = await prisma.user.findUniqueOrThrow({
+      where: { email: EXPLICIT_FULLSTACK },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        image: true,
+        role: true,
+        jobTitle: true,
+        isActive: true,
+      },
+    });
+
+    /* Neither half, so the Full Stack row is the only thing that could be
+       producing the answer. */
+    expect(
+      await prisma.teamMember.count({
+        where: {
+          userId: person.id,
+          team: { slug: { in: [TESTING_TEAM_SLUG, DEVELOPMENT_TEAM_SLUG] } },
+        },
+      }),
+    ).toBe(0);
+
+    expect(await workRoleOf(person)).toBe("FULLSTACK");
+  });
+
+  it("carries the QA half — raising work, and verifying it", async () => {
+    await actAs(EXPLICIT_FULLSTACK);
+    const project = await projectByKey("ENG");
+
+    const raised = await createIssue({
+      projectId: project.id,
+      type: "BUG",
+      title: `Explicit full stack files work ${Date.now()}`,
+      description: "x",
+      priority: "MEDIUM",
+    });
+    expect(raised.ok, raised.ok ? "" : raised.error).toBe(true);
+    if (raised.ok) createdIssueIds.push(raised.data.id);
+
+    const issueId = await anIssue("Explicit full stack verifies", {
+      assigneeId: await userId(EXPLICIT_FULLSTACK),
+      status: "IN_REVIEW",
+    });
+
+    await actAs(EXPLICIT_FULLSTACK);
+    expect((await updateIssue({ issueId, status: "IN_QA" })).ok).toBe(true);
+    expect((await updateIssue({ issueId, status: "DONE" })).ok).toBe(true);
+  });
+
+  it("carries the developer half — claiming work and handing it back", async () => {
+    const issueId = await anIssue("Explicit full stack claims", {
+      status: "TODO",
+    });
+
+    await actAs(EXPLICIT_FULLSTACK);
+    expect((await claimIssue({ issueId })).ok).toBe(true);
+    expect((await updateIssue({ issueId, status: "IN_REVIEW" })).ok).toBe(true);
   });
 });
 

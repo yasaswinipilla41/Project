@@ -2,8 +2,10 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
   accessibleProjectIds,
-  DEVELOPMENT_TEAM_SLUG,
+  DEVELOPER_TEAM_SLUGS,
+  QA_TEAM_SLUGS,
   TESTING_TEAM_SLUG,
+  WORK_TEAM_SLUGS,
   workRoleFromTeams,
 } from "@/lib/authz";
 import {
@@ -38,23 +40,33 @@ import type { CurrentUser } from "@/lib/session";
  * question is being asked of a column in a query rather than of a value in
  * hand. An administrator does everything and is therefore never one of these.
  *
- *   not QA work         a MEMBER who is not on Testing
- *   not developer work  a MEMBER who is on Testing and not on Development
+ *   not QA work         a MEMBER on neither Testing nor Full Stack
+ *   not developer work  a MEMBER on Testing, and on neither Development nor
+ *                       Full Stack
  *
- * The second reads oddly until you remember the long-standing default: a
- * member on neither team is a developer, so the only member who does not build
- * is one who is explicitly on Testing alone.
+ * The second reads oddly until you remember the long-standing default: a member
+ * on no team at all is a developer, so the only member who does not build is one
+ * who is explicitly on the testing side and nowhere else.
+ *
+ * Full Stack appears in both halves because holding it is doing both jobs, so
+ * it is the one membership that keeps somebody *out* of both of these.
  */
 function doesNotDoLaneWork(lane: WorkLane): Prisma.UserWhereInput {
-  const onTesting = {
-    teamMemberships: { some: { team: { slug: TESTING_TEAM_SLUG } } },
+  const doesQaWork = {
+    teamMemberships: { some: { team: { slug: { in: [...QA_TEAM_SLUGS] } } } },
   };
-  const onDevelopment = {
-    teamMemberships: { some: { team: { slug: DEVELOPMENT_TEAM_SLUG } } },
+  const doesDeveloperWork = {
+    teamMemberships: {
+      some: { team: { slug: { in: [...DEVELOPER_TEAM_SLUGS] } } },
+    },
   };
 
-  if (lane === "QA") return { role: "MEMBER", NOT: onTesting };
-  return { role: "MEMBER", ...onTesting, NOT: onDevelopment };
+  if (lane === "QA") return { role: "MEMBER", NOT: doesQaWork };
+  return {
+    role: "MEMBER",
+    teamMemberships: { some: { team: { slug: TESTING_TEAM_SLUG } } },
+    NOT: doesDeveloperWork,
+  };
 }
 
 /**
@@ -231,9 +243,7 @@ export async function listLaneMembers(
       jobTitle: true,
       role: true,
       teamMemberships: {
-        where: {
-          team: { slug: { in: [TESTING_TEAM_SLUG, DEVELOPMENT_TEAM_SLUG] } },
-        },
+        where: { team: { slug: { in: [...WORK_TEAM_SLUGS] } } },
         select: { team: { select: { slug: true } } },
       },
     },

@@ -384,9 +384,17 @@ test.describe("Administration", () => {
     }
   });
 
-  test("derives the Full Stack block from both rosters, without a third team", async ({
+  test("keeps the Full Stack roster independent of Development and Testing", async ({
     page,
   }) => {
+    /*
+     * This block used to be derived — the people on Development *and* on
+     * Testing — with adding writing both rows and removing deleting both. That
+     * made two deliberate memberships into side effects of a third, so taking
+     * somebody off this list quietly took away a Testing row that had been
+     * granted separately and for its own reasons. It is a roster in its own
+     * right now, and says so.
+     */
     await page.goto("/admin");
 
     const block = page
@@ -395,22 +403,19 @@ test.describe("Administration", () => {
         has: page.getByRole("heading", { name: /^Full Stack Developers · / }),
       });
     await expect(block).toBeVisible();
-    await expect(block).toContainText("Not a separate team");
+    await expect(block).toContainText("A membership of its own");
+    await expect(block).not.toContainText("Not a separate team");
 
-    /* Everybody it lists really is on both team rosters — it is a reading of
-       those, not a roster of its own. */
-    const names = await block
-      .locator(".prio-memberpicker__name")
-      .allInnerTexts();
-    for (const name of names) {
-      for (const team of ["Development", "Testing"]) {
-        const source = page
-          .locator(".prio-issue__section")
-          .filter({
-            has: page.getByRole("heading", { name: new RegExp(`^${team} · `) }),
-          });
-        await expect(source.getByText(name, { exact: true })).toHaveCount(1);
-      }
+    // Offered and edited like the two rosters beside it, which both remain.
+    await expect(
+      block.getByRole("button", { name: "Add members" }),
+    ).toHaveCount(1);
+    for (const team of ["Development", "Testing"]) {
+      await expect(
+        page.locator(".prio-issue__section").filter({
+          has: page.getByRole("heading", { name: new RegExp(`^${team} · `) }),
+        }),
+      ).toHaveCount(1);
     }
   });
 
@@ -524,6 +529,14 @@ test.describe("Administration", () => {
     await optionsOf("roster-issues").first().click();
     await expect(chipsOf("roster-issues")).toHaveCount(2);
 
+    /* The issues list stays open after a choice, ready for the next search,
+       and takes the room the window actually has rather than a fixed 220px —
+       so it covers the fields beneath it, as any open dropdown does. Escape
+       dismisses it, which is what the field's own `data-local-escape` is for
+       and what a person does before moving on. */
+    await page.keyboard.press("Escape");
+    await expect(optionsOf("roster-issues")).toHaveCount(0);
+
     // Members: searchable, multiple, and narrowed by the Role above.
     await dialog.locator("#team-search").click();
     const offered = await optionsOf("team-search").allInnerTexts();
@@ -533,6 +546,10 @@ test.describe("Administration", () => {
     await dialog.locator("#team-search").click();
     await optionsOf("team-search").first().click();
     await expect(chipsOf("team-search")).toHaveCount(2);
+
+    // Likewise before reaching back up to Role, which a tall list can cover.
+    await page.keyboard.press("Escape");
+    await expect(optionsOf("team-search")).toHaveCount(0);
 
     /* Switching Role changes who is offered — the admin list is a different,
        shorter set than the member list. */

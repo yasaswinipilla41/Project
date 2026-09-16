@@ -45,22 +45,33 @@ export interface AdminTeam {
 }
 
 const DEVELOPMENT_SLUG = "development";
-const TESTING_SLUG = "testing";
 
 /**
- * The full stack roster, which is not a team.
+ * The full stack roster, which is a team of its own.
  *
- * A full stack developer is somebody on Development *and* on Testing — that
- * is already how `workRoleFromTeams` answers the question everywhere else in
- * Prio. Giving Administration a third `Team` row would create a second answer
- * that could disagree with the first, so the block below is derived from the
- * two rosters that are really there and writes back to both.
+ * It used to be derived — the people on Development *and* on Testing — and the
+ * block wrote back to both. That turned two deliberate memberships into side
+ * effects of a third: adding a full stack developer enrolled them in two
+ * rosters nobody had put them on, and removing one deleted rows that had been
+ * granted separately, for their own reasons.
  *
- * The id is deliberately not a database id and never reaches the server: the
- * two actions this block calls look their teams up by slug for themselves.
+ * So it is a roster now, listed and edited like Testing and Development.
+ * `workRoleFromTeams` still reads Development-and-Testing as full stack as
+ * well, so everybody who was one before this change still is — what it no
+ * longer does is write or delete anything it was not asked to.
  */
 const FULLSTACK_SLUG = "fullstack";
-const DERIVED_FULLSTACK_ID = "derived:fullstack";
+
+/**
+ * Stands in for the Full Stack row on an installation that has not needed one
+ * yet. It never reaches the server: the two actions this block calls resolve
+ * the roster by slug themselves, and the first assignment creates the row.
+ */
+const PENDING_FULLSTACK_ID = "pending:fullstack";
+
+/** What the roster is, worded the same here as on the row itself. */
+const FULLSTACK_DESCRIPTION =
+  "Builds and verifies. A membership of its own — holding it changes nothing about Development or Testing.";
 
 /** The teams whose dialog also hands out work. */
 function handsOutWork(slug: string): boolean {
@@ -119,31 +130,26 @@ export function TeamAdmin({
   const isFullStack = addingTo?.slug === FULLSTACK_SLUG;
 
   /*
-   * The three rosters: the two that exist, and the one that follows from them.
+   * The rosters as they are — every block is a real team listing its own
+   * members.
    *
-   * Somebody on both teams appears in all three blocks, which is the truth
-   * rather than a duplicate — they really are on Development, really are on
-   * Testing, and Prio really does call them a full stack developer because of
-   * it. Hiding them from the two source blocks would make those blocks
-   * disagree with the team rows they are showing.
+   * The one exception is an installation that has never added a full stack
+   * developer, where the row does not exist yet. The block is shown anyway: an
+   * empty roster and a missing feature look identical to an administrator, and
+   * only one of them is true. `assignFullStackDevelopers` creates the row the
+   * first time somebody is put on it.
    */
   const blocks = useMemo<AdminTeam[]>(() => {
-    const development = teams.find((team) => team.slug === DEVELOPMENT_SLUG);
-    const testing = teams.find((team) => team.slug === TESTING_SLUG);
-    if (!development || !testing) return teams;
+    if (teams.some((team) => team.slug === FULLSTACK_SLUG)) return teams;
 
-    const testers = new Set(testing.members.map((member) => member.id));
     return [
       ...teams,
       {
-        id: DERIVED_FULLSTACK_ID,
+        id: PENDING_FULLSTACK_ID,
         slug: FULLSTACK_SLUG,
         name: "Full Stack Developers",
-        description:
-          "Everybody on both Development and Testing. Not a separate team — adding here writes both memberships, and removing takes both away.",
-        members: development.members.filter((member) =>
-          testers.has(member.id),
-        ),
+        description: FULLSTACK_DESCRIPTION,
+        members: [],
       },
     ];
   }, [teams]);
@@ -288,15 +294,16 @@ export function TeamAdmin({
     router.refresh();
   }
 
-  async function remove(teamId: string, userId: string, name: string) {
+  async function remove(team: AdminTeam, userId: string, name: string) {
     setBusyId(userId);
-    /* The derived block has no team row to delete from. Both memberships go
-       instead, because leaving one behind would not make somebody a lesser
-       full stack developer — it would make them a tester. */
+    /* The Full Stack roster has an action of its own, which resolves the team
+       by slug and deletes that one membership. Everything else this person
+       holds — Development, Testing, their projects, their work — is left
+       exactly as it was. */
     const result =
-      teamId === DERIVED_FULLSTACK_ID
+      team.slug === FULLSTACK_SLUG
         ? await removeFullStackDeveloper({ userId })
-        : await removeTeamMember({ teamId, userId });
+        : await removeTeamMember({ teamId: team.id, userId });
     setBusyId(null);
 
     if (!result.ok) {
@@ -304,7 +311,7 @@ export function TeamAdmin({
       return;
     }
     toast(
-      teamId === DERIVED_FULLSTACK_ID
+      team.slug === FULLSTACK_SLUG
         ? `${name} is no longer a full stack developer`
         : `${name} removed from the team`,
     );
@@ -360,7 +367,7 @@ export function TeamAdmin({
             {team.members.length === 0 ? (
               <p className="prio-text-muted">
                 {team.slug === FULLSTACK_SLUG
-                  ? "Nobody is on both teams yet. Adding somebody here puts them on Development and Testing at once."
+                  ? "Nobody is on this roster yet. Adding somebody here makes them a full stack developer, and changes nothing about Development or Testing."
                   : "Nobody is on this team yet. Members added here gain the views that belong to it."}
               </p>
             ) : (
@@ -389,7 +396,7 @@ export function TeamAdmin({
                       variant="ghost"
                       size="sm"
                       disabled={busyId === member.id}
-                      onClick={() => remove(team.id, member.id, member.name)}
+                      onClick={() => remove(team, member.id, member.name)}
                     >
                       Remove
                     </Button>
@@ -411,7 +418,7 @@ export function TeamAdmin({
           busy={saving}
           description={
             isFullStack
-              ? "Choose a project, the work to hand over, the account role and the people. Everybody chosen goes onto Development and Testing, which is what makes them a full stack developer."
+              ? "Choose a project, the work to hand over, the account role and the people. Everybody chosen joins the Full Stack roster; their Development and Testing memberships are left as they are."
               : isDeveloperTeam
                 ? "Choose a project, the work to hand over, the account role and the people. Issues can only come from the project chosen above them."
                 : "Choose a project and the people to put on it. Team membership and project access are separate facts; this writes both."

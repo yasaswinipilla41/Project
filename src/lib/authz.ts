@@ -229,6 +229,56 @@ export const TESTING_TEAM_SLUG = "testing";
  */
 export const DEVELOPMENT_TEAM_SLUG = "development";
 
+/**
+ * Slug of the Full Stack Developers team.
+ *
+ * A roster in its own right, and that is the point of it. Full stack used to be
+ * derived and *only* derived — somebody on Development and on Testing — which
+ * made those two rows load-bearing in a way nobody had asked for: adding a full
+ * stack developer wrote both memberships, and removing one deleted both. So a
+ * person deliberately put on Testing months earlier lost that row because an
+ * administrator took them off the full stack list, and their own dashboard
+ * changed under them without anybody having decided it should.
+ *
+ * The three memberships are independent now. Adding here writes this row and
+ * only this row; removing here deletes this row and only this row; whatever
+ * else somebody holds is theirs and is left alone.
+ *
+ * The derived combination still answers FULLSTACK — see `workRoleFromTeams` —
+ * because somebody who genuinely builds and genuinely checks does both jobs
+ * whether or not a third list says so. What has gone is the cascade, not the
+ * reading.
+ */
+export const FULLSTACK_TEAM_SLUG = "fullstack";
+
+/**
+ * Every team the working role is derived from.
+ *
+ * Named once, because the answer is only right if the question was asked in
+ * full: a query that loads two of these and hands them to `workRoleFromTeams`
+ * gets a confident wrong answer rather than an error, and a full stack
+ * developer quietly reads as a developer. Every bulk load asks for this list.
+ */
+export const WORK_TEAM_SLUGS = [
+  TESTING_TEAM_SLUG,
+  DEVELOPMENT_TEAM_SLUG,
+  FULLSTACK_TEAM_SLUG,
+] as const;
+
+/**
+ * The memberships that carry each half of the job.
+ *
+ * `doesQaWork` and `doesDeveloperWork` answer this for a role already in hand;
+ * these are the same questions expressed as the rows they are derived from, for
+ * the places that have to ask a *query* rather than a value — "which of this
+ * project's members test", and the like.
+ */
+export const QA_TEAM_SLUGS = [TESTING_TEAM_SLUG, FULLSTACK_TEAM_SLUG] as const;
+export const DEVELOPER_TEAM_SLUGS = [
+  DEVELOPMENT_TEAM_SLUG,
+  FULLSTACK_TEAM_SLUG,
+] as const;
+
 /* --------------------------------------------------------- working roles */
 
 /**
@@ -243,6 +293,7 @@ export const DEVELOPMENT_TEAM_SLUG = "development";
  * the testing surfaces this way.
  *
  *   ADMIN                              -> "ADMIN"
+ *   MEMBER on Full Stack               -> "FULLSTACK"
  *   MEMBER on Testing and Development  -> "FULLSTACK"
  *   MEMBER on Testing only             -> "QA"
  *   MEMBER on Development only         -> "DEVELOPER"
@@ -276,7 +327,7 @@ export async function workRoleOf(user: CurrentUser): Promise<WorkRole> {
   const rows = await prisma.teamMember.findMany({
     where: {
       userId: user.id,
-      team: { slug: { in: [TESTING_TEAM_SLUG, DEVELOPMENT_TEAM_SLUG] } },
+      team: { slug: { in: [...WORK_TEAM_SLUGS] } },
     },
     select: { team: { select: { slug: true } } },
   });
@@ -310,7 +361,14 @@ export function workRoleFromTeams(
   const testing = slugs.has(TESTING_TEAM_SLUG);
   const development = slugs.has(DEVELOPMENT_TEAM_SLUG);
 
-  if (testing && development) return "FULLSTACK";
+  /* Two ways to be full stack, and neither outranks the other: somebody put on
+     the Full Stack roster, and somebody who holds both halves separately. The
+     second is what this used to derive the answer from exclusively, and it
+     still counts — a person who genuinely builds and genuinely checks does both
+     jobs whether or not a third list says so. */
+  if (slugs.has(FULLSTACK_TEAM_SLUG) || (testing && development)) {
+    return "FULLSTACK";
+  }
   if (testing) return "QA";
   return "DEVELOPER";
 }
@@ -342,7 +400,7 @@ export async function workRolesFor(
     prisma.teamMember.findMany({
       where: {
         userId: { in: userIds },
-        team: { slug: { in: [TESTING_TEAM_SLUG, DEVELOPMENT_TEAM_SLUG] } },
+        team: { slug: { in: [...WORK_TEAM_SLUGS] } },
       },
       select: { userId: true, team: { select: { slug: true } } },
     }),

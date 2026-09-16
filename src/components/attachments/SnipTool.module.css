@@ -244,6 +244,132 @@
   color: var(--prio-text-muted);
 }
 
+/* ------------------------------------------------- detected navigation */
+
+/*
+ * Where this page says it can go, as the page itself reports it.
+ *
+ * Bounded and scrollable: a long sidebar with a tab strip nested under it
+ * should not make the window taller than the screen. Maximised, it has the
+ * room and the cap comes off.
+ */
+.navScroll {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 220px;
+  overflow-y: auto;
+  min-width: 0;
+}
+
+.window[data-maximized] .navScroll {
+  max-height: none;
+}
+
+.navGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.navGroupLabel {
+  margin: 0;
+  font-size: var(--prio-text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--prio-text-muted);
+}
+
+.navList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* One destination. A real radio underneath, like the two cards above, so every
+   source on offer is one group and the arrow keys move through all of it. */
+.navItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--prio-radius-sm);
+  color: var(--prio-text-secondary);
+  cursor: pointer;
+}
+
+.navItem:hover {
+  background: var(--prio-bg-hover);
+  color: var(--prio-text-primary);
+}
+
+.navItem[data-selected] {
+  border-color: var(--prio-primary-500);
+  background: var(--prio-primary-50);
+  color: var(--prio-text-primary);
+}
+
+.navItem:focus-within {
+  box-shadow: var(--prio-shadow-focus);
+}
+
+/*
+ * A marker where an icon would be. The page named itself and said where it
+ * goes; it did not hand over a glyph, and inventing one would be a guess
+ * dressed as knowledge.
+ *
+ * Drawn in CSS rather than rendered as a character on purpose: generated
+ * content is not part of the element's text, so the row still reads as its own
+ * name — "Projects /projects" — to anything matching on it.
+ */
+.navItem::before {
+  content: "";
+  flex-shrink: 0;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--prio-border-strong);
+}
+
+.navItem[data-selected]::before {
+  background: var(--prio-primary-600);
+}
+
+.navText {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.navName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--prio-text-xs);
+  font-weight: 600;
+}
+
+.navPath {
+  flex-shrink: 0;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--prio-text-2xs);
+  color: var(--prio-text-muted);
+}
+
 /* ---------------------------------------------------------------- snips */
 
 .snipList {

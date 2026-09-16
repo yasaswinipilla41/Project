@@ -37,6 +37,16 @@ async function makeIssue(data: {
   status: IssueStatus;
   assigneeId: string | null;
   reporterId: string;
+  /**
+   * Who moved it to Done, written as the activity entry `updateIssue` would
+   * have written.
+   *
+   * Completed work belongs to whoever finished it, read from the trail —
+   * holding the issue is a different claim about a different question, and an
+   * issue can be closed by one person and held by another. A fixture that set
+   * only an assignee would therefore be describing work nobody did.
+   */
+  completedById?: string;
 }) {
   const issue = await prisma.$transaction(async (tx) => {
     const project = await tx.project.update({
@@ -44,7 +54,7 @@ async function makeIssue(data: {
       data: { issueSequence: { increment: 1 } },
       select: { id: true, key: true, issueSequence: true },
     });
-    return tx.issue.create({
+    const row = await tx.issue.create({
       data: {
         key: `${project.key}-${project.issueSequence}`,
         number: project.issueSequence,
@@ -57,6 +67,20 @@ async function makeIssue(data: {
       },
       select: { id: true, key: true },
     });
+
+    if (data.completedById) {
+      await tx.activityLogEntry.create({
+        data: {
+          issueId: row.id,
+          actorId: data.completedById,
+          action: "issue.updated",
+          field: "status",
+          oldValue: "IN_QA",
+          newValue: "DONE",
+        },
+      });
+    }
+    return row;
   });
   created.push(issue.id);
   return issue;
@@ -84,19 +108,23 @@ test("Completed replaces Bugs, Waiting for testing is gone, and Ready for QA sta
     assigneeId: admin.id,
     reporterId: admin.id,
   });
+  /* Finished by the admin — the trail says so, which is what makes it theirs.
+     Raised by and irrelevant to somebody else. */
   const mine = await makeIssue({
     title: `My Work done mine ${stamp}`,
     status: "DONE",
     assigneeId: admin.id,
     reporterId: other.id,
+    completedById: admin.id,
   });
   /* Done, raised by the admin, finished by and assigned to somebody else:
-     not the admin's completed work. */
+     not the admin's completed work. Raising it is not finishing it. */
   const theirs = await makeIssue({
     title: `My Work done theirs ${stamp}`,
     status: "DONE",
     assigneeId: other.id,
     reporterId: admin.id,
+    completedById: other.id,
   });
 
   await page.goto("/my-work");

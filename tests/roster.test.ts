@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   DEVELOPMENT_TEAM_SLUG,
+  FULLSTACK_TEAM_SLUG,
   TESTING_TEAM_SLUG,
   workRoleOf,
 } from "@/lib/authz";
@@ -539,20 +540,48 @@ describe("listProjectIssues", () => {
   });
 });
 
-describe("the derived Full Stack Developer roster", () => {
+describe("the Full Stack Developer roster", () => {
   /*
-   * There is no third team, and these are what keep it that way. Full Stack
-   * Developer is what `workRoleOf` derives from being on both Development and
-   * Testing, so onboarding one has to write exactly those two rows and taking
-   * one off has to remove exactly those two.
+   * A roster of its own, and these are what keep it independent.
+   *
+   * Full Stack Developer used to be derived from holding Development *and*
+   * Testing, so onboarding one wrote both of those rows and taking one off
+   * deleted both — which destroyed memberships that had been granted
+   * separately, for their own reasons. Adding must now write one row, removing
+   * must delete one row, and everything else the person holds must survive
+   * both.
    */
 
-  async function teamIds() {
+  async function slugIds(slugs: string[]) {
     const teams = await prisma.team.findMany({
-      where: { slug: { in: [TESTING_TEAM_SLUG, DEVELOPMENT_TEAM_SLUG] } },
+      where: { slug: { in: slugs } },
       select: { id: true },
     });
     return teams.map((team) => team.id);
+  }
+
+  /** The two rosters full stack must no longer touch. */
+  const halves = () => slugIds([TESTING_TEAM_SLUG, DEVELOPMENT_TEAM_SLUG]);
+
+  const onBothHalves = async (userId: string) =>
+    prisma.teamMember.count({
+      where: { userId, teamId: { in: await halves() } },
+    });
+
+  const onFullStack = (userId: string) =>
+    prisma.teamMember.count({
+      where: { userId, team: { slug: FULLSTACK_TEAM_SLUG } },
+    });
+
+  /** Puts somebody on Development and Testing, deliberately and separately. */
+  async function joinBothHalves(userId: string) {
+    for (const teamId of await halves()) {
+      await prisma.teamMember.upsert({
+        where: { teamId_userId: { teamId, userId } },
+        update: {},
+        create: { teamId, userId },
+      });
+    }
   }
 
   /*
@@ -563,12 +592,20 @@ describe("the derived Full Stack Developer roster", () => {
    */
   let restoreTeams: { teamId: string; userId: string }[] = [];
 
+  const ALL_WORK_SLUGS = [
+    TESTING_TEAM_SLUG,
+    DEVELOPMENT_TEAM_SLUG,
+    FULLSTACK_TEAM_SLUG,
+  ];
+
   beforeAll(async () => {
     const person = await userByEmail(DEVELOPER);
-    const ids = await teamIds();
     restoreTeams = (
       await prisma.teamMember.findMany({
-        where: { userId: person.id, teamId: { in: ids } },
+        where: {
+          userId: person.id,
+          teamId: { in: await slugIds(ALL_WORK_SLUGS) },
+        },
         select: { teamId: true, userId: true },
       })
     ).map((row) => ({ teamId: row.teamId, userId: row.userId }));
@@ -576,19 +613,26 @@ describe("the derived Full Stack Developer roster", () => {
 
   afterAll(async () => {
     const person = await userByEmail(DEVELOPER);
-    const ids = await teamIds();
     await prisma.teamMember.deleteMany({
-      where: { userId: person.id, teamId: { in: ids } },
+      where: {
+        userId: person.id,
+        teamId: { in: await slugIds(ALL_WORK_SLUGS) },
+      },
     });
     for (const row of restoreTeams) {
       await prisma.teamMember.create({ data: row });
     }
   });
 
-  it("puts somebody on both teams, and Prio then calls them a full stack developer", async () => {
+  it("writes its own membership, and only its own", async () => {
     const project = await projectByKey("ENG");
     const person = await userByEmail(DEVELOPER);
-    const ids = await teamIds();
+
+    /* Starting from neither half, so anything found afterwards was written by
+       this call rather than inherited from another test. */
+    await prisma.teamMember.deleteMany({
+      where: { userId: person.id, teamId: { in: await halves() } },
+    });
 
     const result = await assignFullStackDevelopers({
       projectId: project.id,
@@ -596,31 +640,57 @@ describe("the derived Full Stack Developer roster", () => {
       role: "MEMBER",
       userIds: [person.id],
     });
-
     expect(result.ok).toBe(true);
 
-    const memberships = await prisma.teamMember.findMany({
-      where: { userId: person.id, teamId: { in: ids } },
-      select: { teamId: true },
-    });
-    expect(memberships.length).toBe(2);
+    expect(await onFullStack(person.id)).toBe(1);
+    /* The two rows this used to write as a side effect. Onboarding a full
+       stack developer is not a decision about the Development or Testing
+       rosters, and must not quietly make one. */
+    expect(await onBothHalves(person.id)).toBe(0);
 
     const refreshed = await userByEmail(DEVELOPER);
     expect(await workRoleOf(refreshed)).toBe("FULLSTACK");
   });
 
-  it("creates no third team", async () => {
-    const teams = await prisma.team.findMany({ select: { slug: true } });
-    expect(teams.some((team) => team.slug === "fullstack")).toBe(false);
+  it("has a team row of its own", async () => {
+    /* The inverse of what this file used to assert. The roster is a real team
+       now, which is exactly what lets somebody hold it without holding
+       anything else. */
+    const team = await prisma.team.findUnique({
+      where: { slug: FULLSTACK_TEAM_SLUG },
+      select: { slug: true },
+    });
+    expect(team?.slug).toBe(FULLSTACK_TEAM_SLUG);
   });
 
-  it("removing takes both memberships away, not one", async () => {
-    /* One left behind would not be a lesser full stack developer — it would
-       silently be a different role. */
+  it("coexists with explicit Development and Testing memberships", async () => {
     const project = await projectByKey("ENG");
     const person = await userByEmail(DEVELOPER);
-    const ids = await teamIds();
 
+    await joinBothHalves(person.id);
+
+    expect(
+      (await assignFullStackDevelopers({
+        projectId: project.id,
+        issueIds: [],
+        role: "MEMBER",
+        userIds: [person.id],
+      })).ok,
+    ).toBe(true);
+
+    // All three, side by side, none of them standing in for another.
+    expect(await onFullStack(person.id)).toBe(1);
+    expect(await onBothHalves(person.id)).toBe(2);
+  });
+
+  it("removing takes its own membership away, and leaves the others", async () => {
+    /* The cascade this exists to prevent: somebody put on Testing
+       deliberately, months earlier, must not lose that row because an
+       administrator took them off the full stack list. */
+    const project = await projectByKey("ENG");
+    const person = await userByEmail(DEVELOPER);
+
+    await joinBothHalves(person.id);
     await assignFullStackDevelopers({
       projectId: project.id,
       issueIds: [],
@@ -631,10 +701,15 @@ describe("the derived Full Stack Developer roster", () => {
     const result = await removeFullStackDeveloper({ userId: person.id });
     expect(result.ok).toBe(true);
 
-    const left = await prisma.teamMember.count({
-      where: { userId: person.id, teamId: { in: ids } },
-    });
-    expect(left).toBe(0);
+    expect(await onFullStack(person.id)).toBe(0);
+    expect(
+      await onBothHalves(person.id),
+      "Development and Testing are not this action's to delete",
+    ).toBe(2);
+
+    /* And they are a full stack developer still, because they genuinely hold
+       both halves — the role rule reads that combination as well. */
+    expect(await workRoleOf(await userByEmail(DEVELOPER))).toBe("FULLSTACK");
   });
 
   it("leaves project access and assigned work alone when it removes the role", async () => {
