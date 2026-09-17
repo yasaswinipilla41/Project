@@ -9,6 +9,8 @@ import { assertAdmin, AuthorizationError } from "@/lib/authz";
 import { requireUser } from "@/lib/session";
 import { fieldErrors, type FieldErrors } from "@/server/schemas";
 import { loadMemberDetail, type MemberDetail } from "@/server/queries/memberDetail";
+import { sendWelcomeMail } from "@/server/mailer";
+import { ROLE_LABEL } from "@/lib/domain";
 
 /**
  * Admin user administration (§18, §23).
@@ -59,7 +61,16 @@ const createUserSchema = z.object({
 
 export async function createUser(
   raw: unknown,
-): Promise<UserActionResult<{ id: string; email: string }>> {
+): Promise<
+  UserActionResult<{
+    id: string;
+    email: string;
+    /** Whether the welcome message actually went out. */
+    welcomeEmailSent: boolean;
+    /** True when this installation has no SMTP configured at all. */
+    welcomeEmailSkipped: boolean;
+  }>
+> {
   try {
     const actor = await requireUser();
     assertAdmin(actor);
@@ -95,8 +106,13 @@ export async function createUser(
           role: input.role,
           emailVerified: true,
           isActive: true,
+          /* The password below is one an administrator chose, so it is theirs
+             to replace at the first sign-in. Only accounts created here are
+             marked; every account that already exists keeps its default of
+             false and is not stopped at a password screen. */
+          mustChangePassword: true,
         },
-        select: { id: true, email: true },
+        select: { id: true, name: true, email: true },
       });
 
       await tx.account.create({
@@ -122,8 +138,48 @@ export async function createUser(
       return user;
     });
 
+    /*
+     * Told after the account exists, and never before.
+     *
+     * The message carries the password the administrator typed, which is why
+     * it is sent from here rather than from inside the transaction: a message
+     * promising credentials for an account that then failed to commit would be
+     * worse than no message. The plaintext lives only in this request — the row
+     * holds a hash — and is not logged on any path, including the failure one.
+     *
+     * A mail failure does not undo the account. It exists, the administrator is
+     * told the message did not go, and they can pass the details on themselves;
+     * rolling back would leave them with neither.
+     */
+    const projects =
+      input.projectIds.length === 0
+        ? []
+        : (
+            await prisma.project.findMany({
+              where: { id: { in: input.projectIds } },
+              select: { name: true },
+              orderBy: { name: "asc" },
+            })
+          ).map((project) => project.name);
+
+    const delivery = await sendWelcomeMail({
+      name: created.name,
+      email: created.email,
+      temporaryPassword: input.password,
+      roleLabel: ROLE_LABEL[input.role],
+      projects,
+    });
+
     revalidatePath("/admin");
-    return { ok: true, data: created };
+    return {
+      ok: true,
+      data: {
+        id: created.id,
+        email: created.email,
+        welcomeEmailSent: delivery.sent,
+        welcomeEmailSkipped: delivery.skipped,
+      },
+    };
   } catch (error) {
     return failure(error);
   }
@@ -400,10 +456,26 @@ export async function changeOwnPassword(
       };
     }
 
-    await prisma.account.update({
-      where: { id: account.id },
-      data: { password: await hashPassword(parsed.data.newPassword) },
-    });
+    /*
+     * Both writes together, because the flag is what stands between an
+     * administrator-created account and the application: clearing it while the
+     * password failed to save would let somebody through on the temporary one.
+     *
+     * `mustChangePassword` is set unconditionally rather than only when it was
+     * true — it is already false for everybody else, so this is a no-op for
+     * them, and a conditional would be a second place that has to know the
+     * default.
+     */
+    await prisma.$transaction([
+      prisma.account.update({
+        where: { id: account.id },
+        data: { password: await hashPassword(parsed.data.newPassword) },
+      }),
+      prisma.user.update({
+        where: { id: user.id },
+        data: { mustChangePassword: false },
+      }),
+    ]);
 
     return { ok: true, data: undefined };
   } catch (error) {

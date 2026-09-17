@@ -1,9 +1,10 @@
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { AppShell } from "@/components/shell/AppShell";
 import { SIDEBAR_COOKIE } from "@/components/shell/Sidebar";
 import { prisma } from "@/lib/prisma";
 import { displayRoleOf, projectScope, workRoleOf } from "@/lib/authz";
-import { requireUser } from "@/lib/session";
+import { needsPasswordChange, requireUser } from "@/lib/session";
 
 /**
  * Authenticated application layout. Resolves the session server-side and loads
@@ -15,6 +16,21 @@ export default async function AppLayout({
   children: React.ReactNode;
 }) {
   const user = await requireUser();
+
+  /*
+   * An account still holding the password an administrator gave it goes no
+   * further than this.
+   *
+   * The check is here, in the layout every authenticated page renders inside,
+   * because that is the one place no route can be reached without passing —
+   * a direct URL, a refresh, the back button and a bookmark all arrive through
+   * it, so none of them is a way around. The screen it redirects to lives
+   * outside this layout, or it would redirect to itself.
+   *
+   * The flag is read from the user row rather than the session cookie, so it
+   * cannot be stale and clearing it takes effect on the next request.
+   */
+  if (await needsPasswordChange(user.id)) redirect("/change-password");
 
   const cookieStore = await cookies();
   const initialCollapsed = cookieStore.get(SIDEBAR_COOKIE)?.value === "true";
