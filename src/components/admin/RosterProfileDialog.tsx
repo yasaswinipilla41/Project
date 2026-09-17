@@ -7,7 +7,7 @@ import { Avatar, Button } from "@/components/ui/primitives";
 import { Dialog } from "@/components/ui/Dialog";
 import { useToast } from "@/components/ui/Toast";
 import { SearchSelect } from "@/components/admin/SearchSelect";
-import { ISSUE_TYPE_LABEL, STATUS_LABEL, WORK_ROLE_LABEL } from "@/lib/domain";
+import { DISPLAY_ROLE_LABEL, ISSUE_TYPE_LABEL, STATUS_LABEL } from "@/lib/domain";
 import type { IssueStatus, IssueType } from "@prisma/client";
 import {
   issuesAssignedTo,
@@ -302,8 +302,8 @@ export function RosterProfileDialog({
                 {profile.jobTitle ?? profile.email}
               </span>
             </span>
-            <span className="prio-rolebadge" data-role={profile.workRole}>
-              {WORK_ROLE_LABEL[profile.workRole]}
+            <span className="prio-rolebadge" data-role={profile.displayRole}>
+              {DISPLAY_ROLE_LABEL[profile.displayRole]}
             </span>
           </div>
 

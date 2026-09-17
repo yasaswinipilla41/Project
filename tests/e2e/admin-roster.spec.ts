@@ -316,11 +316,11 @@ test.describe("a QA member and sprints", () => {
     });
   });
 
-  test("is named a QA member, top right", async ({ page }) => {
+  test("is named a QA / Tester, top right", async ({ page }) => {
     await page.goto("/");
     await expect(
       page.locator(".prio-dash__heroaside .prio-rolebadge"),
-    ).toHaveText("QA member");
+    ).toHaveText("QA / Tester");
   });
 
   test("gets no Sprints tab, and the route turns them away", async ({

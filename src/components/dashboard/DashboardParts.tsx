@@ -9,13 +9,14 @@ import {
 } from "@/components/ui/Indicators";
 import { IconCalendar, IconClock, IconWarning } from "@/components/ui/Icon";
 import {
+  DISPLAY_ROLE_LABEL,
   ISSUE_STATUSES,
   PRIORITIES,
   ROLE_DESCRIPTION,
   ROLE_LABEL,
   STATUS_LABEL,
   WORK_ROLE_DESCRIPTION,
-  WORK_ROLE_LABEL,
+  type DisplayRole,
   type WorkRole,
 } from "@/lib/domain";
 import {
@@ -474,14 +475,27 @@ export function ActivityList({ entries }: { entries: DashboardActivity[] }) {
  * the two are offered visibly different things and being told why is better
  * than being left to work it out from an absent button.
  */
-export function RoleBadge({ role }: { role: WorkRole }) {
+/**
+ * `role` here is the *display* role, not the working one.
+ *
+ * They differ for exactly one person: a member on no work team, whom
+ * `workRoleOf` calls a DEVELOPER so that they can pick work up, and whom this
+ * calls a Member because no administrator gave them that job. The badge names
+ * what somebody was assigned; it does not describe what they may do, and
+ * nothing here gates anything — see `displayRoleOf`.
+ */
+export function RoleBadge({ role }: { role: DisplayRole }) {
   return (
     <span
       className="prio-rolebadge"
       data-role={role}
-      title={WORK_ROLE_DESCRIPTION[role]}
+      title={
+        role === "MEMBER"
+          ? "No job assigned yet. An administrator puts people on Development, Testing or Full Stack."
+          : WORK_ROLE_DESCRIPTION[role as WorkRole]
+      }
     >
-      {WORK_ROLE_LABEL[role]}
+      {DISPLAY_ROLE_LABEL[role]}
     </span>
   );
 }

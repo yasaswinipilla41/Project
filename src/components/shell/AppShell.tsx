@@ -9,7 +9,7 @@ import { SnipToolProvider } from "@/components/attachments/SnipTool";
 import { ToastProvider } from "@/components/ui/Toast";
 import { Sidebar, useSidebarState, type SidebarProject } from "./Sidebar";
 import { Topbar, type TopbarUser } from "./Topbar";
-import type { WorkRole } from "@/lib/authz";
+import type { DisplayRole, WorkRole } from "@/lib/authz";
 
 /**
  * The Prio application frame. Server components render inside `children`; only
@@ -18,6 +18,7 @@ import type { WorkRole } from "@/lib/authz";
 export function AppShell({
   user,
   workRole,
+  displayRole,
   projects,
   unreadNotifications,
   newUserAlerts = [],
@@ -31,6 +32,8 @@ export function AppShell({
    * re-checks for itself, so this is presentation, never the boundary.
    */
   workRole: WorkRole;
+  /** What to call that role on screen — see `displayRoleOf`. */
+  displayRole: DisplayRole;
   projects: SidebarProject[];
   unreadNotifications: number;
   /** Admin-only; always empty for a Member. */
@@ -67,6 +70,7 @@ export function AppShell({
             <Topbar
               user={user}
               workRole={workRole}
+              displayRole={displayRole}
               projects={projects}
               unreadNotifications={unreadNotifications}
               onOpenMobileNav={openMobile}

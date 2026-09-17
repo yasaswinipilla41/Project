@@ -66,8 +66,11 @@ test.describe("A developer", () => {
     page,
   }) => {
     await page.goto("/");
+    /* On no work team, so the badge names no assignment — see
+       `displayRoleOf`. The create control below is the point of this case and
+       is unaffected: every permission still reads DEVELOPER. */
     await expect(page.locator(".prio-dash__heroaside .prio-rolebadge")).toHaveText(
-      "Developer",
+      "Member",
     );
 
     /* Raising work used to be an administrator's or a tester's act, and this
@@ -141,7 +144,7 @@ test.describe("A tester", () => {
   }) => {
     await page.goto("/");
     await expect(page.locator(".prio-dash__heroaside .prio-rolebadge")).toHaveText(
-      "QA member",
+      "QA / Tester",
     );
 
     await expect(page.locator(".prio-create__main")).toBeVisible();

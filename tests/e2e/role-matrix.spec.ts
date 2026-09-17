@@ -15,9 +15,17 @@ import { signIn } from "./support";
  *
  * Three people, made here and unmade afterwards:
  *
- *   QA1   Testing only              -> QA member
- *   DEV1  neither team              -> Developer (the long-standing default)
- *   FSD1  Testing and Development   -> Full Stack Developer
+ *   QA1   Testing only              -> QA / Tester
+ *   DEV1  neither team              -> Member
+ *   FSD1  Testing and Development   -> Fullstack Developer
+ *
+ * DEV1 is the one worth reading twice. `workRoleOf` still calls a member on no
+ * team a DEVELOPER, and must — that default is what lets somebody newly added
+ * to a project pick work up at all, and every permission check still reads it.
+ * The badge is a different claim: it names the job an administrator assigned,
+ * and nobody assigned DEV1 one, so it says "Member". The label and the
+ * permissions are deliberately separate here, and the capability cases below
+ * assert the permissions are untouched.
  *
  * The count-versus-list cases are the invariant this suite exists for: a tile
  * says a number, the list behind it holds that many rows, and every row is the
@@ -176,21 +184,26 @@ async function tileValue(page: Page, label: string): Promise<number> {
 }
 
 test.describe("effective role resolution, as the application reports it", () => {
-  test("Testing only is a QA member", async ({ browser }) => {
+  test("Testing only is a QA / Tester", async ({ browser }) => {
     const { page, close } = await pageAs(browser, QA1);
     try {
       await page.goto("/");
-      expect(await roleBadge(page)).toBe("QA member");
+      expect(await roleBadge(page)).toBe("QA / Tester");
     } finally {
       await close();
     }
   });
 
-  test("neither team is a Developer", async ({ browser }) => {
+  test("neither team reads as a Member, while still building", async ({
+    browser,
+  }) => {
     const { page, close } = await pageAs(browser, DEV1);
     try {
       await page.goto("/");
-      expect(await roleBadge(page)).toBe("Developer");
+      /* The badge names an assignment, and there is none. The capability
+         cases in this file cover the other half: DEV1 keeps every developer
+         power, because `workRoleOf` still answers DEVELOPER. */
+      expect(await roleBadge(page)).toBe("Member");
     } finally {
       await close();
     }
@@ -199,14 +212,14 @@ test.describe("effective role resolution, as the application reports it", () => 
   test("Testing and Development is a Full Stack Developer", async ({
     browser,
   }) => {
-    /* The rule the whole change turns on: not "QA member", not "Developer". */
+    /* The rule the whole change turns on: not "QA / Tester", not "Member". */
     const { page, close } = await pageAs(browser, FSD1);
     try {
       await page.goto("/");
       const badge = await roleBadge(page);
-      expect(badge).toBe("Full Stack Developer");
-      expect(badge).not.toBe("QA member");
-      expect(badge).not.toBe("Developer");
+      expect(badge).toBe("Fullstack Developer");
+      expect(badge).not.toBe("QA / Tester");
+      expect(badge).not.toBe("Member");
     } finally {
       await close();
     }
@@ -216,9 +229,9 @@ test.describe("effective role resolution, as the application reports it", () => 
     const { page, close } = await pageAs(browser, FSD1);
     try {
       await page.goto("/");
-      expect(await roleBadge(page)).toBe("Full Stack Developer");
+      expect(await roleBadge(page)).toBe("Fullstack Developer");
       await page.reload();
-      expect(await roleBadge(page)).toBe("Full Stack Developer");
+      expect(await roleBadge(page)).toBe("Fullstack Developer");
     } finally {
       await close();
     }

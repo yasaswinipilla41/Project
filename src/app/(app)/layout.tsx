@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { AppShell } from "@/components/shell/AppShell";
 import { SIDEBAR_COOKIE } from "@/components/shell/Sidebar";
 import { prisma } from "@/lib/prisma";
-import { projectScope, workRoleOf } from "@/lib/authz";
+import { displayRoleOf, projectScope, workRoleOf } from "@/lib/authz";
 import { requireUser } from "@/lib/session";
 
 /**
@@ -23,6 +23,9 @@ export default async function AppLayout({
   /* Resolved once, here, and handed to the chrome — so every surface offers
      the same things to the same person rather than each deciding again. */
   const workRole = await workRoleOf(user);
+  /* What the badge says, which is not always the work role — somebody on no
+     work team is a DEVELOPER to every guard and a "Member" on screen. */
+  const displayRole = await displayRoleOf(user);
 
   const [projectRows, unreadNotifications, pendingNewUserAlerts, favorites, recents] =
     await Promise.all([
@@ -89,6 +92,7 @@ export default async function AppLayout({
         role: user.role,
       }}
       workRole={workRole}
+      displayRole={displayRole}
       projects={projects}
       unreadNotifications={unreadNotifications}
       newUserAlerts={pendingNewUserAlerts.map((n) => ({

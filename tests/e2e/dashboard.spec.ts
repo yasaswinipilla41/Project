@@ -450,13 +450,16 @@ test.describe("Dashboard — signed in as a member", () => {
        absent below. The account role is still MEMBER and still what the People
        screen grants; it is shown as such beside other people, in the team
        list. */
+    /* The badge names the job an administrator assigned, and this member has
+       none — `workRoleOf` still answers DEVELOPER, which is what the absent
+       create control below actually turns on. */
     await expect(page.locator(".prio-dash__heroaside .prio-rolebadge")).toHaveAttribute(
       "data-role",
-      "DEVELOPER",
+      "MEMBER",
     );
     await expect(
       page.locator(".prio-dash__heroaside .prio-rolebadge"),
-    ).toHaveText("Developer");
+    ).toHaveText("Member");
 
     // The org-wide section is an administrator surface.
     await expect(

@@ -57,7 +57,7 @@ export default async function ProjectLayout({
 
   return (
     <>
-      <ProjectShellChrome projectKey={project.key}>
+      <ProjectShellChrome projectKey={project.key} part="header">
       <div className="prio-page-header">
         <div className="prio-page-header__text">
           <BackLink href="/projects" label="All projects" />
@@ -111,6 +111,7 @@ export default async function ProjectLayout({
           />
         </div>
       </div>
+      </ProjectShellChrome>
 
       {/*
         * QA members get no Sprints tab.
@@ -120,7 +121,8 @@ export default async function ProjectLayout({
         * route refuses them as well, so this removes a link that would only
         * lead to a refusal rather than being what withholds anything.
         */}
-      <ProjectNav projectKey={project.key} showSprints={workRole !== "QA"} />
+      <ProjectShellChrome projectKey={project.key} part="nav">
+        <ProjectNav projectKey={project.key} showSprints={workRole !== "QA"} />
       </ProjectShellChrome>
 
       {children}

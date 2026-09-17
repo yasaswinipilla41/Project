@@ -12,7 +12,7 @@ import {
 import { signOut } from "@/lib/auth-client";
 import { Avatar } from "@/components/ui/primitives";
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/Menu";
-import type { WorkRole } from "@/lib/authz";
+import type { DisplayRole, WorkRole } from "@/lib/authz";
 import {
   IconBell,
   IconChevronDown,
@@ -31,8 +31,8 @@ import { CreateIssueDialog } from "@/components/create/CreateIssueDialog";
 import { SprintFormDialog } from "@/components/sprints/SprintFormDialog";
 import { ThemeSwitcher } from "@/components/theme/ThemeSwitcher";
 import {
+  DISPLAY_ROLE_LABEL,
   ISSUE_TYPE_LABEL,
-  WORK_ROLE_LABEL,
   canCreateSprint,
   creatableWorkItems,
 } from "@/lib/domain";
@@ -81,12 +81,15 @@ function ShortcutHint() {
 export function Topbar({
   user,
   workRole,
+  displayRole,
   projects,
   unreadNotifications,
   onOpenMobileNav,
 }: {
   /** Decides what the bar offers; `createIssue` re-checks for itself. */
   workRole: WorkRole;
+  /** The badge's wording, which differs for a member with no team assigned. */
+  displayRole: DisplayRole;
   user: TopbarUser;
   projects: TopbarProject[];
   unreadNotifications: number;
@@ -513,7 +516,7 @@ export function Topbar({
                 * the same table every other badge reads.
                 */}
               <span className="prio-badge" style={{ marginTop: 4 }}>
-                {WORK_ROLE_LABEL[workRole]}
+                {DISPLAY_ROLE_LABEL[displayRole]}
               </span>
             </div>
           </div>
