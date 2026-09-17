@@ -47,6 +47,25 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   return user;
 });
 
+/**
+ * Whether this person still has to replace the password they were given.
+ *
+ * Read from the row on every call rather than carried on `CurrentUser`, for
+ * two reasons. It is asked in exactly one place — the app shell, which is the
+ * gate — so there is nothing to spread; and reading it fresh means clearing
+ * the flag takes effect on the next request rather than whenever a session
+ * happens to be rebuilt. `cache` keeps it to one query per request.
+ */
+export const needsPasswordChange = cache(
+  async (userId: string): Promise<boolean> => {
+    const row = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { mustChangePassword: true },
+    });
+    return row?.mustChangePassword === true;
+  },
+);
+
 /** Redirects to sign-in when there is no active session. */
 export async function requireUser(returnTo?: string): Promise<CurrentUser> {
   const user = await getCurrentUser();

@@ -277,7 +277,22 @@ function CreateUserDialog({
       return;
     }
 
-    toast(`Account created for ${result.data.email}`);
+    /*
+     * What the administrator needs to know, and nothing they should not.
+     *
+     * The account exists either way — a mail failure does not undo it — so the
+     * message says whether the person was actually told, because that decides
+     * whether the administrator now has to pass the password on themselves.
+     * The password itself never appears here.
+     */
+    toast(
+      result.data.welcomeEmailSent
+        ? `Account created for ${result.data.email}. Their welcome email is on its way.`
+        : result.data.welcomeEmailSkipped
+          ? `Account created for ${result.data.email}. Email is not configured here, so send them their password yourself.`
+          : `Account created for ${result.data.email}, but the welcome email could not be sent. Send them their password yourself.`,
+      result.data.welcomeEmailSent ? "success" : "info",
+    );
     onCreated();
   }
 
@@ -291,7 +306,8 @@ function CreateUserDialog({
       footer={
         <>
           <span className="prio-dialog__footer-note">
-            Share the password securely and ask them to change it.
+            They are emailed these details, and must change the password when
+            they first sign in.
           </span>
           <Button variant="ghost" onClick={onClose} disabled={submitting}>
             Cancel

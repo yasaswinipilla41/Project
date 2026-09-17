@@ -32,6 +32,22 @@
   max-width: min(300px, calc(100vw - 40px));
 }
 
+/*
+ * Minimised while recording carries its own controls, so it needs the room.
+ *
+ * The destination gives way rather than the controls wrapping: being able to
+ * stop matters more, in that moment, than being reminded where the file will
+ * land. On a narrow viewport the `100vw` term still wins, so this widens the
+ * window without ever pushing it off screen.
+ */
+.window[data-minimized][data-recording] {
+  max-width: min(440px, calc(100vw - 40px));
+}
+
+.window[data-minimized][data-recording] .target {
+  display: none;
+}
+
 /* Maximised: the window fills most of the screen, so the sources and the snips
    taken so far have room. Restoring returns it to where it was floating. */
 .window[data-maximized] {
@@ -408,10 +424,73 @@
   animation: snipPulse 1.4s ease-in-out infinite;
 }
 
+/*
+ * A paused recording still shows its dot, and stops it blinking.
+ *
+ * Blinking is what says "this is running", so a paused recorder must not keep
+ * doing it — it would be the one state where the indicator lies. The dot stays
+ * put and goes flat, which reads as held rather than finished.
+ */
+.dot[data-paused] {
+  animation: none;
+  background: var(--prio-text-tertiary, var(--prio-text-secondary));
+}
+
 .elapsed {
   font-size: var(--prio-text-sm);
   font-variant-numeric: tabular-nums;
   color: var(--prio-text-primary);
+}
+
+/* ------------------------------------------ recording, from the title bar */
+
+/* Shown on the bar only while minimised, so Stop never needs the window
+   restored first. Compact by necessity: it shares the bar with the title. */
+.barRecording {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding-left: 8px;
+}
+
+.barRecording .elapsed {
+  font-size: var(--prio-text-xs);
+  white-space: nowrap;
+}
+
+.barAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--prio-border-strong);
+  border-radius: var(--prio-radius-sm);
+  background: var(--prio-bg-surface);
+  color: var(--prio-text-secondary);
+  cursor: pointer;
+}
+
+.barAction:hover:not(:disabled) {
+  border-color: var(--prio-neutral-400);
+  color: var(--prio-text-primary);
+}
+
+.barAction:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.barAction:focus-visible {
+  outline: 2px solid var(--prio-border-focus);
+  outline-offset: 1px;
+}
+
+.barAction[data-stop] {
+  border-color: var(--prio-red-600);
+  color: var(--prio-red-600);
 }
 
 .error {

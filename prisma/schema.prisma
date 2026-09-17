@@ -125,6 +125,13 @@ model User {
   role                      Role      @default(MEMBER)
   jobTitle                  String?
   isActive                  Boolean   @default(true)
+  /// Set when an administrator creates the account with a password they chose,
+  /// and cleared the first time the person replaces it.
+  ///
+  /// Defaults to false so that every account which already exists is untouched:
+  /// nobody who has been signing in for months is suddenly stopped at a
+  /// password screen. Only `createUser` sets it true.
+  mustChangePassword        Boolean   @default(false)
   lastSeenAt                DateTime?
   emailNotificationsEnabled Boolean   @default(true)
 

@@ -531,3 +531,30 @@ export const IconSystem = (p: IconProps) => (
     <path d="M5.6 14h4.8M8 11.2V14" />
   </Svg>
 );
+
+/* ------------------------------------------------- recording controls */
+
+/*
+ * The three states a recording can be put into, as the shapes every player
+ * uses for them. They sit on the Snip Tool's title bar while a recording runs,
+ * where there is room for a glyph and none for a word; each button carries its
+ * wording as an `aria-label` and a tooltip.
+ */
+
+export const IconPause = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M6 3.2v9.6M10 3.2v9.6" />
+  </Svg>
+);
+
+export const IconPlay = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4.8 3.1 12.4 8l-7.6 4.9Z" />
+  </Svg>
+);
+
+export const IconStopSquare = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="3.6" y="3.6" width="8.8" height="8.8" rx="1.4" />
+  </Svg>
+);

@@ -6,6 +6,7 @@ import {
   QA_TEAM_SLUGS,
   TESTING_TEAM_SLUG,
   WORK_TEAM_SLUGS,
+  displayRoleFromTeams,
   workRoleFromTeams,
 } from "@/lib/authz";
 import {
@@ -258,6 +259,13 @@ export async function listLaneMembers(
       image: row.image,
       jobTitle: row.jobTitle,
       workRole: workRoleFromTeams(
+        row.role,
+        row.teamMemberships.map((m) => m.team.slug),
+      ),
+      /* What the card prints. The line above is what the lane filter reads, and
+         the two differ for a member on no team: a DEVELOPER by default, and a
+         "Member" on screen because nobody assigned them that job. */
+      displayRole: displayRoleFromTeams(
         row.role,
         row.teamMemberships.map((m) => m.team.slug),
       ),

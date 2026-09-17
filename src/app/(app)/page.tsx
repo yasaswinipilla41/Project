@@ -30,7 +30,7 @@ import {
 import { QuickActions } from "@/components/dashboard/QuickActions";
 import { WorkStatusCard } from "@/components/dashboard/WorkStatusCard";
 import { requireUser } from "@/lib/session";
-import { workRoleOf } from "@/lib/authz";
+import { displayRoleOf, workRoleOf } from "@/lib/authz";
 import { loadDashboard } from "@/server/queries/dashboard";
 import { loadWorkStatus } from "@/server/queries/workStatus";
 
@@ -57,6 +57,9 @@ export default async function HomePage() {
   const firstName = user.name.split(" ")[0] ?? user.name;
   const isAdmin = data.scope.isAdmin;
   const workRole = await workRoleOf(user);
+  /* The badge's wording. Separate from `workRole` above, which still decides
+     what the quick actions offer — see `displayRoleOf`. */
+  const displayRole = await displayRoleOf(user);
 
   /*
    * Work Status, in the slot "Assigned to me" used to hold on Admin Home.
@@ -122,7 +125,7 @@ export default async function HomePage() {
           * Only where it is drawn changed.
           */}
         <div className="prio-dash__heroaside">
-          <RoleBadge role={workRole} />
+          <RoleBadge role={displayRole} />
           <QuickActions role={workRole} userId={user.id} />
         </div>
       </header>

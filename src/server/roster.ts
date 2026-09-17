@@ -2,9 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { assertAdmin, FULLSTACK_TEAM_SLUG, workRoleOf } from "@/lib/authz";
+import {
+  assertAdmin,
+  displayRoleOf,
+  FULLSTACK_TEAM_SLUG,
+  workRoleOf,
+} from "@/lib/authz";
 import { ISSUE_TYPE_LABEL } from "@/lib/domain";
-import type { WorkRole } from "@/lib/domain";
+import type { DisplayRole, WorkRole } from "@/lib/domain";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import {
@@ -666,6 +671,8 @@ export interface RosterProfile {
   image: string | null;
   jobTitle: string | null;
   workRole: WorkRole;
+  /** What the badge says — "Member" for somebody on no work team. */
+  displayRole: DisplayRole;
   projects: { id: string; key: string; name: string }[];
   issues: {
     id: string;
@@ -731,7 +738,7 @@ export async function loadRosterProfile(
 
     /* The whole row, so this is the same `CurrentUser` every other caller
        passes rather than a cast-shaped approximation of one. */
-    const workRole = await workRoleOf({
+    const asUser = {
       id: person.id,
       name: person.name,
       email: person.email,
@@ -739,7 +746,11 @@ export async function loadRosterProfile(
       role: person.role,
       jobTitle: person.jobTitle,
       isActive: person.isActive,
-    });
+    };
+    const workRole = await workRoleOf(asUser);
+    /* Printed rather than acted on: somebody on no work team is a DEVELOPER to
+       every guard and a "Member" on this card. */
+    const displayRole = await displayRoleOf(asUser);
 
     return {
       ok: true,
@@ -750,6 +761,7 @@ export async function loadRosterProfile(
         image: person.image,
         jobTitle: person.jobTitle,
         workRole,
+        displayRole,
         projects: person.projectMemberships.map((m) => m.project),
         issues: issues.map((issue) => ({
           id: issue.id,

@@ -37,6 +37,8 @@ import {
   ISSUE_STATUSES,
   allowedStatusesFor,
   canSetStatus,
+  doesDeveloperWork,
+  doesQaWork,
   type WorkRole,
   PRIORITIES,
   PRIORITY_LABEL,
@@ -106,6 +108,39 @@ export interface BoardLabel {
 }
 
 type MoveAction = { issueId: string; status: IssueStatus };
+
+/**
+ * What to say when a drop is refused because of who is doing it.
+ *
+ * Only the two cases the workflow turns on get wording of their own, because
+ * only those two are a person being told "that is somebody else's job" rather
+ * than "not from where that card is". Everything else — a move that is simply
+ * not a legal transition from the card's current status — keeps the general
+ * message, which names the card and where it was.
+ *
+ * Returns null when the refusal was not about the role, and the caller falls
+ * back. Nothing here decides anything: `canSetStatus` already refused, and the
+ * server refuses again regardless of what this returns.
+ */
+function refusalFor(role: WorkRole, wanted: IssueStatus | null): string | null {
+  if (wanted === null) return null;
+
+  const builds = doesDeveloperWork(role);
+  const checks = doesQaWork(role);
+
+  /* A tester handing work to themselves to test. Ready for QA is the
+     developer's hand-off, and saying so is the point of the message. */
+  if (checks && !builds && wanted === "IN_REVIEW") {
+    return "You do not have access to drag and drop items into ‘Ready for QA’. This access is available only to Developers.";
+  }
+
+  /* A developer marking their own work tested or finished. */
+  if (builds && !checks && (wanted === "IN_QA" || wanted === "DONE")) {
+    return "You do not have access to drag and drop items into ‘In QA’ or ‘Done’. This access is available only to QA.";
+  }
+
+  return null;
+}
 
 const UNASSIGNED = "unassigned";
 
@@ -315,6 +350,18 @@ export function FlowBoard({
     };
   }, [measure]);
 
+  /*
+   * Why a drop was refused, shown beside the Labels filter.
+   *
+   * Deliberately not a toast. A toast for this is the wrong shape twice over:
+   * it appears away from the board, where the person's attention is not, and
+   * it leaves before somebody who has just dragged a card and watched it snap
+   * back has finished asking why. This sits in the toolbar, next to the last
+   * control before the columns, and stays until the next drop succeeds or they
+   * clear it.
+   */
+  const [dropError, setDropError] = useState<string | null>(null);
+
   const [dragIssueId, setDragIssueId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<IssueStatus | null>(null);
   const baseIssues = useMemo(
@@ -494,29 +541,39 @@ export function FlowBoard({
      * when `updateIssue` says no.
      */
     const planned = candidates.map((issue) => {
-      const to = resolve(issue.status);
+      /* What the drop meant, kept even when it is refused: the message shown
+         beside Labels names the column they aimed at, and `to` alone cannot
+         say which one that was once it has been nulled. */
+      const wanted = resolve(issue.status);
+      const permitted =
+        wanted !== null && canSetStatus(workRole, issue.status, wanted);
       /* Their half of the job, asked the same way the server asks it. A
          status somebody else owns is refused here rather than moved and
          sprung back. */
-      return {
-        issue,
-        to: to !== null && canSetStatus(workRole, issue.status, to) ? to : null,
-      };
+      return { issue, wanted, to: permitted ? wanted : null };
     });
 
     const moving = planned.filter(
-      (plan): plan is { issue: (typeof candidates)[number]; to: IssueStatus } =>
-        plan.to !== null && plan.to !== plan.issue.status,
+      (
+        plan,
+      ): plan is {
+        issue: (typeof candidates)[number];
+        wanted: IssueStatus | null;
+        to: IssueStatus;
+      } => plan.to !== null && plan.to !== plan.issue.status,
     );
+
+    /* A move that works answers the last refusal, so it clears it. */
+    if (planned.some((plan) => plan.to !== null)) setDropError(null);
 
     const refused = planned.filter((plan) => plan.to === null);
     if (refused.length > 0) {
       const first = refused[0];
-      toast(
-        refused.length === 1 && first
-          ? `${first.issue.key} cannot move straight from ${STATUS_LABEL[first.issue.status]} to ${destination}.`
-          : `${refused.length} issues cannot move to ${destination} from where they are.`,
-        "error",
+      setDropError(
+        refusalFor(workRole, refused[0]?.wanted ?? null) ??
+          (refused.length === 1 && first
+            ? `${first.issue.key} cannot move straight from ${STATUS_LABEL[first.issue.status]} to ${destination}.`
+            : `${refused.length} issues cannot move to ${destination} from where they are.`),
       );
     }
 
@@ -807,6 +864,33 @@ export function FlowBoard({
                 ))
               )}
             </ToolbarMenu>
+
+            {/*
+              * Why the last drop was refused, beside the filter the person was
+              * last looking at rather than in a corner of the screen.
+              *
+              * `role="status"` with `aria-live` so it is announced when it
+              * appears — a card springing back is silent to a screen reader,
+              * and this is the only thing that says why.
+              */}
+            {dropError ? (
+              <p
+                className="prio-board__droperror"
+                role="status"
+                aria-live="polite"
+              >
+                {dropError}
+                <button
+                  type="button"
+                  className="prio-board__droperror-close"
+                  onClick={() => setDropError(null)}
+                  aria-label="Dismiss"
+                  title="Dismiss"
+                >
+                  <IconClose size={12} />
+                </button>
+              </p>
+            ) : null}
 
             {/* Same control the issue list carries, in the same place beside
                 the chips it clears. */}

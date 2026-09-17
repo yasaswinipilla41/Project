@@ -546,6 +546,33 @@ export const WORK_ROLE_DESCRIPTION: Record<WorkRole, string> = {
     "Builds and verifies: picks work up, hands it back, and checks what comes in.",
 };
 
+/**
+ * What somebody's role is *called on screen*, which is not always their work
+ * role.
+ *
+ * `workRoleOf` answers DEVELOPER for a member on no team, and that default is
+ * load-bearing: it is what lets somebody who has just been added to a project
+ * pick work up at all. It is the wrong thing to *print*, though. Somebody an
+ * administrator has not given a job to has not been made a developer, and a
+ * badge saying so claims an assignment nobody made — which is why an
+ * unassigned member reads "Member" here while still being a DEVELOPER to every
+ * permission check.
+ *
+ * So this is deliberately a display concept and nothing else. Nothing branches
+ * on it, no guard consults it, and changing it cannot widen or narrow what
+ * anybody may do — see `displayRoleOf` in `lib/authz`, which is the one place
+ * that decides it.
+ */
+export type DisplayRole = WorkRole | "MEMBER";
+
+export const DISPLAY_ROLE_LABEL: Record<DisplayRole, string> = {
+  ADMIN: "Admin",
+  QA: "QA / Tester",
+  DEVELOPER: "Developer",
+  FULLSTACK: "Fullstack Developer",
+  MEMBER: "Member",
+};
+
 /* ------------------------------------------------------------ capabilities */
 
 /**

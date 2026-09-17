@@ -154,3 +154,118 @@ describe("stating how long a recording ran", () => {
     expect(formatDuration(-5_000)).toBe("0:00");
   });
 });
+
+/**
+ * Pausing, and the clock it has to keep honest.
+ *
+ * A paused recorder writes nothing, so a duration measured from start to stop
+ * counts time that is not in the file. The attachment would then claim a
+ * length the video does not have. These drive a stand-in recorder rather than
+ * a real one, because what is being checked is the bookkeeping around it.
+ */
+describe("pausing a recording", () => {
+  /** A MediaRecorder stand-in that honours state the way the real one does. */
+  function recorderStub(options: { pausable: boolean }) {
+    const listeners: Record<string, () => void> = {};
+    const instance = {
+      state: "inactive" as string,
+      mimeType: "video/webm",
+      ondataavailable: null as ((e: { data: Blob }) => void) | null,
+      onstop: null as (() => void) | null,
+      onerror: null as (() => void) | null,
+      start(_slice?: number) {
+        instance.state = "recording";
+        void _slice;
+      },
+      stop() {
+        instance.state = "inactive";
+        instance.ondataavailable?.({ data: new Blob(["x"]) });
+        instance.onstop?.();
+      },
+      addEventListener: (name: string, fn: () => void) => {
+        listeners[name] = fn;
+      },
+      ...(options.pausable
+        ? {
+            pause() {
+              instance.state = "paused";
+            },
+            resume() {
+              instance.state = "recording";
+            },
+          }
+        : {}),
+    };
+    return instance;
+  }
+
+  function stubEnvironment(recorder: ReturnType<typeof recorderStub>) {
+    const track = { stop: vi.fn(), addEventListener: vi.fn() };
+    const stream = {
+      getTracks: () => [track],
+      getVideoTracks: () => [track],
+    };
+
+    const Recorder = function () {
+      return recorder;
+    } as unknown as {
+      new (): unknown;
+      isTypeSupported: (t: string) => boolean;
+    };
+    Recorder.isTypeSupported = () => true;
+
+    vi.stubGlobal("navigator", {
+      mediaDevices: { getDisplayMedia: vi.fn().mockResolvedValue(stream) },
+    });
+    vi.stubGlobal("window", { MediaRecorder: Recorder });
+    vi.stubGlobal("MediaRecorder", Recorder);
+  }
+
+  it("is offered only when the recorder implements it", async () => {
+    stubEnvironment(recorderStub({ pausable: false }));
+    const active = await startScreenRecording();
+
+    expect(active.canPause).toBe(false);
+    // And the controls refuse rather than pretending they worked.
+    expect(active.pause()).toBe(false);
+    expect(active.isPaused()).toBe(false);
+  });
+
+  it("pauses and resumes, reporting what the recorder actually did", async () => {
+    stubEnvironment(recorderStub({ pausable: true }));
+    const active = await startScreenRecording();
+
+    expect(active.canPause).toBe(true);
+    expect(active.pause()).toBe(true);
+    expect(active.isPaused()).toBe(true);
+    // Pausing twice is not a second pause.
+    expect(active.pause()).toBe(false);
+
+    expect(active.resume()).toBe(true);
+    expect(active.isPaused()).toBe(false);
+    expect(active.resume()).toBe(false);
+  });
+
+  it("leaves the paused time out of the duration it reports", async () => {
+    vi.useFakeTimers();
+    try {
+      stubEnvironment(recorderStub({ pausable: true }));
+      const active = await startScreenRecording();
+
+      vi.advanceTimersByTime(1_000); // recording
+      active.pause();
+      vi.advanceTimersByTime(5_000); // paused: not in the file
+      active.resume();
+      vi.advanceTimersByTime(1_000); // recording
+
+      const result = await active.stop();
+
+      /* Two seconds of footage across seven seconds of wall clock. The
+         tolerance is for the timer, not for the arithmetic. */
+      expect(result.durationMs).toBeGreaterThanOrEqual(1_900);
+      expect(result.durationMs).toBeLessThan(2_600);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

@@ -466,6 +466,52 @@
   }
 }
 
+/*
+ * Why the last drop was refused, in the toolbar beside the Labels filter.
+ *
+ * Red, and in the flow of the toolbar rather than over it: a card that springs
+ * back needs an explanation the eye finds without moving, and a message that
+ * covered a filter would trade one confusion for another. It wraps on a narrow
+ * toolbar instead of pushing the controls off the edge.
+ */
+.prio-board__droperror {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 4px 8px;
+  max-width: 100%;
+  font-size: var(--prio-text-xs);
+  line-height: 1.4;
+  color: var(--prio-red-600);
+  background: var(--prio-red-50, var(--prio-bg-subtle));
+  border: 1px solid var(--prio-red-600);
+  border-radius: var(--prio-radius-sm);
+}
+
+.prio-board__droperror-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.75;
+}
+
+.prio-board__droperror-close:hover {
+  opacity: 1;
+}
+
+.prio-board__droperror-close:focus-visible {
+  outline: 2px solid var(--prio-border-focus);
+  outline-offset: 1px;
+  border-radius: 2px;
+}
+
 /* A column that will not take the card currently being dragged. Dimmed rather
    than hidden: it is still a real column with real work in it. */
 .prio-board__column[data-refuses="true"] {

@@ -1,5 +1,10 @@
 import type { IssueStatus } from "@prisma/client";
-import { doesDeveloperWork, doesQaWork, type WorkRole } from "@/lib/domain";
+import {
+  doesDeveloperWork,
+  doesQaWork,
+  type DisplayRole,
+  type WorkRole,
+} from "@/lib/domain";
 
 /**
  * Work Status's vocabulary: the two lanes an administrator hands work out
@@ -100,5 +105,8 @@ export interface WorkStatusMember {
   email: string;
   image: string | null;
   jobTitle: string | null;
+  /** Decides which lane may be offered this person's name. */
   workRole: WorkRole;
+  /** What their badge says, which differs for somebody on no work team. */
+  displayRole: DisplayRole;
 }

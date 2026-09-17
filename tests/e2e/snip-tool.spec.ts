@@ -419,7 +419,7 @@ test.describe("Snip Tool — screenshot workflow on an issue", () => {
     expect(afterChoosing.at(-1)?.selfBrowserSurface).toBe("exclude");
 
     // The window says what it is holding, and offers the way out of it.
-    await expect(snip.getByText(/^Sharing/)).toBeVisible();
+    await expect(snip.getByText(/^Capturing from/)).toBeVisible();
 
     await snip.getByRole("button", { name: "New snip" }).click();
     const selector = page.getByRole("dialog", { name: "Select area to snip" });
@@ -438,11 +438,13 @@ test.describe("Snip Tool — screenshot workflow on an issue", () => {
     await expect(selector).toBeHidden();
     await expect(snip).toBeVisible();
     await expect(snipRows(snip)).toHaveCount(0);
-    await expect(snip.getByText(/^Sharing/)).toBeVisible();
+    await expect(snip.getByText(/^Capturing from/)).toBeVisible();
 
-    /* Stopping is the person's to do, and hands the source back to this tab. */
-    await snip.getByRole("button", { name: "Stop sharing" }).click();
-    await expect(snip.getByText(/^Sharing/)).toHaveCount(0);
+    /* Releasing is the person's to do, and hands the source back to this tab.
+       Worded as capture rather than sharing: nothing leaves the machine, and
+       the browser's own "Stop sharing" bar is a separate control. */
+    await snip.getByRole("button", { name: "Release source" }).click();
+    await expect(snip.getByText(/^Capturing from/)).toHaveCount(0);
     await expect(snip.getByRole("radio", { name: /^This tab/ })).toBeChecked();
   });
 });
@@ -619,6 +621,51 @@ test.describe("Snip Tool — on the Create form", () => {
     await expect(snip.getByRole("status")).toContainText("Recording");
     await expect(snip.getByRole("button", { name: "Stop recording" })).toBeVisible();
     await expect(snip.getByRole("button", { name: "Discard" })).toBeVisible();
+
+    /*
+     * This tab was left out of the picker.
+     *
+     * The recording controls are part of this page, so recording this page
+     * would put them in the file. Asking the browser to exclude its own
+     * surface is what prevents that, and it is the only part of the guarantee
+     * Prio controls — a person who picks a whole screen is recording the
+     * screen the controls are on, which no page can prevent.
+     */
+    const recordHints = await page.evaluate(
+      () =>
+        (
+          window as unknown as {
+            __displayMediaCalls: {
+              preferCurrentTab?: boolean;
+              selfBrowserSurface?: string;
+            }[];
+          }
+        ).__displayMediaCalls,
+    );
+    expect(recordHints.at(-1)?.selfBrowserSurface).toBe("exclude");
+    expect(recordHints.at(-1)?.preferCurrentTab).not.toBe(true);
+
+    /* Pausing is offered only where the recorder actually implements it. */
+    const pause = snip.getByRole("button", { name: "Pause", exact: true });
+    if ((await pause.count()) > 0) {
+      await pause.click();
+      await expect(snip.getByRole("status")).toContainText("Paused");
+      await snip.getByRole("button", { name: "Resume", exact: true }).click();
+      await expect(snip.getByRole("status")).toContainText("Recording");
+    }
+
+    /*
+     * Stopping survives collapsing the window.
+     *
+     * The body is not rendered while minimised, which used to take Stop with
+     * it — the one control somebody urgently needs was behind restoring the
+     * window first.
+     */
+    await snip.getByRole("button", { name: "Minimise Snip Tool" }).click();
+    await expect(
+      snip.getByRole("button", { name: "Stop recording" }),
+    ).toBeVisible();
+    await snip.getByRole("button", { name: "Restore Snip Tool" }).click();
 
     /* Long enough for the recorder's one-second timeslice to deliver a chunk;
        a stop before that produces an empty blob and a refusal instead. */

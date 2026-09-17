@@ -25,8 +25,11 @@ import {
   IconImage,
   IconMaximize,
   IconMinimize,
+  IconPause,
+  IconPlay,
   IconPlus,
   IconRestoreWindow,
+  IconStopSquare,
   IconTrash,
   type IconProps,
 } from "@/components/ui/Icon";
@@ -275,7 +278,19 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
   const recordingRef = useRef<ActiveRecording | null>(null);
   const startedAtRef = useRef<number | null>(null);
   const [recording, setRecording] = useState(false);
+  const [paused, setPaused] = useState(false);
+  /** Whether this browser's recorder can pause; false hides the control. */
+  const [canPause, setCanPause] = useState(false);
   const [elapsedMs, setElapsedMs] = useState(0);
+  /*
+   * Time already spent paused, and when the current pause began.
+   *
+   * The clock on screen has to agree with the file that comes out, and a
+   * paused recorder writes nothing — so both this and `screenCapture` subtract
+   * the same spans rather than reporting wall-clock.
+   */
+  const pausedTotalRef = useRef(0);
+  const pausedAtRef = useRef<number | null>(null);
 
   /*
    * Where the person has dragged the window to.
@@ -367,15 +382,21 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
     };
   });
 
-  // Ticks while recording, and only while recording.
+  // Ticks while recording, and not while it is paused.
   useEffect(() => {
-    if (!recording) return;
+    if (!recording || paused) return;
     const timer = setInterval(
-      () => setElapsedMs(Date.now() - (startedAtRef.current ?? Date.now())),
+      () =>
+        setElapsedMs(
+          Math.max(
+            0,
+            Date.now() - (startedAtRef.current ?? Date.now()) - pausedTotalRef.current,
+          ),
+        ),
       250,
     );
     return () => clearInterval(timer);
-  }, [recording]);
+  }, [recording, paused]);
 
   // Nothing keeps sharing the screen after the window is gone.
   useEffect(() => {
@@ -736,7 +757,14 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
     try {
       recordingRef.current = await startScreenRecording();
       startedAtRef.current = Date.now();
+      pausedTotalRef.current = 0;
+      pausedAtRef.current = null;
       setElapsedMs(0);
+      setPaused(false);
+      /* Asked of the recorder that was actually made, because pausing is
+         optional in the specification and a browser without it must not be
+         offered a button that would do nothing. */
+      setCanPause(recordingRef.current.canPause);
       setRecording(true);
     } catch (failure) {
       setError(
@@ -770,6 +798,8 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
     } finally {
       recordingRef.current = null;
       setRecording(false);
+      setPaused(false);
+      pausedAtRef.current = null;
       setBusy(null);
     }
   }
@@ -778,7 +808,35 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
     recordingRef.current?.cancel();
     recordingRef.current = null;
     setRecording(false);
+    setPaused(false);
+    pausedAtRef.current = null;
     setError(null);
+  }
+
+  /**
+   * Holds the recording where it is, or lets it run on again.
+   *
+   * The recorder is the authority on whether it worked — `pause` returns false
+   * on a browser that does not implement it, and on one that does but refused —
+   * so the button only changes what it says when the recorder actually moved.
+   */
+  function togglePause() {
+    const active = recordingRef.current;
+    if (!active) return;
+
+    if (active.isPaused()) {
+      if (!active.resume()) return;
+      if (pausedAtRef.current !== null) {
+        pausedTotalRef.current += Date.now() - pausedAtRef.current;
+        pausedAtRef.current = null;
+      }
+      setPaused(false);
+      return;
+    }
+
+    if (!active.pause()) return;
+    pausedAtRef.current = Date.now();
+    setPaused(true);
   }
 
   /**
@@ -838,6 +896,7 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
           ref={windowRef}
           className={styles.window}
           data-minimized={minimized || undefined}
+          data-recording={recording || undefined}
           data-maximized={!floating || undefined}
           /* Placed from the top left once it has been moved; until then the
              stylesheet's own corner applies and these are simply absent. */
@@ -867,6 +926,57 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
             <span className={styles.target} title={destination}>
               {destination}
             </span>
+
+            {/*
+             * Stopping a recording, from the collapsed window.
+             *
+             * The body below is not rendered while minimised, which used to
+             * take Stop with it — so the one control somebody urgently needs
+             * was behind restoring the window first. It lives on the bar
+             * instead whenever a recording is running, which is the only state
+             * that shows it, and `stopPropagation` keeps a press on it from
+             * starting a drag of the window underneath.
+             */}
+            {recording && minimized ? (
+              <span
+                className={styles.barRecording}
+                role="status"
+                aria-live="polite"
+                onPointerDown={(event) => event.stopPropagation()}
+              >
+                <span
+                  className={styles.dot}
+                  data-paused={paused || undefined}
+                  aria-hidden
+                />
+                <span className={styles.elapsed}>
+                  {paused ? "Paused" : "Recording"} {formatDuration(elapsedMs)}
+                </span>
+                {canPause ? (
+                  <button
+                    type="button"
+                    className={styles.barAction}
+                    onClick={togglePause}
+                    disabled={busy === "record"}
+                    aria-label={paused ? "Resume recording" : "Pause recording"}
+                    title={paused ? "Resume recording" : "Pause recording"}
+                  >
+                    {paused ? <IconPlay size={13} /> : <IconPause size={13} />}
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className={styles.barAction}
+                  data-stop
+                  onClick={() => void finishRecording()}
+                  disabled={busy === "record"}
+                  aria-label="Stop recording"
+                  title="Stop recording"
+                >
+                  <IconStopSquare size={13} />
+                </button>
+              </span>
+            ) : null}
 
             <button
               type="button"
@@ -923,10 +1033,25 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
                   role="status"
                   aria-live="polite"
                 >
-                  <span className={styles.dot} aria-hidden />
+                  <span
+                    className={styles.dot}
+                    data-paused={paused || undefined}
+                    aria-hidden
+                  />
                   <span className={styles.elapsed}>
-                    Recording {formatDuration(elapsedMs)}
+                    {paused ? "Paused" : "Recording"} {formatDuration(elapsedMs)}
                   </span>
+                  {canPause ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={togglePause}
+                      disabled={busy === "record"}
+                    >
+                      {paused ? "Resume" : "Pause"}
+                    </Button>
+                  ) : null}
                   <Button
                     type="button"
                     variant="primary"
@@ -971,7 +1096,7 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
                       <SourceOption
                         label="Another tab or window"
                         hint={
-                          sharing ? "Shared — ready to snip" : "Choose in the browser"
+                          sharing ? "Selected — ready to snip" : "Choose in the browser"
                         }
                         Icon={IconExternal}
                         selected={source === "other"}
@@ -979,20 +1104,30 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
                       />
                     </div>
 
-                    {/* What is being shared, and the way out of it. The browser
-                        shows its own indicator as well; this is the one inside
-                        Prio, next to the choice that started it. */}
+                    {/*
+                     * What Prio is capturing from, and the way out of it.
+                     *
+                     * Worded as capture rather than sharing. Nothing is being
+                     * sent anywhere: the browser hands Prio frames of a surface
+                     * the person picked, to put on a work item. "Sharing your
+                     * screen" describes a call, and reading it here invites the
+                     * reasonable worry that somebody is watching.
+                     *
+                     * The browser's own indicator and its own Stop are separate
+                     * and untouched — this is Prio's, beside the choice that
+                     * started it.
+                     */}
                     {sharing ? (
                       <p className={styles.sharing}>
                         <span className={styles.sharingName} title={sharing}>
-                          Sharing {sharing}
+                          Capturing from {sharing}
                         </span>
                         <button
                           type="button"
                           className="prio-btn prio-btn--ghost prio-btn--sm"
                           onClick={releaseSource}
                         >
-                          Stop sharing
+                          Release source
                         </button>
                       </p>
                     ) : null}

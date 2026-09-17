@@ -52,21 +52,15 @@ export function ProjectNav({
   const base = `/projects/${projectKey.toLowerCase()}`;
 
   /*
-   * The Flow Board shows no tab strip.
+   * The board shows the strip like every other view.
    *
-   * The strip lives in the project layout, so every view under it gets one --
-   * which is what keeps there being exactly one. The board is the exception:
-   * it is asked to carry no project navigation at all. Deciding that here,
-   * from the path, rather than in the layout is what keeps the rule in one
-   * place: the layout still renders this for every view, and this is the only
-   * thing that knows which view is showing.
-   *
-   * Nothing is removed by returning null -- the board is still reached from
-   * the strip on the other four views, and its route is unchanged.
+   * It used to be the exception and returned null here, which left the one
+   * project view with no way on to Summary, List, Sprints, Calendar, Timeline
+   * or Activity — the board's URL never left the project, but the workspace
+   * around it did. Where the strip is drawn is the layout's business and the
+   * board is no longer special to it; what the board still withholds is the
+   * shell's *header*, because it draws its own. See `ProjectShellChrome`.
    */
-  if (pathname === `${base}/board` || pathname.startsWith(`${base}/board/`)) {
-    return null;
-  }
 
   const tabs: { id: ProjectTab; label: string; href: string }[] = [
     { id: "summary", label: "Summary", href: `${base}/summary` },

@@ -8,7 +8,7 @@ import { SearchSelect } from "@/components/admin/SearchSelect";
 import { IssueKey, StatusPill } from "@/components/ui/Indicators";
 import { useToast } from "@/components/ui/Toast";
 import { IconMyWork } from "@/components/ui/Icon";
-import { STATUS_LABEL, WORK_ROLE_LABEL } from "@/lib/domain";
+import { DISPLAY_ROLE_LABEL, STATUS_LABEL } from "@/lib/domain";
 import { assignWork, laneIssues, laneMembers } from "@/server/workStatus";
 import {
   applyBacklogAllocation,
@@ -370,7 +370,7 @@ export function WorkStatusCard({ data }: { data: WorkStatusData }) {
                 options={(people ?? []).map((person) => ({
                   id: person.id,
                   label: person.name,
-                  meta: `${person.jobTitle ?? "Not set"} · ${WORK_ROLE_LABEL[person.workRole]}`,
+                  meta: `${person.jobTitle ?? "Not set"} · ${DISPLAY_ROLE_LABEL[person.displayRole]}`,
                   /* Searchable by email without printing an address on every
                      row — the same rule Administration's pickers follow. */
                   keywords: person.email,

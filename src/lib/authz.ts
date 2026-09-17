@@ -13,7 +13,7 @@ import {
   canEditSprintIssues,
   canStartSprint,
 } from "@/lib/domain";
-import type { WorkRole } from "@/lib/domain";
+import type { DisplayRole, WorkRole } from "@/lib/domain";
 
 /**
  * Project-level authorization.
@@ -348,7 +348,7 @@ export const DEVELOPER_TEAM_SLUGS = [
  * Everything that gates on this calls `workRoleOf`; there is no second
  * definition of who a tester is anywhere in the codebase.
  */
-export type { WorkRole };
+export type { DisplayRole, WorkRole };
 
 export async function workRoleOf(user: CurrentUser): Promise<WorkRole> {
   if (user.role === "ADMIN") return "ADMIN";
@@ -446,6 +446,92 @@ export async function workRolesFor(
     people.map((person) => [
       person.id,
       workRoleFromTeams(person.role, slugsByUser.get(person.id) ?? []),
+    ]),
+  );
+}
+
+/**
+ * What to call somebody's role on screen.
+ *
+ * Display only. Every guard in Prio asks `workRoleOf`, and this changes none of
+ * them — it exists because the two questions genuinely have different answers
+ * for one person: somebody on no work team.
+ *
+ * `workRoleFromTeams` calls that person a DEVELOPER, and must, because the
+ * default is what lets a new member pick work up at all. Printing "Developer"
+ * on their badge is a different claim: it says an administrator gave them that
+ * job, and nobody did. So a person holding none of the work teams reads
+ * "Member", while remaining a DEVELOPER to every permission check.
+ *
+ * Derived from the same rows as the role itself rather than from a second
+ * column, so the badge cannot drift from the teams it describes: the moment an
+ * administrator adds or removes somebody from Development, Testing or Full
+ * Stack, this answers differently.
+ */
+export function displayRoleFromTeams(
+  accountRole: CurrentUser["role"],
+  teamSlugs: Iterable<string>,
+): DisplayRole {
+  if (accountRole === "ADMIN") return "ADMIN";
+
+  const slugs = [...teamSlugs];
+  const assigned = slugs.some((slug) =>
+    (WORK_TEAM_SLUGS as readonly string[]).includes(slug),
+  );
+  if (!assigned) return "MEMBER";
+
+  return workRoleFromTeams(accountRole, slugs);
+}
+
+/** The display role of one person, read from their own team rows. */
+export async function displayRoleOf(user: CurrentUser): Promise<DisplayRole> {
+  if (user.role === "ADMIN") return "ADMIN";
+
+  const rows = await prisma.teamMember.findMany({
+    where: {
+      userId: user.id,
+      team: { slug: { in: [...WORK_TEAM_SLUGS] } },
+    },
+    select: { team: { select: { slug: true } } },
+  });
+
+  return displayRoleFromTeams(
+    user.role,
+    rows.map((row) => row.team.slug),
+  );
+}
+
+/** The display role of several people, in one query — see `workRolesFor`. */
+export async function displayRolesFor(
+  userIds: string[],
+): Promise<Map<string, DisplayRole>> {
+  if (userIds.length === 0) return new Map();
+
+  const [people, memberships] = await Promise.all([
+    prisma.user.findMany({
+      where: { id: { in: userIds } },
+      select: { id: true, role: true },
+    }),
+    prisma.teamMember.findMany({
+      where: {
+        userId: { in: userIds },
+        team: { slug: { in: [...WORK_TEAM_SLUGS] } },
+      },
+      select: { userId: true, team: { select: { slug: true } } },
+    }),
+  ]);
+
+  const slugsByUser = new Map<string, string[]>();
+  for (const row of memberships) {
+    const slugs = slugsByUser.get(row.userId) ?? [];
+    slugs.push(row.team.slug);
+    slugsByUser.set(row.userId, slugs);
+  }
+
+  return new Map(
+    people.map((person) => [
+      person.id,
+      displayRoleFromTeams(person.role, slugsByUser.get(person.id) ?? []),
     ]),
   );
 }

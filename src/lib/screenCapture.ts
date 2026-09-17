@@ -313,6 +313,21 @@ export interface ActiveRecording {
   stop: () => Promise<ScreenRecording>;
   /** Abandons it, keeping nothing. */
   cancel: () => void;
+  /**
+   * Whether this browser's recorder can pause at all.
+   *
+   * `pause` and `resume` are optional in the MediaRecorder specification, so
+   * this is read from the object rather than assumed. A caller that finds it
+   * false should not offer the control, because there is nothing honest to put
+   * behind it — see `pause` below.
+   */
+  canPause: boolean;
+  /** Stops writing without ending the recording. False if it could not. */
+  pause: () => boolean;
+  /** Starts writing again after `pause`. False if it could not. */
+  resume: () => boolean;
+  /** Whether it is paused right now, asked of the recorder itself. */
+  isPaused: () => boolean;
 }
 
 /**
@@ -353,7 +368,22 @@ export async function startScreenRecording(): Promise<ActiveRecording> {
     );
   }
 
-  const stream = await requestDisplayStream();
+  /*
+   * Another tab, a window or a screen — never this tab.
+   *
+   * Prio's recording controls are part of the Prio page, so if the page itself
+   * is the surface being captured, the controls are captured with it: the
+   * compositor records the rendered surface and no amount of z-index, portal
+   * or stacking context can opt an element out of it. Leaving this tab out of
+   * the picker is therefore the only thing that actually keeps the toolbar out
+   * of the file, and it is what `selfBrowserSurface: "exclude"` asks for.
+   *
+   * It is not absolute, and the limit is the browser's rather than ours: the
+   * picker always offers whole screens, and a screen containing the Prio
+   * window contains the toolbar too. That case cannot be excluded from inside
+   * the page, and is documented rather than papered over.
+   */
+  const stream = await requestDisplayStream({ source: "any" });
 
   let recorder: MediaRecorder;
   try {
@@ -370,6 +400,17 @@ export async function startScreenRecording(): Promise<ActiveRecording> {
   const chunks: Blob[] = [];
   const startedAt = Date.now();
   let settled = false;
+
+  /*
+   * Time spent paused, so the duration reported matches the footage.
+   *
+   * A paused recorder writes nothing, so wall-clock from start to stop counts
+   * time that is not in the file. The attachment would then claim a length the
+   * video does not have, and the player would disagree with the label beside
+   * it. Each pause adds its own span here and `stop` subtracts the total.
+   */
+  let pausedMs = 0;
+  let pausedAt: number | null = null;
 
   let resolveStop: ((recording: ScreenRecording) => void) | null = null;
   let rejectStop: ((error: unknown) => void) | null = null;
@@ -408,9 +449,14 @@ export async function startScreenRecording(): Promise<ActiveRecording> {
       return;
     }
 
+    if (pausedAt !== null) {
+      pausedMs += Date.now() - pausedAt;
+      pausedAt = null;
+    }
+
     resolveStop?.({
       blob,
-      durationMs: Date.now() - startedAt,
+      durationMs: Math.max(0, Date.now() - startedAt - pausedMs),
       mimeType: recorder.mimeType || "video/webm",
     });
   };
@@ -429,7 +475,36 @@ export async function startScreenRecording(): Promise<ActiveRecording> {
      moment instead of nothing at all. */
   recorder.start(1000);
 
+  const canPause =
+    typeof recorder.pause === "function" && typeof recorder.resume === "function";
+
   return {
+    canPause,
+    isPaused: () => recorder.state === "paused",
+    pause: () => {
+      if (!canPause || recorder.state !== "recording") return false;
+      recorder.pause();
+      /* Re-read as a plain string: the guard above narrowed `state` to
+         "recording", and the call that just changed it is invisible to that
+         narrowing. Only the pause the recorder actually accepted is counted. */
+      const after: string = recorder.state;
+      if (after === "paused") {
+        pausedAt = Date.now();
+        return true;
+      }
+      return false;
+    },
+    resume: () => {
+      if (!canPause || recorder.state !== "paused") return false;
+      recorder.resume();
+      const after: string = recorder.state;
+      if (after === "recording") {
+        if (pausedAt !== null) pausedMs += Date.now() - pausedAt;
+        pausedAt = null;
+        return true;
+      }
+      return false;
+    },
     stop: () => {
       if (recorder.state !== "inactive") recorder.stop();
       return finished;

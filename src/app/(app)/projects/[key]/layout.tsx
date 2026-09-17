@@ -55,7 +55,7 @@ export default async function ProjectLayout({
 
   return (
     <>
-      <ProjectShellChrome projectKey={project.key}>
+      <ProjectShellChrome projectKey={project.key} part="header">
       <div className="prio-page-header">
         <div className="prio-page-header__text">
           <BackLink href="/projects" label="All projects" />
@@ -109,13 +109,15 @@ export default async function ProjectLayout({
           />
         </div>
       </div>
+      </ProjectShellChrome>
 
       {/*
        * Sprints is every working role's tab now: Admin, Developer, Tester and
        * Full Stack Developer all read and plan sprints. `showSprints`
        * defaults to true for exactly that reason — see `ProjectNav`.
        */}
-      <ProjectNav projectKey={project.key} />
+      <ProjectShellChrome projectKey={project.key} part="nav">
+        <ProjectNav projectKey={project.key} />
       </ProjectShellChrome>
 
       {children}

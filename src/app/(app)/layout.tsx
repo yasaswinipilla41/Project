@@ -1,9 +1,10 @@
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { AppShell } from "@/components/shell/AppShell";
 import { SIDEBAR_COOKIE } from "@/components/shell/Sidebar";
 import { prisma } from "@/lib/prisma";
-import { projectScope, workRoleOf } from "@/lib/authz";
-import { requireUser } from "@/lib/session";
+import { displayRoleOf, projectScope, workRoleOf } from "@/lib/authz";
+import { needsPasswordChange, requireUser } from "@/lib/session";
 
 /**
  * Authenticated application layout. Resolves the session server-side and loads
@@ -16,6 +17,21 @@ export default async function AppLayout({
 }) {
   const user = await requireUser();
 
+  /*
+   * An account still holding the password an administrator gave it goes no
+   * further than this.
+   *
+   * The check is here, in the layout every authenticated page renders inside,
+   * because that is the one place no route can be reached without passing —
+   * a direct URL, a refresh, the back button and a bookmark all arrive through
+   * it, so none of them is a way around. The screen it redirects to lives
+   * outside this layout, or it would redirect to itself.
+   *
+   * The flag is read from the user row rather than the session cookie, so it
+   * cannot be stale and clearing it takes effect on the next request.
+   */
+  if (await needsPasswordChange(user.id)) redirect("/change-password");
+
   const cookieStore = await cookies();
   const initialCollapsed = cookieStore.get(SIDEBAR_COOKIE)?.value === "true";
 
@@ -23,6 +39,9 @@ export default async function AppLayout({
   /* Resolved once, here, and handed to the chrome — so every surface offers
      the same things to the same person rather than each deciding again. */
   const workRole = await workRoleOf(user);
+  /* What the badge says, which is not always the work role — somebody on no
+     work team is a DEVELOPER to every guard and a "Member" on screen. */
+  const displayRole = await displayRoleOf(user);
 
   const [projectRows, unreadNotifications, pendingNewUserAlerts, favorites, recents] =
     await Promise.all([
@@ -89,6 +108,7 @@ export default async function AppLayout({
         role: user.role,
       }}
       workRole={workRole}
+      displayRole={displayRole}
       projects={projects}
       unreadNotifications={unreadNotifications}
       newUserAlerts={pendingNewUserAlerts.map((n) => ({
