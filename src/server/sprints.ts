@@ -3,17 +3,24 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import {
-  assertAdmin,
+  assertCanCompleteSprint,
   assertCanCreateSprint,
+  assertCanDeleteSprint,
+  assertCanEditSprint,
+  assertCanEditSprintIssues,
+  assertCanStartSprint,
+  assertProjectAccess,
   AuthorizationError,
   NotFoundError,
 } from "@/lib/authz";
 import { isClosedStatus } from "@/lib/domain";
 import { requireUser } from "@/lib/session";
+import { recordFieldChanges } from "@/server/activity";
 import {
   completeSprintSchema,
   createSprintSchema,
   fieldErrors,
+  moveIssueSchema,
   sprintIdSchema,
   sprintIssueSchema,
   sprintIssuesSchema,
@@ -39,17 +46,21 @@ import {
  *    from the issues rather than stored beside them. Nothing here writes an
  *    issue's status.
  *
- *  - **Authorization reuses what Prio already has.** No sprint role and no
- *    sprint permission table: a sprint is an administrator's instrument, so
- *    every write here is `assertAdmin`.
+ *  - **Authorization is a capability table, not one blanket rule.** A
+ *    sprint's lifecycle — creating, editing, deleting, completing — is an
+ *    administrator's; starting one is also open to a Full Stack Developer;
+ *    and filling a sprint, emptying it or moving its issues elsewhere is
+ *    every working role's, the same as any other issue edit. `domain.ts`
+ *    (`canEditSprintDetails`, `canDeleteSprint`, `canCompleteSprint`,
+ *    `canStartSprint`, `canEditSprintIssues`) is the one table this and every
+ *    caller reads, so the menu that offers an action and the action that
+ *    accepts it can never disagree.
  *
- *    That covers the lifecycle — creating, editing, starting, completing — and
- *    also what a sprint *contains*, because putting an issue into the sprint
- *    or taking it out is committing somebody's fortnight rather than editing
- *    an issue. Both used to be looser: the lifecycle was "an administrator or
- *    whoever created the project", and membership of the sprint was any member
- *    of the project. Developers and testers read sprints now; they do not
- *    shape them.
+ *    Every write here also checks project access, because filling or moving
+ *    issues is no longer administrator-only and an administrator sees every
+ *    project by construction — a Developer, Tester or Full Stack Developer
+ *    does not, and `assertProjectAccess` is what keeps a sprint in a project
+ *    they cannot open closed to them.
  *
  *    Reading is untouched. Nothing below gates a query, so everybody who can
  *    open the project still sees the sprint, its goal, its dates and its work.
@@ -156,7 +167,8 @@ export async function updateSprint(raw: unknown): Promise<SprintActionResult> {
     const { sprintId, ...input } = parsed.data;
 
     const sprint = await loadSprint(sprintId);
-    assertAdmin(user);
+    await assertProjectAccess(user, sprint.projectId);
+    await assertCanEditSprint(user);
 
     /* A completed sprint is a record of what happened. Renaming one or moving
        its dates afterwards would rewrite that record, so it is refused rather
@@ -206,7 +218,8 @@ export async function deleteSprint(raw: unknown): Promise<SprintActionResult> {
     }
 
     const sprint = await loadSprint(parsed.data.sprintId);
-    assertAdmin(user);
+    await assertProjectAccess(user, sprint.projectId);
+    await assertCanDeleteSprint(user);
 
     await prisma.sprint.delete({ where: { id: sprint.id } });
 
@@ -250,7 +263,8 @@ export async function addIssuesToSprint(
     const { sprintId, issueIds } = parsed.data;
 
     const sprint = await loadSprint(sprintId);
-    assertAdmin(user);
+    await assertProjectAccess(user, sprint.projectId);
+    await assertCanEditSprintIssues(user);
 
     if (sprint.status === "COMPLETED") {
       return {
@@ -262,12 +276,14 @@ export async function addIssuesToSprint(
     /*
      * Read the issues' own `projectId` from the database — never from the
      * payload, which the caller controls. An id that names nothing, or names
-     * another project's work, is the same failure here.
+     * another project's work, is the same failure here. Their current sprint
+     * (if any) is read too, so the activity trail can say where each one came
+     * from rather than just where it ended up.
      */
     const requested = [...new Set(issueIds)];
     const eligible = await prisma.issue.findMany({
       where: { id: { in: requested }, projectId: sprint.projectId },
-      select: { id: true },
+      select: { id: true, sprint: { select: { name: true } } },
     });
 
     if (eligible.length !== requested.length) {
@@ -282,6 +298,20 @@ export async function addIssuesToSprint(
       where: { id: { in: requested }, projectId: sprint.projectId },
       data: { sprintId },
     });
+
+    for (const issue of eligible) {
+      await recordFieldChanges(prisma, {
+        issueId: issue.id,
+        actorId: user.id,
+        changes: [
+          {
+            field: "sprintId",
+            oldValue: issue.sprint?.name ?? "Backlog",
+            newValue: sprint.name,
+          },
+        ],
+      });
+    }
 
     revalidateSprintSurfaces(sprint.project.key);
     return { ok: true, data: { added: count } };
@@ -304,7 +334,8 @@ export async function removeIssueFromSprint(
     const { sprintId, issueId } = parsed.data;
 
     const sprint = await loadSprint(sprintId);
-    assertAdmin(user);
+    await assertProjectAccess(user, sprint.projectId);
+    await assertCanEditSprintIssues(user);
 
     if (sprint.status === "COMPLETED") {
       return {
@@ -315,10 +346,18 @@ export async function removeIssueFromSprint(
 
     /* Scoped by sprint as well as by issue, so this can only ever detach work
        that is actually in this sprint. */
-    await prisma.issue.updateMany({
+    const { count } = await prisma.issue.updateMany({
       where: { id: issueId, sprintId },
       data: { sprintId: null },
     });
+
+    if (count > 0) {
+      await recordFieldChanges(prisma, {
+        issueId,
+        actorId: user.id,
+        changes: [{ field: "sprintId", oldValue: sprint.name, newValue: "Backlog" }],
+      });
+    }
 
     revalidateSprintSurfaces(sprint.project.key);
     return { ok: true, data: undefined };
@@ -339,7 +378,8 @@ export async function startSprint(raw: unknown): Promise<SprintActionResult> {
     }
 
     const sprint = await loadSprint(parsed.data.sprintId);
-    assertAdmin(user);
+    await assertProjectAccess(user, sprint.projectId);
+    await assertCanStartSprint(user);
 
     if (sprint.status !== "PLANNED") {
       return {
@@ -430,7 +470,8 @@ export async function completeSprint(
     const { sprintId, moveIncompleteTo, nextSprintId } = parsed.data;
 
     const sprint = await loadSprint(sprintId);
-    assertAdmin(user);
+    await assertProjectAccess(user, sprint.projectId);
+    await assertCanCompleteSprint(user);
 
     if (sprint.status !== "ACTIVE") {
       return {
@@ -508,6 +549,148 @@ export async function completeSprint(
     return {
       ok: true,
       data: { completed: finished.length, moved: unfinished.length },
+    };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/* --------------------------------------------------------------- move to */
+
+/**
+ * Move one issue to the next open sprint, a specific other sprint, or the
+ * backlog.
+ *
+ * The same project-scoping rule as `addIssuesToSprint`: a named destination
+ * sprint is read from the database and checked against the issue's own
+ * `projectId` before anything is written, so an issue can never be moved into
+ * another project's sprint. "Next sprint" is derived the same way — the
+ * project's own open sprints, ordered by `startDate` — rather than left for
+ * the caller to name, so there is one answer for "what comes next" and it is
+ * always this project's.
+ *
+ * Only `sprintId` changes. Status, assignee, comments, attachments and every
+ * other fact about the issue are untouched, and the move is written to the
+ * issue's own activity trail exactly like any other field change.
+ */
+export async function moveIssueToSprint(
+  raw: unknown,
+): Promise<
+  SprintActionResult<{ sprintId: string | null; sprintName: string }>
+> {
+  try {
+    const user = await requireUser();
+
+    const parsed = moveIssueSchema.safeParse(raw);
+    if (!parsed.success) {
+      return { ok: false, error: "That move could not be read." };
+    }
+    const { issueId, destination } = parsed.data;
+
+    const issue = await prisma.issue.findUnique({
+      where: { id: issueId },
+      select: {
+        id: true,
+        projectId: true,
+        sprintId: true,
+        sprint: {
+          select: { id: true, name: true, status: true, startDate: true },
+        },
+      },
+    });
+    if (!issue) throw new NotFoundError("This issue no longer exists.");
+
+    await assertProjectAccess(user, issue.projectId);
+    await assertCanEditSprintIssues(user);
+
+    /* A completed sprint is a closed record; an issue still pointing at one
+       (a finished issue `completeSprint` left in place) cannot be moved out
+       of it, the same refusal every other sprint write gives a completed
+       sprint. */
+    if (issue.sprint && issue.sprint.status === "COMPLETED") {
+      return {
+        ok: false,
+        error:
+          "This issue's sprint has been completed and can no longer be changed.",
+      };
+    }
+
+    let destinationSprintId: string | null = null;
+    let destinationSprintName = "Backlog";
+
+    if (destination.type === "SPRINT") {
+      const target = await prisma.sprint.findUnique({
+        where: { id: destination.sprintId },
+        select: { id: true, projectId: true, name: true, status: true },
+      });
+      if (!target || target.projectId !== issue.projectId) {
+        return {
+          ok: false,
+          error: "Choose a sprint that belongs to this issue's project.",
+        };
+      }
+      if (target.status === "COMPLETED") {
+        return {
+          ok: false,
+          error: "That sprint has been completed. Choose one that is still open.",
+        };
+      }
+      destinationSprintId = target.id;
+      destinationSprintName = target.name;
+    } else if (destination.type === "NEXT_SPRINT") {
+      /* The next open sprint after this issue's own, by start date — or, for
+         an issue already in the backlog, simply the soonest open sprint in
+         the project. Never a sprint this issue is already in. */
+      const next = await prisma.sprint.findFirst({
+        where: {
+          projectId: issue.projectId,
+          status: { in: ["PLANNED", "ACTIVE"] },
+          ...(issue.sprintId ? { id: { not: issue.sprintId } } : {}),
+          ...(issue.sprint ? { startDate: { gt: issue.sprint.startDate } } : {}),
+        },
+        orderBy: { startDate: "asc" },
+        select: { id: true, name: true },
+      });
+      if (!next) {
+        return { ok: false, error: "No future Sprint is available." };
+      }
+      destinationSprintId = next.id;
+      destinationSprintName = next.name;
+    }
+    // destination.type === "BACKLOG": stays sprintId null, name "Backlog".
+
+    if (destinationSprintId === issue.sprintId) {
+      return {
+        ok: false,
+        error: `This issue is already in ${destinationSprintName}.`,
+      };
+    }
+
+    const fromName = issue.sprint?.name ?? "Backlog";
+
+    await prisma.$transaction(async (tx) => {
+      await tx.issue.update({
+        where: { id: issue.id },
+        data: { sprintId: destinationSprintId },
+      });
+      await recordFieldChanges(tx, {
+        issueId: issue.id,
+        actorId: user.id,
+        changes: [
+          { field: "sprintId", oldValue: fromName, newValue: destinationSprintName },
+        ],
+      });
+    });
+
+    const project = await prisma.project.findUnique({
+      where: { id: issue.projectId },
+      select: { key: true },
+    });
+    if (project) revalidateSprintSurfaces(project.key);
+
+    return {
+      ok: true,
+      data: { sprintId: destinationSprintId, sprintName: destinationSprintName },
     };
   } catch (error) {
     return failure(error);

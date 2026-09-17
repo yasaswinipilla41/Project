@@ -39,14 +39,12 @@ export function ProjectNav({
    * Whether this reader gets the Sprints tab.
    *
    * Resolved on the server by the project layout and passed down, because a
-   * client component cannot ask who is signed in. False for QA members: a
-   * sprint is an administrator's instrument, testers read work rather than
-   * shape it, and the route itself turns them away — so leaving the tab up
-   * would offer a link to a page that refuses them.
+   * client component cannot ask who is signed in. Defaults to true: every
+   * working role — Admin, Developer, Tester and Full Stack Developer — reads
+   * and plans sprints, so there is currently nobody this is withheld from.
    *
-   * Hiding it decides nothing about access. `sprints.ts` asserts an
-   * administrator on every write and the page re-checks the reader, both of
-   * which hold whatever this prop says.
+   * Showing it decides nothing about access. Every write in `sprints.ts`
+   * asserts its own rule independently, whatever this prop says.
    */
   showSprints?: boolean;
 }) {

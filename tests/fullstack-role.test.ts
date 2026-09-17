@@ -7,7 +7,13 @@ import {
 } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
 import { claimIssue, createIssue, updateIssue } from "@/server/issues";
-import { createSprint } from "@/server/sprints";
+import {
+  addIssuesToSprint,
+  completeSprint,
+  createSprint,
+  startSprint,
+  updateSprint,
+} from "@/server/sprints";
 import { actAs, projectByKey } from "./helpers";
 
 /**
@@ -451,6 +457,68 @@ describe("what full stack is not", () => {
     });
     if (leaked) createdSprintIds.push(leaked.id);
     expect(leaked).toBeNull();
+  });
+
+  it("may start a sprint an administrator planned, but not edit or complete it", async () => {
+    /* Starting one is the exception: a Full Stack Developer builds and
+       verifies, so beginning the fortnight the team already planned is
+       theirs too, unlike changing the plan or closing its record out. */
+    await actAs(ADMIN);
+    const project = await projectByKey("ENG");
+    const created = await createSprint({
+      projectId: project.id,
+      name: `Full stack may start ${Date.now()}`,
+      goal: "",
+      startDate: new Date().toISOString(),
+      endDate: new Date(Date.now() + 7 * 864e5).toISOString(),
+    });
+    if (!created.ok) throw new Error(created.error);
+    createdSprintIds.push(created.data.id);
+
+    const issue = await createIssue({
+      projectId: project.id,
+      type: "TASK",
+      title: `Full stack start fixture ${Date.now()}`,
+    });
+    if (!issue.ok) throw new Error(issue.error);
+    createdIssueIds.push(issue.data.id);
+    const added = await addIssuesToSprint({
+      sprintId: created.data.id,
+      issueIds: [issue.data.id],
+    });
+    if (!added.ok) throw new Error(added.error);
+
+    await actAs(FULLSTACK);
+
+    const renamed = await updateSprint({
+      sprintId: created.data.id,
+      name: "Full stack should not rename this",
+      goal: "",
+      startDate: new Date().toISOString(),
+      endDate: new Date(Date.now() + 7 * 864e5).toISOString(),
+    });
+    expect(renamed.ok).toBe(false);
+
+    const started = await startSprint({ sprintId: created.data.id });
+    expect(started.ok).toBe(true);
+    expect(
+      (
+        await prisma.sprint.findUniqueOrThrow({
+          where: { id: created.data.id },
+          select: { status: true },
+        })
+      ).status,
+    ).toBe("ACTIVE");
+
+    const completed = await completeSprint({
+      sprintId: created.data.id,
+      moveIncompleteTo: "BACKLOG",
+    });
+    expect(completed.ok).toBe(false);
+
+    // Left running for cleanup to close out, as an administrator.
+    await actAs(ADMIN);
+    await completeSprint({ sprintId: created.data.id, moveIncompleteTo: "BACKLOG" });
   });
 
   it("does not let them assign work to somebody else", async () => {

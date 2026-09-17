@@ -237,6 +237,72 @@ test.describe("The sprint workflow", () => {
     await expect(picker.locator(".prio-sprintpicker__row")).toHaveCount(0);
   });
 
+  test("moves an issue to another sprint, then to the backlog", async ({ page }) => {
+    const from = sprintName("move-from");
+    const to = sprintName("move-to");
+    const issue = await seedIssue("ENG", `Moved issue ${Date.now()}`);
+
+    await createSprintThroughUi(page, "ENG", from);
+    await createSprintThroughUi(page, "ENG", to);
+
+    const source = sprintCard(page, from);
+    await source.getByRole("button", { name: "Add issues" }).click();
+    const picker = page.getByRole("dialog");
+    await picker
+      .locator(".prio-sprintpicker__row", { hasText: issue.key })
+      .getByRole("checkbox")
+      .check();
+    await picker.getByRole("button", { name: /Add \d+ to sprint/ }).click();
+    await expect(picker).toBeHidden();
+
+    const row = source.locator(".prio-sprint__issue", { hasText: issue.key });
+    await row
+      .getByRole("button", { name: new RegExp(`Move ${issue.key}`) })
+      .click();
+
+    const menu = page.getByRole("menu", { name: new RegExp(`Move ${issue.key}`) });
+    await expect(menu).toBeVisible();
+    await menu.getByRole("menuitem", { name: to }).click();
+
+    await expect(
+      page.locator(".prio-toast", { hasText: new RegExp(`moved to ${to}`) }),
+    ).toBeVisible();
+    const destinationSprint = await prisma.sprint.findFirstOrThrow({
+      where: { name: to },
+      select: { id: true },
+    });
+    expect(
+      await prisma.issue.findUniqueOrThrow({
+        where: { id: issue.id },
+        select: { sprintId: true },
+      }),
+    ).toMatchObject({ sprintId: destinationSprint.id });
+
+    // Now send it to the backlog from its new sprint.
+    await page.reload();
+    const destination = sprintCard(page, to);
+    const rowAtDestination = destination.locator(".prio-sprint__issue", {
+      hasText: issue.key,
+    });
+    await rowAtDestination
+      .getByRole("button", { name: new RegExp(`Move ${issue.key}`) })
+      .click();
+    const backlogMenu = page.getByRole("menu", {
+      name: new RegExp(`Move ${issue.key}`),
+    });
+    await backlogMenu.getByRole("menuitem", { name: "Backlog" }).click();
+
+    await expect(
+      page.locator(".prio-toast", { hasText: /moved to Backlog/ }),
+    ).toBeVisible();
+    expect(
+      await prisma.issue.findUniqueOrThrow({
+        where: { id: issue.id },
+        select: { sprintId: true },
+      }),
+    ).toMatchObject({ sprintId: null });
+  });
+
   test("is reachable from the project's tab strip and the Create menu", async ({
     page,
   }) => {
@@ -290,6 +356,8 @@ test.describe("Sprints as a member of the project", () => {
     });
     created.push(sprint.id);
 
+    const issue = await seedIssue("ENG", `Member's own work ${Date.now()}`);
+
     await page.goto("/projects/eng/sprints");
     const card = sprintCard(page, name);
     await expect(card).toBeVisible();
@@ -300,5 +368,33 @@ test.describe("Sprints as a member of the project", () => {
     await expect(card.getByRole("button", { name: "Start sprint" })).toHaveCount(0);
     await expect(card.getByRole("button", { name: "Edit" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "New sprint" })).toHaveCount(0);
+
+    /*
+     * The actual bug this fixed: a member clicking "Add issues" used to be
+     * told "This action requires an administrator." — the button was shown
+     * but the server refused it. Driven through the real dialog so the fix
+     * is proven at the boundary the bug was in, not just that a button is
+     * visible.
+     */
+    await card.getByRole("button", { name: "Add issues" }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+
+    await dialog
+      .locator("li")
+      .filter({ hasText: issue.key })
+      .locator("input[type=checkbox]")
+      .check();
+    await dialog.getByRole("button", { name: /Add \d+ to sprint/ }).click();
+
+    await expect(dialog).toBeHidden();
+    await expect(page.getByText(/administrator/i)).toHaveCount(0);
+
+    expect(
+      await prisma.issue.findUniqueOrThrow({
+        where: { id: issue.id },
+        select: { sprintId: true },
+      }),
+    ).toMatchObject({ sprintId: sprint.id });
   });
 });

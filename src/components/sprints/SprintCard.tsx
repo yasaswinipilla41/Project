@@ -27,6 +27,7 @@ import {
 import type { SprintIssueSummary, SprintView } from "@/server/queries/sprints";
 import { AddSprintIssuesDialog } from "./AddSprintIssuesDialog";
 import { CompleteSprintDialog } from "./CompleteSprintDialog";
+import { MoveIssueMenu } from "./MoveIssueMenu";
 import { SprintFormDialog } from "./SprintFormDialog";
 
 /**
@@ -52,10 +53,13 @@ function SprintIssueRow({
   issue,
   onRemove,
   removing,
+  moveMenu,
 }: {
   issue: SprintIssueSummary;
   onRemove?: () => void;
   removing?: boolean;
+  /** Rendered by the caller — only when this reader may move sprint issues. */
+  moveMenu?: React.ReactNode;
 }) {
   return (
     <li className="prio-sprint__issue">
@@ -81,6 +85,8 @@ function SprintIssueRow({
         <Avatar name={null} size="xs" empty />
       )}
 
+      {moveMenu}
+
       {onRemove ? (
         <button
           type="button"
@@ -103,7 +109,10 @@ export function SprintCard({
   projectKey,
   backlog,
   otherOpenSprints,
-  canManage,
+  canEdit,
+  canDelete,
+  canStart,
+  canComplete,
   canEditIssues,
 }: {
   sprint: SprintView;
@@ -113,9 +122,16 @@ export function SprintCard({
   backlog: SprintIssueSummary[];
   /** Other sprints in this project that could receive unfinished work. */
   otherOpenSprints: { id: string; name: string }[];
-  /** May start, complete and edit this sprint. */
-  canManage: boolean;
-  /** May put issues into it and take them out — anyone on the project. */
+  /** May rename this sprint or move its dates. */
+  canEdit: boolean;
+  /** May delete this sprint outright. */
+  canDelete: boolean;
+  /** May move this sprint from Planned to Active. */
+  canStart: boolean;
+  /** May close this sprint out and say where unfinished work goes. */
+  canComplete: boolean;
+  /** May put issues into it, take them out, or move them elsewhere — every
+   *  working role. */
   canEditIssues: boolean;
 }) {
   const router = useRouter();
@@ -243,13 +259,13 @@ export function SprintCard({
               </Button>
             ) : null}
 
-            {live && canManage ? (
+            {live && canEdit ? (
               <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
                 Edit
               </Button>
             ) : null}
 
-            {sprint.status === "PLANNED" && canManage ? (
+            {sprint.status === "PLANNED" && canStart ? (
               <Button
                 variant="brand"
                 size="sm"
@@ -260,18 +276,19 @@ export function SprintCard({
               </Button>
             ) : null}
 
-            {sprint.status === "ACTIVE" && canManage ? (
+            {sprint.status === "ACTIVE" && canComplete ? (
               <Button variant="brand" size="sm" onClick={() => setClosing(true)}>
                 <IconCheck size={13} />
                 Complete sprint
               </Button>
             ) : null}
 
-            {/* Deleting is an administrator's, like the rest of this row, and
-                `deleteSprint` says so again on the server. Offered whatever
-                the sprint's state: a plan that was never run and a sprint that
-                was are both things an administrator may clear away. */}
-            {canManage ? (
+            {/* Deleting is an administrator's, like editing and completing,
+                and `deleteSprint` says so again on the server. Offered
+                whatever the sprint's state: a plan that was never run and a
+                sprint that was are both things an administrator may clear
+                away. */}
+            {canDelete ? (
               <Button
                 variant="danger-outline"
                 size="sm"
@@ -350,6 +367,15 @@ export function SprintCard({
                           : undefined
                       }
                       removing={removingId === issue.id}
+                      moveMenu={
+                        canEditIssues ? (
+                          <MoveIssueMenu
+                            issueId={issue.id}
+                            issueKey={issue.key}
+                            otherOpenSprints={otherOpenSprints}
+                          />
+                        ) : undefined
+                      }
                     />
                   ))}
                 </ul>
@@ -366,6 +392,15 @@ export function SprintCard({
                   canEditIssues ? () => void remove(issue.id, issue.key) : undefined
                 }
                 removing={removingId === issue.id}
+                moveMenu={
+                  canEditIssues ? (
+                    <MoveIssueMenu
+                      issueId={issue.id}
+                      issueKey={issue.key}
+                      otherOpenSprints={otherOpenSprints}
+                    />
+                  ) : undefined
+                }
               />
             ))}
           </ul>
