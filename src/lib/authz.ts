@@ -2,6 +2,8 @@ import type { IssueType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { CurrentUser } from "@/lib/session";
 import {
+  ISSUE_LIMIT_CODE,
+  ISSUE_LIMIT_REACHED,
   ISSUE_TYPE_LABEL,
   canCreateSprint,
   canCreateWorkItem,
@@ -33,6 +35,23 @@ export class NotFoundError extends Error {
   constructor(message = "The requested item no longer exists.") {
     super(message);
     this.name = "NotFoundError";
+  }
+}
+
+/**
+ * The project has as many issues as its administrator allowed it.
+ *
+ * Not an authorization failure — the caller was entitled to file this, and
+ * would be again tomorrow if somebody raised the limit or closed the project's
+ * books. It lives beside the other two because they share one job: a refusal
+ * the server decided, carrying wording fit to show the person who asked, which
+ * `failure()` turns into a result rather than a stack trace.
+ */
+export class ProjectAtCapacityError extends Error {
+  readonly code = ISSUE_LIMIT_CODE;
+  constructor(message = ISSUE_LIMIT_REACHED) {
+    super(message);
+    this.name = "ProjectAtCapacityError";
   }
 }
 

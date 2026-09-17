@@ -623,6 +623,39 @@ export function canCreateSprint(role: WorkRole): boolean {
   return role === "ADMIN";
 }
 
+// -------------------------------------------------------- issue capacity
+
+/**
+ * Shown when a project has reached the issue limit an administrator set for it.
+ *
+ * Exact wording, defined once and shared by the server that refuses the write
+ * and the dialogs that display it, so the two can never drift apart.
+ */
+export const ISSUE_LIMIT_REACHED =
+  "You have reached the maximum number of issues you can create";
+
+/**
+ * Names that refusal in an action result, so a caller can tell it from every
+ * other reason a create can fail without matching on the message text.
+ */
+export const ISSUE_LIMIT_CODE = "PROJECT_AT_CAPACITY";
+
+/**
+ * Whether one more issue may be filed in a project holding `count` of them.
+ *
+ * `limit` is null for a project with no limit set, which is every project
+ * until somebody chooses otherwise — so the answer is yes. At or above the
+ * limit the answer is no: a project already over its limit (the number was
+ * lowered after the work was filed) stays shut rather than being allowed back
+ * up to it, and nothing here deletes anything to make room.
+ */
+export function canHoldAnotherIssue(
+  count: number,
+  limit: number | null,
+): boolean {
+  return limit === null || count < limit;
+}
+
 // ------------------------------------------------------------------ guards
 
 export function isIssueStatus(value: unknown): value is IssueStatus {

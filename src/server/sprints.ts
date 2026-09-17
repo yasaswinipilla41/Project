@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import {
   assertAdmin,
   assertCanCreateSprint,
+  assertProjectAccess,
   AuthorizationError,
   NotFoundError,
 } from "@/lib/authz";
@@ -40,16 +41,20 @@ import {
  *    issue's status.
  *
  *  - **Authorization reuses what Prio already has.** No sprint role and no
- *    sprint permission table: a sprint is an administrator's instrument, so
- *    every write here is `assertAdmin`.
+ *    sprint permission table — only the two rules Prio already owns, and which
+ *    of them applies turns on whether the sprint itself is at stake:
  *
- *    That covers the lifecycle — creating, editing, starting, completing — and
- *    also what a sprint *contains*, because putting an issue into the sprint
- *    or taking it out is committing somebody's fortnight rather than editing
- *    an issue. Both used to be looser: the lifecycle was "an administrator or
- *    whoever created the project", and membership of the sprint was any member
- *    of the project. Developers and testers read sprints now; they do not
- *    shape them.
+ *      - **Whether the sprint exists** — creating one, and deleting one — is
+ *        `assertAdmin`. A sprint commits everybody working in it to a period
+ *        and a scope, so bringing one into being, or clearing one away, stays
+ *        with administrators.
+ *      - **Editing an existing sprint** — its name, goal and dates — is
+ *        `assertProjectAccess`: whoever may open the project. Fixing a wrong
+ *        date on a sprint people are already working in is upkeep of work in
+ *        progress, and making it an administrator's errand helped nobody.
+ *
+ *    Starting, completing, and what a sprint *contains* remain `assertAdmin`:
+ *    each commits somebody's fortnight rather than correcting a detail of it.
  *
  *    Reading is untouched. Nothing below gates a query, so everybody who can
  *    open the project still sees the sprint, its goal, its dates and its work.
@@ -156,7 +161,23 @@ export async function updateSprint(raw: unknown): Promise<SprintActionResult> {
     const { sprintId, ...input } = parsed.data;
 
     const sprint = await loadSprint(sprintId);
-    assertAdmin(user);
+    /*
+     * Editing a sprint belongs to whoever may open its project, not to
+     * administrators alone.
+     *
+     * Bringing a sprint into being and clearing one away are decisions about
+     * whether the period exists at all, and those stay with administrators —
+     * `createSprint` and `deleteSprint` are unchanged. Correcting the name, the
+     * goal or the dates of a sprint people are already working in is ordinary
+     * upkeep of work in progress, and refusing it to the people doing that work
+     * meant a wrong date could only be fixed by an administrator.
+     *
+     * The rule is the project's own access check — the same one the board, the
+     * issue list and every issue write already use — so this adds no second
+     * notion of who may, and somebody with no access to the project is refused
+     * exactly as before.
+     */
+    await assertProjectAccess(user, sprint.projectId);
 
     /* A completed sprint is a record of what happened. Renaming one or moving
        its dates afterwards would rewrite that record, so it is refused rather

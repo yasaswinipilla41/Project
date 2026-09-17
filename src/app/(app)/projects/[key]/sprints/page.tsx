@@ -62,15 +62,6 @@ export default async function ProjectSprintsPage({
   ]);
 
   /*
-   * Who may do what, using the two rules Prio already has:
-   *   - the sprint's lifecycle is `canManageProject` — an administrator, or
-   *     the person who created this project;
-   *   - putting work into a sprint is for anybody who can open the project,
-   *     which is everyone who reaches this page at all.
-   * Both are re-checked inside the server actions; this only decides what is
-   * worth showing.
-   */
-  /*
    * A sprint is an administrator's instrument.
    *
    * This used to be `canManageProject` — an administrator *or* whoever created
@@ -80,6 +71,16 @@ export default async function ProjectSprintsPage({
    * rule on every write; this only decides what to draw.
    */
   const canManage = user.role === "ADMIN";
+
+  /*
+   * Correcting an existing sprint is not part of that instrument.
+   *
+   * Everybody who reaches this page can already open the project — that is what
+   * granted them the page — and `updateSprint` authorizes on exactly that, so
+   * the Edit button is offered to them rather than hidden behind a rank they do
+   * not need. Creating and deleting stay on `canManage` above.
+   */
+  const canEdit = true;
 
   const open = sprints.filter((sprint) => sprint.status !== "COMPLETED");
   const completed = sprints.filter((sprint) => sprint.status === "COMPLETED");
@@ -125,6 +126,7 @@ export default async function ProjectSprintsPage({
                 .filter((other) => other.id !== sprint.id)
                 .map((other) => ({ id: other.id, name: other.name }))}
               canManage={canManage}
+              canEdit={canEdit}
               canEditIssues
             />
           ))}
@@ -146,6 +148,7 @@ export default async function ProjectSprintsPage({
                   backlog={backlog}
                   otherOpenSprints={[]}
                   canManage={canManage}
+                  canEdit={canEdit}
                   canEditIssues={false}
                 />
               ))}

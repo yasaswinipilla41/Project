@@ -317,18 +317,6 @@ export function FlowBoard({
 
   const [dragIssueId, setDragIssueId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<IssueStatus | null>(null);
-  /* Ids ticked for a bulk move. Kept as a Set because every card asks "am I
-     in this?" on each render. */
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-
-  function toggleSelected(issueId: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (!next.delete(issueId)) next.add(issueId);
-      return next;
-    });
-  }
-
   const baseIssues = useMemo(
     () => columns.flatMap((column) => column.issues),
     [columns],
@@ -474,18 +462,21 @@ export function FlowBoard({
   }, [groupBy, visible, members, labels]);
 
   /*
-   * Moving one card and moving a selection are the same code path — a single
-   * drag is just a move of one. Each issue is sent on its own request because
-   * `updateIssue` is what writes the activity entry and the notification for
-   * that issue; batching them into one call would collapse several distinct
-   * events into one and lose that history.
+   * Moving work, and the one place the board writes anything.
    *
-   * `resolve` decides, per issue, what the move actually means. A drop asks
-   * the column what it does with a card coming from that status; a pick from a
-   * card's own status menu asks for one status exactly. Resolving per issue
-   * rather than once for the whole batch is what lets a mixed selection land
-   * correctly — dragging a Done card and an In Progress card onto New reopens
-   * the first and moves the second, which is what each of them means.
+   * Cards used to carry a tick box so several could be moved at once. They no
+   * longer do: moving an issue is dragging it, or picking a status from its own
+   * menu, and nothing has to be selected first. The list survives because both
+   * of those arrive here as a list of one, and because keeping it costs nothing
+   * — each issue is still sent on its own request, since `updateIssue` writes
+   * that issue's activity entry and notification and batching would collapse
+   * distinct events into one.
+   *
+   * `resolve` decides what the move actually means. A drop asks the column what
+   * it does with a card coming from that status; a pick from a card's own menu
+   * asks for one status exactly. It is applied per issue rather than once for
+   * the group, so dragging a Done card and an In Progress card onto New would
+   * reopen the first and move the second — each according to where it was.
    */
   function applyStatus(
     issueIds: string[],
@@ -548,7 +539,6 @@ export function FlowBoard({
           "error",
         );
       }
-      setSelected(new Set());
       router.refresh();
     });
   }
@@ -574,17 +564,11 @@ export function FlowBoard({
     applyStatus([issueId], () => status, STATUS_LABEL[status]);
   }
 
-  /*
-   * While a card is in the air, which columns will take it. Only the dragged
-   * card is considered when it sits outside the selection, matching what the
-   * drop itself will do.
-   */
+  /* While a card is in the air, which columns will take it. */
   const draggingStatuses = (() => {
     if (!dragIssueId) return [];
-    const ids = selected.has(dragIssueId) ? [...selected] : [dragIssueId];
-    return ids
-      .map((id) => issues.find((i) => i.id === id)?.status)
-      .filter((s): s is IssueStatus => Boolean(s));
+    const status = issues.find((i) => i.id === dragIssueId)?.status;
+    return status ? [status] : [];
   })();
 
   /* Asks exactly what the drop will ask, so the no-entry cursor and the drop
@@ -604,11 +588,7 @@ export function FlowBoard({
     setDragIssueId(null);
     if (!issueId) return;
 
-    /* Dragging a card that is part of the selection moves the whole
-       selection; dragging one outside it moves only that card, which is what
-       makes an accidental tick harmless. */
-    const ids = selected.has(issueId) ? [...selected] : [issueId];
-    move(ids, status);
+    move([issueId], status);
   }
 
   return (
@@ -906,24 +886,6 @@ export function FlowBoard({
         </div>
       </div>
 
-      {/* Only present while something is ticked, so the board is unchanged
-          for anyone not moving things in bulk. */}
-      {selected.size > 0 ? (
-        <div className="prio-board__selection" role="status">
-          <span>
-            {selected.size} issue{selected.size === 1 ? "" : "s"} selected —
-            drag any one of them to move them together
-          </span>
-          <button
-            type="button"
-            className="prio-btn prio-btn--ghost prio-btn--sm"
-            onClick={() => setSelected(new Set())}
-          >
-            Clear selection
-          </button>
-        </div>
-      ) : null}
-
       {showInsights ? (
         <div className="prio-board__insights">{insights}</div>
       ) : (
@@ -989,14 +951,7 @@ export function FlowBoard({
                       workRole={workRole}
                       currentUserId={currentUserId}
                       isAdmin={isAdmin}
-                      dragging={
-                        dragIssueId === issue.id ||
-                        (dragIssueId !== null &&
-                          selected.has(issue.id) &&
-                          selected.has(dragIssueId))
-                      }
-                      selected={selected.has(issue.id)}
-                      onToggleSelected={() => toggleSelected(issue.id)}
+                      dragging={dragIssueId === issue.id}
                       onDragStart={(event) => {
                         setDragIssueId(issue.id);
                         event.dataTransfer.setData("text/plain", issue.id);
@@ -1027,8 +982,6 @@ function BoardCard({
   currentUserId,
   isAdmin,
   dragging,
-  selected,
-  onToggleSelected,
   onDragStart,
   onDragEnd,
 }: {
@@ -1044,8 +997,6 @@ function BoardCard({
   currentUserId: string;
   isAdmin: boolean;
   dragging: boolean;
-  selected: boolean;
-  onToggleSelected: () => void;
   onDragStart: (event: DragEvent<HTMLDivElement>) => void;
   onDragEnd: () => void;
 }) {
@@ -1065,31 +1016,11 @@ function BoardCard({
       className="prio-board__card"
       draggable={draggable}
       data-dragging={dragging || undefined}
-      data-selected={selected || undefined}
       data-cancelled={cancelled || undefined}
       onDragStart={draggable ? onDragStart : undefined}
       onDragEnd={draggable ? onDragEnd : undefined}
     >
       <div className="prio-board__card-top">
-        {/* Ticking cards is how several move at once. `draggable={false}`
-            and the stopped propagation are the same guards the card menu
-            below uses: without them, reaching for the box starts a drag. */}
-        {draggable ? (
-          <label
-            className="prio-board__card-select"
-            draggable={false}
-            onClick={(event) => event.stopPropagation()}
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <input
-              type="checkbox"
-              checked={selected}
-              onChange={onToggleSelected}
-              aria-label={`Select ${issue.key}`}
-            />
-          </label>
-        ) : null}
-
         <p className="prio-board__card-title">{issue.title}</p>
 
         {/*

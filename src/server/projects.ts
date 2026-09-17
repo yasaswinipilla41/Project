@@ -8,6 +8,7 @@ import {
   assertProjectManage,
   AuthorizationError,
   NotFoundError,
+  ProjectAtCapacityError,
 } from "@/lib/authz";
 import { DEFAULT_PROJECT_LABELS } from "@/lib/domain";
 import { requireUser } from "@/lib/session";
@@ -40,9 +41,13 @@ import {
 
 export type ProjectActionResult<T = undefined> =
   | { ok: true; data: T }
-  | { ok: false; error: string; fieldErrors?: FieldErrors };
+  /** `code` names the refusal — see `ActionResult` in `src/server/issues.ts`. */
+  | { ok: false; error: string; code?: string; fieldErrors?: FieldErrors };
 
 function failure(error: unknown): ProjectActionResult<never> {
+  if (error instanceof ProjectAtCapacityError) {
+    return { ok: false, error: error.message, code: error.code };
+  }
   if (error instanceof AuthorizationError || error instanceof NotFoundError) {
     return { ok: false, error: error.message };
   }
@@ -135,6 +140,11 @@ export async function createProject(
  *     for the copy, not whoever created the source;
  *   - `isDefaultProject`, so a copy never silently starts enrolling every new
  *     account that signs up. It is left at its default of `false`;
+ *   - `maxIssues`, for the same reason and one more: a copy of a project that
+ *     is already at its limit would otherwise be born full, and the copy would
+ *     have to be refused to honour a number nobody chose for it. A duplicate
+ *     starts unlimited, as every new project does, and an administrator sets a
+ *     limit on it if they want one;
  *   - the audit trail, notifications and watchers. A clone is a board to work
  *     in, not a fabricated record of work that was already done — and for the
  *     same reason a copied issue arrives with a fresh QA verdict rather than
@@ -389,8 +399,32 @@ async function copyProjectIssues(
   const sequence = await tx.project.update({
     where: { id: targetProjectId },
     data: { issueSequence: { increment: issues.length } },
-    select: { issueSequence: true },
+    select: { issueSequence: true, maxIssues: true },
   });
+
+  /*
+   * The target's issue limit, honoured for the batch as a whole.
+   *
+   * In practice the target is a project created moments ago in this same
+   * transaction, so its limit is null and this never fires — a copy starts
+   * unlimited exactly as any other new project does. The check is here because
+   * this function takes a target id rather than assuming one, and a batch
+   * insert that ignored the limit would be the one way to get more issues into
+   * a project than its administrator allowed.
+   *
+   * Refused whole rather than truncated: copying the first few issues of a
+   * project and silently dropping the rest would produce something that looks
+   * like a complete duplicate and is not.
+   */
+  if (sequence.maxIssues !== null) {
+    const held = await tx.issue.count({
+      where: { projectId: targetProjectId },
+    });
+    if (held + issues.length > sequence.maxIssues) {
+      throw new ProjectAtCapacityError();
+    }
+  }
+
   const firstNumber = sequence.issueSequence - issues.length + 1;
 
   await tx.issue.createMany({
@@ -863,6 +897,14 @@ export async function updateProject(
         ...(parsed.data.isDefaultProject === undefined
           ? {}
           : { isDefaultProject: parsed.data.isDefaultProject }),
+        /* Absent leaves the limit alone; null removes it. Written here rather
+           than guarded separately because `assertProjectManage` above is the
+           same gate the name, the archive flag and the default flag pass, and
+           creating a project is already an administrator's act — so the person
+           who may rename a project is the person who may set its capacity. */
+        ...(parsed.data.maxIssues === undefined
+          ? {}
+          : { maxIssues: parsed.data.maxIssues }),
       },
       select: { key: true },
     });

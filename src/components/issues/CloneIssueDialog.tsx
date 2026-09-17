@@ -9,6 +9,8 @@ import { IssueTypeIcon } from "@/components/ui/Indicators";
 import { useToast } from "@/components/ui/Toast";
 import { IconWarning } from "@/components/ui/Icon";
 import {
+  ISSUE_LIMIT_CODE,
+  ISSUE_LIMIT_REACHED,
   ISSUE_TYPES,
   ISSUE_TYPE_LABEL,
   PRIORITIES,
@@ -154,6 +156,10 @@ export function CloneIssueDialog({
 
     if (!result.ok) {
       setSaving(false);
+      // A full destination project — see the same branch in CreateIssueDialog.
+      if (result.code === ISSUE_LIMIT_CODE) {
+        toast(ISSUE_LIMIT_REACHED, "error");
+      }
       setFormError(result.error);
       setErrors(result.fieldErrors ?? {});
       return;

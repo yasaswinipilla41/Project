@@ -466,40 +466,6 @@
   }
 }
 
-/* ------------------------------------------------- multi-select bulk move */
-
-.prio-board__selection {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--prio-space-3);
-  margin-bottom: var(--prio-space-3);
-  padding: var(--prio-space-2) var(--prio-space-3);
-  font-size: var(--prio-text-xs);
-  color: var(--prio-text-secondary);
-  background: var(--prio-bg-subtle);
-  border: 1px solid var(--prio-border);
-  border-radius: var(--prio-radius-md);
-}
-
-.prio-board__card-select {
-  display: inline-flex;
-  align-items: center;
-  flex-shrink: 0;
-  margin-right: var(--prio-space-2);
-  cursor: pointer;
-}
-
-.prio-board__card-select input {
-  cursor: pointer;
-  accent-color: var(--prio-primary-600);
-}
-
-.prio-board__card[data-selected="true"] {
-  border-color: var(--prio-primary-600);
-  box-shadow: 0 0 0 1px var(--prio-primary-600) inset;
-}
-
 /* A column that will not take the card currently being dragged. Dimmed rather
    than hidden: it is still a real column with real work in it. */
 .prio-board__column[data-refuses="true"] {

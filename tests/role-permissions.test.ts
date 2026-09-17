@@ -491,25 +491,95 @@ describe("sprints", () => {
       if (!result.ok) expect(result.error).toMatch(/administrator/i);
     });
 
-    it(`cannot be edited or started by ${who}`, async () => {
+    it(`cannot be started by ${who}`, async () => {
       const sprintId = createdSprintIds[0];
       expect(sprintId, "the admin sprint above exists").toBeTruthy();
 
       await actAs(email);
-      expect((await updateSprint({ sprintId: sprintId!, name: "renamed" })).ok).toBe(
-        false,
-      );
       expect((await startSprint({ sprintId: sprintId! })).ok).toBe(false);
 
-      // …and the sprint is untouched.
+      // …and the sprint has not begun.
+      const after = await prisma.sprint.findUniqueOrThrow({
+        where: { id: sprintId! },
+        select: { status: true },
+      });
+      expect(after.status).toBe("PLANNED");
+    });
+
+    it(`can be edited by ${who}, who works in the project`, async () => {
+      /*
+       * Editing is deliberately not an administrator's alone.
+       *
+       * Whether the sprint exists is theirs — creating and deleting are both
+       * refused above and in `sprint-delete.test.ts`. Correcting the name, goal
+       * or dates of a sprint people are already working in is upkeep of work in
+       * progress, so `updateSprint` asks the project's own access rule instead,
+       * and everyone in this loop is on Engineering.
+       */
+      const sprintId = createdSprintIds[0];
+      expect(sprintId, "the admin sprint above exists").toBeTruthy();
+
+      const renamed = `Renamed by ${who} ${Date.now()}`;
+      await actAs(email);
+      /* Every field the schema asks for. Sending only the name is refused by
+         validation before authorization is ever consulted, which would make
+         this pass whatever the rule was. */
+      const result = await updateSprint({
+        sprintId: sprintId!,
+        name: renamed,
+        goal: "Edited by somebody who works here",
+        startDate: new Date().toISOString(),
+        endDate: new Date(Date.now() + 7 * 864e5).toISOString(),
+      });
+      expect(result.ok, result.ok ? "" : result.error).toBe(true);
+
       const after = await prisma.sprint.findUniqueOrThrow({
         where: { id: sprintId! },
         select: { name: true, status: true },
       });
-      expect(after.name).not.toBe("renamed");
+      expect(after.name).toBe(renamed);
+      // Editing it did not also start it.
       expect(after.status).toBe("PLANNED");
     });
   }
+
+  it("cannot be edited by somebody outside its project", async () => {
+    /*
+     * The rule is the project's access check, not "not an administrator" — so
+     * it still refuses anybody who could not open the project at all.
+     *
+     * Testing is the administrator's own project and the developer is not in
+     * it, the same pairing `sprints.test.ts` uses for this.
+     */
+    await actAs(ADMIN);
+    const testing = await projectByKey("TES");
+    const made = await createSprint({
+      projectId: testing.id,
+      name: `Outsider fixture ${Date.now()}`,
+      goal: "fixture",
+      startDate: new Date().toISOString(),
+      endDate: new Date(Date.now() + 7 * 864e5).toISOString(),
+    });
+    expect(made.ok, made.ok ? "" : made.error).toBe(true);
+    if (!made.ok) return;
+    createdSprintIds.push(made.data.id);
+
+    await actAs(DEVELOPER);
+    const result = await updateSprint({
+      sprintId: made.data.id,
+      name: "Renamed by an outsider",
+      goal: "",
+      startDate: new Date().toISOString(),
+      endDate: new Date(Date.now() + 7 * 864e5).toISOString(),
+    });
+    expect(result.ok).toBe(false);
+
+    const after = await prisma.sprint.findUniqueOrThrow({
+      where: { id: made.data.id },
+      select: { name: true },
+    });
+    expect(after.name).not.toBe("Renamed by an outsider");
+  });
 
   it("stay readable to everybody who can open the project", async () => {
     const sprintId = createdSprintIds[0]!;

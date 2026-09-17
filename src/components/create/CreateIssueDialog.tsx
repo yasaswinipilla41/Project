@@ -19,6 +19,8 @@ import {
 import { uploadStagedAttachments } from "@/lib/uploadAttachment";
 import { MAX_IMAGE_BYTES, MAX_UPLOAD_BYTES } from "@/server/upload-types";
 import {
+  ISSUE_LIMIT_CODE,
+  ISSUE_LIMIT_REACHED,
   ISSUE_TYPES,
   ISSUE_TYPE_LABEL,
   labelColourFor,
@@ -421,6 +423,13 @@ export function CreateIssueDialog({
 
     if (!result.ok) {
       setSubmitting(false);
+      /* A full project is raised as a toast as well as shown in the dialog:
+         it is not a field to correct, so the person needs to see it even if
+         their eye is on the button rather than the top of the form. Keyed on
+         the code, so no other failure can ever borrow this wording. */
+      if (result.code === ISSUE_LIMIT_CODE) {
+        toast(ISSUE_LIMIT_REACHED, "error");
+      }
       setFormError(result.error);
       setErrors(result.fieldErrors ?? {});
       return;

@@ -263,9 +263,19 @@ test.describe("The sprint workflow", () => {
 test.describe("Sprints as a member of the project", () => {
   test.use({ storageState: MEMBER_STATE });
 
-  test("can add work to a sprint but not start it", async ({ page }) => {
-    /* The existing permission split, applied unchanged: working in a project
-       you belong to is a member's, the project's own lifecycle is not. */
+  test("can fill and correct a sprint, but not start or create one", async ({
+    page,
+  }) => {
+    /*
+     * The permission split, as it now stands: what a sprint *is* belongs to
+     * whoever may open the project, whether it *exists* and whether it has
+     * *begun* do not.
+     *
+     * Edit used to be hidden here too. It is offered now — correcting a wrong
+     * date on a sprint people are already working in is upkeep of work in
+     * progress, and `updateSprint` authorizes on the project's own access rule
+     * rather than on rank. Creating and starting are unchanged.
+     */
     const name = sprintName("member");
     const sprint = await prisma.sprint.create({
       data: {
@@ -294,11 +304,12 @@ test.describe("Sprints as a member of the project", () => {
     const card = sprintCard(page, name);
     await expect(card).toBeVisible();
 
-    // Theirs: filling the sprint.
+    // Theirs: filling the sprint, and correcting its details.
     await expect(card.getByRole("button", { name: "Add issues" })).toBeVisible();
-    // Not theirs: starting it, or editing it.
+    await expect(card.getByRole("button", { name: "Edit" })).toBeVisible();
+    // Not theirs: starting it, creating another, or deleting this one.
     await expect(card.getByRole("button", { name: "Start sprint" })).toHaveCount(0);
-    await expect(card.getByRole("button", { name: "Edit" })).toHaveCount(0);
+    await expect(card.getByRole("button", { name: "Delete sprint" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "New sprint" })).toHaveCount(0);
   });
 });

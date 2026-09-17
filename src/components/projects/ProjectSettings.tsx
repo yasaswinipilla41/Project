@@ -40,6 +40,10 @@ export function ProjectSettings({
     description: string | null;
     isDefaultProject: boolean;
     isArchived: boolean;
+    /** Null when the project has no issue limit, which is the default. */
+    maxIssues: number | null;
+    /** How many issues it holds now — what the limit is measured against. */
+    issueCount: number;
   };
   labels: SettingsLabel[];
 }) {
@@ -52,6 +56,11 @@ export function ProjectSettings({
     project.isDefaultProject,
   );
   const [isArchived, setIsArchived] = useState(project.isArchived);
+  /* Held as text, because the empty field is a real value here — it is how a
+     limit is removed — and a number input cannot represent "cleared". */
+  const [maxIssues, setMaxIssues] = useState(
+    project.maxIssues === null ? "" : String(project.maxIssues),
+  );
   const [savingDetails, setSavingDetails] = useState(false);
   const [detailErrors, setDetailErrors] = useState<FieldErrors>({});
 
@@ -70,6 +79,7 @@ export function ProjectSettings({
       description,
       isDefaultProject,
       isArchived,
+      maxIssues,
     });
 
     setSavingDetails(false);
@@ -165,6 +175,36 @@ export function ProjectSettings({
                   rows={4}
                   maxLength={2000}
                 />
+              </div>
+
+              <div className="prio-field">
+                <label className="prio-label" htmlFor="settings-max-issues">
+                  Maximum issues
+                </label>
+                <input
+                  id="settings-max-issues"
+                  className="prio-input"
+                  type="number"
+                  min={1}
+                  step={1}
+                  inputMode="numeric"
+                  placeholder="No limit"
+                  value={maxIssues}
+                  onChange={(e) => setMaxIssues(e.target.value)}
+                  style={{ maxWidth: 180 }}
+                  aria-describedby="settings-max-issues-hint"
+                  aria-invalid={detailErrors.maxIssues ? true : undefined}
+                />
+                <span className="prio-hint" id="settings-max-issues-hint">
+                  {maxIssues.trim() === ""
+                    ? `No limit — this project can hold any number of issues. It holds ${project.issueCount} now.`
+                    : `Nobody can raise new work here once this project holds ${maxIssues.trim()} issues. It holds ${project.issueCount} now. Clear this field to remove the limit.`}
+                </span>
+                {detailErrors.maxIssues ? (
+                  <span className="prio-error" role="alert">
+                    {detailErrors.maxIssues}
+                  </span>
+                ) : null}
               </div>
 
               <div className="prio-field">

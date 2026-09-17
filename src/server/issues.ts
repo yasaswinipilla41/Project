@@ -14,6 +14,7 @@ import {
   assertProjectAccess,
   AuthorizationError,
   NotFoundError,
+  ProjectAtCapacityError,
   assertCanCreateWork,
   workRoleOf,
   workRolesFor,
@@ -25,6 +26,7 @@ import {
   canEditDueDate,
   canEditIssueName,
   canEditPriority,
+  canHoldAnotherIssue,
   canSetStatus,
   filableStatusesFor,
   doesDeveloperWork,
@@ -66,9 +68,18 @@ import { createIssueLink } from "@/server/links";
 
 export type ActionResult<T = undefined> =
   | { ok: true; data: T }
-  | { ok: false; error: string; fieldErrors?: FieldErrors };
+  /**
+   * `code` names the refusal for callers that must tell one apart from the
+   * rest — the create dialogs single out a full project, and nothing else.
+   * Optional, so every existing failure and every caller reading only `error`
+   * is unaffected.
+   */
+  | { ok: false; error: string; code?: string; fieldErrors?: FieldErrors };
 
 function failure(error: unknown): ActionResult<never> {
+  if (error instanceof ProjectAtCapacityError) {
+    return { ok: false, error: error.message, code: error.code };
+  }
   if (error instanceof AuthorizationError || error instanceof NotFoundError) {
     return { ok: false, error: error.message };
   }
@@ -95,8 +106,30 @@ async function nextIssueNumber(
   const project = await tx.project.update({
     where: { id: projectId },
     data: { issueSequence: { increment: 1 } },
-    select: { key: true, issueSequence: true },
+    select: { key: true, issueSequence: true, maxIssues: true },
   });
+
+  /*
+   * The project's issue limit, checked here because here is where every new
+   * issue necessarily passes.
+   *
+   * Filing work and allocating its key are the same act, so a creation path
+   * that skipped this check could not produce a key — which is a stronger
+   * guarantee than remembering to repeat the check in each caller, and is why
+   * it is not written at the two call sites instead.
+   *
+   * The update above holds this project's row for the rest of the transaction,
+   * so the count cannot be raced: a second create arriving at the same moment
+   * waits here, and reads a count that already includes the first. Refusing by
+   * `throw` rolls the transaction back, which also returns the sequence number
+   * this call just took — a refused create leaves no gap in the keys.
+   */
+  if (project.maxIssues !== null) {
+    const held = await tx.issue.count({ where: { projectId } });
+    if (!canHoldAnotherIssue(held, project.maxIssues)) {
+      throw new ProjectAtCapacityError();
+    }
+  }
 
   return {
     number: project.issueSequence,

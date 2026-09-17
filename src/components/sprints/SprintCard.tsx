@@ -104,6 +104,7 @@ export function SprintCard({
   backlog,
   otherOpenSprints,
   canManage,
+  canEdit,
   canEditIssues,
 }: {
   sprint: SprintView;
@@ -113,8 +114,17 @@ export function SprintCard({
   backlog: SprintIssueSummary[];
   /** Other sprints in this project that could receive unfinished work. */
   otherOpenSprints: { id: string; name: string }[];
-  /** May start, complete and edit this sprint. */
+  /** May create, delete, start and complete — an administrator. */
   canManage: boolean;
+  /**
+   * May correct this sprint's name, goal and dates.
+   *
+   * Separate from `canManage` because it is a different question: whether the
+   * sprint exists is an administrator's call, whether its dates are right is
+   * upkeep for whoever is working in it. `updateSprint` authorizes on the
+   * project, and this mirrors that.
+   */
+  canEdit: boolean;
   /** May put issues into it and take them out — anyone on the project. */
   canEditIssues: boolean;
 }) {
@@ -243,7 +253,7 @@ export function SprintCard({
               </Button>
             ) : null}
 
-            {live && canManage ? (
+            {live && canEdit ? (
               <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
                 Edit
               </Button>

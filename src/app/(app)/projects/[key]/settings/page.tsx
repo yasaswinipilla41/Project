@@ -30,6 +30,10 @@ export default async function ProjectSettingsPage({
       description: true,
       isDefaultProject: true,
       isArchived: true,
+      maxIssues: true,
+      /* What the limit is measured against, so the field can say how much of
+         the allowance is already spent rather than asking an admin to guess. */
+      _count: { select: { issues: true } },
       members: {
         orderBy: { createdAt: "asc" },
         select: {
@@ -89,6 +93,8 @@ export default async function ProjectSettingsPage({
           description: project.description,
           isDefaultProject: project.isDefaultProject,
           isArchived: project.isArchived,
+          maxIssues: project.maxIssues,
+          issueCount: project._count.issues,
         }}
         labels={project.labels.map((l) => ({
           id: l.id,
