@@ -8,7 +8,13 @@ import { Button } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/Toast";
 import { IconClose, IconPlus, IconWarning } from "@/components/ui/Icon";
 import { IssueKey, IssueTypeIcon, StatusPill } from "@/components/ui/Indicators";
-import { ISSUE_TYPES, ISSUE_TYPE_LABEL, isClosedStatus } from "@/lib/domain";
+import {
+  ISSUE_LIMIT_CODE,
+  ISSUE_LIMIT_REACHED,
+  ISSUE_TYPES,
+  ISSUE_TYPE_LABEL,
+  isClosedStatus,
+} from "@/lib/domain";
 import { createIssue } from "@/server/issues";
 
 /**
@@ -227,6 +233,10 @@ export function ProjectCalendarGrid({
     setSaving(false);
 
     if (!result.ok) {
+      // A full project — see the same branch in CreateIssueDialog.
+      if (result.code === ISSUE_LIMIT_CODE) {
+        toast(ISSUE_LIMIT_REACHED, "error");
+      }
       setError(result.fieldErrors?.title ?? result.error);
       return;
     }

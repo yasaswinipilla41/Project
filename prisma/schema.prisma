@@ -240,6 +240,14 @@ model Project {
 
   /// Monotonic counter backing immutable issue keys (ENG-1, ENG-2 ...). Never decremented.
   issueSequence Int      @default(0)
+  /// Most issues this project may hold, or null for no limit.
+  ///
+  /// Null is the default and the only value Prio ever sets by itself: there is
+  /// no built-in cap, so a project stays unlimited until an administrator
+  /// chooses a number for it. Deliberately nullable rather than defaulted —
+  /// any number here would be an invented rule applied to every project that
+  /// already exists.
+  maxIssues     Int?
   isArchived    Boolean  @default(false)
   /// Every self-registered account is added to projects with this set, the
   /// moment their account is created — see `signUp` in src/server/signup.ts.

@@ -103,12 +103,42 @@ export const createProjectSchema = z.object({
 
 export type CreateProjectInput = z.infer<typeof createProjectSchema>;
 
+/**
+ * The most issues a project may hold, or null for no limit.
+ *
+ * An empty field means "no limit" rather than zero — clearing the box is how a
+ * limit is removed, and a project that may hold no issues at all is not a
+ * setting anybody wants. Zero and negatives are refused for that reason, and
+ * fractions because half an issue is not a thing.
+ *
+ * `undefined` is distinct from `null` here and the action relies on it: absent
+ * means "this caller is not changing the limit", null means "remove it". A
+ * form that never showed the field must not wipe it.
+ */
+const issueLimit = z
+  .union([z.number(), z.string()])
+  .transform((v) => {
+    if (typeof v === "number") return v;
+    const text = v.trim();
+    return text === "" ? null : Number(text);
+  })
+  .nullable()
+  .optional()
+  .refine(
+    (v) =>
+      v === null ||
+      v === undefined ||
+      (Number.isInteger(v) && v > 0),
+    "Enter a whole number above zero, or leave it empty for no limit.",
+  );
+
 export const updateProjectSchema = z.object({
   projectId: z.string().min(1),
   name: trimmed(80).min(2, "Give the project a name."),
   description: optionalText(2000),
   isArchived: z.boolean().optional(),
   isDefaultProject: z.boolean().optional(),
+  maxIssues: issueLimit,
 });
 
 /*

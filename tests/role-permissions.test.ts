@@ -491,22 +491,52 @@ describe("sprints", () => {
       if (!result.ok) expect(result.error).toMatch(/administrator/i);
     });
 
-    it(`cannot be edited or started by ${who}`, async () => {
+    it(`cannot be started by ${who}`, async () => {
       const sprintId = createdSprintIds[0];
       expect(sprintId, "the admin sprint above exists").toBeTruthy();
 
       await actAs(email);
-      expect((await updateSprint({ sprintId: sprintId!, name: "renamed" })).ok).toBe(
-        false,
-      );
       expect((await startSprint({ sprintId: sprintId! })).ok).toBe(false);
 
-      // …and the sprint is untouched.
+      // …and the sprint has not begun.
+      const after = await prisma.sprint.findUniqueOrThrow({
+        where: { id: sprintId! },
+        select: { status: true },
+      });
+      expect(after.status).toBe("PLANNED");
+    });
+
+    it(`cannot be edited by ${who}, even from inside the project`, async () => {
+      /*
+       * Editing a sprint's own configuration — its name, goal or dates —
+       * stays with administrators, the same as creating, deleting, starting
+       * and completing one. `canEditSprintDetails` in `domain.ts` is the one
+       * table this and `updateSprint` both read; being on the project is not
+       * enough, which is why `updateSprint` checks project access and this
+       * capability separately rather than one implying the other.
+       */
+      const sprintId = createdSprintIds[0];
+      expect(sprintId, "the admin sprint above exists").toBeTruthy();
+
+      await actAs(email);
+      /* Every field the schema asks for. Sending only the name is refused by
+         validation before authorization is ever consulted, which would make
+         this pass whatever the rule was. */
+      const result = await updateSprint({
+        sprintId: sprintId!,
+        name: `Renamed by ${who} ${Date.now()}`,
+        goal: "Should not stick",
+        startDate: new Date().toISOString(),
+        endDate: new Date(Date.now() + 7 * 864e5).toISOString(),
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/administrator/i);
+
       const after = await prisma.sprint.findUniqueOrThrow({
         where: { id: sprintId! },
         select: { name: true, status: true },
       });
-      expect(after.name).not.toBe("renamed");
+      expect(after.name).not.toMatch(new RegExp(`Renamed by ${who}`));
       expect(after.status).toBe("PLANNED");
     });
   }
