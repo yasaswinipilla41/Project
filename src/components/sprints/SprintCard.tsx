@@ -9,6 +9,7 @@ import {
   IconCalendar,
   IconCheck,
   IconClose,
+  IconEdit,
   IconPlus,
   IconTrash,
   IconUsers,
@@ -221,47 +222,64 @@ export function SprintCard({
       <CardBody>
         <header className="prio-sprint__head">
           <div className="prio-sprint__identity">
-            <h3 className="prio-sprint__name">
-              {sprint.name}
-              <span className="prio-sprint__status" data-status={sprint.status}>
-                {sprint.status === "ACTIVE"
-                  ? "Active"
-                  : sprint.status === "PLANNED"
-                    ? "Planned"
-                    : "Completed"}
-              </span>
-            </h3>
-            {sprint.goal ? (
-              <p className="prio-sprint__goal">{sprint.goal}</p>
-            ) : null}
-            <p className="prio-sprint__dates">
-              <IconCalendar size={13} />
-              {formatDateCompact(sprint.startDate)} →{" "}
-              {formatDateCompact(sprint.endDate)}
-              {sprint.completedAt ? (
-                <span className="prio-text-muted">
-                  {" "}
-                  · closed {formatDateCompact(sprint.completedAt)}
+            {/* The sprint's own dedicated details page — name, goal and dates
+                are the click target; the actions to the right are not, so a
+                click there is never swallowed by this link. */}
+            <Link
+              href={`/projects/${projectKey.toLowerCase()}/sprints/${sprint.id}`}
+              className="prio-sprint__identitylink"
+            >
+              <h3 className="prio-sprint__name">
+                {sprint.name}
+                <span className="prio-sprint__status" data-status={sprint.status}>
+                  {sprint.status === "ACTIVE"
+                    ? "Active"
+                    : sprint.status === "PLANNED"
+                      ? "Planned"
+                      : "Completed"}
                 </span>
+              </h3>
+              {sprint.goal ? (
+                <p className="prio-sprint__goal">{sprint.goal}</p>
               ) : null}
-            </p>
+              <p className="prio-sprint__dates">
+                <IconCalendar size={13} />
+                {formatDateCompact(sprint.startDate)} →{" "}
+                {formatDateCompact(sprint.endDate)}
+                {sprint.completedAt ? (
+                  <span className="prio-text-muted">
+                    {" "}
+                    · closed {formatDateCompact(sprint.completedAt)}
+                  </span>
+                ) : null}
+              </p>
+            </Link>
           </div>
 
           <div className="prio-sprint__actions">
             {live && canEditIssues ? (
               <Button
-                variant="secondary"
+                variant="ghost"
                 size="sm"
+                iconOnly
+                aria-label="Add issues"
+                title="Add issues"
                 onClick={() => setAdding(true)}
               >
-                <IconPlus size={13} />
-                Add issues
+                <IconPlus size={18} />
               </Button>
             ) : null}
 
             {live && canEdit ? (
-              <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
-                Edit
+              <Button
+                variant="ghost"
+                size="sm"
+                iconOnly
+                aria-label="Edit"
+                title="Edit"
+                onClick={() => setEditing(true)}
+              >
+                <IconEdit size={18} />
               </Button>
             ) : null}
 
@@ -290,12 +308,14 @@ export function SprintCard({
                 away. */}
             {canDelete ? (
               <Button
-                variant="danger-outline"
+                variant="danger"
                 size="sm"
+                iconOnly
+                aria-label="Delete sprint"
+                title="Delete sprint"
                 onClick={() => setDeleting(true)}
               >
                 <IconTrash size={13} />
-                Delete sprint
               </Button>
             ) : null}
           </div>
@@ -349,7 +369,7 @@ export function SprintCard({
               : ""}
           </p>
         ) : sprint.status === "ACTIVE" ? (
-          <div className="prio-sprint__board">
+          <div className="prio-sprint__board prio-scroll">
             {columns.map(({ column, issues }) => (
               <section key={column} className="prio-sprint__column">
                 <h4 className="prio-sprint__columnhead">

@@ -58,6 +58,7 @@ const TEAM_NAMES: Record<string, string> = {
 
 const createdIssueIds: string[] = [];
 const createdSprintIds: string[] = [];
+const createdProjectIds: string[] = [];
 const memberships: string[] = [];
 
 async function userId(email: string): Promise<string> {
@@ -191,8 +192,38 @@ afterAll(async () => {
   if (memberships.length > 0) {
     await prisma.teamMember.deleteMany({ where: { id: { in: memberships } } });
   }
+  if (createdProjectIds.length > 0) {
+    await prisma.project.deleteMany({ where: { id: { in: createdProjectIds } } });
+  }
   await prisma.$disconnect();
 });
+
+/**
+ * A project of its own, with the full stack fixture already a member.
+ *
+ * ENG is a shared, seeded project that whoever is actually using Prio may
+ * also have a sprint running in right now — "one active sprint per project"
+ * is a real rule, not a test-only one, so a case that starts a sprint and
+ * expects it to succeed needs a project nothing else can be contending for.
+ */
+async function makeIsolatedProject(): Promise<{ id: string }> {
+  const admin = await prisma.user.findUniqueOrThrow({
+    where: { email: ADMIN },
+    select: { id: true },
+  });
+  const key = `FS${Date.now().toString(36).toUpperCase()}`.slice(0, 10);
+  const project = await prisma.project.create({
+    data: {
+      key,
+      name: `Full stack fixture ${key}`,
+      createdById: admin.id,
+      members: { create: { userId: await userId(FULLSTACK) } },
+    },
+    select: { id: true },
+  });
+  createdProjectIds.push(project.id);
+  return project;
+}
 
 describe("who a full stack developer is", () => {
   it("resolves to FULLSTACK, not to either half", async () => {
@@ -459,12 +490,13 @@ describe("what full stack is not", () => {
     expect(leaked).toBeNull();
   });
 
-  it("may start a sprint an administrator planned, but not edit or complete it", async () => {
-    /* Starting one is the exception: a Full Stack Developer builds and
-       verifies, so beginning the fortnight the team already planned is
-       theirs too, unlike changing the plan or closing its record out. */
+  it("may start and edit a sprint an administrator planned, but not complete it", async () => {
+    /* Starting and editing are the exceptions: a Full Stack Developer builds
+       and verifies, so beginning the fortnight the team already planned, and
+       correcting its name, goal or dates, are both theirs — unlike closing
+       its record out, which stays an administrator's. */
     await actAs(ADMIN);
-    const project = await projectByKey("ENG");
+    const project = await makeIsolatedProject();
     const created = await createSprint({
       projectId: project.id,
       name: `Full stack may start ${Date.now()}`,
@@ -492,12 +524,20 @@ describe("what full stack is not", () => {
 
     const renamed = await updateSprint({
       sprintId: created.data.id,
-      name: "Full stack should not rename this",
+      name: "Renamed by full stack",
       goal: "",
       startDate: new Date().toISOString(),
       endDate: new Date(Date.now() + 7 * 864e5).toISOString(),
     });
-    expect(renamed.ok).toBe(false);
+    expect(renamed.ok, renamed.ok ? "" : renamed.error).toBe(true);
+    expect(
+      (
+        await prisma.sprint.findUniqueOrThrow({
+          where: { id: created.data.id },
+          select: { name: true },
+        })
+      ).name,
+    ).toBe("Renamed by full stack");
 
     const started = await startSprint({ sprintId: created.data.id });
     expect(started.ok).toBe(true);

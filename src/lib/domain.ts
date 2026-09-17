@@ -626,12 +626,21 @@ export function canCreateSprint(role: WorkRole): boolean {
 /**
  * Who may change a sprint's own configuration — its name, goal or dates.
  *
- * Kept with the administrator, the same as creating one: a sprint's dates and
- * goal are the commitment itself, so changing them after the fact is not
- * something anybody working inside the sprint may do on their own.
+ * Every working role, the same as filling the sprint is: correcting a wrong
+ * date or goal on a sprint people are already working in is upkeep of work in
+ * progress, not the team-wide commitment that creating, starting, completing
+ * or deleting one is — those stay with an administrator (starting also with a
+ * Full Stack Developer). Project access is still asserted separately by
+ * `updateSprint`, so this only narrows who may act once they are in the
+ * project, never widens where.
  */
 export function canEditSprintDetails(role: WorkRole): boolean {
-  return role === "ADMIN";
+  return (
+    role === "ADMIN" ||
+    role === "DEVELOPER" ||
+    role === "QA" ||
+    role === "FULLSTACK"
+  );
 }
 
 /** Who may delete a sprint outright. An administrator's call, like the rest

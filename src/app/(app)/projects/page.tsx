@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { BackLink } from "@/components/shell/BackLink";
 import { ProjectsHeaderActions } from "@/components/projects/ProjectsHeaderActions";
+import { ProjectSprintPicker } from "@/components/projects/ProjectSprintPicker";
+import { ProjectSprintsBlock } from "@/components/projects/ProjectSprintsBlock";
 import { SectionHead } from "@/components/dashboard/DashboardParts";
 import {
   AvatarStack,
@@ -15,6 +17,7 @@ import { CLOSED_STATUSES, OPEN_STATUSES } from "@/lib/domain";
 import { percent } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
+import { loadSprints } from "@/server/queries/sprints";
 
 export const metadata: Metadata = { title: "Projects" };
 export const dynamic = "force-dynamic";
@@ -26,9 +29,14 @@ export const dynamic = "force-dynamic";
 export default async function ProjectsPage({
   searchParams,
 }: {
-  /* Only ever read for `from`, which Administration sets so this page knows to
-     offer the way back. The list itself takes no parameters. */
-  searchParams: Promise<{ from?: string }>;
+  /*
+   * `from` is read only for Administration's way back. `project` is the
+   * Iterations/Sprints block's own selection — which of this reader's
+   * projects it shows sprints for — and lives in the URL for the same
+   * reason every other single-select filter in Prio does: shareable, and
+   * survives a refresh.
+   */
+  searchParams: Promise<{ from?: string; project?: string }>;
 }) {
   const params = await searchParams;
   const user = await requireUser();
@@ -83,8 +91,17 @@ export default async function ProjectsPage({
       : Promise.resolve([]),
   ]);
 
+  /*
+   * The Iterations/Sprints block's own selection. Read from the URL, but only
+   * ever a project this reader's own `projects` query already returned — a
+   * stale or forged id in `?project=` falls back to the first project rather
+   * than reaching into one this reader cannot see.
+   */
+  const selectedProject =
+    projects.find((project) => project.id === params.project) ?? projects[0];
+
   // One grouped query rather than a count per project per status.
-  const [stats, favorites] = await Promise.all([
+  const [stats, favorites, sprints] = await Promise.all([
     prisma.issue.groupBy({
       by: ["projectId", "type", "status"],
       where: { projectId: { in: projects.map((p) => p.id) } },
@@ -94,6 +111,7 @@ export default async function ProjectsPage({
       where: { userId: user.id, projectId: { in: projects.map((p) => p.id) } },
       select: { projectId: true },
     }),
+    selectedProject ? loadSprints(selectedProject.id) : Promise.resolve([]),
   ]);
 
   const favoriteIds = new Set(favorites.map((f) => f.projectId));
@@ -254,6 +272,38 @@ export default async function ProjectsPage({
           })}
         </div>
       )}
+
+      {/*
+       * Iterations/Sprints: every role that can open a project may see its
+       * sprints here, the same as the project's own Sprints tab — `projects`
+       * above is already scoped to what this reader may see, and the picker
+       * can only choose among those, so this block never leaks a project the
+       * reader could not otherwise open.
+       */}
+      {projects.length > 0 ? (
+        <section style={{ marginTop: "var(--prio-space-6)" }}>
+          <div className="prio-sprints__head">
+            <div>
+              <h2 className="prio-issue__section-title">Iterations / Sprints</h2>
+              <p className="prio-text-muted">
+                {selectedProject
+                  ? `Sprints in ${selectedProject.name}.`
+                  : "Choose a project to see its sprints."}
+              </p>
+            </div>
+            <ProjectSprintPicker
+              projects={projects}
+              selectedId={selectedProject?.id ?? null}
+            />
+          </div>
+          <div style={{ marginTop: "var(--prio-space-3)" }}>
+            <ProjectSprintsBlock
+              sprints={sprints}
+              projectName={selectedProject?.name ?? "This project"}
+            />
+          </div>
+        </section>
+      ) : null}
 
       {/*
         * Archived projects.

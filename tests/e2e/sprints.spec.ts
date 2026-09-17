@@ -324,18 +324,61 @@ test.describe("The sprint workflow", () => {
        is nothing to choose. */
     await expect(dialog.getByLabel("Project")).toHaveCount(0);
   });
+
+  test("clicking a sprint opens its own details page, and Back returns to the list", async ({
+    page,
+  }) => {
+    /*
+     * The sprint's name/goal/dates are the click target on its card — not
+     * the actions beside them — and each sprint has its own URL under the
+     * project, so two different sprints never land on the same page.
+     */
+    const first = sprintName("nav-first");
+    const second = sprintName("nav-second");
+    await createSprintThroughUi(page, "ENG", first);
+    await createSprintThroughUi(page, "ENG", second);
+
+    await page.goto("/projects/eng/sprints");
+
+    const firstCard = sprintCard(page, first);
+    await firstCard.locator(".prio-sprint__identitylink").click();
+    await expect(page).toHaveURL(/\/projects\/eng\/sprints\/[a-z0-9]+$/i);
+    const firstUrl = page.url();
+    await expect(page.getByRole("heading", { name: first })).toBeVisible();
+    // Still inside the project shell, with Sprints marked as the active tab.
+    await expect(
+      page.locator(".prio-projectnav__tab", { hasText: "Sprints" }),
+    ).toHaveAttribute("aria-current", "page");
+
+    await page.getByRole("link", { name: /Back to sprints/i }).click();
+    await expect(page).toHaveURL(/\/projects\/eng\/sprints$/);
+
+    // A different sprint's card leads to a different URL, showing that one.
+    const secondCard = sprintCard(page, second);
+    await secondCard.locator(".prio-sprint__identitylink").click();
+    await expect(page).toHaveURL(/\/projects\/eng\/sprints\/[a-z0-9]+$/i);
+    await expect(page.getByRole("heading", { name: second })).toBeVisible();
+    expect(page.url()).not.toBe(firstUrl);
+
+    // The actions beside the name are unaffected by the new click target.
+    await page.goto("/projects/eng/sprints");
+    await expect(
+      firstCard.getByRole("button", { name: "Add issues" }),
+    ).toBeVisible();
+  });
 });
 
 test.describe("Sprints as a member of the project", () => {
   test.use({ storageState: MEMBER_STATE });
 
-  test("can fill a sprint, but not edit, start, create or delete one", async ({
+  test("can fill and correct a sprint, but not start, create or delete one", async ({
     page,
   }) => {
     /*
      * The permission split: filling a sprint — adding issues, moving them
-     * elsewhere — belongs to whoever may open the project. What a sprint
-     * *is*, whether it has *begun*, and whether it has *ended* stay with an
+     * elsewhere — and correcting its name, goal or dates both belong to
+     * whoever may open the project. Whether the sprint *exists* at all,
+     * whether it has *begun*, and whether it has *ended* stay with an
      * administrator (a Full Stack Developer may also start one, but this
      * member is neither).
      */
@@ -369,13 +412,34 @@ test.describe("Sprints as a member of the project", () => {
     const card = sprintCard(page, name);
     await expect(card).toBeVisible();
 
-    // Theirs: filling the sprint.
+    // Theirs: filling the sprint, and correcting its details.
     await expect(card.getByRole("button", { name: "Add issues" })).toBeVisible();
-    // Not theirs: editing, starting, creating another, or deleting this one.
-    await expect(card.getByRole("button", { name: "Edit" })).toHaveCount(0);
+    await expect(card.getByRole("button", { name: "Edit" })).toBeVisible();
+    // Not theirs: starting it, creating another, or deleting this one.
     await expect(card.getByRole("button", { name: "Start sprint" })).toHaveCount(0);
     await expect(card.getByRole("button", { name: "Delete sprint" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "New sprint" })).toHaveCount(0);
+
+    /*
+     * Editing is fully functional here, not just visible — driven through
+     * the real "Edit sprint" dialog, the same one Admin uses, so the fix is
+     * proven at the boundary a hidden-button assertion would miss.
+     */
+    const editedName = `${name} (edited)`;
+    await card.getByRole("button", { name: "Edit" }).click();
+    const editDialog = page.getByRole("dialog");
+    await expect(editDialog.getByRole("heading", { name: "Edit sprint" })).toBeVisible();
+    await editDialog.getByLabel("Sprint name").fill(editedName);
+    await editDialog.getByRole("button", { name: "Save" }).click();
+    await expect(editDialog).toBeHidden();
+
+    await expect(sprintCard(page, editedName)).toBeVisible();
+    expect(
+      await prisma.sprint.findUniqueOrThrow({
+        where: { id: sprint.id },
+        select: { name: true },
+      }),
+    ).toMatchObject({ name: editedName });
 
     /*
      * The actual bug this fixed: a member clicking "Add issues" used to be

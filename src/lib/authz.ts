@@ -491,10 +491,17 @@ export async function assertCanCreateSprint(user: CurrentUser): Promise<void> {
   }
 }
 
-/** Who may rename a sprint or move its dates: an administrator, and nobody else. */
+/**
+ * Who may rename a sprint or move its dates: every working role, the same as
+ * `canEditSprintDetails` says. `updateSprint` still asserts project access
+ * separately, so this alone never lets somebody reach a sprint outside a
+ * project they belong to.
+ */
 export async function assertCanEditSprint(user: CurrentUser): Promise<void> {
   if (!canEditSprintDetails(await workRoleOf(user))) {
-    throw new AuthorizationError("Only an administrator can edit a sprint.");
+    throw new AuthorizationError(
+      "You do not have permission to edit this sprint.",
+    );
   }
 }
 

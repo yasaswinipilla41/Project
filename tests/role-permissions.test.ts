@@ -506,37 +506,38 @@ describe("sprints", () => {
       expect(after.status).toBe("PLANNED");
     });
 
-    it(`cannot be edited by ${who}, even from inside the project`, async () => {
+    it(`can be edited by ${who}, who works in the project`, async () => {
       /*
-       * Editing a sprint's own configuration — its name, goal or dates —
-       * stays with administrators, the same as creating, deleting, starting
-       * and completing one. `canEditSprintDetails` in `domain.ts` is the one
-       * table this and `updateSprint` both read; being on the project is not
-       * enough, which is why `updateSprint` checks project access and this
-       * capability separately rather than one implying the other.
+       * Editing a sprint's own configuration is every working role's now —
+       * the same as filling it is. Only whether the sprint exists (create,
+       * delete) and whether it has started or closed (start, complete) stay
+       * with an administrator. `canEditSprintDetails` in `domain.ts` is the
+       * one table this and `updateSprint` both read, so the icon offered in
+       * the sprint block and the write that accepts it can never disagree.
        */
       const sprintId = createdSprintIds[0];
       expect(sprintId, "the admin sprint above exists").toBeTruthy();
 
+      const renamed = `Renamed by ${who} ${Date.now()}`;
       await actAs(email);
       /* Every field the schema asks for. Sending only the name is refused by
          validation before authorization is ever consulted, which would make
          this pass whatever the rule was. */
       const result = await updateSprint({
         sprintId: sprintId!,
-        name: `Renamed by ${who} ${Date.now()}`,
-        goal: "Should not stick",
+        name: renamed,
+        goal: "Edited by somebody who works here",
         startDate: new Date().toISOString(),
         endDate: new Date(Date.now() + 7 * 864e5).toISOString(),
       });
-      expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.error).toMatch(/administrator/i);
+      expect(result.ok, result.ok ? "" : result.error).toBe(true);
 
       const after = await prisma.sprint.findUniqueOrThrow({
         where: { id: sprintId! },
         select: { name: true, status: true },
       });
-      expect(after.name).not.toMatch(new RegExp(`Renamed by ${who}`));
+      expect(after.name).toBe(renamed);
+      // Editing it did not also start it.
       expect(after.status).toBe("PLANNED");
     });
   }
