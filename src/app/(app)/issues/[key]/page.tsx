@@ -53,7 +53,14 @@ import {
   doesQaWork,
   isClosedStatus,
 } from "@/lib/domain";
-import { formatDate, formatDateTime, formatRelative, isOverdue } from "@/lib/format";
+import {
+  elapsedBetween,
+  formatDate,
+  formatDateTime,
+  formatElapsed,
+  formatRelative,
+  isOverdue,
+} from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { requireUser, type CurrentUser } from "@/lib/session";
 
@@ -284,6 +291,17 @@ export default async function IssueDetailPage({
       ]),
     ).values(),
   ].sort((a, b) => a.name.localeCompare(b.name));
+
+  /*
+   * How long the work took, computed here from the two persisted timestamps
+   * rather than in the browser.
+   *
+   * `elapsedBetween` answers null while either end is missing, which is what
+   * keeps unfinished work from showing a completion time — see the row it
+   * feeds. Nothing about this reads the current clock, so the number does not
+   * change between one render and the next.
+   */
+  const worked = elapsedBetween(issue.createdAt, issue.completedAt);
 
   return (
     <article className="prio-issue">
@@ -719,6 +737,28 @@ export default async function IssueDetailPage({
                 <MetaRow label="Completed date">
                   <span title={formatDateTime(issue.completedAt)}>
                     {formatDate(issue.completedAt)}
+                  </span>
+                </MetaRow>
+              ) : null}
+
+              {/*
+                * How long this took: the gap between the two timestamps above
+                * it, and shown only when both of them exist.
+                *
+                * Both are the database's own — `createdAt` is written when the
+                * row is, `completedAt` when the work was actually closed — so
+                * this is a fact about the work rather than about when somebody
+                * happened to open the page. Unfinished work has no completion
+                * to measure to and gets no row at all, which is deliberate: a
+                * running total against "now" would read as a finished duration
+                * and be wrong the moment it was believed.
+                */}
+              {worked !== null ? (
+                <MetaRow label="Worked">
+                  <span
+                    title={`From ${formatDateTime(issue.createdAt)} to ${formatDateTime(issue.completedAt)}`}
+                  >
+                    {formatElapsed(worked)}
                   </span>
                 </MetaRow>
               ) : null}

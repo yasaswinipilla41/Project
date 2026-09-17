@@ -272,3 +272,80 @@ export function monthWindow(now: Date = new Date()): {
 
   return { startOfMonth, startOfNextMonth, startOfLastMonth };
 }
+
+/* ------------------------------------------------------------- durations */
+
+const MINUTE_MS = 60_000;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
+
+/**
+ * How long something took, in the largest units that still say something.
+ *
+ * Distinct from `formatRelative` above, which answers "how long ago" against
+ * the clock and stops at a date once a week has passed. This answers "how
+ * long" between two fixed instants, so it never stops being a duration — a
+ * piece of work open for three months reads as days rather than turning into
+ * a calendar date.
+ *
+ * Days and hours, plus minutes while the whole thing is still under a day:
+ * "2d 4h" is what somebody wants to know about a fortnight's work, and
+ * "2d 4h 30m" is false precision on it. Under an hour it falls to minutes,
+ * and anything under a minute is "0m" rather than a count of seconds nobody
+ * asked for.
+ *
+ * Negative input reads as "0m". It should not happen — it would mean something
+ * finished before it began — but a clock skew on the writing server is not a
+ * reason to print "-3h" on somebody's screen.
+ */
+export function formatElapsed(ms: number): string {
+  if (!Number.isFinite(ms) || ms <= 0) return "0m";
+
+  const days = Math.floor(ms / DAY_MS);
+  const hours = Math.floor((ms % DAY_MS) / HOUR_MS);
+  const minutes = Math.floor((ms % HOUR_MS) / MINUTE_MS);
+
+  if (days > 0) {
+    return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
+  }
+  if (hours > 0) {
+    return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+  }
+  return `${minutes}m`;
+}
+
+/**
+ * The span between two instants, or null when it cannot be one.
+ *
+ * Returns null rather than zero for missing ends, because "not finished" and
+ * "finished instantly" are different facts and a caller has to be able to tell
+ * them apart — the one thing the interface must never do is print a completion
+ * time for work that has not completed.
+ */
+export function elapsedBetween(
+  from: Date | string | null | undefined,
+  to: Date | string | null | undefined,
+): number | null {
+  if (!from || !to) return null;
+
+  const start = typeof from === "string" ? new Date(from) : from;
+  const end = typeof to === "string" ? new Date(to) : to;
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+
+  return end.getTime() - start.getTime();
+}
+
+/**
+ * Whole hours since an instant, for the "(24 hrs ago)" beside a relative time.
+ *
+ * Rounded down and deliberately coarse: it sits next to "1 day ago" as the
+ * same fact in the unit people compare work in, not as a second, more precise
+ * reading that would invite somebody to notice the two disagree.
+ */
+export function hoursAgo(value: Date | string | null | undefined): number | null {
+  if (!value) return null;
+  const date = typeof value === "string" ? new Date(value) : value;
+  if (Number.isNaN(date.getTime())) return null;
+
+  return Math.max(0, Math.floor((Date.now() - date.getTime()) / HOUR_MS));
+}

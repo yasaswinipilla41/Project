@@ -3,7 +3,12 @@ import { StatusPill } from "@/components/ui/Indicators";
 import type { IssueLinkType } from "@prisma/client";
 import { FIELD_LABEL, humanizeEnumValue, isIssueStatus } from "@/lib/domain";
 import { LINK_LABEL } from "@/lib/issue-links";
-import { formatDate, formatDateTime, formatRelative } from "@/lib/format";
+import {
+  formatDate,
+  formatDateTime,
+  formatRelative,
+  hoursAgo,
+} from "@/lib/format";
 
 /**
  * Immutable activity history (§31), rendered chronologically.
@@ -53,9 +58,20 @@ function describe(entry: ActivityEntry, names: NameLookup): React.ReactNode {
   if (field === "status") {
     const from = entry.oldValue;
     const to = entry.newValue;
+
+    /*
+     * Re-opening is named rather than left as a status change.
+     *
+     * Read from the transition that was actually recorded — this entry moved
+     * the work *to* REOPENED — so it says so only where the history says so.
+     * Nothing is inferred from the shape of the entry, and an old row that
+     * never recorded a status is untouched and still reads as an update.
+     */
+    const reopened = to !== null && to === "REOPENED";
+
     return (
       <>
-        changed status
+        {reopened ? "re-opened this" : "changed status"}
         {from && isIssueStatus(from) ? (
           <>
             {" from "}
@@ -157,10 +173,28 @@ export function ActivityFeedItem({
             suppressHydrationWarning
         >
           {formatRelative(entry.createdAt)}
+          {elapsedSuffix(entry.createdAt)}
         </time>
       </div>
     </li>
   );
+}
+
+/**
+ * The same instant again, in hours.
+ *
+ * "2 days ago" is how people speak and "(48 hrs ago)" is how they compare, and
+ * the pair is more useful than either alone when reading a workflow — the gap
+ * between hand-off and pick-up is the thing somebody is actually looking for.
+ *
+ * Omitted under an hour, where it would only ever read "(0 hrs ago)" beside a
+ * relative time that already said the same thing more precisely. Computed from
+ * the entry's own stored timestamp, never reconstructed.
+ */
+function elapsedSuffix(at: Date): string {
+  const hours = hoursAgo(at);
+  if (hours === null || hours < 1) return "";
+  return ` (${hours} hr${hours === 1 ? "" : "s"} ago)`;
 }
 
 export function ActivityFeed({

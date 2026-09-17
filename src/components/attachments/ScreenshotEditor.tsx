@@ -3,7 +3,25 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { Alert, Button } from "@/components/ui/primitives";
-import { IconWarning } from "@/components/ui/Icon";
+import {
+  IconArrowTool,
+  IconBlur,
+  IconCrop,
+  IconEraser,
+  IconFit,
+  IconHighlighter,
+  IconLineTool,
+  IconOval,
+  IconPen,
+  IconRectangle,
+  IconRedo,
+  IconTextA,
+  IconTrash,
+  IconUndo,
+  IconWarning,
+  IconZoomIn,
+  IconZoomOut,
+} from "@/components/ui/Icon";
 import styles from "./ScreenshotEditor.module.css";
 
 /**
@@ -74,6 +92,26 @@ const DRAW_TOOLS: Exclude<Tool, "crop">[] = [
   "blur",
   "eraser",
 ];
+
+/**
+ * The picture on each tool's button.
+ *
+ * Paired with `TOOL_LABEL` rather than replacing it: the label is still the
+ * button's accessible name and its tooltip, so the control reads exactly as it
+ * did to a screen reader and to a test, and only the visible glyph changed.
+ */
+const TOOL_ICON: Record<Tool, (p: { size?: number }) => React.ReactElement> = {
+  pen: IconPen,
+  highlight: IconHighlighter,
+  rect: IconRectangle,
+  ellipse: IconOval,
+  arrow: IconArrowTool,
+  line: IconLineTool,
+  text: IconTextA,
+  blur: IconBlur,
+  eraser: IconEraser,
+  crop: IconCrop,
+};
 
 const TOOL_LABEL: Record<Tool, string> = {
   pen: "Draw",
@@ -1055,13 +1093,17 @@ export function ScreenshotEditor({
 
       <div className={styles.toolbar}>
         <div className={styles.toolGroup}>
-          {DRAW_TOOLS.map((option) => (
+          {DRAW_TOOLS.map((option) => {
+            const ToolIcon = TOOL_ICON[option];
+            return (
             <button
               key={option}
               type="button"
               className={styles.toolButton}
               data-active={tool === option}
               disabled={!ready}
+              aria-label={TOOL_LABEL[option]}
+              title={TOOL_LABEL[option]}
               onClick={() => {
                 setTool(option);
                 setCropRect(null);
@@ -1072,9 +1114,10 @@ export function ScreenshotEditor({
                 }
               }}
             >
-              {TOOL_LABEL[option]}
+              <ToolIcon size={16} />
             </button>
-          ))}
+            );
+          })}
         </div>
 
         {/*
@@ -1091,8 +1134,10 @@ export function ScreenshotEditor({
             data-active={tool === "crop"}
             disabled={!ready}
             onClick={() => setTool("crop")}
+            aria-label="Crop"
+            title="Crop"
           >
-            Crop
+            <IconCrop size={16} />
           </button>
           <button
             type="button"
@@ -1161,24 +1206,30 @@ export function ScreenshotEditor({
             className={styles.toolButton}
             onClick={() => void undo()}
             disabled={!canUndo}
+            aria-label="Undo"
+            title="Undo"
           >
-            Undo
+            <IconUndo size={16} />
           </button>
           <button
             type="button"
             className={styles.toolButton}
             onClick={() => void redo()}
             disabled={!canRedo}
+            aria-label="Redo"
+            title="Redo"
           >
-            Redo
+            <IconRedo size={16} />
           </button>
           <button
             type="button"
             className={styles.toolButton}
             onClick={clearAnnotations}
             disabled={!ready}
+            aria-label="Clear all"
+            title="Clear all"
           >
-            Clear all
+            <IconTrash size={16} />
           </button>
         </div>
 
@@ -1189,8 +1240,9 @@ export function ScreenshotEditor({
             onClick={zoomOut}
             disabled={!ready || zoomPercent <= ZOOM_MIN}
             aria-label="Zoom out"
+            title="Zoom out"
           >
-            −
+            <IconZoomOut size={16} />
           </button>
           <span className={styles.zoomLabel}>{zoomPercent}%</span>
           <button
@@ -1199,16 +1251,19 @@ export function ScreenshotEditor({
             onClick={zoomIn}
             disabled={!ready || zoomPercent >= ZOOM_MAX}
             aria-label="Zoom in"
+            title="Zoom in"
           >
-            +
+            <IconZoomIn size={16} />
           </button>
           <button
             type="button"
             className={styles.toolButton}
             onClick={fitToScreen}
             disabled={!ready}
+            aria-label="Fit"
+            title="Fit"
           >
-            Fit
+            <IconFit size={16} />
           </button>
         </div>
       </div>

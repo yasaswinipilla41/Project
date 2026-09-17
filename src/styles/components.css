@@ -980,6 +980,28 @@ a.prio-key:hover {
   pointer-events: auto;
   animation: none;
   box-shadow: var(--prio-shadow-xl);
+  /*
+   * Marked as something put aside rather than something closed.
+   *
+   * Collapsed to its title bar and sitting at the foot of the page, this
+   * otherwise reads as a stray strip of chrome — and a half-written work item
+   * that looks like chrome is one somebody abandons. The brand edge and tint
+   * say it is Prio's, and still waiting; the ring lifts it off whatever it is
+   * resting over. Restrained on purpose: it is a held draft, not an alert.
+   */
+  border-color: var(--prio-primary-400);
+  border-left: 3px solid var(--prio-primary-600);
+  background: var(--prio-primary-50, var(--prio-bg-surface-raised));
+  box-shadow:
+    var(--prio-shadow-xl),
+    0 0 0 1px var(--prio-primary-400);
+}
+
+/* The title carries the same weight it would in an open dialog, so the name of
+   what is waiting is the first thing read rather than the window controls. */
+.prio-dialog[data-minimized] .prio-dialog__title {
+  color: var(--prio-primary-700);
+  font-weight: 600;
 }
 
 .prio-dialog[data-minimized] .prio-dialog__header {

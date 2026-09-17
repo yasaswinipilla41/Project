@@ -120,6 +120,40 @@ async function canvasSize(
   }));
 }
 
+/**
+ * The canvas's box once it has stopped moving.
+ *
+ * The editor opens with a dialog animation, so a box read too early is a few
+ * pixels short of where the canvas ends up. That matters here more than it
+ * looks: two drags in one test are meant to cover the same ground, and if the
+ * first is measured mid-animation and the second after it, they land about a
+ * dozen pixels apart — far enough for an erase stroke to miss the pen stroke
+ * it was supposed to remove, and for the test to report that erasing does not
+ * erase. `create-screenshot.spec.ts` settles its box for the same reason.
+ */
+async function settledCanvasBox(page: Page, canvas: Locator) {
+  let previous = await canvas.boundingBox();
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    await waitForNextFrame(page);
+    const current = await canvas.boundingBox();
+    if (
+      previous &&
+      current &&
+      current.width > 0 &&
+      current.height > 0 &&
+      current.x === previous.x &&
+      current.y === previous.y &&
+      current.width === previous.width &&
+      current.height === previous.height
+    ) {
+      return current;
+    }
+    previous = current;
+  }
+  if (!previous) throw new Error("Canvas has no bounding box.");
+  return previous;
+}
+
 async function dragOnCanvas(
   page: Page,
   editor: Locator,
@@ -127,7 +161,7 @@ async function dragOnCanvas(
   to: { xFrac: number; yFrac: number },
 ) {
   const canvas = editor.locator("canvas").nth(1);
-  const box = await canvas.boundingBox();
+  const box = await settledCanvasBox(page, canvas);
   if (!box) throw new Error("Canvas has no bounding box.");
 
   await page.mouse.move(

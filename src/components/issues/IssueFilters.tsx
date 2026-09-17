@@ -111,6 +111,19 @@ function FilterMenu({
           {...props}
         >
           {label}
+          {/*
+            * How many values this filter is holding, in the same chip the Flow
+            * Board uses — same element, same class, same position between the
+            * label and the chevron — so the two toolbars read identically
+            * rather than merely similarly.
+            *
+            * `selected` is the filter's own state, so the number is the actual
+            * count of chosen values and changes with them; there is nothing to
+            * keep in step.
+            */}
+          {selected.length > 0 ? (
+            <span className="prio-filterchip__count">{selected.length}</span>
+          ) : null}
           <IconChevronDown size={12} />
         </button>
       )}
