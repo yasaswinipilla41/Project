@@ -323,9 +323,20 @@ test.describe("a QA member and sprints", () => {
     ).toHaveText("QA / Tester");
   });
 
-  test("gets no Sprints tab, and the route turns them away", async ({
+  test("gets the Sprints tab, but not the power to create one", async ({
     page,
   }) => {
+    /*
+     * This asserted the opposite until sprints stopped being an
+     * administrator's instrument end to end: every working role now plans into
+     * a sprint and moves issues through it, so the tab and the route are a
+     * tester's too — see `canEditSprintIssues` and `canEditSprintDetails` in
+     * `domain.ts`.
+     *
+     * What is still not theirs is creating one. `canCreateSprint` stays with
+     * an administrator because a sprint commits everybody in it to a period
+     * and a scope, so that is the boundary this test holds now.
+     */
     const project = await prisma.project.findFirstOrThrow({
       where: {
         isArchived: false,
@@ -338,26 +349,20 @@ test.describe("a QA member and sprints", () => {
     await page.goto(`${base}/summary`);
     await expect(page.locator(".prio-projectnav")).toBeVisible();
 
-    /* The other tabs are all there; Sprints is not one of them. */
     await expect(
       page.locator(".prio-projectnav__tab", { hasText: "Summary" }),
     ).toBeVisible();
     await expect(
       page.locator(".prio-projectnav__tab", { hasText: "Sprints" }),
-    ).toHaveCount(0);
+    ).toHaveCount(1);
 
-    /*
-     * And a hidden link is not a check: the URL itself refuses.
-     *
-     * Asserted on what comes back rather than on a 404 status. The project
-     * layout streams before the page calls `notFound()`, so the response has
-     * already committed 200 by the time the refusal is decided. What the
-     * reader gets is the not-found page and none of the sprint screen, which
-     * is what being turned away means here.
-     */
+    /* The tab being drawn is not the claim — the route answering is. */
     await page.goto(`${base}/sprints`);
-    await expect(page.locator(".prio-notfound")).toBeVisible();
-    await expect(page.locator(".prio-sprints")).toHaveCount(0);
+    await expect(page.locator(".prio-sprints__head")).toBeVisible();
+    await expect(page.locator(".prio-notfound")).toHaveCount(0);
+
+    /* And a missing button is only the visible half of the refusal:
+       `createSprint` asserts the same rule again on the server. */
     await expect(
       page.getByRole("button", { name: /new sprint/i }),
     ).toHaveCount(0);

@@ -79,8 +79,13 @@
 
 .prio-filters__trailing {
   display: flex;
+  /* Wraps, because this row grows: the result count, Export, Import, the
+     column chooser and Share all live here, and on a phone they cannot
+     share one line. Without this the row simply extended past the viewport
+     and took the page's whole horizontal scroll with it. */
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--prio-space-3);
+  gap: var(--prio-space-2) var(--prio-space-3);
   margin-left: auto;
 }
 
