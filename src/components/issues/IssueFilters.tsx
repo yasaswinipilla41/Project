@@ -39,6 +39,9 @@ import {
  * and the server re-queries — nothing is filtered on the client.
  */
 
+/** The completed-iteration check's colour, in every theme and state. */
+const ITERATION_DONE_COLOR = "#10B981";
+
 export interface FilterOption {
   id: string;
   name: string;
@@ -494,6 +497,10 @@ export function IssueFilters({
                     size={13}
                     strokeWidth={2.25}
                     className="prio-filter__iteration-done"
+                    /* Set on the element itself, so no theme, hover or
+                       selected-row rule can repaint it. */
+                    stroke={ITERATION_DONE_COLOR}
+                    style={{ color: ITERATION_DONE_COLOR, stroke: ITERATION_DONE_COLOR }}
                   />
                   <span className="prio-visually-hidden"> (completed)</span>
                 </span>

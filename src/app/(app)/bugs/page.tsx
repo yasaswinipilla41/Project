@@ -107,6 +107,7 @@ export default async function BugsPage({
         sprints={options.sprints.map((sprint) => ({
           id: sprint.id,
           name: `${sprint.project.key} · ${sprint.name}`,
+          completed: sprint.status === "COMPLETED",
         }))}
         showTypeFilter={false}
         currentUserId={user.id}

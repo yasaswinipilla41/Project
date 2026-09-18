@@ -2842,3 +2842,22 @@ a.prio-stat:focus-visible {
   color: var(--prio-red-600);
   font-variant-numeric: tabular-nums;
 }
+
+/* A completed iteration in the Iteration filter: its name, then a green
+   check. The check's colour (#10B981) is also set on the icon itself; this
+   rule is scoped to the menu row, including its hover and selected states, so
+   it wins over their inherited text colour as well. */
+.prio-filter__iteration {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  min-width: 0;
+}
+
+.prio-menu__item .prio-filter__iteration-done,
+.prio-menu__item:hover .prio-filter__iteration-done,
+.prio-menu__item[aria-checked="true"] .prio-filter__iteration-done {
+  flex-shrink: 0;
+  color: #10b981;
+  stroke: #10b981;
+}
