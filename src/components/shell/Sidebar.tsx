@@ -87,21 +87,40 @@ export function Sidebar({
     router.refresh();
   }
 
+  /**
+   * The project key in the address bar, when the reader is inside a project.
+   *
+   * Read from the path rather than passed down, because the shell is rendered
+   * above `projects/[key]` in the route tree and has no param of its own. It
+   * is used only to choose where a navigation item points; nothing is
+   * authorized on it, and the project route resolves the key against the
+   * reader's own access as it always has.
+   */
+  const inProject = /^\/projects\/([^/]+)(?:\/|$)/.exec(pathname)?.[1] ?? null;
+
   const entries: NavEntry[] = [
     { href: "/", label: "Home", Icon: IconHome },
     /*
-     * The sidebar's Flow Board is the all-projects board, always.
+     * Flow Board: this project's, while you are inside a project — and the
+     * all-projects board everywhere else.
      *
-     * It used to resolve to whichever project you happened to be inside,
-     * which made one navigation item mean two different boards depending on
-     * where you clicked it — and put a "Back to <project>" control above a
-     * board you had not reached from that project. The two contexts are now
-     * two routes: this one, and the project's own board reached from its tab
-     * strip or from the board's Project dropdown. Both light this entry up,
-     * because both are the Flow Board.
+     * Standing in Engineering and pressing Flow Board used to leave
+     * Engineering for a board of every project, from which the way back to the
+     * board you meant was the Project dropdown. One click out of the workspace
+     * and one click back in, to reach the board of the project you never left.
+     *
+     * The destination now follows where you are standing, which is also what
+     * the entry has always *claimed*: it lights up on a project's board as
+     * well as the global one, so those two were already one item in the
+     * sidebar's own terms. "All Projects" in the board's Project dropdown is
+     * how you widen it, and every page outside a project still leads here.
+     *
+     * The earlier objection to this — that it put "Back to <project>" above a
+     * board you had not reached from that project — does not apply: you
+     * reached it from inside that project, which is what the control says.
      */
     {
-      href: "/board",
+      href: inProject ? `/projects/${inProject}/board` : "/board",
       label: "Flow Board",
       Icon: IconBoard,
       activeTest: (p) =>

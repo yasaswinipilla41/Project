@@ -10,8 +10,8 @@ import {
   IconUsers,
 } from "@/components/ui/Icon";
 import { WelcomeCreateProject } from "@/components/projects/WelcomeCreateProject";
-import { projectScope } from "@/lib/authz";
-import { OPEN_STATUSES } from "@/lib/domain";
+import { projectDisplayRoleOf, projectScope } from "@/lib/authz";
+import { DISPLAY_ROLE_LABEL, OPEN_STATUSES, type DisplayRole } from "@/lib/domain";
 import { percent } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { requireUser, type CurrentUser } from "@/lib/session";
@@ -56,6 +56,7 @@ async function loadProject(rawKey: string, user: CurrentUser) {
         orderBy: { createdAt: "asc" },
         select: {
           userId: true,
+          designation: true,
           user: { select: { id: true, name: true, image: true } },
         },
       },
@@ -94,10 +95,19 @@ function roleInProject({
   user,
   isMember,
   isLead,
+  projectRole,
+  named,
 }: {
   user: CurrentUser;
   isMember: boolean;
   isLead: boolean;
+  /**
+   * What this project calls them — their designation on this membership where
+   * one is set, and their organisation-wide badge where none is.
+   */
+  projectRole: DisplayRole;
+  /** Whether that answer came from this project or from everywhere. */
+  named: boolean;
 }): { label: string; detail: string } {
   if (isLead) {
     return {
@@ -114,9 +124,17 @@ function roleInProject({
     };
   }
   if (isMember) {
+    /*
+     * This used to print `user.jobTitle` — one free-text column on the
+     * account, and therefore the same words on every project a person opened.
+     * It now prints what this project says they are, falling back to their
+     * badge across Prio when this project has not said.
+     */
     return {
-      label: user.jobTitle ?? "Member",
-      detail: "You can create and work on issues in this project.",
+      label: DISPLAY_ROLE_LABEL[projectRole],
+      detail: named
+        ? "What you do on this project. It says what you do here, not what you may do."
+        : "You can create and work on issues in this project.",
     };
   }
   return {
@@ -160,9 +178,20 @@ export default async function ProjectWelcomePage({
       }),
     ]);
 
-  const isMember = project.members.some((m) => m.userId === user.id);
+  const membership = project.members.find((m) => m.userId === user.id);
+  const isMember = membership !== undefined;
   const isLead = project.createdById === user.id;
-  const role = roleInProject({ user, isMember, isLead });
+  /* Through the resolver rather than off the row above, so this page and
+     anything else that asks what somebody is on a project get their answer
+     from the same place. */
+  const projectRole = await projectDisplayRoleOf(user, project.id);
+  const role = roleInProject({
+    user,
+    isMember,
+    isLead,
+    projectRole,
+    named: membership?.designation != null,
+  });
   const members = project.members.map((m) => m.user);
   const complete = percent(doneIssues, totalIssues);
 

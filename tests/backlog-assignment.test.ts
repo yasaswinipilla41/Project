@@ -160,7 +160,19 @@ describe("who may auto-assign", () => {
 });
 
 describe("what is eligible", () => {
-  it("plans backlog work, and no other status", async () => {
+  it("plans every stage that is waiting, and reopened work ahead of the pile", async () => {
+    /*
+     * This asserted the opposite while the backlog was the whole of it: New
+     * and Reopen were excluded because neither is "the pile with nobody's name
+     * on it". That was true and it was also the gap — the two states where the
+     * right person is *already known* were the two the engine would not touch,
+     * so they waited for somebody to notice them by hand.
+     *
+     * Both are in scope now, and each has its own rule: reopened work goes
+     * back to whoever built it, and the backlog is shared out. What has not
+     * changed is that work already held by somebody who can do it is left
+     * alone — the test below this one still proves that.
+     */
     const backlog = await anIssue("eligible-backlog", { status: "BACKLOG" });
     const todo = await anIssue("eligible-todo", { status: "TODO" });
     const reopened = await anIssue("eligible-reopened", { status: "REOPENED" });
@@ -172,11 +184,19 @@ describe("what is eligible", () => {
 
     const planned = preview.data.allocations.map((row) => row.issueId);
     expect(planned).toContain(backlog);
-    /* New is work somebody has just raised and may still be shaping; Reopen
-       goes back to whoever built it. Neither is the pile with nobody's name
-       on it. */
-    expect(planned).not.toContain(todo);
-    expect(planned).not.toContain(reopened);
+    expect(planned).toContain(todo);
+    expect(planned).toContain(reopened);
+
+    /* Order, not just membership: work that has come back is somebody's
+       correction to make and is placed before work nobody has started. */
+    expect(planned.indexOf(reopened)).toBeLessThan(planned.indexOf(backlog));
+
+    const stages = new Map(
+      preview.data.allocations.map((row) => [row.issueId, row.stage]),
+    );
+    expect(stages.get(reopened)).toBe("REOPENED");
+    expect(stages.get(todo)).toBe("NEW");
+    expect(stages.get(backlog)).toBe("BACKLOG");
   });
 
   it("never takes work off somebody who is already holding it", async () => {

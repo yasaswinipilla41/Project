@@ -20,7 +20,21 @@ import { importWorkItems, type ImportProblem } from "@/server/issueImport";
  * somebody back to a spreadsheet with nothing to look for; "Row 7: Unknown
  * priority" sends them to row 7.
  */
-export function ImportIssuesDialog({ onClose }: { onClose: () => void }) {
+export function ImportIssuesDialog({
+  project,
+  onClose,
+}: {
+  /**
+   * The project this import belongs to, on a surface that is one project's.
+   *
+   * Sent to the server, which re-resolves it inside what the signed-in person
+   * may reach and then refuses any row naming a different project — so a
+   * spreadsheet opened on the Engineering tab cannot quietly file work in
+   * Website, whatever its "Project key" column says.
+   */
+  project?: { id: string; key: string };
+  onClose: () => void;
+}) {
   const router = useRouter();
   const { toast } = useToast();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -39,6 +53,7 @@ export function ImportIssuesDialog({ onClose }: { onClose: () => void }) {
 
     const body = new FormData();
     body.set("file", file);
+    if (project) body.set("projectId", project.id);
 
     const result = await importWorkItems(body);
     setBusy(false);
@@ -63,7 +78,11 @@ export function ImportIssuesDialog({ onClose }: { onClose: () => void }) {
       onClose={onClose}
       busy={busy}
       title="Import work items"
-      description="An .xlsx spreadsheet — the same shape Export produces."
+      description={
+        project
+          ? `An .xlsx spreadsheet — the same shape Export produces. Everything imports into ${project.key}.`
+          : "An .xlsx spreadsheet — the same shape Export produces."
+      }
       footer={
         <>
           <span className="prio-dialog__footer-note">
@@ -108,9 +127,19 @@ export function ImportIssuesDialog({ onClose }: { onClose: () => void }) {
           }}
         />
         <span className="prio-hint">
-          Needs a <strong>Title</strong> and a <strong>Project key</strong>
-          {" "}column. Type, Status, Priority, Assignee, Labels, Due date and
-          Description are used when present.
+          Needs a <strong>Title</strong> column
+          {project ? (
+            <>
+              ; a <strong>Project key</strong> column is optional here and must
+              say <strong>{project.key}</strong> where it is present
+            </>
+          ) : (
+            <>
+              {" "}and a <strong>Project key</strong> column
+            </>
+          )}
+          . Type, Status, Priority, Assignee, Labels, Due date and Description
+          are used when present.
         </span>
       </div>
 

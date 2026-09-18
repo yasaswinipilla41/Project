@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import { IssueFilters } from "@/components/issues/IssueFilters";
 import { IssueTable } from "@/components/issues/IssueTable";
 import { filterOptions, listIssues } from "@/server/queries/issues";
 import { parseIssueParams, type SearchParams } from "@/server/queries/params";
 import { projectScope, workRoleOf } from "@/lib/authz";
+import { COLUMN_COOKIE, parseColumnPreference } from "@/lib/tableColumns";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 
@@ -51,6 +53,12 @@ export default async function ProjectListPage({
     filterOptions(user),
   ]);
 
+  /* Read server-side, so this table is rendered with the columns somebody
+     chose rather than rendered whole and trimmed afterwards — the sort and
+     page links stay plain links, and the list still works without
+     JavaScript. */
+  const columns = parseColumnPreference((await cookies()).get(COLUMN_COOKIE)?.value);
+
   return (
     <>
       <IssueFilters
@@ -64,8 +72,16 @@ export default async function ProjectListPage({
         currentUserId={user.id}
         total={result.total}
         enableExport
+        enableImport
         enableShare
         isAdmin={user.role === "ADMIN"}
+        /* The same chooser and the same cookie the global list uses, so a
+           person who hid Reporter there does not meet it again here. */
+        columns={columns}
+        /* The project is in the route, not the query string. Export sends it
+           so the file matches this table rather than every project, and
+           Import files the spreadsheet here rather than wherever it says. */
+        project={project}
       />
 
       <IssueTable
@@ -76,6 +92,7 @@ export default async function ProjectListPage({
         dir={filters.dir ?? "desc"}
         emptyTitle="No issues found"
         emptyBody="No issue in this project matches these filters. Clear them to see everything here."
+        visibleColumns={columns}
         currentUser={{
           id: user.id,
           isAdmin: user.role === "ADMIN",

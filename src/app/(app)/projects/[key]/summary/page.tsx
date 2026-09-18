@@ -98,6 +98,7 @@ async function loadProject(rawKey: string, user: CurrentUser) {
       members: {
         orderBy: { createdAt: "asc" },
         select: {
+          designation: true,
           user: {
             select: {
               id: true,
@@ -1177,7 +1178,12 @@ export default async function ProjectOverviewPage({
           <CardBody>
             <ProjectMembers
               projectId={project.id}
-              members={project.members.map(({ user: member }) => member)}
+              /* The designation travels with the person, because it is a fact
+                 about this membership rather than about the account. */
+              members={project.members.map(({ user: member, designation }) => ({
+                ...member,
+                designation,
+              }))}
               candidates={memberCandidates}
               canManage={canManageMembers}
             />

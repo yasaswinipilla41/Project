@@ -6,6 +6,7 @@ import {
   PRIORITY_LABEL,
   STATUS_LABEL,
 } from "@/lib/domain";
+import { csvDocument, htmlDocument } from "@/lib/exportText";
 import { exportIssues, EXPORT_LIMIT } from "@/server/queries/issues";
 import { parseIssueParams, type SearchParams } from "@/server/queries/params";
 import type { IssueExportRow } from "@/server/queries/issues";
@@ -43,6 +44,15 @@ interface Column {
    * When present it replaces `value` entirely.
    */
   cell?: (row: IssueExportRow, origin: string) => Cell;
+  /**
+   * The same cell as a link, for the formats that have no formulas.
+   *
+   * A spreadsheet expresses a hyperlink as `HYPERLINK()`; HTML expresses it as
+   * an anchor and CSV cannot express it at all. Rather than let each format
+   * reinvent what an attachment column means, the column says what the link
+   * *is* once and each writer renders it the way its format can.
+   */
+  link?: (row: IssueExportRow, origin: string) => { href: string; label: string } | null;
 }
 
 /**
@@ -101,6 +111,12 @@ function attachmentLinkColumns(count: number): Column[] {
     header: `Attachment ${index + 1}`,
     width: 34,
     value: () => null,
+    link: (row: IssueExportRow, origin: string) => {
+      const file = row.attachments[index];
+      return file
+        ? { href: attachmentUrl(origin, file), label: file.filename }
+        : null;
+    },
     cell: (row: IssueExportRow, origin: string): Cell => {
       const file = row.attachments[index];
       if (!file) return { type: String, value: "" };
@@ -223,6 +239,49 @@ function stamp(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+/** The three shapes this export comes in. Anything else falls back to Excel. */
+const FORMATS = ["xlsx", "csv", "html"] as const;
+type ExportFormat = (typeof FORMATS)[number];
+
+function formatOf(raw: string | string[] | undefined): ExportFormat {
+  const wanted = (Array.isArray(raw) ? raw[0] : raw)?.toLowerCase();
+  return (FORMATS as readonly string[]).includes(wanted ?? "")
+    ? (wanted as ExportFormat)
+    : "xlsx";
+}
+
+const MEDIA_TYPE: Record<ExportFormat, string> = {
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  csv: "text/csv; charset=utf-8",
+  html: "text/html; charset=utf-8",
+};
+
+/**
+ * A date as the sheet shows it, for the formats that have no date type.
+ *
+ * The server's own clock, like every other calendar question this application
+ * answers — the container runs on the organisation's day for exactly that
+ * reason. An ISO timestamp would be unambiguous and would also be the one
+ * thing nobody wants to read in a column of due dates.
+ */
+function plainDate(date: Date, format?: string): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const day = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  return format?.includes("hh")
+    ? `${day} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+    : day;
+}
+
+/** A column's value as text. A link column gives up its URL, not its label. */
+function textOf(column: Column, row: IssueExportRow, origin: string): string {
+  if (column.link) return column.link(row, origin)?.href ?? "";
+
+  const value = column.value(row, origin);
+  if (value === null || value === undefined) return "";
+  if (value instanceof Date) return plainDate(value, column.format);
+  return String(value);
+}
+
 export async function GET(request: Request) {
   const user = await getCurrentUser();
   if (!user) {
@@ -243,6 +302,7 @@ export async function GET(request: Request) {
    * for why it does not fall back to localhost.
    */
   const origin = publicBaseUrl();
+  const format = formatOf(params.format);
 
   try {
     const rows = await exportIssues(user, parseIssueParams(params));
@@ -257,6 +317,55 @@ export async function GET(request: Request) {
       rows.reduce((most, row) => Math.max(most, row.attachments.length), 0),
     );
     const columns = [...COLUMNS, ...attachmentLinkColumns(linkColumns)];
+
+    /*
+     * The two text formats, written from the same columns and the same rows
+     * the workbook uses.
+     *
+     * They are not lesser exports: CSV is what a spreadsheet nobody has
+     * licensed can still open and what a script can read, and HTML is what
+     * somebody attaches to a mail for a reader with no spreadsheet at all.
+     * Both therefore carry every column the workbook carries, in the same
+     * order, under the same headers — including the attachment links, which
+     * become URLs in CSV and anchors in HTML because those are the strongest
+     * things each format can say.
+     */
+    if (format !== "xlsx") {
+      const headers = columns.map((column) => column.header);
+      const filename = `prio-issues-${stamp(new Date())}.${format}`;
+
+      const document =
+        format === "csv"
+          ? csvDocument([
+              headers,
+              ...rows.map((row) =>
+                columns.map((column) => textOf(column, row, origin)),
+              ),
+            ])
+          : htmlDocument(
+              "Prio — work items",
+              headers,
+              rows.map((row) =>
+                columns.map((column) => {
+                  const link = column.link?.(row, origin);
+                  return link
+                    ? { text: link.label, href: link.href }
+                    : { text: textOf(column, row, origin) };
+                }),
+              ),
+              `${rows.length} ${rows.length === 1 ? "work item" : "work items"} · exported ${stamp(new Date())}`,
+            );
+
+      return new Response(document, {
+        headers: {
+          "Content-Type": MEDIA_TYPE[format],
+          "Content-Disposition": `attachment; filename="${filename}"`,
+          "Cache-Control": "no-store",
+          "X-Prio-Export-Rows": String(rows.length),
+          "X-Prio-Export-Limit": String(EXPORT_LIMIT),
+        },
+      });
+    }
 
     /* The longest name and the longest link in this export, measured in the
        same form each cell writes them. */

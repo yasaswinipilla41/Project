@@ -26,6 +26,30 @@ async function aProject() {
 }
 
 test.describe("Flow Board from the sidebar", () => {
+  test("keeps you in the project you are standing in", async ({ page }) => {
+    /*
+     * Standing inside a project and pressing Flow Board used to leave it for
+     * the board of every project — one click out of the workspace, and the
+     * Project dropdown to get back to the board you meant. The sidebar entry
+     * already lit up on both boards, so the two were one item in its own
+     * terms; the destination now agrees with that.
+     */
+    const project = await aProject();
+    await page.goto(`/projects/${project.key.toLowerCase()}/summary`);
+
+    await page
+      .locator(".prio-sidebar")
+      .getByRole("link", { name: "Flow Board" })
+      .click();
+
+    await expect(page).toHaveURL(
+      new RegExp(`/projects/${project.key.toLowerCase()}/board$`),
+    );
+    /* And this really is the project's board: the control that returns to it
+       is the one the all-projects board does not have. */
+    await expect(page.locator(".prio-backlink")).toBeVisible();
+  });
+
   test("opens the all-projects board with no back link", async ({ page }) => {
     await page.goto("/");
     await page

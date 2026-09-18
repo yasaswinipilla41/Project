@@ -363,6 +363,7 @@ export function Stat({
   icon,
   tone,
   href,
+  selected,
 }: {
   label: string;
   value: ReactNode;
@@ -371,6 +372,14 @@ export function Stat({
   tone?: "default" | "brand" | "danger" | "warning" | "success";
   /** Makes the whole tile a link into the list the figure summarises. */
   href?: string;
+  /**
+   * Marks a linked tile as the one whose list is showing.
+   *
+   * For the surfaces where the tiles choose what is beneath them rather than
+   * navigate away: without this, four identical tiles sit above a list with
+   * nothing saying which of them produced it.
+   */
+  selected?: boolean;
 }) {
   const body = (
     <>
@@ -388,7 +397,13 @@ export function Stat({
   // works this way.
   if (href) {
     return (
-      <Link href={href} className="prio-stat" data-tone={tone ?? "default"}>
+      <Link
+        href={href}
+        className="prio-stat"
+        data-tone={tone ?? "default"}
+        data-selected={selected ? "true" : undefined}
+        aria-current={selected ? "true" : undefined}
+      >
         {body}
       </Link>
     );

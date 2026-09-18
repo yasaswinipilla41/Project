@@ -50,11 +50,59 @@ export interface AllocationCandidate {
   workload: number;
 }
 
+/**
+ * Where an issue is in its life, which is what decides who should get it.
+ *
+ * Ordered as the engine considers them: work already handed to testing goes to
+ * a tester before anything else is dealt, work that has come back goes to
+ * whoever built it, and only then is the unclaimed pile shared out.
+ */
+export const ALLOCATION_STAGES = [
+  "READY_FOR_QA",
+  "REOPENED",
+  "NEW",
+  "BACKLOG",
+] as const;
+export type AllocationStage = (typeof ALLOCATION_STAGES)[number];
+
+const STAGE_RANK: Record<AllocationStage, number> =
+  Object.fromEntries(ALLOCATION_STAGES.map((stage, index) => [stage, index])) as Record<
+    AllocationStage,
+    number
+  >;
+
 export interface AllocationIssue {
   id: string;
   key: string;
   title: string;
   priority: Priority;
+  /** Defaults to `BACKLOG`, which is the only stage this engine used to have. */
+  stage?: AllocationStage;
+  /**
+   * The one person this issue belongs to, when its history names one.
+   *
+   * Resolved by the caller from authoritative records — the tester the work
+   * was handed to, or the developer who built what has come back — and already
+   * checked for eligibility there. When it is present the queues do not get a
+   * vote: returning work to whoever it belongs to is the point, and the
+   * lightest queue is only how the unclaimed pile is shared.
+   */
+  preferred?: { id: string; name: string; because: string } | null;
+}
+
+/** An issue the engine deliberately left alone, and what it was waiting for. */
+export interface UnplacedIssue {
+  issueId: string;
+  issueKey: string;
+  issueTitle: string;
+  stage: AllocationStage;
+  reason: string;
+}
+
+/** Everything one run would do: what it places, and what it will not. */
+export interface AllocationPlan {
+  allocations: Allocation[];
+  unplaced: UnplacedIssue[];
 }
 
 /** One issue, the person it goes to, and why. */
@@ -63,6 +111,7 @@ export interface Allocation {
   issueKey: string;
   issueTitle: string;
   priority: Priority;
+  stage: AllocationStage;
   assigneeId: string;
   assigneeName: string;
   /** What they were holding when this issue was placed. */
@@ -111,42 +160,112 @@ function leastLoaded(
 export function planBacklogAllocation(
   issues: AllocationIssue[],
   candidates: AllocationCandidate[],
-): Allocation[] {
-  if (candidates.length === 0 || issues.length === 0) return [];
+): AllocationPlan {
+  if (issues.length === 0) return { allocations: [], unplaced: [] };
 
   /* A working copy, because the whole point is that these move. */
   const load = new Map(candidates.map((person) => [person.id, person.workload]));
 
+  /*
+   * Stage first, then priority, then key.
+   *
+   * Stage leads because the stages are not equally urgent in the same sense:
+   * work sitting in Ready for QA is finished work waiting on one person, and
+   * work that has come back is somebody's own mistake waiting to be corrected.
+   * Both are ahead of a pile nobody has started. Within a stage the existing
+   * order is untouched — urgent work placed while the queues are shortest,
+   * ties broken by a key rather than by chance.
+   */
+  const stageOf = (issue: AllocationIssue): AllocationStage =>
+    issue.stage ?? "BACKLOG";
+
   const order = [...issues].sort((a, b) => {
+    const byStage = STAGE_RANK[stageOf(a)] - STAGE_RANK[stageOf(b)];
+    if (byStage !== 0) return byStage;
     const byPriority = PRIORITY_WEIGHT[b.priority] - PRIORITY_WEIGHT[a.priority];
     if (byPriority !== 0) return byPriority;
     return a.key.localeCompare(b.key, "en");
   });
 
-  const plan: Allocation[] = [];
+  const allocations: Allocation[] = [];
+  const unplaced: UnplacedIssue[] = [];
 
-  for (const issue of order) {
-    const person = leastLoaded(candidates, load);
+  const place = (
+    issue: AllocationIssue,
+    person: { id: string; name: string },
+    reason: string,
+  ) => {
     const before = load.get(person.id) ?? 0;
     const after = before + 1;
     load.set(person.id, after);
 
-    plan.push({
+    allocations.push({
       issueId: issue.id,
       issueKey: issue.key,
       issueTitle: issue.title,
       priority: issue.priority,
+      stage: stageOf(issue),
       assigneeId: person.id,
       assigneeName: person.name,
       workloadBefore: before,
       workloadAfter: after,
-      reason:
-        `${PRIORITY_LABEL[issue.priority]} priority. ${person.name} had the ` +
-        `lightest queue at ${before} open ${before === 1 ? "issue" : "issues"}.`,
+      reason,
     });
+  };
+
+  for (const issue of order) {
+    const stage = stageOf(issue);
+
+    /* The issue belongs to somebody, and the caller has already checked that
+       they can still take it. Queues are irrelevant here. */
+    if (issue.preferred) {
+      place(issue, issue.preferred, issue.preferred.because);
+      continue;
+    }
+
+    /*
+     * Ready for QA never falls through to the developers.
+     *
+     * The generic pool is a pool of people who *build*, and handing tested-out
+     * work to one of them would undo the hand-off the status records. With no
+     * tester to return it to, the honest answer is to leave it where it is and
+     * say so.
+     */
+    if (stage === "READY_FOR_QA") {
+      unplaced.push({
+        issueId: issue.id,
+        issueKey: issue.key,
+        issueTitle: issue.title,
+        stage,
+        reason:
+          "Waiting for testing, and no tester on this project can take it. " +
+          "Left where it is rather than handed to a developer.",
+      });
+      continue;
+    }
+
+    if (candidates.length === 0) {
+      unplaced.push({
+        issueId: issue.id,
+        issueKey: issue.key,
+        issueTitle: issue.title,
+        stage,
+        reason: "No developer on this project is available to take it.",
+      });
+      continue;
+    }
+
+    const person = leastLoaded(candidates, load);
+    const before = load.get(person.id) ?? 0;
+    place(
+      issue,
+      person,
+      `${PRIORITY_LABEL[issue.priority]} priority. ${person.name} had the ` +
+        `lightest queue at ${before} open ${before === 1 ? "issue" : "issues"}.`,
+    );
   }
 
-  return plan;
+  return { allocations, unplaced };
 }
 
 /**
@@ -165,6 +284,8 @@ export const MAX_PER_RUN = 25;
 /** What a run would do, or did. */
 export interface BacklogPlan {
   allocations: Allocation[];
+  /** What it deliberately left alone, and why — never a silent omission. */
+  unplaced: UnplacedIssue[];
   totals: { id: string; name: string; added: number; workloadAfter: number }[];
   /** Every backlog issue waiting for a developer, including beyond this run. */
   waiting: number;

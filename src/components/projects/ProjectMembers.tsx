@@ -6,7 +6,16 @@ import { Avatar, Button } from "@/components/ui/primitives";
 import { Dialog } from "@/components/ui/Dialog";
 import { useToast } from "@/components/ui/Toast";
 import { IconPlus } from "@/components/ui/Icon";
-import { addProjectMember, removeProjectMember } from "@/server/projects";
+import {
+  addProjectMember,
+  removeProjectMember,
+  setProjectMemberDesignation,
+} from "@/server/projects";
+import { DISPLAY_ROLE_LABEL } from "@/lib/domain";
+import type { ProjectDesignation } from "@prisma/client";
+
+/** The designations a project may give somebody, in the order they are offered. */
+const DESIGNATIONS: ProjectDesignation[] = ["DEVELOPER", "QA", "FULLSTACK"];
 
 export interface ProjectMemberPerson {
   id: string;
@@ -14,6 +23,8 @@ export interface ProjectMemberPerson {
   email: string;
   image: string | null;
   jobTitle: string | null;
+  /** What this project calls them, where it has said. Absent off a project. */
+  designation?: ProjectDesignation | null;
 }
 
 /**
@@ -70,6 +81,29 @@ export function ProjectMembers({
     router.refresh();
   }
 
+  async function designate(userId: string, value: string) {
+    setBusyId(userId);
+    const result = await setProjectMemberDesignation({
+      projectId,
+      userId,
+      /* An empty choice is a real one: it clears the designation rather than
+         leaving the previous answer in place. */
+      designation: value === "" ? null : value,
+    });
+    setBusyId(null);
+
+    if (!result.ok) {
+      toast(result.error, "error");
+      return;
+    }
+    toast(
+      value === ""
+        ? "Designation cleared"
+        : `Designated ${DISPLAY_ROLE_LABEL[value as ProjectDesignation]}`,
+    );
+    router.refresh();
+  }
+
   async function remove(userId: string, name: string) {
     setBusyId(userId);
     const result = await removeProjectMember({ projectId, userId });
@@ -114,6 +148,39 @@ export function ProjectMembers({
                 {member.jobTitle ?? "Not set"}
               </span>
             </span>
+
+            {/*
+              * What this project calls them.
+              *
+              * A label and not a permission: `setProjectMemberDesignation`
+              * writes one column that no guard reads, so naming somebody the
+              * tester here changes the Welcome screen they see on this project
+              * and nothing else. "Same as everywhere" clears it and returns
+              * them to their organisation-wide badge.
+              */}
+            {canManage ? (
+              <select
+                className="prio-select prio-select--sm"
+                aria-label={`What ${member.name} does on this project`}
+                value={member.designation ?? ""}
+                disabled={busyId === member.id}
+                onChange={(event) =>
+                  void designate(member.id, event.target.value)
+                }
+              >
+                <option value="">Same as everywhere</option>
+                {DESIGNATIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {DISPLAY_ROLE_LABEL[option]}
+                  </option>
+                ))}
+              </select>
+            ) : member.designation ? (
+              <span className="prio-badge">
+                {DISPLAY_ROLE_LABEL[member.designation]}
+              </span>
+            ) : null}
+
             {canManage ? (
               <Button
                 variant="ghost"

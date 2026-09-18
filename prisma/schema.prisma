@@ -320,12 +320,35 @@ model TeamMember {
   @@map("team_member")
 }
 
+/// What somebody is called on one project.
+///
+/// Display only, and deliberately so. Authorization is decided by the account
+/// role and the work teams, exactly as before — this changes what a project
+/// says a person is, never what they may do. Somebody carrying QA here is
+/// still whatever `workRoleOf` says they are to every guard in Prio.
+///
+/// Kept to the designations the application already has names and labels for.
+/// A designation nothing can render is a string in a column, not a role.
+enum ProjectDesignation {
+  DEVELOPER
+  QA
+  FULLSTACK
+}
+
 model ProjectMember {
   id        String   @id @default(cuid())
   projectId String
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// What this person is on this project, where somebody has said.
+  ///
+  /// Null is the ordinary case and means "whatever they are across Prio" —
+  /// every membership that existed before this column did reads that way, so
+  /// nothing changed for anybody when it arrived. It is the one per-project
+  /// person-fact in the schema besides `Project.createdById`; without it a
+  /// role could only ever be the same on every project.
+  designation ProjectDesignation?
   createdAt DateTime @default(now())
 
   @@unique([projectId, userId])

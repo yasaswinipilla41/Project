@@ -77,6 +77,17 @@ export interface IssueFiltersProps {
    * are unchanged.
    */
   columns?: readonly TableColumnId[];
+  /**
+   * The one project this surface belongs to, when it belongs to one.
+   *
+   * A project's own List tab fixes its project in the route rather than in the
+   * query string, so the bar cannot read it back out of the URL. Export needs
+   * it to send the same project the table was drawn from, and Import needs it
+   * to put the spreadsheet's rows in this project rather than wherever the
+   * file says. Neither is the check: the server re-resolves this id inside
+   * what the signed-in person may reach.
+   */
+  project?: { id: string; key: string };
 }
 
 /**
@@ -168,6 +179,7 @@ export function IssueFilters({
   enableShare = false,
   isAdmin = false,
   columns,
+  project,
 }: IssueFiltersProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -280,16 +292,29 @@ export function IssueFilters({
   };
 
   /**
-   * Downloads the current filtered/searched view as a genuine, fully
-   * editable .xlsx workbook. The query string sent is exactly what is in the
-   * address bar, so the export always matches what's on screen.
+   * Downloads the current filtered/searched view.
+   *
+   * The query string sent is what is in the address bar, so the export always
+   * matches what is on screen — plus the project when the surface is one
+   * project's own list. There the project is in the route rather than the
+   * query string, and sending only the address bar produced a workbook of
+   * every project the reader can see: an export that did not match the table
+   * above it.
+   *
+   * The server still decides what may be in it. Naming a project here can
+   * only narrow the result, never widen it, because the scope comes from the
+   * session either way.
    */
-  async function handleExport() {
+  async function handleExport(format: "xlsx" | "csv" | "html" = "xlsx") {
     if (exporting) return;
     setExporting(true);
 
     try {
-      const qs = params.toString();
+      const query = new URLSearchParams(params.toString());
+      if (project && !query.has("project")) query.set("project", project.id);
+      if (format !== "xlsx") query.set("format", format);
+
+      const qs = query.toString();
       const response = await fetch(
         `/api/issues/export${qs ? `?${qs}` : ""}`,
       );
@@ -535,16 +560,57 @@ export function IssueFilters({
             {pending ? "Loading…" : `${total} ${total === 1 ? "result" : "results"}`}
           </span>
 
+          {/*
+            * Export, with Excel as the button and the other two formats behind
+            * the caret.
+            *
+            * A split control rather than a menu with three equal entries: a
+            * spreadsheet is what almost everybody wants, and making everybody
+            * choose it every time would be a worse control that merely looked
+            * more complete. CSV is for a script or a spreadsheet nobody has
+            * licensed; HTML is for a reader with neither.
+            */}
           {enableExport ? (
-            <Button
-              variant="brand"
-              size="sm"
-              onClick={handleExport}
-              loading={exporting}
-            >
-              <IconDownload size={13} />
-              {exporting ? "Exporting…" : "Export Excel"}
-            </Button>
+            <div className="prio-splitbtn">
+              <Button
+                variant="brand"
+                size="sm"
+                className="prio-splitbtn__main"
+                onClick={() => handleExport("xlsx")}
+                loading={exporting}
+              >
+                <IconDownload size={13} />
+                {exporting ? "Exporting…" : "Export Excel"}
+              </Button>
+
+              <Menu
+                align="end"
+                width={200}
+                label="Choose an export format"
+                trigger={(props) => (
+                  <button
+                    type="button"
+                    className="prio-btn prio-btn--brand prio-btn--sm prio-splitbtn__caret"
+                    aria-label="Choose an export format"
+                    disabled={exporting}
+                    {...props}
+                  >
+                    <IconChevronDown size={12} />
+                  </button>
+                )}
+              >
+                <MenuLabel>Export</MenuLabel>
+                <MenuItem onSelect={() => handleExport("xlsx")}>
+                  Excel (.xlsx)
+                </MenuItem>
+                <MenuItem onSelect={() => handleExport("csv")}>
+                  CSV (.csv)
+                </MenuItem>
+                <MenuItem onSelect={() => handleExport("html")}>
+                  HTML (.html)
+                </MenuItem>
+              </Menu>
+            </div>
           ) : null}
 
           {enableImport ? (
@@ -576,7 +642,10 @@ export function IssueFilters({
       ) : null}
 
       {importing ? (
-        <ImportIssuesDialog onClose={() => setImporting(false)} />
+        <ImportIssuesDialog
+          project={project}
+          onClose={() => setImporting(false)}
+        />
       ) : null}
     </div>
   );

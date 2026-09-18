@@ -46,6 +46,32 @@ import type {
  * still selected may write its result. The same shape `TeamAdmin` already uses
  * for exactly this.
  */
+/**
+ * What the run will not place, and why.
+ *
+ * A plan that quietly skipped four issues would read as a plan that had
+ * nothing to say about them. These are the cases where the engine knows whose
+ * work something is and cannot give it to them — the tester has left the
+ * project, the developer who built it has moved on — and the honest answer is
+ * to name them rather than hand the work to whoever happens to be free.
+ */
+function UnplacedNote({ unplaced }: { unplaced: BacklogPlan["unplaced"] }) {
+  if (unplaced.length === 0) return null;
+
+  return (
+    <div className="prio-field">
+      <span className="prio-label">Left where it is</span>
+      <ul className="prio-importproblems">
+        {unplaced.map((row) => (
+          <li key={row.issueId}>
+            <strong>{row.issueKey}</strong> — {row.reason}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function WorkStatusCard({ data }: { data: WorkStatusData }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -407,7 +433,7 @@ export function WorkStatusCard({ data }: { data: WorkStatusData }) {
           title="Auto-assign backlog"
           size="lg"
           busy={applying}
-          description="Deals a project's backlog out across the developers on it: most urgent work first, each issue to whoever has the lightest queue at the time."
+          description="Returns work to whoever it already belongs to — a hand-off to the tester who raised it, a reopen to the developer who built it — and then deals what is left across the project's developers, most urgent first, to whoever has the lightest queue at the time."
           footer={
             <>
               <Button
@@ -498,12 +524,17 @@ export function WorkStatusCard({ data }: { data: WorkStatusData }) {
                   .map((person) => `${person.name} +${person.added}`)
                   .join(" · ")}
               </p>
+
+              <UnplacedNote unplaced={plan.unplaced} />
             </>
           ) : (
-            <p className="prio-text-muted">
-              Nothing in this project&rsquo;s backlog is waiting for a
-              developer, or nobody on the project does development work.
-            </p>
+            <>
+              <p className="prio-text-muted">
+                Nothing in this project is waiting to be handed out, or nobody
+                on it can be handed the work that is.
+              </p>
+              {plan ? <UnplacedNote unplaced={plan.unplaced} /> : null}
+            </>
           )}
         </Dialog>
       ) : null}
