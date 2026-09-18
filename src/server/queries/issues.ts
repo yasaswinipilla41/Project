@@ -61,6 +61,12 @@ export interface IssueFilters {
    */
   completedByIds?: string[];
   labelIds?: string[];
+  /**
+   * Which sprints' work to show. `"none"` is a first-class value meaning the
+   * backlog — work in no sprint at all — so "Backlog" is a choice rather than
+   * the absence of a choice, exactly as `"none"` already works for assignee.
+   */
+  sprintIds?: string[];
   /** "open" | "closed" | undefined (all) */
   resolution?: string;
   /** Restricts to overdue items. */
@@ -179,6 +185,41 @@ export function buildIssueWhere(
   if (filters.labelIds?.length) {
     // An issue matches if it carries any of the selected labels.
     where.labels = { some: { labelId: { in: filters.labelIds } } };
+  }
+
+  if (filters.sprintIds?.length) {
+    /*
+     * The backlog is a sprint choice, not the lack of one.
+     *
+     * `"none"` means "in no sprint", the same sentinel the assignee filter
+     * above uses for unassigned work, and it composes with named sprints the
+     * same way: picking Backlog and Sprint 4 shows both, rather than one
+     * silently cancelling the other. Sprints are scoped to a project by the
+     * schema, so filtering by one implicitly narrows to that project's work
+     * without this needing to say so.
+     */
+    const ids = filters.sprintIds.filter((id) => id !== "none");
+    const wantsBacklog = filters.sprintIds.includes("none");
+    /*
+     * A sprint's work is what is in it now, and — once it is completed —
+     * everything its record says it held when it closed. Completing a sprint
+     * carries unfinished issues out of it, so `sprintId` alone would show a
+     * completed sprint as only its finished half. Only `completeSprint` writes
+     * outcome rows, so a planned or active sprint matches exactly as before.
+     */
+    const inSprints: Prisma.IssueWhereInput = {
+      OR: [
+        { sprintId: { in: ids } },
+        { sprintOutcomes: { some: { sprintId: { in: ids } } } },
+      ],
+    };
+    if (ids.length > 0 && wantsBacklog) {
+      and.push({ OR: [inSprints, { sprintId: null }] });
+    } else if (wantsBacklog) {
+      where.sprintId = null;
+    } else {
+      and.push(inSprints);
+    }
   }
 
   if (filters.overdue) {
@@ -509,7 +550,8 @@ export async function countByStatus(
 
 /**
  * The option lists the filter bar offers: only projects the caller can see,
- * only people who are members of those projects, only labels in them.
+ * only people who are members of those projects, only labels and sprints in
+ * them.
  */
 export async function filterOptions(user: CurrentUser) {
   const projects = await prisma.project.findMany({
@@ -523,7 +565,7 @@ export async function filterOptions(user: CurrentUser) {
 
   const projectIds = projects.map((p) => p.id);
 
-  const [people, labels] = await Promise.all([
+  const [people, labels, sprints] = await Promise.all([
     prisma.user.findMany({
       where: {
         isActive: true,
@@ -537,9 +579,26 @@ export async function filterOptions(user: CurrentUser) {
       select: { id: true, name: true, color: true, projectId: true },
       orderBy: { name: "asc" },
     }),
+    /* Scoped to the same projects as everything else here, so a sprint the
+       caller could not open is never offered as something to filter by. The
+       project's key travels with each one because two projects may both have
+       a "Sprint 4", and a cross-project surface has to tell them apart. */
+    prisma.sprint.findMany({
+      where: { projectId: { in: projectIds } },
+      select: {
+        id: true,
+        name: true,
+        projectId: true,
+        /* Read so a surface can mark a completed sprint as one — from the
+           sprint's own status, never from its name. */
+        status: true,
+        project: { select: { key: true } },
+      },
+      orderBy: [{ startDate: "desc" }, { name: "asc" }],
+    }),
   ]);
 
-  return { projects, people, labels };
+  return { projects, people, labels, sprints };
 }
 
 /**

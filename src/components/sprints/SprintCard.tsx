@@ -3,106 +3,40 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Alert, Avatar, Button, CardBody } from "@/components/ui/primitives";
+import { Alert, Button, CardBody } from "@/components/ui/primitives";
 import { Dialog } from "@/components/ui/Dialog";
 import {
+  IconArrowRight,
   IconCalendar,
   IconCheck,
-  IconClose,
   IconEdit,
   IconPlus,
   IconTrash,
   IconUsers,
   IconWarning,
 } from "@/components/ui/Icon";
-import { IssueKey, IssueTypeIcon, StatusPill } from "@/components/ui/Indicators";
 import { useToast } from "@/components/ui/Toast";
-import { BOARD_STATUSES, boardColumnFor } from "@/lib/board";
-import { isClosedStatus, STATUS_LABEL } from "@/lib/domain";
+import { isClosedStatus } from "@/lib/domain";
 import { formatDateCompact } from "@/lib/format";
-import {
-  deleteSprint,
-  removeIssueFromSprint,
-  startSprint,
-} from "@/server/sprints";
+import { deleteSprint, startSprint } from "@/server/sprints";
 import type { SprintIssueSummary, SprintView } from "@/server/queries/sprints";
 import { AddSprintIssuesDialog } from "./AddSprintIssuesDialog";
 import { CompleteSprintDialog } from "./CompleteSprintDialog";
-import { MoveIssueMenu } from "./MoveIssueMenu";
 import { SprintFormDialog } from "./SprintFormDialog";
 
 /**
- * One sprint, in whichever of its three states it is in.
+ * One sprint, in whichever of its three states it is in: its name (the link to
+ * its own page), goal, dates, figures and progress, and the actions that stage
+ * allows — Add issues, Edit, Start, Complete, Delete.
  *
- * The same card throughout its life, showing what that stage of it is for:
- *
- *   PLANNED    the work chosen so far, with a way to add more or take some
- *              back out, and Start Sprint at the end of it — which is the
- *              plan-then-start step in one place rather than two pages.
- *   ACTIVE     the work as a board, grouped by each issue's *current* status.
- *              Nothing is stored here: move a card on the Flow Board and this
- *              regroups, because both read `Issue.status`.
- *   COMPLETED  its record — what was finished, what was not, and the figures
- *              as they stood when it closed.
+ * The block is a summary. The sprint's issues are listed on its own page,
+ * grouped by the status each is in, rather than repeated inside every block
+ * here.
  *
  * The lifecycle actions are only rendered for somebody who may perform them,
  * and that is presentation alone: `startSprint` and `completeSprint` both
  * check on the server, and a hidden button is never the control.
  */
-
-function SprintIssueRow({
-  issue,
-  onRemove,
-  removing,
-  moveMenu,
-}: {
-  issue: SprintIssueSummary;
-  onRemove?: () => void;
-  removing?: boolean;
-  /** Rendered by the caller — only when this reader may move sprint issues. */
-  moveMenu?: React.ReactNode;
-}) {
-  return (
-    <li className="prio-sprint__issue">
-      <Link
-        href={`/issues/${issue.key.toLowerCase()}`}
-        className="prio-sprint__issuelink"
-      >
-        <IssueTypeIcon type={issue.type} size={15} />
-        <IssueKey issueKey={issue.key} />
-        <span className="prio-sprint__issuetitle prio-truncate">
-          {issue.title}
-        </span>
-        <StatusPill status={issue.status} />
-      </Link>
-
-      {issue.assignee ? (
-        <Avatar
-          name={issue.assignee.name}
-          image={issue.assignee.image}
-          size="xs"
-        />
-      ) : (
-        <Avatar name={null} size="xs" empty />
-      )}
-
-      {moveMenu}
-
-      {onRemove ? (
-        <button
-          type="button"
-          className="prio-btn prio-btn--ghost prio-btn--icon prio-btn--sm"
-          aria-label={`Remove ${issue.key} from this sprint`}
-          title="Remove from sprint"
-          disabled={removing}
-          onClick={onRemove}
-        >
-          <IconClose size={13} />
-        </button>
-      ) : null}
-    </li>
-  );
-}
 
 export function SprintCard({
   sprint,
@@ -142,7 +76,6 @@ export function SprintCard({
   const [editing, setEditing] = useState(false);
   const [closing, setClosing] = useState(false);
   const [starting, setStarting] = useState(false);
-  const [removingId, setRemovingId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deletePending, setDeletePending] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -192,29 +125,6 @@ export function SprintCard({
     router.refresh();
   }
 
-  async function remove(issueId: string, issueKey: string) {
-    setRemovingId(issueId);
-    const result = await removeIssueFromSprint({ sprintId: sprint.id, issueId });
-    setRemovingId(null);
-
-    if (!result.ok) {
-      toast(result.error, "error");
-      return;
-    }
-    toast(`${issueKey} moved back to the backlog`);
-    router.refresh();
-  }
-
-  /* The active sprint's board: the same columns the Flow Board uses, and the
-     same `boardColumnFor` deciding which one an issue is drawn in — so a
-     Reopened issue lands in New and a Rejected one in Done here exactly as it
-     does there. Empty columns are dropped: this is a read of the sprint, not
-     a board to drag onto. */
-  const columns = BOARD_STATUSES.map((column) => ({
-    column,
-    issues: sprint.issues.filter((issue) => boardColumnFor(issue.status) === column),
-  })).filter((entry) => entry.issues.length > 0);
-
   return (
     /* A card, written out rather than built with `Card`, because the status
        has to reach the CSS as an attribute and `Card` takes only a class. */
@@ -222,38 +132,41 @@ export function SprintCard({
       <CardBody>
         <header className="prio-sprint__head">
           <div className="prio-sprint__identity">
-            {/* The sprint's own dedicated details page — name, goal and dates
-                are the click target; the actions to the right are not, so a
-                click there is never swallowed by this link. */}
-            <Link
-              href={`/projects/${projectKey.toLowerCase()}/sprints/${sprint.id}`}
-              className="prio-sprint__identitylink"
-            >
-              <h3 className="prio-sprint__name">
+            <h3 className="prio-sprint__name">
+              {/* Only the name is the link to this sprint's own page, and it
+                  reads as one — link colour, an arrow, an underline on hover.
+                  Goal, dates and the actions to the right are not links, so a
+                  click on any of them is never taken as navigation. */}
+              <Link
+                href={`/projects/${projectKey.toLowerCase()}/sprints/${sprint.id}`}
+                className="prio-sprint__identitylink"
+                title={`Open ${sprint.name}`}
+              >
                 {sprint.name}
-                <span className="prio-sprint__status" data-status={sprint.status}>
-                  {sprint.status === "ACTIVE"
-                    ? "Active"
-                    : sprint.status === "PLANNED"
-                      ? "Planned"
-                      : "Completed"}
+                <IconArrowRight size={14} aria-hidden />
+              </Link>
+              <span className="prio-sprint__status" data-status={sprint.status}>
+                {sprint.status === "ACTIVE"
+                  ? "Active"
+                  : sprint.status === "PLANNED"
+                    ? "Planned"
+                    : "Completed"}
+              </span>
+            </h3>
+            {sprint.goal ? (
+              <p className="prio-sprint__goal">{sprint.goal}</p>
+            ) : null}
+            <p className="prio-sprint__dates">
+              <IconCalendar size={13} />
+              {formatDateCompact(sprint.startDate)} →{" "}
+              {formatDateCompact(sprint.endDate)}
+              {sprint.completedAt ? (
+                <span className="prio-text-muted">
+                  {" "}
+                  · closed {formatDateCompact(sprint.completedAt)}
                 </span>
-              </h3>
-              {sprint.goal ? (
-                <p className="prio-sprint__goal">{sprint.goal}</p>
               ) : null}
-              <p className="prio-sprint__dates">
-                <IconCalendar size={13} />
-                {formatDateCompact(sprint.startDate)} →{" "}
-                {formatDateCompact(sprint.endDate)}
-                {sprint.completedAt ? (
-                  <span className="prio-text-muted">
-                    {" "}
-                    · closed {formatDateCompact(sprint.completedAt)}
-                  </span>
-                ) : null}
-              </p>
-            </Link>
+            </p>
           </div>
 
           <div className="prio-sprint__actions">
@@ -349,18 +262,25 @@ export function SprintCard({
           </span>
         </div>
 
-        <div
-          className="prio-progress"
-          role="img"
-          aria-label={`${stats.progress}% of this sprint's work is finished`}
-        >
+        <div className="prio-sprint__progressrow">
           <div
-            className="prio-progress__bar"
-            style={{ width: `${stats.progress}%` }}
-          />
+            className="prio-progress"
+            role="img"
+            aria-label={`${stats.progress}% of this sprint's work is finished`}
+          >
+            <div
+              className="prio-progress__bar"
+              style={{ width: `${stats.progress}%` }}
+            />
+          </div>
+          <span className="prio-sprint__progresslabel" aria-hidden>
+            {stats.progress}%
+          </span>
         </div>
 
-        {/* --------------------------------------------------------- body */}
+        {/* The block is a summary: its issues are listed, by status, on the
+            sprint's own page behind its name. Only an empty sprint says so
+            here, since that is what stands between it and Start sprint. */}
         {sprint.issues.length === 0 ? (
           <p className="prio-text-muted prio-sprint__empty">
             No issues in this sprint yet.
@@ -368,105 +288,7 @@ export function SprintCard({
               ? " Add some from the backlog before starting it."
               : ""}
           </p>
-        ) : sprint.status === "ACTIVE" ? (
-          <div className="prio-sprint__board prio-scroll">
-            {columns.map(({ column, issues }) => (
-              <section key={column} className="prio-sprint__column">
-                <h4 className="prio-sprint__columnhead">
-                  {STATUS_LABEL[column]}
-                  <span className="prio-sprint__columncount">{issues.length}</span>
-                </h4>
-                <ul className="prio-sprint__issues">
-                  {issues.map((issue) => (
-                    <SprintIssueRow
-                      key={issue.id}
-                      issue={issue}
-                      onRemove={
-                        canEditIssues
-                          ? () => void remove(issue.id, issue.key)
-                          : undefined
-                      }
-                      removing={removingId === issue.id}
-                      moveMenu={
-                        canEditIssues ? (
-                          <MoveIssueMenu
-                            issueId={issue.id}
-                            issueKey={issue.key}
-                            otherOpenSprints={otherOpenSprints}
-                          />
-                        ) : undefined
-                      }
-                    />
-                  ))}
-                </ul>
-              </section>
-            ))}
-          </div>
-        ) : sprint.status === "PLANNED" ? (
-          <ul className="prio-sprint__issues">
-            {sprint.issues.map((issue) => (
-              <SprintIssueRow
-                key={issue.id}
-                issue={issue}
-                onRemove={
-                  canEditIssues ? () => void remove(issue.id, issue.key) : undefined
-                }
-                removing={removingId === issue.id}
-                moveMenu={
-                  canEditIssues ? (
-                    <MoveIssueMenu
-                      issueId={issue.id}
-                      issueKey={issue.key}
-                      otherOpenSprints={otherOpenSprints}
-                    />
-                  ) : undefined
-                }
-              />
-            ))}
-          </ul>
-        ) : (
-          /* Completed: the record, read from the outcome rows written when the
-             sprint closed — not from where the issues happen to be today. */
-          <div className="prio-sprint__record">
-            <section>
-              <h4 className="prio-sprint__recordhead">
-                Completed
-                <span className="prio-sprint__columncount">
-                  {sprint.outcome?.completed.length ?? 0}
-                </span>
-              </h4>
-              {sprint.outcome && sprint.outcome.completed.length > 0 ? (
-                <ul className="prio-sprint__issues">
-                  {sprint.outcome.completed.map((issue) => (
-                    <SprintIssueRow key={issue.id} issue={issue} />
-                  ))}
-                </ul>
-              ) : (
-                <p className="prio-text-muted">Nothing was finished.</p>
-              )}
-            </section>
-
-            <section>
-              <h4 className="prio-sprint__recordhead">
-                Incomplete
-                <span className="prio-sprint__columncount">
-                  {sprint.outcome?.incomplete.length ?? 0}
-                </span>
-              </h4>
-              {sprint.outcome && sprint.outcome.incomplete.length > 0 ? (
-                <ul className="prio-sprint__issues">
-                  {sprint.outcome.incomplete.map((issue) => (
-                    <SprintIssueRow key={issue.id} issue={issue} />
-                  ))}
-                </ul>
-              ) : (
-                <p className="prio-text-muted">
-                  Everything in this sprint was finished.
-                </p>
-              )}
-            </section>
-          </div>
-        )}
+        ) : null}
       </CardBody>
 
       {adding ? (

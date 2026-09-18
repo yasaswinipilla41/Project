@@ -1058,7 +1058,12 @@ export function FlowBoard({
   );
 }
 
-function BoardCard({
+/**
+ * One issue card. Exported so the sprint details page shows a sprint's work
+ * in the same card — with the same status menu and the same role-aware
+ * actions — rather than a second card design that could drift from this one.
+ */
+export function BoardCard({
   issue,
   draggable,
   onStatusChange,

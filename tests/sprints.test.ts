@@ -99,22 +99,38 @@ afterAll(async () => {
   }
 });
 
+/** Distinguishes two fixtures made in the same millisecond. */
+let fixtureCount = 0;
+
 /**
- * A project of its own, so a test asking "is there any other open sprint in
- * this project" gets a true answer rather than one polluted by whatever
- * other test files — running concurrently, against the same database — have
- * left in a shared seeded project like ENG.
+ * A project of its own, with only the administrator in it.
+ *
+ * Every case below that has to *successfully start or complete* a sprint uses
+ * one, because "one sprint runs at a time in a project" is a real rule and a
+ * shared seeded project like ENG may already have a sprint running in it —
+ * left by another suite running concurrently against the same database, or by
+ * somebody actually using the application. Those tests were asserting the
+ * rule against whatever state they inherited rather than against state they
+ * established, which is why they failed depending on what else existed.
+ *
+ * Only the administrator is a member, which also makes it the right fixture
+ * for the opposite question: a project some other person demonstrably cannot
+ * open.
  */
 async function makeIsolatedProject(): Promise<{ id: string }> {
   const admin = await prisma.user.findUniqueOrThrow({
     where: { email: ADMIN },
     select: { id: true },
   });
-  const key = `MV${Date.now().toString(36).toUpperCase()}`.slice(0, 10);
+  fixtureCount += 1;
+  const key = `SP${fixtureCount}${Date.now().toString(36).toUpperCase()}`.slice(
+    0,
+    10,
+  );
   const project = await prisma.project.create({
     data: {
       key,
-      name: `Move fixture ${key}`,
+      name: `Sprint fixture ${key}`,
       createdById: admin.id,
       members: { create: { userId: admin.id } },
     },
@@ -198,14 +214,19 @@ describe("Creating a sprint", () => {
   });
 
   it("refuses someone with no access to the project", async () => {
-    /* Testing is the administrator's own project; `MEMBER` is not in it. A
-       stranger to a project cannot plan work in it. */
-    await actAs(MEMBER);
-    const testing = await projectByKey("TES");
+    /*
+     * A project only the administrator is in, so "no access" is established
+     * by this test rather than assumed of a seeded project. This used to name
+     * a `TES` project that the seed does not create, so the lookup threw and
+     * the assertion below never ran at all.
+     */
+    await actAs(ADMIN);
+    const theirs = await makeIsolatedProject();
 
+    await actAs(MEMBER);
     const before = await prisma.sprint.count();
     const result = await createSprint({
-      projectId: testing.id,
+      projectId: theirs.id,
       name: "Not theirs",
       goal: "",
       ...dates(),
@@ -434,7 +455,7 @@ describe("Adding issues to a sprint", () => {
 describe("Starting a sprint", () => {
   it("moves it to ACTIVE once it holds work", async () => {
     await actAs(ADMIN);
-    const project = await projectByKey("ENG");
+    const project = await makeIsolatedProject();
     const sprintId = await makeSprint(project.id, "Ready to start");
     const issue = await makeIssue(project.id, "Something to do");
     await addIssuesToSprint({ sprintId, issueIds: [issue.id] });
@@ -463,7 +484,7 @@ describe("Starting a sprint", () => {
 
   it("refuses a second running sprint in the same project", async () => {
     await actAs(ADMIN);
-    const project = await projectByKey("WEB");
+    const project = await makeIsolatedProject();
 
     const first = await makeSprint(project.id, "First running");
     const firstIssue = await makeIssue(project.id, "Work for the first");
@@ -490,7 +511,7 @@ describe("Starting a sprint", () => {
 
   it("refuses to start a sprint twice", async () => {
     await actAs(ADMIN);
-    const project = await projectByKey("ENG");
+    const project = await makeIsolatedProject();
     const sprintId = await makeSprint(project.id, "Start me once");
     const issue = await makeIssue(project.id, "Only work");
     await addIssuesToSprint({ sprintId, issueIds: [issue.id] });
@@ -506,7 +527,7 @@ describe("Starting a sprint", () => {
 describe("An active sprint's figures", () => {
   it("follow the issues' own statuses", async () => {
     await actAs(ADMIN);
-    const project = await projectByKey("ENG");
+    const project = await makeIsolatedProject();
     const sprintId = await makeSprint(project.id, "Progress follows status");
 
     const issues = await Promise.all([
@@ -545,7 +566,7 @@ describe("An active sprint's figures", () => {
 describe("Completing a sprint", () => {
   it("sends unfinished work to the backlog and keeps the finished work", async () => {
     await actAs(ADMIN);
-    const project = await projectByKey("ENG");
+    const project = await makeIsolatedProject();
     const sprintId = await makeSprint(project.id, "Closing to backlog");
 
     const finished = await makeIssue(project.id, "Will be finished");
@@ -594,7 +615,7 @@ describe("Completing a sprint", () => {
 
   it("carries unfinished work into another sprint in the same project", async () => {
     await actAs(ADMIN);
-    const project = await projectByKey("INT");
+    const project = await makeIsolatedProject();
 
     const current = await makeSprint(project.id, "Carry from here");
     const next = await makeSprint(project.id, "Carry into here");
@@ -618,14 +639,77 @@ describe("Completing a sprint", () => {
     ).toMatchObject({ sprintId: next, projectId: project.id });
   });
 
+  it("records the carry-over on the issue's own history", async () => {
+    /*
+     * Being carried out of a sprint is a sprint change on the issue, so it
+     * leaves the same trail adding, removing and moving one do. This was the
+     * one way an issue's sprint could change silently: the bulk re-pointing
+     * at completion wrote no activity, so an issue's history skipped the
+     * sprint it had been carried out of.
+     */
+    await actAs(ADMIN);
+    const project = await makeIsolatedProject();
+
+    const current = await makeSprint(project.id, "Carried out of here");
+    const next = await makeSprint(project.id, "Carried into here");
+    const unfinished = await makeIssue(project.id, "Its history is kept");
+
+    await addIssuesToSprint({ sprintId: current, issueIds: [unfinished.id] });
+    await startSprint({ sprintId: current });
+    const result = await completeSprint({
+      sprintId: current,
+      moveIncompleteTo: "NEXT_SPRINT",
+      nextSprintId: next,
+    });
+    expect(result.ok).toBe(true);
+
+    const entry = await prisma.activityLogEntry.findFirst({
+      where: { issueId: unfinished.id, field: "sprintId" },
+      orderBy: { createdAt: "desc" },
+      select: { oldValue: true, newValue: true },
+    });
+
+    expect(entry).toMatchObject({
+      oldValue: "Carried out of here",
+      newValue: "Carried into here",
+    });
+  });
+
+  it("names the backlog in that history when the work goes nowhere", async () => {
+    await actAs(ADMIN);
+    const project = await makeIsolatedProject();
+
+    const sprintId = await makeSprint(project.id, "Closed to the backlog");
+    const unfinished = await makeIssue(project.id, "Back to the backlog");
+
+    await addIssuesToSprint({ sprintId, issueIds: [unfinished.id] });
+    await startSprint({ sprintId });
+    expect(
+      (await completeSprint({ sprintId, moveIncompleteTo: "BACKLOG" })).ok,
+    ).toBe(true);
+
+    const entry = await prisma.activityLogEntry.findFirst({
+      where: { issueId: unfinished.id, field: "sprintId" },
+      orderBy: { createdAt: "desc" },
+      select: { oldValue: true, newValue: true },
+    });
+
+    expect(entry).toMatchObject({
+      oldValue: "Closed to the backlog",
+      newValue: "Backlog",
+    });
+  });
+
   it("refuses to carry work into another project's sprint", async () => {
     await actAs(ADMIN);
-    const engineering = await projectByKey("ENG");
-    const website = await projectByKey("WEB");
+    /* Two projects of this test's own: the source has to be startable, and
+       the destination has to genuinely be somewhere else. */
+    const engineering = await makeIsolatedProject();
+    const website = await makeIsolatedProject();
 
-    const source = await makeSprint(engineering.id, "Cannot leave Engineering");
-    const foreign = await makeSprint(website.id, "Website's own sprint");
-    const unfinished = await makeIssue(engineering.id, "Must stay in ENG");
+    const source = await makeSprint(engineering.id, "Cannot leave its project");
+    const foreign = await makeSprint(website.id, "The other project's sprint");
+    const unfinished = await makeIssue(engineering.id, "Must stay put");
 
     await addIssuesToSprint({ sprintId: source, issueIds: [unfinished.id] });
     await startSprint({ sprintId: source });
@@ -662,7 +746,7 @@ describe("Completing a sprint", () => {
      * not: both issues are still named, and still on the right side.
      */
     await actAs(ADMIN);
-    const project = await projectByKey("ENG");
+    const project = await makeIsolatedProject();
     const sprintId = await makeSprint(project.id, "History keeper");
 
     const finished = await makeIssue(project.id, "Finished, remembered");
@@ -714,7 +798,7 @@ describe("Completing a sprint", () => {
 
   it("refuses to change a completed sprint afterwards", async () => {
     await actAs(ADMIN);
-    const project = await projectByKey("ENG");
+    const project = await makeIsolatedProject();
     const sprintId = await makeSprint(project.id, "Sealed");
     const issue = await makeIssue(project.id, "Sealed work");
     await addIssuesToSprint({ sprintId, issueIds: [issue.id] });

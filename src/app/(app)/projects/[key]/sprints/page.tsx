@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { NewSprintButton } from "@/components/sprints/NewSprintButton";
 import { SprintCard } from "@/components/sprints/SprintCard";
-import { Card, EmptyState } from "@/components/ui/primitives";
-import { IconEmptyBox } from "@/components/ui/Icon";
+import { ButtonLink, Card, EmptyState } from "@/components/ui/primitives";
+import { IconEmptyBox, IconTimeline } from "@/components/ui/Icon";
 import { projectScope, workRoleOf } from "@/lib/authz";
 import {
   canCompleteSprint,
@@ -88,7 +88,19 @@ export default async function ProjectSprintsPage({
             project&rsquo;s issues can be in one.
           </p>
         </div>
-        {canCreate ? <NewSprintButton projectId={project.id} /> : null}
+        <div className="prio-sprints__headactions">
+          {/* Every role that can open this section can open Iterations /
+              Sprints, so it is offered to all of them; New sprint stays an
+              administrator's. */}
+          <ButtonLink
+            href={`/projects/${project.key.toLowerCase()}/sprints/iterations`}
+            variant="secondary"
+          >
+            <IconTimeline size={14} />
+            Iterations / Sprints
+          </ButtonLink>
+          {canCreate ? <NewSprintButton projectId={project.id} /> : null}
+        </div>
       </div>
 
       {sprints.length === 0 ? (

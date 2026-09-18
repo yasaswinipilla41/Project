@@ -61,6 +61,17 @@ export default async function ProjectListPage({
         showProjectFilter={false}
         people={options.people}
         labels={options.labels}
+        /* This project's own sprints, by their plain names: the route already
+           fixes the project, so prefixing its key would only repeat it. A
+           completed one is flagged from its real status, and the dropdown
+           marks it with a check. */
+        sprints={options.sprints
+          .filter((sprint) => sprint.projectId === project.id)
+          .map((sprint) => ({
+            id: sprint.id,
+            name: sprint.name,
+            completed: sprint.status === "COMPLETED",
+          }))}
         currentUserId={user.id}
         total={result.total}
         enableExport

@@ -489,6 +489,9 @@ export async function completeSprint(
      * sprint — the one thing §11 rules out outright.
      */
     let destination: string | null = null;
+    /* Where the carried-over work ended up, in the words the activity trail
+       uses: a sprint's name, or "Backlog" when it goes nowhere. */
+    let destinationName = "Backlog";
     if (moveIncompleteTo === "NEXT_SPRINT") {
       const next = await prisma.sprint.findFirst({
         where: {
@@ -496,7 +499,7 @@ export async function completeSprint(
           projectId: sprint.projectId,
           status: { in: ["PLANNED", "ACTIVE"] },
         },
-        select: { id: true },
+        select: { id: true, name: true },
       });
       if (!next) {
         return {
@@ -506,6 +509,7 @@ export async function completeSprint(
         };
       }
       destination = next.id;
+      destinationName = next.name;
     }
 
     const issues = await prisma.issue.findMany({
@@ -537,6 +541,28 @@ export async function completeSprint(
           where: { id: { in: unfinished.map((i) => i.id) }, sprintId: sprint.id },
           data: { sprintId: destination },
         });
+
+        /*
+         * Carrying work over is a sprint change on each issue, so it is
+         * recorded as one — the same `sprintId` field change, in the same
+         * words, that adding, removing and moving an issue already write.
+         * Without this, the one way an issue's sprint could change without
+         * leaving a trail was the bulk move at completion, and an issue's
+         * history would skip the sprint it was carried out of.
+         */
+        for (const issue of unfinished) {
+          await recordFieldChanges(tx, {
+            issueId: issue.id,
+            actorId: user.id,
+            changes: [
+              {
+                field: "sprintId",
+                oldValue: sprint.name,
+                newValue: destinationName,
+              },
+            ],
+          });
+        }
       }
 
       await tx.sprint.update({

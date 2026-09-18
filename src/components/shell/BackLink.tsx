@@ -10,9 +10,21 @@ import { IconChevronLeft } from "@/components/ui/Icon";
  * "back" means somewhere outside Prio entirely — or nowhere at all. Naming the
  * destination means the control does the same thing however you arrived.
  */
-export function BackLink({ href, label }: { href: string; label: string }) {
+export function BackLink({
+  href,
+  label,
+  tone = "default",
+}: {
+  href: string;
+  label: string;
+  /** `sprint` is the Sprint pages' purple; every other page keeps the default. */
+  tone?: "default" | "sprint";
+}) {
   return (
-    <Link href={href} className="prio-backlink">
+    <Link
+      href={href}
+      className={tone === "sprint" ? "prio-backlink prio-backlink--sprint" : "prio-backlink"}
+    >
       <IconChevronLeft size={14} />
       {label}
     </Link>

@@ -1,8 +1,8 @@
+import type { ReactNode } from "react";
 import { Card, CardBody } from "@/components/ui/primitives";
 import { IconCalendar, IconUsers } from "@/components/ui/Icon";
-import { StatusPill } from "@/components/ui/Indicators";
-import { ISSUE_STATUSES } from "@/lib/domain";
-import { barWidth, formatDateCompact } from "@/lib/format";
+import { ISSUE_STATUSES, STATUS_LABEL as ISSUE_STATUS_LABEL } from "@/lib/domain";
+import { formatDateCompact, workingDaysBetween } from "@/lib/format";
 import type { SprintView } from "@/server/queries/sprints";
 
 const STATUS_LABEL: Record<SprintView["status"], string> = {
@@ -13,7 +13,7 @@ const STATUS_LABEL: Record<SprintView["status"], string> = {
 
 /**
  * A sprint's details, read only: its own card (name, status, goal, dates,
- * stats, progress) plus a bar chart of its issues by status.
+ * stats, progress) plus an isometric bar chart of its issues by status.
  *
  * Shared by both places a sprint has a dedicated details page — reached from
  * the Projects directory's Iterations/Sprints block, and from a project's own
@@ -23,12 +23,24 @@ const STATUS_LABEL: Record<SprintView["status"], string> = {
  * subset of it and a chart of the same issues. Where the two pages differ —
  * the Back link's destination — is each page's own, not this component's.
  */
-export function SprintDetailsView({ sprint }: { sprint: SprintView }) {
+export function SprintDetailsView({
+  sprint,
+  children,
+}: {
+  sprint: SprintView;
+  /** Drawn between the sprint's own card and its chart — the project's
+   *  details page puts the sprint's issues here, grouped by status. */
+  children?: ReactNode;
+}) {
   const total = sprint.stats.total;
+  const workingDays = workingDaysBetween(sprint.startDate, sprint.endDate);
   const statusCounts = new Map<string, number>();
   for (const issue of sprint.issues) {
     statusCounts.set(issue.status, (statusCounts.get(issue.status) ?? 0) + 1);
   }
+  /* The tallest bar is the busiest status; every other bar is drawn against
+     it, from a zero baseline, so heights compare honestly. */
+  const maxCount = Math.max(0, ...statusCounts.values());
 
   return (
     <>
@@ -49,6 +61,13 @@ export function SprintDetailsView({ sprint }: { sprint: SprintView }) {
                 <IconCalendar size={13} />
                 {formatDateCompact(sprint.startDate)} →{" "}
                 {formatDateCompact(sprint.endDate)}
+                {/* Working days, not calendar days: a fortnight's sprint is
+                    ten days of work because nobody works the weekends in
+                    it. One shared `workingDaysBetween` decides this. */}
+                <span className="prio-text-muted">
+                  {" "}
+                  · {workingDays} working {workingDays === 1 ? "day" : "days"}
+                </span>
                 {sprint.completedAt ? (
                   <span className="prio-text-muted">
                     {" "}
@@ -90,18 +109,25 @@ export function SprintDetailsView({ sprint }: { sprint: SprintView }) {
             </span>
           </div>
 
-          <div
-            className="prio-progress"
-            role="img"
-            aria-label={`${sprint.stats.progress}% of this sprint's work is finished`}
-          >
+          <div className="prio-sprint__progressrow">
             <div
-              className="prio-progress__bar"
-              style={{ width: `${sprint.stats.progress}%` }}
-            />
+              className="prio-progress"
+              role="img"
+              aria-label={`${sprint.stats.progress}% of this sprint's work is finished`}
+            >
+              <div
+                className="prio-progress__bar"
+                style={{ width: `${sprint.stats.progress}%` }}
+              />
+            </div>
+            <span className="prio-sprint__progresslabel" aria-hidden>
+              {sprint.stats.progress}%
+            </span>
           </div>
         </CardBody>
       </section>
+
+      {children}
 
       <Card style={{ marginTop: "var(--prio-space-4)" }}>
         <CardBody>
@@ -109,26 +135,48 @@ export function SprintDetailsView({ sprint }: { sprint: SprintView }) {
           {total === 0 ? (
             <p className="prio-text-muted">No issues in this sprint yet.</p>
           ) : (
-            <ul className="prio-distribution">
-              {ISSUE_STATUSES.map((status) => {
-                const count = statusCounts.get(status) ?? 0;
-                return (
-                  <li key={status} className="prio-distribution__row">
-                    <span className="prio-distribution__label">
-                      <StatusPill status={status} />
-                    </span>
-                    <span className="prio-distribution__track" aria-hidden>
-                      <span
-                        className="prio-distribution__bar"
-                        data-status={status}
-                        style={{ width: barWidth(count, total) }}
-                      />
-                    </span>
-                    <span className="prio-distribution__value">{count}</span>
-                  </li>
-                );
-              })}
-            </ul>
+            /* One isometric bar per status, every status always shown —
+               an empty one is a flat tile on the floor, not a gap. Each
+               column is a list item carrying its own spoken label, and its
+               title is the hover read-out. */
+            <div className="prio-isochart__scroll">
+              <ul className="prio-isochart" aria-label="Issues by status">
+                {ISSUE_STATUSES.map((status) => {
+                  const count = statusCounts.get(status) ?? 0;
+                  const label = ISSUE_STATUS_LABEL[status];
+                  const summary = `${label}: ${count} ${count === 1 ? "issue" : "issues"}`;
+                  return (
+                    <li
+                      key={status}
+                      className="prio-isochart__col"
+                      data-status={status}
+                      data-empty={count === 0 ? "true" : undefined}
+                      title={summary}
+                      aria-label={summary}
+                    >
+                      <span className="prio-isochart__plot" aria-hidden>
+                        <span
+                          className="prio-isochart__bar"
+                          style={{
+                            height: `${maxCount === 0 ? 0 : (count / maxCount) * 100}%`,
+                          }}
+                        >
+                          {/* Inside the bar so it rides on its top face,
+                              whatever the bar's height. */}
+                          <span className="prio-isochart__value">
+                            <span className="prio-isochart__dot" />
+                            {count}
+                          </span>
+                        </span>
+                      </span>
+                      <span className="prio-isochart__label" aria-hidden>
+                        {label}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
           )}
         </CardBody>
       </Card>
