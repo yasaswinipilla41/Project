@@ -54,6 +54,13 @@ function describe(entry: ActivityEntry, names: NameLookup): React.ReactNode {
 
   const label = FIELD_LABEL[field] ?? field;
 
+  /* Sprint moves read as "moved this from X to Y" rather than the generic
+     "changed the sprint from X to Y" — the same wording Sprint Planning and
+     the backlog both use for the action, whichever surface it happened on. */
+  if (field === "sprintId") {
+    return `moved this from ${entry.oldValue ?? "Backlog"} to ${entry.newValue ?? "Backlog"}`;
+  }
+
   // Status changes get the real pills so the workflow reads at a glance.
   if (field === "status") {
     const from = entry.oldValue;

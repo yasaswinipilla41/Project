@@ -5,8 +5,13 @@ import {
   ISSUE_LIMIT_CODE,
   ISSUE_LIMIT_REACHED,
   ISSUE_TYPE_LABEL,
+  canCompleteSprint,
   canCreateSprint,
   canCreateWorkItem,
+  canDeleteSprint,
+  canEditSprintDetails,
+  canEditSprintIssues,
+  canStartSprint,
 } from "@/lib/domain";
 import type { DisplayRole, WorkRole } from "@/lib/domain";
 
@@ -569,6 +574,57 @@ export async function assertCanCreateWork(
 export async function assertCanCreateSprint(user: CurrentUser): Promise<void> {
   if (!canCreateSprint(await workRoleOf(user))) {
     throw new AuthorizationError("Only an administrator can create a sprint.");
+  }
+}
+
+/**
+ * Who may rename a sprint or move its dates: every working role, the same as
+ * `canEditSprintDetails` says. `updateSprint` still asserts project access
+ * separately, so this alone never lets somebody reach a sprint outside a
+ * project they belong to.
+ */
+export async function assertCanEditSprint(user: CurrentUser): Promise<void> {
+  if (!canEditSprintDetails(await workRoleOf(user))) {
+    throw new AuthorizationError(
+      "You do not have permission to edit this sprint.",
+    );
+  }
+}
+
+/** Who may delete a sprint outright: an administrator, and nobody else. */
+export async function assertCanDeleteSprint(user: CurrentUser): Promise<void> {
+  if (!canDeleteSprint(await workRoleOf(user))) {
+    throw new AuthorizationError("Only an administrator can delete a sprint.");
+  }
+}
+
+/** Who may start a planned sprint: an administrator, or a Full Stack Developer. */
+export async function assertCanStartSprint(user: CurrentUser): Promise<void> {
+  if (!canStartSprint(await workRoleOf(user))) {
+    throw new AuthorizationError(
+      "Only an administrator or a full stack developer can start a sprint.",
+    );
+  }
+}
+
+/** Who may close a sprint out: an administrator, and nobody else. */
+export async function assertCanCompleteSprint(user: CurrentUser): Promise<void> {
+  if (!canCompleteSprint(await workRoleOf(user))) {
+    throw new AuthorizationError("Only an administrator can complete a sprint.");
+  }
+}
+
+/**
+ * Who may fill a sprint, empty it, or move its issues elsewhere: every
+ * working role. The same rule `addIssuesToSprint`, `removeIssueFromSprint`
+ * and `moveIssueToSprint` all enforce, so the menu that offers this and the
+ * action that accepts it cannot disagree.
+ */
+export async function assertCanEditSprintIssues(user: CurrentUser): Promise<void> {
+  if (!canEditSprintIssues(await workRoleOf(user))) {
+    throw new AuthorizationError(
+      "You do not have permission to change this sprint's issues.",
+    );
   }
 }
 

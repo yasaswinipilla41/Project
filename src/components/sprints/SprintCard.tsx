@@ -9,6 +9,7 @@ import {
   IconCalendar,
   IconCheck,
   IconClose,
+  IconEdit,
   IconPlus,
   IconTrash,
   IconUsers,
@@ -27,6 +28,7 @@ import {
 import type { SprintIssueSummary, SprintView } from "@/server/queries/sprints";
 import { AddSprintIssuesDialog } from "./AddSprintIssuesDialog";
 import { CompleteSprintDialog } from "./CompleteSprintDialog";
+import { MoveIssueMenu } from "./MoveIssueMenu";
 import { SprintFormDialog } from "./SprintFormDialog";
 
 /**
@@ -52,10 +54,13 @@ function SprintIssueRow({
   issue,
   onRemove,
   removing,
+  moveMenu,
 }: {
   issue: SprintIssueSummary;
   onRemove?: () => void;
   removing?: boolean;
+  /** Rendered by the caller — only when this reader may move sprint issues. */
+  moveMenu?: React.ReactNode;
 }) {
   return (
     <li className="prio-sprint__issue">
@@ -81,6 +86,8 @@ function SprintIssueRow({
         <Avatar name={null} size="xs" empty />
       )}
 
+      {moveMenu}
+
       {onRemove ? (
         <button
           type="button"
@@ -103,8 +110,10 @@ export function SprintCard({
   projectKey,
   backlog,
   otherOpenSprints,
-  canManage,
   canEdit,
+  canDelete,
+  canStart,
+  canComplete,
   canEditIssues,
 }: {
   sprint: SprintView;
@@ -114,18 +123,16 @@ export function SprintCard({
   backlog: SprintIssueSummary[];
   /** Other sprints in this project that could receive unfinished work. */
   otherOpenSprints: { id: string; name: string }[];
-  /** May create, delete, start and complete — an administrator. */
-  canManage: boolean;
-  /**
-   * May correct this sprint's name, goal and dates.
-   *
-   * Separate from `canManage` because it is a different question: whether the
-   * sprint exists is an administrator's call, whether its dates are right is
-   * upkeep for whoever is working in it. `updateSprint` authorizes on the
-   * project, and this mirrors that.
-   */
+  /** May rename this sprint or move its dates. */
   canEdit: boolean;
-  /** May put issues into it and take them out — anyone on the project. */
+  /** May delete this sprint outright. */
+  canDelete: boolean;
+  /** May move this sprint from Planned to Active. */
+  canStart: boolean;
+  /** May close this sprint out and say where unfinished work goes. */
+  canComplete: boolean;
+  /** May put issues into it, take them out, or move them elsewhere — every
+   *  working role. */
   canEditIssues: boolean;
 }) {
   const router = useRouter();
@@ -215,51 +222,68 @@ export function SprintCard({
       <CardBody>
         <header className="prio-sprint__head">
           <div className="prio-sprint__identity">
-            <h3 className="prio-sprint__name">
-              {sprint.name}
-              <span className="prio-sprint__status" data-status={sprint.status}>
-                {sprint.status === "ACTIVE"
-                  ? "Active"
-                  : sprint.status === "PLANNED"
-                    ? "Planned"
-                    : "Completed"}
-              </span>
-            </h3>
-            {sprint.goal ? (
-              <p className="prio-sprint__goal">{sprint.goal}</p>
-            ) : null}
-            <p className="prio-sprint__dates">
-              <IconCalendar size={13} />
-              {formatDateCompact(sprint.startDate)} →{" "}
-              {formatDateCompact(sprint.endDate)}
-              {sprint.completedAt ? (
-                <span className="prio-text-muted">
-                  {" "}
-                  · closed {formatDateCompact(sprint.completedAt)}
+            {/* The sprint's own dedicated details page — name, goal and dates
+                are the click target; the actions to the right are not, so a
+                click there is never swallowed by this link. */}
+            <Link
+              href={`/projects/${projectKey.toLowerCase()}/sprints/${sprint.id}`}
+              className="prio-sprint__identitylink"
+            >
+              <h3 className="prio-sprint__name">
+                {sprint.name}
+                <span className="prio-sprint__status" data-status={sprint.status}>
+                  {sprint.status === "ACTIVE"
+                    ? "Active"
+                    : sprint.status === "PLANNED"
+                      ? "Planned"
+                      : "Completed"}
                 </span>
+              </h3>
+              {sprint.goal ? (
+                <p className="prio-sprint__goal">{sprint.goal}</p>
               ) : null}
-            </p>
+              <p className="prio-sprint__dates">
+                <IconCalendar size={13} />
+                {formatDateCompact(sprint.startDate)} →{" "}
+                {formatDateCompact(sprint.endDate)}
+                {sprint.completedAt ? (
+                  <span className="prio-text-muted">
+                    {" "}
+                    · closed {formatDateCompact(sprint.completedAt)}
+                  </span>
+                ) : null}
+              </p>
+            </Link>
           </div>
 
           <div className="prio-sprint__actions">
             {live && canEditIssues ? (
               <Button
-                variant="secondary"
+                variant="ghost"
                 size="sm"
+                iconOnly
+                aria-label="Add issues"
+                title="Add issues"
                 onClick={() => setAdding(true)}
               >
-                <IconPlus size={13} />
-                Add issues
+                <IconPlus size={18} />
               </Button>
             ) : null}
 
             {live && canEdit ? (
-              <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
-                Edit
+              <Button
+                variant="ghost"
+                size="sm"
+                iconOnly
+                aria-label="Edit"
+                title="Edit"
+                onClick={() => setEditing(true)}
+              >
+                <IconEdit size={18} />
               </Button>
             ) : null}
 
-            {sprint.status === "PLANNED" && canManage ? (
+            {sprint.status === "PLANNED" && canStart ? (
               <Button
                 variant="brand"
                 size="sm"
@@ -270,25 +294,28 @@ export function SprintCard({
               </Button>
             ) : null}
 
-            {sprint.status === "ACTIVE" && canManage ? (
+            {sprint.status === "ACTIVE" && canComplete ? (
               <Button variant="brand" size="sm" onClick={() => setClosing(true)}>
                 <IconCheck size={13} />
                 Complete sprint
               </Button>
             ) : null}
 
-            {/* Deleting is an administrator's, like the rest of this row, and
-                `deleteSprint` says so again on the server. Offered whatever
-                the sprint's state: a plan that was never run and a sprint that
-                was are both things an administrator may clear away. */}
-            {canManage ? (
+            {/* Deleting is an administrator's, like editing and completing,
+                and `deleteSprint` says so again on the server. Offered
+                whatever the sprint's state: a plan that was never run and a
+                sprint that was are both things an administrator may clear
+                away. */}
+            {canDelete ? (
               <Button
-                variant="danger-outline"
+                variant="danger"
                 size="sm"
+                iconOnly
+                aria-label="Delete sprint"
+                title="Delete sprint"
                 onClick={() => setDeleting(true)}
               >
                 <IconTrash size={13} />
-                Delete sprint
               </Button>
             ) : null}
           </div>
@@ -342,7 +369,7 @@ export function SprintCard({
               : ""}
           </p>
         ) : sprint.status === "ACTIVE" ? (
-          <div className="prio-sprint__board">
+          <div className="prio-sprint__board prio-scroll">
             {columns.map(({ column, issues }) => (
               <section key={column} className="prio-sprint__column">
                 <h4 className="prio-sprint__columnhead">
@@ -360,6 +387,15 @@ export function SprintCard({
                           : undefined
                       }
                       removing={removingId === issue.id}
+                      moveMenu={
+                        canEditIssues ? (
+                          <MoveIssueMenu
+                            issueId={issue.id}
+                            issueKey={issue.key}
+                            otherOpenSprints={otherOpenSprints}
+                          />
+                        ) : undefined
+                      }
                     />
                   ))}
                 </ul>
@@ -376,6 +412,15 @@ export function SprintCard({
                   canEditIssues ? () => void remove(issue.id, issue.key) : undefined
                 }
                 removing={removingId === issue.id}
+                moveMenu={
+                  canEditIssues ? (
+                    <MoveIssueMenu
+                      issueId={issue.id}
+                      issueKey={issue.key}
+                      otherOpenSprints={otherOpenSprints}
+                    />
+                  ) : undefined
+                }
               />
             ))}
           </ul>

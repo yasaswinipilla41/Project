@@ -650,6 +650,71 @@ export function canCreateSprint(role: WorkRole): boolean {
   return role === "ADMIN";
 }
 
+/**
+ * Who may change a sprint's own configuration — its name, goal or dates.
+ *
+ * Every working role, the same as filling the sprint is: correcting a wrong
+ * date or goal on a sprint people are already working in is upkeep of work in
+ * progress, not the team-wide commitment that creating, starting, completing
+ * or deleting one is — those stay with an administrator (starting also with a
+ * Full Stack Developer). Project access is still asserted separately by
+ * `updateSprint`, so this only narrows who may act once they are in the
+ * project, never widens where.
+ */
+export function canEditSprintDetails(role: WorkRole): boolean {
+  return (
+    role === "ADMIN" ||
+    role === "DEVELOPER" ||
+    role === "QA" ||
+    role === "FULLSTACK"
+  );
+}
+
+/** Who may delete a sprint outright. An administrator's call, like the rest
+ * of its lifecycle. */
+export function canDeleteSprint(role: WorkRole): boolean {
+  return role === "ADMIN";
+}
+
+/**
+ * Who may close a sprint out and decide where its unfinished work goes.
+ *
+ * Kept with the administrator: completing a sprint writes its permanent
+ * record and moves every remaining issue somewhere, which is the same kind of
+ * team-wide decision creating one is.
+ */
+export function canCompleteSprint(role: WorkRole): boolean {
+  return role === "ADMIN";
+}
+
+/**
+ * Who may start a sprint that has already been planned.
+ *
+ * An administrator always may. A Full Stack Developer may too — building and
+ * verifying both, beginning the fortnight the team already planned sits
+ * within what either half of that job needs, unlike changing the plan itself
+ * or closing its record out.
+ */
+export function canStartSprint(role: WorkRole): boolean {
+  return role === "ADMIN" || role === "FULLSTACK";
+}
+
+/**
+ * Who may put issues into a sprint, take them out, or move them to another
+ * sprint or the backlog.
+ *
+ * Every working role: filling a sprint is ordinary project work, not the
+ * team-wide commitment that creating, editing or closing one out is.
+ */
+export function canEditSprintIssues(role: WorkRole): boolean {
+  return (
+    role === "ADMIN" ||
+    role === "DEVELOPER" ||
+    role === "QA" ||
+    role === "FULLSTACK"
+  );
+}
+
 // -------------------------------------------------------- issue capacity
 
 /**
@@ -744,6 +809,7 @@ export const FIELD_LABEL: Record<string, string> = {
   reporterId: "reporter",
   dueDate: "due date",
   parentId: "parent issue",
+  sprintId: "sprint",
   type: "issue type",
   labels: "labels",
   testResult: "test result",

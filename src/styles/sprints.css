@@ -72,6 +72,31 @@
   flex: 1;
 }
 
+/* The click target for this sprint's own details page — block so its
+   children (name, goal, dates) keep exactly the layout and spacing they had
+   as plain elements, and no visual change beyond a hover/focus cue. */
+.prio-sprint__identitylink {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  border-radius: var(--prio-radius-sm);
+}
+
+.prio-sprint__identitylink:hover {
+  color: inherit;
+  text-decoration: none;
+}
+
+.prio-sprint__identitylink:hover .prio-sprint__name {
+  text-decoration: underline;
+}
+
+.prio-sprint__identitylink:focus-visible {
+  outline: none;
+  box-shadow: var(--prio-shadow-focus);
+}
+
 .prio-sprint__name {
   display: flex;
   align-items: center;
@@ -215,18 +240,28 @@
 
 /*
  * The active sprint's board. Bootstrap's grid does not own this: the number of
- * columns follows how many statuses the sprint's work is actually in, so it is
- * an auto-fit grid that reflows on its own rather than a fixed set of spans.
+ * columns follows how many statuses the sprint's work is actually in.
+ *
+ * A row rather than a grid that reflows: up to about four columns share the
+ * available width evenly, the same as the old auto-fit grid did, but a fifth
+ * one no longer drops to a second row — it sits past the edge and the row
+ * scrolls sideways to reach it, so the card's own height never grows with the
+ * number of statuses in play. The scrollbar is the block's own, never the
+ * page's: `overflow-x` is set here and nowhere higher up.
  */
 .prio-sprint__board {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  display: flex;
+  flex-wrap: nowrap;
   gap: var(--prio-space-4);
   margin-top: var(--prio-space-3);
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: var(--prio-space-2);
 }
 
 .prio-sprint__column {
-  min-width: 0;
+  flex: 1 1 240px;
+  min-width: 240px;
   padding: var(--prio-space-3);
   border-radius: var(--prio-radius-md);
   background: var(--prio-bg-subtle);

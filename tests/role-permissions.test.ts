@@ -508,13 +508,12 @@ describe("sprints", () => {
 
     it(`can be edited by ${who}, who works in the project`, async () => {
       /*
-       * Editing is deliberately not an administrator's alone.
-       *
-       * Whether the sprint exists is theirs — creating and deleting are both
-       * refused above and in `sprint-delete.test.ts`. Correcting the name, goal
-       * or dates of a sprint people are already working in is upkeep of work in
-       * progress, so `updateSprint` asks the project's own access rule instead,
-       * and everyone in this loop is on Engineering.
+       * Editing a sprint's own configuration is every working role's now —
+       * the same as filling it is. Only whether the sprint exists (create,
+       * delete) and whether it has started or closed (start, complete) stay
+       * with an administrator. `canEditSprintDetails` in `domain.ts` is the
+       * one table this and `updateSprint` both read, so the icon offered in
+       * the sprint block and the write that accepts it can never disagree.
        */
       const sprintId = createdSprintIds[0];
       expect(sprintId, "the admin sprint above exists").toBeTruthy();
@@ -542,44 +541,6 @@ describe("sprints", () => {
       expect(after.status).toBe("PLANNED");
     });
   }
-
-  it("cannot be edited by somebody outside its project", async () => {
-    /*
-     * The rule is the project's access check, not "not an administrator" — so
-     * it still refuses anybody who could not open the project at all.
-     *
-     * Testing is the administrator's own project and the developer is not in
-     * it, the same pairing `sprints.test.ts` uses for this.
-     */
-    await actAs(ADMIN);
-    const testing = await projectByKey("TES");
-    const made = await createSprint({
-      projectId: testing.id,
-      name: `Outsider fixture ${Date.now()}`,
-      goal: "fixture",
-      startDate: new Date().toISOString(),
-      endDate: new Date(Date.now() + 7 * 864e5).toISOString(),
-    });
-    expect(made.ok, made.ok ? "" : made.error).toBe(true);
-    if (!made.ok) return;
-    createdSprintIds.push(made.data.id);
-
-    await actAs(DEVELOPER);
-    const result = await updateSprint({
-      sprintId: made.data.id,
-      name: "Renamed by an outsider",
-      goal: "",
-      startDate: new Date().toISOString(),
-      endDate: new Date(Date.now() + 7 * 864e5).toISOString(),
-    });
-    expect(result.ok).toBe(false);
-
-    const after = await prisma.sprint.findUniqueOrThrow({
-      where: { id: made.data.id },
-      select: { name: true },
-    });
-    expect(after.name).not.toBe("Renamed by an outsider");
-  });
 
   it("stay readable to everybody who can open the project", async () => {
     const sprintId = createdSprintIds[0]!;
