@@ -4,6 +4,9 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useState, useTransition, type FormEvent } from "react";
 import { Button } from "@/components/ui/primitives";
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/Menu";
+import { ColumnPicker } from "@/components/issues/ColumnPicker";
+import { ImportIssuesDialog } from "@/components/issues/ImportIssuesDialog";
+import type { TableColumnId } from "@/lib/tableColumns";
 import { useToast } from "@/components/ui/Toast";
 import { ShareSheetDialog } from "@/components/issues/ShareSheetDialog";
 import {
@@ -16,6 +19,7 @@ import {
   IconChevronDown,
   IconClose,
   IconDownload,
+  IconUpload,
   IconFilter,
   IconSearch,
   IconShare,
@@ -69,6 +73,8 @@ export interface IssueFiltersProps {
   total: number;
   /** Shows the Export Excel button — only the main /issues surface opts in. */
   enableExport?: boolean;
+  /** Offers Import beside Export. Only the global work item list sets it. */
+  enableImport?: boolean;
   /**
    * Shows the Share button — only the main /issues surface opts in, and even
    * then only for an administrator. Sharing manages who else in the
@@ -77,6 +83,12 @@ export interface IssueFiltersProps {
    */
   enableShare?: boolean;
   isAdmin?: boolean;
+  /**
+   * The columns the page rendered the table with. Supplied only by surfaces
+   * that offer the chooser, so the other three tables that share these filters
+   * are unchanged.
+   */
+  columns?: readonly TableColumnId[];
 }
 
 /**
@@ -123,6 +135,19 @@ function FilterMenu({
           {...props}
         >
           {label}
+          {/*
+            * How many values this filter is holding, in the same chip the Flow
+            * Board uses — same element, same class, same position between the
+            * label and the chevron — so the two toolbars read identically
+            * rather than merely similarly.
+            *
+            * `selected` is the filter's own state, so the number is the actual
+            * count of chosen values and changes with them; there is nothing to
+            * keep in step.
+            */}
+          {selected.length > 0 ? (
+            <span className="prio-filterchip__count">{selected.length}</span>
+          ) : null}
           <IconChevronDown size={12} />
         </button>
       )}
@@ -152,8 +177,10 @@ export function IssueFilters({
   currentUserId,
   total,
   enableExport = false,
+  enableImport = false,
   enableShare = false,
   isAdmin = false,
+  columns,
 }: IssueFiltersProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -162,6 +189,7 @@ export function IssueFilters({
   const [query, setQuery] = useState(params.get("q") ?? "");
   const { toast } = useToast();
   const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
 
   const values = useCallback(
@@ -543,6 +571,10 @@ export function IssueFilters({
         ) : null}
 
         <div className="prio-filters__trailing">
+          {/* Beside the result count and the export it complements: all three
+              are about the shape of the list rather than its contents. */}
+          {columns ? <ColumnPicker visible={columns} /> : null}
+
           <span className="prio-filters__total">
             {pending ? "Loading…" : `${total} ${total === 1 ? "result" : "results"}`}
           </span>
@@ -556,6 +588,17 @@ export function IssueFilters({
             >
               <IconDownload size={13} />
               {exporting ? "Exporting…" : "Export Excel"}
+            </Button>
+          ) : null}
+
+          {enableImport ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setImporting(true)}
+            >
+              <IconUpload size={13} />
+              Import
             </Button>
           ) : null}
 
@@ -574,6 +617,10 @@ export function IssueFilters({
 
       {enableShare && isAdmin ? (
         <ShareSheetDialog open={shareOpen} onClose={() => setShareOpen(false)} />
+      ) : null}
+
+      {importing ? (
+        <ImportIssuesDialog onClose={() => setImporting(false)} />
       ) : null}
     </div>
   );

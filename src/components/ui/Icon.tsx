@@ -321,6 +321,14 @@ export const IconDownload = (p: IconProps) => (
   </Svg>
 );
 
+/** The download glyph with its arrow reversed — into Prio rather than out. */
+export const IconUpload = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M8 9.8V2.4M4.8 5.4 8 2.4l3.2 3" />
+    <path d="M2.6 11.4v1.2a1.6 1.6 0 0 0 1.6 1.6h7.6a1.6 1.6 0 0 0 1.6-1.6v-1.2" />
+  </Svg>
+);
+
 export const IconImage = (p: IconProps) => (
   <Svg {...p}>
     <rect x="2.4" y="2.9" width="11.2" height="10.2" rx="1.4" />
@@ -556,5 +564,131 @@ export const IconPlay = (p: IconProps) => (
 export const IconStopSquare = (p: IconProps) => (
   <Svg {...p}>
     <rect x="3.6" y="3.6" width="8.8" height="8.8" rx="1.4" />
+  </Svg>
+);
+
+/* ------------------------------------------------------ annotation tools */
+
+/*
+ * The screenshot editor's toolbar.
+ *
+ * Each names the mark it makes rather than the verb for making it, because
+ * that is what somebody scanning a toolbar looks for — a rectangle, an arrow,
+ * the letter A. The buttons keep their wording as an `aria-label` and a
+ * tooltip, so the accessible name is unchanged and only the visible label
+ * becomes a picture.
+ */
+
+export const IconPen = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M11.4 2.3a1.55 1.55 0 0 1 2.2 2.2L5.4 12.7l-3 .8.8-3Z" />
+    <path d="M10.3 3.4 12.6 5.7" />
+  </Svg>
+);
+
+export const IconHighlighter = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M6.2 10.6 4 12.8l-1.4-1.4 2.2-2.2" />
+    <path d="M12.1 2.5a1.4 1.4 0 0 1 2 2L8 10.6 5.4 8Z" />
+    <path d="M2.2 14.2h5" />
+  </Svg>
+);
+
+export const IconRectangle = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="2.2" y="3.6" width="11.6" height="8.8" rx="1.1" />
+  </Svg>
+);
+
+export const IconOval = (p: IconProps) => (
+  <Svg {...p}>
+    <ellipse cx="8" cy="8" rx="5.9" ry="4.4" />
+  </Svg>
+);
+
+export const IconArrowTool = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M3 13 13 3" />
+    <path d="M8.2 3H13v4.8" />
+  </Svg>
+);
+
+export const IconLineTool = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M2.8 13.2 13.2 2.8" />
+  </Svg>
+);
+
+/**
+ * The Text tool, as the letter it writes.
+ *
+ * Drawn rather than typed: a real glyph would follow the page font and change
+ * shape between themes and platforms, where the rest of the set is geometry on
+ * a 16×16 grid. Two strokes and a crossbar read as an A at any size.
+ */
+export const IconTextA = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M3.4 13.2 8 2.8l4.6 10.4" />
+    <path d="M5.2 9.6h5.6" />
+  </Svg>
+);
+
+export const IconBlur = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="8" cy="8" r="5.6" />
+    <path d="M3.4 5.6h9.2M2.4 8h11.2M3.4 10.4h9.2" opacity="0.45" />
+  </Svg>
+);
+
+export const IconEraser = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M8.9 3.3 13 7.4a1.2 1.2 0 0 1 0 1.7l-3.6 3.6H6.2L3 9.5a1.2 1.2 0 0 1 0-1.7Z" />
+    <path d="M6.6 5.6 10.7 9.7" />
+    <path d="M8.4 12.7h5.4" />
+  </Svg>
+);
+
+export const IconCrop = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4.4 1.6v10h10" />
+    <path d="M1.6 4.4h10v10" />
+  </Svg>
+);
+
+export const IconUndo = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M2.6 7.4h7.1a3.5 3.5 0 0 1 0 7H6.4" />
+    <path d="M5.4 4.2 2.2 7.4l3.2 3.2" />
+  </Svg>
+);
+
+export const IconRedo = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M13.4 7.4H6.3a3.5 3.5 0 0 0 0 7h3.3" />
+    <path d="M10.6 4.2l3.2 3.2-3.2 3.2" />
+  </Svg>
+);
+
+export const IconZoomIn = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="7.1" cy="7.1" r="4.5" />
+    <path d="M10.4 10.4 14 14" />
+    <path d="M7.1 5.3v3.6M5.3 7.1h3.6" />
+  </Svg>
+);
+
+export const IconZoomOut = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="7.1" cy="7.1" r="4.5" />
+    <path d="M10.4 10.4 14 14" />
+    <path d="M5.3 7.1h3.6" />
+  </Svg>
+);
+
+/** Fit to the frame: four corners pulling outward to the edges. */
+export const IconFit = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="1.8" y="2.8" width="12.4" height="10.4" rx="1.2" />
+    <path d="M5.2 6.2h1.9V8.1M10.8 9.8H8.9V7.9" />
   </Svg>
 );

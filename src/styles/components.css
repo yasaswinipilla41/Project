@@ -980,6 +980,28 @@ a.prio-key:hover {
   pointer-events: auto;
   animation: none;
   box-shadow: var(--prio-shadow-xl);
+  /*
+   * Marked as something put aside rather than something closed.
+   *
+   * Collapsed to its title bar and sitting at the foot of the page, this
+   * otherwise reads as a stray strip of chrome — and a half-written work item
+   * that looks like chrome is one somebody abandons. The brand edge and tint
+   * say it is Prio's, and still waiting; the ring lifts it off whatever it is
+   * resting over. Restrained on purpose: it is a held draft, not an alert.
+   */
+  border-color: var(--prio-primary-400);
+  border-left: 3px solid var(--prio-primary-600);
+  background: var(--prio-primary-50, var(--prio-bg-surface-raised));
+  box-shadow:
+    var(--prio-shadow-xl),
+    0 0 0 1px var(--prio-primary-400);
+}
+
+/* The title carries the same weight it would in an open dialog, so the name of
+   what is waiting is the first thing read rather than the window controls. */
+.prio-dialog[data-minimized] .prio-dialog__title {
+  color: var(--prio-primary-700);
+  font-weight: 600;
 }
 
 .prio-dialog[data-minimized] .prio-dialog__header {
@@ -2788,17 +2810,35 @@ a.prio-stat:focus-visible {
   border-radius: var(--prio-radius-xs);
 }
 
-/* A completed iteration in the list's Iteration filter: its name, then a
-   green check — the Done status's own green — read from the sprint's real
-   status. The row's own selected tick and highlight are untouched. */
-.prio-filter__iteration {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--prio-space-2);
-  min-width: 0;
+/*
+ * What to correct in a spreadsheet that would not import.
+ *
+ * A scrolling list rather than a dialog that grows: fifty rows of corrections
+ * must not push the Import button off the screen. Monospaced row numbers so a
+ * column of them reads straight down, which is how somebody checks them off
+ * against the spreadsheet beside them.
+ */
+.prio-importproblems {
+  margin: 0;
+  padding: var(--prio-space-2) var(--prio-space-3);
+  max-height: 220px;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-sm);
+  background: var(--prio-bg-subtle);
+  font-size: var(--prio-text-xs);
+  line-height: 1.6;
+  color: var(--prio-text-secondary);
 }
 
-.prio-filter__iteration-done {
-  flex-shrink: 0;
-  color: var(--prio-status-done-dot);
+.prio-importproblems li + li {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--prio-border-subtle);
+}
+
+.prio-importproblems strong {
+  color: var(--prio-red-600);
+  font-variant-numeric: tabular-nums;
 }
