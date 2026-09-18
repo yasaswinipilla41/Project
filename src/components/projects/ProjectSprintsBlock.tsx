@@ -22,9 +22,16 @@ const STATUS_LABEL: Record<SprintView["status"], string> = {
 export function ProjectSprintsBlock({
   sprints,
   projectName,
+  sprintHref = (sprintId) => `/sprints/${sprintId}`,
 }: {
   sprints: SprintView[];
   projectName: string;
+  /**
+   * Where a row leads. Defaults to the standalone `/sprints/:id` page the
+   * Projects directory has always used; the project's own Iterations /
+   * Sprints page keeps the reader inside the project instead.
+   */
+  sprintHref?: (sprintId: string) => string;
 }) {
   if (sprints.length === 0) {
     return (
@@ -57,7 +64,7 @@ export function ProjectSprintsBlock({
                 </span>
               </span>
               <Link
-                href={`/sprints/${sprint.id}`}
+                href={sprintHref(sprint.id)}
                 className="prio-btn prio-btn--ghost prio-btn--sm"
               >
                 View

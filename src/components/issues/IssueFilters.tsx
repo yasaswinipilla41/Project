@@ -15,6 +15,7 @@ import {
   StatusPill,
 } from "@/components/ui/Indicators";
 import {
+  IconCheck,
   IconChevronDown,
   IconClose,
   IconDownload,
@@ -42,12 +43,23 @@ export interface FilterOption {
   id: string;
   name: string;
   color?: string;
+  /** A sprint that has been completed — the Iteration dropdown marks it with
+   *  a check. Read from the sprint's own status; absent everywhere else. */
+  completed?: boolean;
 }
 
 export interface IssueFiltersProps {
   projects: FilterOption[];
   people: FilterOption[];
   labels: FilterOption[];
+  /**
+   * The sprints this surface can filter by, already named for it — a
+   * project's own List tab passes its own sprints by name, a cross-project
+   * surface prefixes the project key, because two projects may each have a
+   * "Sprint 4". Absent means the chip is not offered at all, which is how
+   * Label already behaves when a surface has none.
+   */
+  sprints?: FilterOption[];
   /**
    * Hides the Project dropdown on a surface that is already one project's —
    * a project's own List tab, where the route fixes the project and the
@@ -170,6 +182,7 @@ export function IssueFilters({
   projects,
   people,
   labels,
+  sprints = [],
   showProjectFilter = true,
   showTypeFilter = true,
   currentUserId,
@@ -274,6 +287,7 @@ export function IssueFilters({
     values("assignee").length +
     values("reporter").length +
     values("label").length +
+    values("sprint").length +
     (params.get("resolution") ? 1 : 0) +
     (params.get("overdue") ? 1 : 0) +
     /* Arrived at from the dashboard's "completed this month". It has no chip of
@@ -480,6 +494,36 @@ export function IssueFilters({
                   />
                   {l.name}
                 </span>
+              ),
+            }))}
+          />
+        ) : null}
+
+        {/* Named "Iteration", and offering only real iterations: the
+            "Backlog (no sprint)" entry is no longer listed. The parameter is
+            still `sprint`, and the server still reads `"none"` as work in no
+            sprint, so an older link that carries it keeps working. A
+            completed iteration carries a green check, from its real status. */}
+        {sprints.length > 0 ? (
+          <FilterMenu
+            label="Iteration"
+            paramKey="sprint"
+            selected={values("sprint")}
+            onToggle={toggle}
+            options={sprints.map((s) => ({
+              value: s.id,
+              node: s.completed ? (
+                <span className="prio-filter__iteration">
+                  {s.name}
+                  <IconCheck
+                    size={13}
+                    strokeWidth={2.25}
+                    className="prio-filter__iteration-done"
+                  />
+                  <span className="prio-visually-hidden"> (completed)</span>
+                </span>
+              ) : (
+                s.name
               ),
             }))}
           />

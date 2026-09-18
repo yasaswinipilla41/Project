@@ -102,6 +102,12 @@ export default async function BugsPage({
         projects={options.projects}
         people={options.people}
         labels={options.labels}
+        /* Cross-project, so each sprint carries its project's key — as on
+           /issues, for the same reason. */
+        sprints={options.sprints.map((sprint) => ({
+          id: sprint.id,
+          name: `${sprint.project.key} · ${sprint.name}`,
+        }))}
         showTypeFilter={false}
         currentUserId={user.id}
         total={result.total}

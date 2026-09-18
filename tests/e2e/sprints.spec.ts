@@ -14,6 +14,7 @@ import { MEMBER_STATE } from "./support";
 
 const created: string[] = [];
 const createdIssues: string[] = [];
+const createdProjects: string[] = [];
 
 test.afterAll(async () => {
   if (created.length > 0) {
@@ -22,7 +23,37 @@ test.afterAll(async () => {
   if (createdIssues.length > 0) {
     await prisma.issue.deleteMany({ where: { id: { in: createdIssues } } });
   }
+  if (createdProjects.length > 0) {
+    await prisma.project.deleteMany({ where: { id: { in: createdProjects } } });
+  }
 });
+
+/**
+ * A project of this spec's own, with the administrator in it.
+ *
+ * "One sprint runs at a time in a project" is a real rule, so a test that has
+ * to *start* a sprint cannot share ENG with whatever sprint somebody using
+ * the application already has running there — it would be asserting the rule
+ * against state it inherited rather than state it set up.
+ */
+async function makeIsolatedProject(): Promise<string> {
+  const admin = await prisma.user.findFirstOrThrow({
+    where: { role: "ADMIN" },
+    select: { id: true },
+  });
+  const key = `LC${Date.now().toString(36).toUpperCase()}`.slice(0, 10);
+  const project = await prisma.project.create({
+    data: {
+      key,
+      name: `Lifecycle fixture ${key}`,
+      createdById: admin.id,
+      members: { create: { userId: admin.id } },
+    },
+    select: { id: true },
+  });
+  createdProjects.push(project.id);
+  return key;
+}
 
 /** A unique name, so a re-run never collides with the last one's rows. */
 function sprintName(label: string) {
@@ -108,10 +139,11 @@ async function createSprintThroughUi(page: Page, projectKey: string, name: strin
 test.describe("The sprint workflow", () => {
   test("runs from creating a sprint to completing it", async ({ page }) => {
     const name = sprintName("lifecycle");
-    const finished = await seedIssue("ENG", `Sprint work finished ${Date.now()}`);
-    const carried = await seedIssue("ENG", `Sprint work carried ${Date.now()}`);
+    const key = await makeIsolatedProject();
+    const finished = await seedIssue(key, `Sprint work finished ${Date.now()}`);
+    const carried = await seedIssue(key, `Sprint work carried ${Date.now()}`);
 
-    await createSprintThroughUi(page, "ENG", name);
+    await createSprintThroughUi(page, key, name);
     const card = sprintCard(page, name);
 
     // Planned, with the goal and dates it was given.
@@ -146,8 +178,14 @@ test.describe("The sprint workflow", () => {
     await picker.getByRole("button", { name: /Add \d+ to sprint/ }).click();
     await expect(picker).toBeHidden();
 
-    await expect(card.getByText(finished.key)).toBeVisible();
-    await expect(card.getByText(carried.key)).toBeVisible();
+    /* Both are in the sprint, but the block is a summary: its issues are
+       listed on the sprint's own page, not drawn inside the block. */
+    expect(
+      await prisma.issue.count({
+        where: { id: { in: [finished.id, carried.id] }, sprintId: { not: null } },
+      }),
+    ).toBe(2);
+    await expect(card.getByText(finished.key)).toHaveCount(0);
 
     // The summary counts real issues, and nothing is finished yet.
     await expect(card.locator(".prio-sprint__stat").first()).toContainText("2");
@@ -159,9 +197,8 @@ test.describe("The sprint workflow", () => {
       timeout: 15_000,
     });
 
-    // Active: the work is grouped into columns by its current status.
-    await expect(card.locator(".prio-sprint__board")).toBeVisible();
-    await expect(card.locator(".prio-sprint__column").first()).toBeVisible();
+    // Active, and still a summary: no issue board inside the block.
+    await expect(card.locator(".prio-sprint__board")).toHaveCount(0);
 
     // -------------------------------------- finish one, through the issue
     /* Moved with the ordinary status workflow, so this proves the sprint
@@ -208,9 +245,13 @@ test.describe("The sprint workflow", () => {
       }),
     ).toMatchObject({ sprintId: null });
 
-    await expect(done.locator(".prio-sprint__record")).toContainText(finished.key);
-    await expect(done.locator(".prio-sprint__record")).toContainText(carried.key);
     await expect(done).toContainText("50%");
+
+    // The record is read on the sprint's own page, which still names both.
+    await done.locator(".prio-sprint__identitylink").click();
+    await expect(page.getByText("Issues in this sprint")).toBeVisible();
+    await expect(page.getByText(finished.key)).toBeVisible();
+    await expect(page.getByText(carried.key)).toBeVisible();
   });
 
   test("offers only this project's backlog in the issue picker", async ({
@@ -235,72 +276,6 @@ test.describe("The sprint workflow", () => {
     // Searching for it by key finds nothing either.
     await picker.getByLabel("Search the backlog").fill(theirs.key);
     await expect(picker.locator(".prio-sprintpicker__row")).toHaveCount(0);
-  });
-
-  test("moves an issue to another sprint, then to the backlog", async ({ page }) => {
-    const from = sprintName("move-from");
-    const to = sprintName("move-to");
-    const issue = await seedIssue("ENG", `Moved issue ${Date.now()}`);
-
-    await createSprintThroughUi(page, "ENG", from);
-    await createSprintThroughUi(page, "ENG", to);
-
-    const source = sprintCard(page, from);
-    await source.getByRole("button", { name: "Add issues" }).click();
-    const picker = page.getByRole("dialog");
-    await picker
-      .locator(".prio-sprintpicker__row", { hasText: issue.key })
-      .getByRole("checkbox")
-      .check();
-    await picker.getByRole("button", { name: /Add \d+ to sprint/ }).click();
-    await expect(picker).toBeHidden();
-
-    const row = source.locator(".prio-sprint__issue", { hasText: issue.key });
-    await row
-      .getByRole("button", { name: new RegExp(`Move ${issue.key}`) })
-      .click();
-
-    const menu = page.getByRole("menu", { name: new RegExp(`Move ${issue.key}`) });
-    await expect(menu).toBeVisible();
-    await menu.getByRole("menuitem", { name: to }).click();
-
-    await expect(
-      page.locator(".prio-toast", { hasText: new RegExp(`moved to ${to}`) }),
-    ).toBeVisible();
-    const destinationSprint = await prisma.sprint.findFirstOrThrow({
-      where: { name: to },
-      select: { id: true },
-    });
-    expect(
-      await prisma.issue.findUniqueOrThrow({
-        where: { id: issue.id },
-        select: { sprintId: true },
-      }),
-    ).toMatchObject({ sprintId: destinationSprint.id });
-
-    // Now send it to the backlog from its new sprint.
-    await page.reload();
-    const destination = sprintCard(page, to);
-    const rowAtDestination = destination.locator(".prio-sprint__issue", {
-      hasText: issue.key,
-    });
-    await rowAtDestination
-      .getByRole("button", { name: new RegExp(`Move ${issue.key}`) })
-      .click();
-    const backlogMenu = page.getByRole("menu", {
-      name: new RegExp(`Move ${issue.key}`),
-    });
-    await backlogMenu.getByRole("menuitem", { name: "Backlog" }).click();
-
-    await expect(
-      page.locator(".prio-toast", { hasText: /moved to Backlog/ }),
-    ).toBeVisible();
-    expect(
-      await prisma.issue.findUniqueOrThrow({
-        where: { id: issue.id },
-        select: { sprintId: true },
-      }),
-    ).toMatchObject({ sprintId: null });
   });
 
   test("is reachable from the project's tab strip and the Create menu", async ({
@@ -468,5 +443,159 @@ test.describe("Sprints as a member of the project", () => {
         select: { sprintId: true },
       }),
     ).toMatchObject({ sprintId: sprint.id });
+  });
+});
+
+test.describe("A sprint's own page", () => {
+  /**
+   * A sprint in a project of its own, holding issues in known statuses, so
+   * the blocks and the percentage have exact expectations.
+   */
+  async function seedSprintWith(statuses: ("TODO" | "IN_PROGRESS" | "DONE")[]) {
+    const key = await makeIsolatedProject();
+    const project = await prisma.project.findUniqueOrThrow({
+      where: { key },
+      select: { id: true },
+    });
+    const admin = await prisma.user.findFirstOrThrow({
+      where: { role: "ADMIN" },
+      select: { id: true },
+    });
+    const sprint = await prisma.sprint.create({
+      data: {
+        name: sprintName("blocks"),
+        startDate: new Date(),
+        endDate: new Date(Date.now() + 12 * 86_400_000),
+        projectId: project.id,
+        createdById: admin.id,
+      },
+      select: { id: true, name: true },
+    });
+    created.push(sprint.id);
+
+    const issues = [];
+    for (const [index, status] of statuses.entries()) {
+      const issue = await seedIssue(key, `Block issue ${index} ${Date.now()}`);
+      await prisma.issue.update({
+        where: { id: issue.id },
+        data: { status, sprintId: sprint.id },
+      });
+      issues.push({ ...issue, status });
+    }
+    return { key: key.toLowerCase(), sprint, issues };
+  }
+
+  test("groups its issues by status, showing only statuses that hold one", async ({
+    page,
+  }) => {
+    const { key, sprint, issues } = await seedSprintWith([
+      "TODO",
+      "TODO",
+      "IN_PROGRESS",
+    ]);
+    const [newA, newB, inProgress] = issues;
+
+    await page.goto(`/projects/${key}/sprints`);
+    await sprintCard(page, sprint.name)
+      .locator(".prio-sprint__identitylink")
+      .click();
+    await expect(page.getByText("Issues in this sprint")).toBeVisible();
+
+    const newBlock = page.getByRole("region", { name: /^New,/ });
+    const progressBlock = page.getByRole("region", { name: /^In Progress,/ });
+
+    await expect(newBlock.getByText(newA!.key)).toBeVisible();
+    await expect(newBlock.getByText(newB!.key)).toBeVisible();
+    await expect(progressBlock.getByText(inProgress!.key)).toBeVisible();
+    // Empty statuses draw no block.
+    await expect(page.getByRole("region", { name: /^Done,/ })).toHaveCount(0);
+    await expect(page.getByRole("region", { name: /^Backlog,/ })).toHaveCount(0);
+
+    // ------------------------------- a status change moves the card
+    const card = newBlock.locator(".prio-board__card", { hasText: newA!.key });
+    await card.locator(".prio-board__card-statustrigger").click();
+    await page
+      .getByRole("menu", { name: `Change status of ${newA!.key}` })
+      .getByRole("menuitemradio", { name: "In Progress", exact: true })
+      .click();
+
+    await expect(progressBlock.getByText(newA!.key)).toBeVisible();
+    await expect(newBlock.getByText(newA!.key)).toHaveCount(0);
+
+    // And it is the server's answer, not only the screen's.
+    await page.reload();
+    await expect(
+      page.getByRole("region", { name: /^In Progress,/ }).getByText(newA!.key),
+    ).toBeVisible();
+  });
+
+  test("shows the completion percentage beside the progress bar", async ({
+    page,
+  }) => {
+    // 4 issues, 1 Done: 25%, beside the bar on the list and on the page.
+    const { key, sprint } = await seedSprintWith([
+      "DONE",
+      "TODO",
+      "TODO",
+      "IN_PROGRESS",
+    ]);
+
+    await page.goto(`/projects/${key}/sprints`);
+    const card = sprintCard(page, sprint.name);
+    await expect(card.locator(".prio-sprint__progresslabel")).toHaveText("25%");
+
+    await card.locator(".prio-sprint__identitylink").click();
+    await expect(page.locator(".prio-sprint__progresslabel")).toHaveText("25%");
+  });
+
+  test("opens Iterations / Sprints inside the project, and comes back to it", async ({
+    page,
+  }) => {
+    const { key, sprint } = await seedSprintWith(["TODO"]);
+
+    await page.goto(`/projects/${key}/sprints`);
+    await page.getByRole("link", { name: "Iterations / Sprints" }).click();
+    await expect(page).toHaveURL(new RegExp(`/projects/${key}/sprints/iterations$`));
+    // Still inside the project, with Sprints the active tab.
+    await expect(
+      page.locator(".prio-projectnav__tab", { hasText: "Sprints" }),
+    ).toHaveAttribute("aria-current", "page");
+
+    // A row opens the sprint's page in this project, and Back returns here.
+    await page.getByRole("link", { name: "View" }).first().click();
+    await expect(page).toHaveURL(
+      (url) =>
+        url.pathname === `/projects/${key}/sprints/${sprint.id}` &&
+        url.searchParams.get("from") === "iterations",
+    );
+    const back = page.locator(".prio-backlink--sprint");
+    await expect(back).toHaveText(/Back to iterations/);
+    // #5b04a7 in the light theme …
+    await expect(back).toHaveCSS("color", "rgb(91, 4, 167)");
+    // … and #cfa5f3 in the dark one, text and chevron alike.
+    await page.evaluate(() =>
+      document.documentElement.setAttribute("data-theme", "dark"),
+    );
+    await expect(back).toHaveCSS("color", "rgb(207, 165, 243)");
+    await expect(back.locator("svg")).toHaveCSS("color", "rgb(207, 165, 243)");
+    await page.evaluate(() =>
+      document.documentElement.setAttribute("data-theme", "light"),
+    );
+    await expect(back).toHaveCSS("color", "rgb(91, 4, 167)");
+    await back.click();
+    await expect(page).toHaveURL(new RegExp(`/projects/${key}/sprints/iterations$`));
+  });
+});
+
+test.describe("The All Projects page", () => {
+  test("carries no Iterations / Sprints section", async ({ page }) => {
+    /* Iterations / Sprints lives inside each project's Sprints section now;
+       the directory lists projects and nothing else. */
+    await page.goto("/projects");
+    await expect(
+      page.getByRole("heading", { name: "Projects", level: 1 }),
+    ).toBeVisible();
+    await expect(page.getByText("Iterations / Sprints")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Choose a project" })).toHaveCount(0);
   });
 });
