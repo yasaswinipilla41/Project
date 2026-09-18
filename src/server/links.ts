@@ -106,18 +106,25 @@ export async function createIssueLink(
       };
     }
 
-    await prisma.$transaction([
-      prisma.issueLink.create({
+    /*
+     * The interactive form: the array/"batch" form hands all four writes to
+     * the query engine as a plan it interprets without actually awaiting each
+     * in turn, which can reach the pg client with the next query before the
+     * previous one has returned and trip its "already executing a query"
+     * guard.
+     */
+    await prisma.$transaction(async (tx) => {
+      await tx.issueLink.create({
         data: {
           sourceId: source.id,
           targetId: target.id,
           type,
           createdById: user.id,
         },
-      }),
+      });
       // The mirror. `skipDuplicates` is not available on `create`, so the pair
       // is written with an upsert-shaped guard instead.
-      prisma.issueLink.upsert({
+      await tx.issueLink.upsert({
         where: {
           sourceId_targetId_type: {
             sourceId: target.id,
@@ -132,8 +139,8 @@ export async function createIssueLink(
           type: INVERSE[type],
           createdById: user.id,
         },
-      }),
-      prisma.activityLogEntry.create({
+      });
+      await tx.activityLogEntry.create({
         data: {
           issueId: source.id,
           actorId: user.id,
@@ -141,8 +148,8 @@ export async function createIssueLink(
           field: type,
           newValue: target.key,
         },
-      }),
-      prisma.activityLogEntry.create({
+      });
+      await tx.activityLogEntry.create({
         data: {
           issueId: target.id,
           actorId: user.id,
@@ -150,8 +157,8 @@ export async function createIssueLink(
           field: INVERSE[type],
           newValue: source.key,
         },
-      }),
-    ]);
+      });
+    });
 
     revalidatePath(`/issues/${source.key.toLowerCase()}`);
     revalidatePath(`/issues/${target.key.toLowerCase()}`);

@@ -469,7 +469,18 @@ export async function listIssues(
   const pageSize = filters.pageSize ?? DEFAULT_PAGE_SIZE;
   const page = Math.max(1, filters.page ?? 1);
 
-  const [total, rows] = await prisma.$transaction([
+  /*
+   * Deliberately not `$transaction`: `LIST_SELECT` carries nested relations
+   * (project, assignee, labels, _count), and the query engine loads those as
+   * separate sibling queries fired without waiting on one another. Off a
+   * transaction, each gets its own pooled connection and that's harmless;
+   * forced onto one shared connection *inside* a transaction, those sibling
+   * queries collide on it — pg's "client.query() while already executing a
+   * query" guard. A snapshot shared between the count and the page is a nicety
+   * here, not a correctness requirement, so it is not worth working around an
+   * engine bug for.
+   */
+  const [total, rows] = await Promise.all([
     prisma.issue.count({ where }),
     prisma.issue.findMany({
       where,
