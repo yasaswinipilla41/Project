@@ -62,6 +62,7 @@ export function parseIssueParams(params: SearchParams): IssueFilters {
     reporterIds: many(params.reporter),
     completedByIds: many(params.completedBy),
     labelIds: many(params.label),
+    sprintIds: many(params.sprint),
     resolution:
       resolution === "open" || resolution === "closed" ? resolution : undefined,
     overdue: one(params.overdue) === "1",

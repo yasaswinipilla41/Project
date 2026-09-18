@@ -456,3 +456,55 @@
     background: var(--prio-bg-subtle);
   }
 }
+
+/* ------------------------------------------------------ sprint back link */
+
+/*
+ * The Sprint pages' Back link is a literal `#5b04a7` in `components.css` — the
+ * light theme's colour, which is too dark to read on a dark page. `#cfa5f3` is
+ * its dark-theme counterpart, for the text and the chevron alike (the icon
+ * draws in `currentColor`), on hover as well. Nothing else about it changes.
+ */
+:root[data-theme="dark"] .prio-backlink--sprint,
+:root[data-theme="dark"] .prio-backlink--sprint:hover {
+  color: #cfa5f3;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .prio-backlink--sprint,
+  :root:not([data-theme="light"]) .prio-backlink--sprint:hover {
+    color: #cfa5f3;
+  }
+}
+
+/*
+ * The sprint "Issues by status" isometric bars on a dark surface. The status
+ * colours stay the ones every other status mark uses; the darkest of them
+ * (Backlog, Cancelled) would otherwise sink into the card, so each solid gets
+ * a faint light rim and a brighter top face to hold its shape.
+ */
+:root[data-theme="dark"] .prio-isochart__bar {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+:root[data-theme="dark"] .prio-isochart__bar::before {
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0.45)),
+    var(--iso-c);
+}
+:root[data-theme="dark"] .prio-isochart__dot {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .prio-isochart__bar {
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  }
+  :root:not([data-theme="light"]) .prio-isochart__bar::before {
+    background:
+      linear-gradient(rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0.45)),
+      var(--iso-c);
+  }
+  :root:not([data-theme="light"]) .prio-isochart__dot {
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35);
+  }
+}

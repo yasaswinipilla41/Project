@@ -2233,6 +2233,19 @@ a.prio-stat:focus-visible {
   text-decoration: none;
 }
 
+/* The Sprint pages' Back link: the same control, in #5b04a7 — text and
+   chevron alike, since the icon draws in `currentColor`. It keeps that colour
+   on hover and confirms the hover with an underline instead. */
+.prio-backlink--sprint,
+.prio-backlink--sprint:hover {
+  color: #5b04a7;
+}
+
+.prio-backlink--sprint:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 /* ------------------------------------------------------------ project nav */
 
 /*
@@ -2773,4 +2786,19 @@ a.prio-stat:focus-visible {
   outline: 2px solid var(--prio-border-focus);
   outline-offset: 2px;
   border-radius: var(--prio-radius-xs);
+}
+
+/* A completed iteration in the list's Iteration filter: its name, then a
+   green check — the Done status's own green — read from the sprint's real
+   status. The row's own selected tick and highlight are untouched. */
+.prio-filter__iteration {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  min-width: 0;
+}
+
+.prio-filter__iteration-done {
+  flex-shrink: 0;
+  color: var(--prio-status-done-dot);
 }

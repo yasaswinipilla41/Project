@@ -51,6 +51,12 @@ export default async function IssuesPage({
         projects={options.projects}
         people={options.people}
         labels={options.labels}
+        /* Every project's sprints reach this list, so each carries its own
+           project's key — two projects may both have a "Sprint 4". */
+        sprints={options.sprints.map((sprint) => ({
+          id: sprint.id,
+          name: `${sprint.project.key} · ${sprint.name}`,
+        }))}
         currentUserId={user.id}
         total={result.total}
         enableExport

@@ -93,6 +93,53 @@ export function daysUntil(value: Date | string | null | undefined): number | nul
   return Math.round((target.getTime() - startOfToday.getTime()) / 86_400_000);
 }
 
+/** Saturday or Sunday — the two days a sprint's working length skips. */
+export function isWeekend(value: Date): boolean {
+  const day = value.getDay();
+  return day === 0 || day === 6;
+}
+
+/**
+ * Working days from `start` to `end`, both ends included, weekends excluded.
+ *
+ * A fortnight's sprint measures ten working days, not fourteen: Saturday and
+ * Sunday are in the calendar span but nobody is working them, so counting
+ * them would overstate every sprint's capacity by two days a week. Both ends
+ * count because a sprint that starts and ends on the same weekday is one
+ * working day of work, not none.
+ *
+ * Defined here, once, beside the other date helpers, because two different
+ * answers to "how long is this sprint" would drift apart — the same reason
+ * `dueWindow` and `monthWindow` live here rather than at their call sites.
+ * Dates are normalised to local midnight before counting, exactly as
+ * `daysUntil` does, so a time of day cannot change the answer.
+ *
+ * Returns 0 when the range is inverted or either end is unreadable, so a
+ * half-entered form never shows a negative length.
+ */
+export function workingDaysBetween(
+  start: Date | string | null | undefined,
+  end: Date | string | null | undefined,
+): number {
+  if (!start || !end) return 0;
+
+  const from = typeof start === "string" ? new Date(start) : new Date(start);
+  const to = typeof end === "string" ? new Date(end) : new Date(end);
+  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return 0;
+
+  from.setHours(0, 0, 0, 0);
+  to.setHours(0, 0, 0, 0);
+  if (from.getTime() > to.getTime()) return 0;
+
+  let days = 0;
+  const cursor = new Date(from);
+  while (cursor.getTime() <= to.getTime()) {
+    if (!isWeekend(cursor)) days += 1;
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return days;
+}
+
 export function isOverdue(
   dueDate: Date | string | null | undefined,
   isClosed: boolean,
