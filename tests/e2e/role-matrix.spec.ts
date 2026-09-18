@@ -262,9 +262,18 @@ test.describe("what each role is offered", () => {
     }
   });
 
-  test("Sprints is withheld from a pure QA member and kept for a full stack one", async ({
+  test("Sprints is kept for a QA member and a full stack one alike", async ({
     browser,
   }) => {
+    /*
+     * Sprints used to be withheld from a pure QA member — a tester read work
+     * rather than shaped it, and the tab and the route agreed on refusing
+     * them. It is every working role's surface now: Admin, Developer, Tester
+     * and Full Stack Developer all plan into a sprint, add issues to it and
+     * move issues between sprints, even though only an administrator (and,
+     * for starting one, a full stack developer) may still shape its
+     * lifecycle. See `canEditSprintIssues` in `domain.ts`.
+     */
     const project = await prisma.project.findFirstOrThrow({
       where: {
         isArchived: false,
@@ -279,11 +288,10 @@ test.describe("what each role is offered", () => {
       await qa.page.goto(`${base}/summary`);
       await expect(
         qa.page.locator(".prio-projectnav__tab", { hasText: "Sprints" }),
-      ).toHaveCount(0);
+      ).toHaveCount(1);
 
-      /* And the route refuses, so the hidden tab is not what withholds it. */
       await qa.page.goto(`${base}/sprints`);
-      await expect(qa.page.locator(".prio-notfound")).toBeVisible();
+      await expect(qa.page.locator(".prio-notfound")).toHaveCount(0);
     } finally {
       await qa.close();
     }

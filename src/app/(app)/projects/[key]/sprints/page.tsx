@@ -5,6 +5,14 @@ import { SprintCard } from "@/components/sprints/SprintCard";
 import { Card, EmptyState } from "@/components/ui/primitives";
 import { IconEmptyBox } from "@/components/ui/Icon";
 import { projectScope, workRoleOf } from "@/lib/authz";
+import {
+  canCompleteSprint,
+  canCreateSprint,
+  canDeleteSprint,
+  canEditSprintDetails,
+  canEditSprintIssues,
+  canStartSprint,
+} from "@/lib/domain";
 import { prisma } from "@/lib/prisma";
 import { loadSprintBacklog, loadSprints } from "@/server/queries/sprints";
 import { requireUser } from "@/lib/session";
@@ -34,21 +42,7 @@ export default async function ProjectSprintsPage({
 }) {
   const { key } = await params;
   const user = await requireUser();
-
-  /*
-   * Sprints are not a QA member's surface.
-   *
-   * Checked here, before the project is even queried, so a direct URL gets the
-   * not-found page rather than a sprint board with every control missing — an
-   * empty management screen is a worse answer than no screen. The tab strip
-   * hides the link for the same people; this is what makes the hiding binding,
-   * since a hidden link is not a check.
-   *
-   * Administrators are unaffected, and so are developers, who read sprints to
-   * see what they are working in. Every write in `sprints.ts` still asserts an
-   * administrator independently.
-   */
-  if ((await workRoleOf(user)) === "QA") notFound();
+  const workRole = await workRoleOf(user);
 
   const project = await prisma.project.findFirst({
     where: { key: key.toUpperCase(), ...projectScope(user) },
@@ -62,25 +56,24 @@ export default async function ProjectSprintsPage({
   ]);
 
   /*
-   * A sprint is an administrator's instrument.
-   *
-   * This used to be `canManageProject` — an administrator *or* whoever created
-   * the project. Starting and closing a sprint commits everybody working in
-   * it, and developers and testers read sprints rather than shape them, so the
-   * lifecycle narrowed to administrators alone. `sprints.ts` asserts the same
-   * rule on every write; this only decides what to draw.
+   * Who may do what, read from the one capability table `domain.ts` owns and
+   * `sprints.ts` enforces independently — this only decides what is worth
+   * drawing:
+   *   - creating, editing and deleting a sprint's own configuration is an
+   *     administrator's;
+   *   - starting a planned sprint is also open to a Full Stack Developer;
+   *   - completing a sprint, the same team-wide decision closing its record
+   *     out is, stays an administrator's;
+   *   - filling a sprint, emptying it or moving its issues elsewhere is every
+   *     working role's — Admin, Developer, Tester and Full Stack Developer
+   *     alike.
    */
-  const canManage = user.role === "ADMIN";
-
-  /*
-   * Correcting an existing sprint is not part of that instrument.
-   *
-   * Everybody who reaches this page can already open the project — that is what
-   * granted them the page — and `updateSprint` authorizes on exactly that, so
-   * the Edit button is offered to them rather than hidden behind a rank they do
-   * not need. Creating and deleting stay on `canManage` above.
-   */
-  const canEdit = true;
+  const canCreate = canCreateSprint(workRole);
+  const canEdit = canEditSprintDetails(workRole);
+  const canDelete = canDeleteSprint(workRole);
+  const canStart = canStartSprint(workRole);
+  const canComplete = canCompleteSprint(workRole);
+  const canEditIssues = canEditSprintIssues(workRole);
 
   const open = sprints.filter((sprint) => sprint.status !== "COMPLETED");
   const completed = sprints.filter((sprint) => sprint.status === "COMPLETED");
@@ -95,7 +88,7 @@ export default async function ProjectSprintsPage({
             project&rsquo;s issues can be in one.
           </p>
         </div>
-        {canManage ? <NewSprintButton projectId={project.id} /> : null}
+        {canCreate ? <NewSprintButton projectId={project.id} /> : null}
       </div>
 
       {sprints.length === 0 ? (
@@ -104,11 +97,11 @@ export default async function ProjectSprintsPage({
             icon={<IconEmptyBox />}
             title="No sprints yet"
             body={
-              canManage
+              canCreate
                 ? "Create a sprint, add issues from the backlog, then start it. Its progress follows the issues' own statuses."
-                : "Nobody has planned a sprint for this project yet. An administrator or the project's creator can start one."
+                : "Nobody has planned a sprint for this project yet. An administrator can start one."
             }
-            actions={canManage ? <NewSprintButton projectId={project.id} /> : null}
+            actions={canCreate ? <NewSprintButton projectId={project.id} /> : null}
           />
         </Card>
       ) : (
@@ -125,9 +118,11 @@ export default async function ProjectSprintsPage({
               otherOpenSprints={open
                 .filter((other) => other.id !== sprint.id)
                 .map((other) => ({ id: other.id, name: other.name }))}
-              canManage={canManage}
               canEdit={canEdit}
-              canEditIssues
+              canDelete={canDelete}
+              canStart={canStart}
+              canComplete={canComplete}
+              canEditIssues={canEditIssues}
             />
           ))}
 
@@ -147,8 +142,10 @@ export default async function ProjectSprintsPage({
                   projectKey={project.key}
                   backlog={backlog}
                   otherOpenSprints={[]}
-                  canManage={canManage}
                   canEdit={canEdit}
+                  canDelete={canDelete}
+                  canStart={canStart}
+                  canComplete={canComplete}
                   canEditIssues={false}
                 />
               ))}

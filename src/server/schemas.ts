@@ -377,6 +377,21 @@ export const sprintIssueSchema = z.object({
 });
 
 /**
+ * Where one issue moves to: the next open sprint, a named sprint, or the
+ * backlog. `sprintId` is only present for `SPRINT`, so the server always
+ * knows exactly which case it is reading rather than guessing from which
+ * fields happen to be set.
+ */
+export const moveIssueSchema = z.object({
+  issueId: z.string().min(1),
+  destination: z.discriminatedUnion("type", [
+    z.object({ type: z.literal("BACKLOG") }),
+    z.object({ type: z.literal("NEXT_SPRINT") }),
+    z.object({ type: z.literal("SPRINT"), sprintId: z.string().min(1) }),
+  ]),
+});
+
+/**
  * Completing a sprint has to say where its unfinished work goes — that is the
  * decision the dialog exists to take, so it is required rather than defaulted.
  * `NEXT_SPRINT` carries the sprint to move it into; the server still checks

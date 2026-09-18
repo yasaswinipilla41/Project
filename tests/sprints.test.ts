@@ -6,6 +6,7 @@ import {
   addIssuesToSprint,
   completeSprint,
   createSprint,
+  moveIssueToSprint,
   removeIssueFromSprint,
   startSprint,
   updateSprint,
@@ -33,6 +34,7 @@ const MEMBER = "priya.nair@symbiosystech.com";
 
 const createdIssues: string[] = [];
 const createdSprints: string[] = [];
+const createdProjects: string[] = [];
 
 /** A sprint next week, so its dates are always valid whenever this runs. */
 function dates(offsetDays = 0) {
@@ -92,7 +94,35 @@ afterAll(async () => {
     await prisma.sprint.deleteMany({ where: { id: { in: createdSprints } } });
   }
   await deleteIssues(createdIssues);
+  if (createdProjects.length > 0) {
+    await prisma.project.deleteMany({ where: { id: { in: createdProjects } } });
+  }
 });
+
+/**
+ * A project of its own, so a test asking "is there any other open sprint in
+ * this project" gets a true answer rather than one polluted by whatever
+ * other test files — running concurrently, against the same database — have
+ * left in a shared seeded project like ENG.
+ */
+async function makeIsolatedProject(): Promise<{ id: string }> {
+  const admin = await prisma.user.findUniqueOrThrow({
+    where: { email: ADMIN },
+    select: { id: true },
+  });
+  const key = `MV${Date.now().toString(36).toUpperCase()}`.slice(0, 10);
+  const project = await prisma.project.create({
+    data: {
+      key,
+      name: `Move fixture ${key}`,
+      createdById: admin.id,
+      members: { create: { userId: admin.id } },
+    },
+    select: { id: true },
+  });
+  createdProjects.push(project.id);
+  return project;
+}
 
 describe("Creating a sprint", () => {
   it("records name, goal and dates against the project", async () => {
@@ -320,13 +350,14 @@ describe("Adding issues to a sprint", () => {
     expect(ids).not.toContain(elsewhere.id);
   });
 
-  it("refuses a member filling a sprint, and lets an administrator", async () => {
+  it("lets a project member fill a sprint, and lets an administrator too", async () => {
     /*
-     * Filling a sprint used to be ordinary work in a project you belong to.
-     * It is not: what a sprint contains is a commitment about the next
-     * fortnight, made for everybody working in it, so it moved to the same
-     * rule as starting and completing one. Developers and testers read
-     * sprints; they do not shape them.
+     * Filling a sprint is ordinary work in a project you belong to — every
+     * working role may. This used to refuse a plain member outright with
+     * "This action requires an administrator.", which was the bug: a
+     * Developer, Tester or Full Stack Developer adding work to a sprint they
+     * could already see and plan into was turned away by a rule meant for
+     * the sprint's own lifecycle, not its contents.
      */
     await actAs(ADMIN);
     const project = await projectByKey("ENG");
@@ -334,14 +365,51 @@ describe("Adding issues to a sprint", () => {
     const issue = await makeIssue(project.id, "Member's own work");
 
     await actAs(MEMBER);
-    const refused = await addIssuesToSprint({ sprintId, issueIds: [issue.id] });
-    expect(refused.ok).toBe(false);
-    expect(await prisma.issue.count({ where: { sprintId } })).toBe(0);
-
-    await actAs(ADMIN);
     const allowed = await addIssuesToSprint({ sprintId, issueIds: [issue.id] });
     expect(allowed.ok).toBe(true);
     expect(await prisma.issue.count({ where: { sprintId } })).toBe(1);
+
+    const other = await makeIssue(project.id, "Admin's own work");
+    await actAs(ADMIN);
+    const allowedForAdmin = await addIssuesToSprint({
+      sprintId,
+      issueIds: [other.id],
+    });
+    expect(allowedForAdmin.ok).toBe(true);
+    expect(await prisma.issue.count({ where: { sprintId } })).toBe(2);
+  });
+
+  it("refuses somebody who cannot open the sprint's project at all", async () => {
+    /*
+     * Filling a sprint is every working role's now, which is exactly why
+     * project access still has to be checked here rather than assumed: an
+     * administrator sees every project by construction, but a Developer,
+     * Tester or Full Stack Developer does not, and nothing about being
+     * signed in lets them reach into a project they were never added to.
+     */
+    await actAs(ADMIN);
+    const project = await projectByKey("ENG");
+    const sprintId = await makeSprint(project.id, "Not this outsider's to fill");
+    const issue = await makeIssue(project.id, "Outsider cannot touch this");
+
+    // Every seeded account is a member of every seeded project, so MEMBER is
+    // taken off ENG for the duration of this test and put back afterwards.
+    const membership = await prisma.projectMember.findFirstOrThrow({
+      where: { projectId: project.id, user: { email: MEMBER } },
+    });
+    await prisma.projectMember.delete({ where: { id: membership.id } });
+
+    try {
+      await actAs(MEMBER);
+      const result = await addIssuesToSprint({ sprintId, issueIds: [issue.id] });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toMatch(/access/i);
+      expect(await prisma.issue.count({ where: { sprintId } })).toBe(0);
+    } finally {
+      await prisma.projectMember.create({
+        data: { projectId: project.id, userId: membership.userId },
+      });
+    }
   });
 
   it("returns an issue to the backlog when it is removed", async () => {
@@ -671,5 +739,163 @@ describe("Completing a sprint", () => {
         select: { name: true },
       }),
     ).toMatchObject({ name: "Sealed" });
+  });
+});
+
+describe("Moving an issue", () => {
+  it("moves it to a named sprint in the same project, and leaves its status alone", async () => {
+    await actAs(ADMIN);
+    const project = await projectByKey("ENG");
+    const from = await makeSprint(project.id, "Move source");
+    const to = await makeSprint(project.id, "Move destination");
+    const issue = await makeIssue(project.id, "Moved between sprints");
+    await addIssuesToSprint({ sprintId: from, issueIds: [issue.id] });
+    await updateIssue({ issueId: issue.id, status: "IN_PROGRESS" });
+
+    const result = await moveIssueToSprint({
+      issueId: issue.id,
+      destination: { type: "SPRINT", sprintId: to },
+    });
+
+    expect(result.ok).toBe(true);
+    const after = await prisma.issue.findUniqueOrThrow({
+      where: { id: issue.id },
+      select: { sprintId: true, status: true },
+    });
+    expect(after).toMatchObject({ sprintId: to, status: "IN_PROGRESS" });
+
+    const entry = await prisma.activityLogEntry.findFirst({
+      where: { issueId: issue.id, field: "sprintId" },
+      orderBy: { createdAt: "desc" },
+    });
+    expect(entry).toMatchObject({
+      oldValue: "Move source",
+      newValue: "Move destination",
+    });
+  });
+
+  it("moves it to the backlog, clearing its sprint without touching anything else", async () => {
+    await actAs(ADMIN);
+    const project = await projectByKey("ENG");
+    const sprintId = await makeSprint(project.id, "Move to backlog source");
+    const issue = await makeIssue(project.id, "Moved to the backlog");
+    await addIssuesToSprint({ sprintId, issueIds: [issue.id] });
+
+    const result = await moveIssueToSprint({
+      issueId: issue.id,
+      destination: { type: "BACKLOG" },
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data).toMatchObject({ sprintId: null });
+    expect(
+      await prisma.issue.findUniqueOrThrow({
+        where: { id: issue.id },
+        select: { sprintId: true },
+      }),
+    ).toMatchObject({ sprintId: null });
+  });
+
+  it("finds the chronologically next open sprint, skipping later ones", async () => {
+    await actAs(ADMIN);
+    const project = await makeIsolatedProject();
+    const current = await makeSprint(project.id, "Next-sprint current");
+    const soon = await createSprint({
+      projectId: project.id,
+      name: `Next-sprint soon ${Date.now()}`,
+      goal: "",
+      ...dates(30),
+    });
+    const later = await createSprint({
+      projectId: project.id,
+      name: `Next-sprint later ${Date.now()}`,
+      goal: "",
+      ...dates(60),
+    });
+    if (!soon.ok || !later.ok) throw new Error("fixture sprints failed");
+    createdSprints.push(soon.data.id, later.data.id);
+
+    const issue = await makeIssue(project.id, "Wants the next sprint");
+    await addIssuesToSprint({ sprintId: current, issueIds: [issue.id] });
+
+    const result = await moveIssueToSprint({
+      issueId: issue.id,
+      destination: { type: "NEXT_SPRINT" },
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.data.sprintId).toBe(soon.data.id);
+  });
+
+  it("says plainly when no future sprint exists, and does not create one", async () => {
+    await actAs(ADMIN);
+    const project = await makeIsolatedProject();
+    const sprintId = await makeSprint(project.id, "Only sprint in the project");
+    const issue = await makeIssue(project.id, "Nowhere further to go");
+    await addIssuesToSprint({ sprintId, issueIds: [issue.id] });
+
+    const before = await prisma.sprint.count({ where: { projectId: project.id } });
+    const result = await moveIssueToSprint({
+      issueId: issue.id,
+      destination: { type: "NEXT_SPRINT" },
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toBe("No future Sprint is available.");
+    expect(await prisma.sprint.count({ where: { projectId: project.id } })).toBe(
+      before,
+    );
+    expect(
+      await prisma.issue.findUniqueOrThrow({
+        where: { id: issue.id },
+        select: { sprintId: true },
+      }),
+    ).toMatchObject({ sprintId });
+  });
+
+  it("refuses to move an issue into another project's sprint", async () => {
+    await actAs(ADMIN);
+    const engineering = await projectByKey("ENG");
+    const website = await projectByKey("WEB");
+
+    const issue = await makeIssue(engineering.id, "Must stay in ENG");
+    const foreign = await makeSprint(website.id, "Website's own sprint");
+
+    const result = await moveIssueToSprint({
+      issueId: issue.id,
+      destination: { type: "SPRINT", sprintId: foreign },
+    });
+
+    expect(result.ok).toBe(false);
+    expect(
+      await prisma.issue.findUniqueOrThrow({
+        where: { id: issue.id },
+        select: { sprintId: true },
+      }),
+    ).toMatchObject({ sprintId: null });
+  });
+
+  it("is open to a project member, not only an administrator", async () => {
+    /* The same bug `addIssuesToSprint` had: moving an issue between sprints
+       is every working role's, not an administrator's alone. */
+    await actAs(ADMIN);
+    const project = await projectByKey("ENG");
+    const sprintId = await makeSprint(project.id, "Member moves this");
+    const issue = await makeIssue(project.id, "Member's own work to move");
+    await addIssuesToSprint({ sprintId, issueIds: [issue.id] });
+
+    await actAs(MEMBER);
+    const result = await moveIssueToSprint({
+      issueId: issue.id,
+      destination: { type: "BACKLOG" },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(
+      await prisma.issue.findUniqueOrThrow({
+        where: { id: issue.id },
+        select: { sprintId: true },
+      }),
+    ).toMatchObject({ sprintId: null });
   });
 });
