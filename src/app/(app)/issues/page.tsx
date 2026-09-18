@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { BackLink } from "@/components/shell/BackLink";
 import { IssueFilters } from "@/components/issues/IssueFilters";
 import { IssueTable } from "@/components/issues/IssueTable";
@@ -6,6 +7,7 @@ import { filterOptions, listIssues } from "@/server/queries/issues";
 import { parseIssueParams, type SearchParams } from "@/server/queries/params";
 import { requireUser } from "@/lib/session";
 import { workRoleOf } from "@/lib/authz";
+import { COLUMN_COOKIE, parseColumnPreference } from "@/lib/tableColumns";
 
 export const metadata: Metadata = { title: "Issues" };
 export const dynamic = "force-dynamic";
@@ -22,6 +24,12 @@ export default async function IssuesPage({
   const user = await requireUser();
   const params = await searchParams;
   const filters = parseIssueParams(params);
+
+  /* Read here so the table below is rendered with the right columns rather
+     than rendered whole and trimmed in the browser — see `lib/tableColumns`. */
+  const columns = parseColumnPreference(
+    (await cookies()).get(COLUMN_COOKIE)?.value,
+  );
 
   const [result, options] = await Promise.all([
     listIssues(user, filters),
@@ -54,8 +62,10 @@ export default async function IssuesPage({
         currentUserId={user.id}
         total={result.total}
         enableExport
+        enableImport
         enableShare
         isAdmin={user.role === "ADMIN"}
+        columns={columns}
       />
 
       <IssueTable
@@ -66,6 +76,7 @@ export default async function IssuesPage({
         dir={filters.dir ?? "desc"}
         emptyTitle="No issues found"
         emptyBody="No issue matches these filters. Clear them, or create an issue to start tracking work."
+        visibleColumns={columns}
         currentUser={{
           id: user.id,
           isAdmin: user.role === "ADMIN",

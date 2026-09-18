@@ -321,6 +321,14 @@ export const IconDownload = (p: IconProps) => (
   </Svg>
 );
 
+/** The download glyph with its arrow reversed — into Prio rather than out. */
+export const IconUpload = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M8 9.8V2.4M4.8 5.4 8 2.4l3.2 3" />
+    <path d="M2.6 11.4v1.2a1.6 1.6 0 0 0 1.6 1.6h7.6a1.6 1.6 0 0 0 1.6-1.6v-1.2" />
+  </Svg>
+);
+
 export const IconImage = (p: IconProps) => (
   <Svg {...p}>
     <rect x="2.4" y="2.9" width="11.2" height="10.2" rx="1.4" />

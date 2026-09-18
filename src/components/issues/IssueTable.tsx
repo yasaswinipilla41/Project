@@ -19,6 +19,7 @@ import {
 import { isClosedStatus, type WorkRole } from "@/lib/domain";
 import { formatDateCompact, formatRelative, isOverdue } from "@/lib/format";
 import type { IssueListResult, SortField } from "@/server/queries/issues";
+import { DEFAULT_COLUMNS, type TableColumnId } from "@/lib/tableColumns";
 import { IssueRowActions } from "@/components/issues/IssueRowActions";
 
 /**
@@ -29,27 +30,29 @@ import { IssueRowActions } from "@/components/issues/IssueRowActions";
  */
 
 interface Column {
+  /** Matches `TABLE_COLUMNS`, which is what the column chooser writes down. */
+  id: TableColumnId;
   field: SortField | null;
   label: string;
   className?: string;
 }
 
 const COLUMNS: Column[] = [
-  { field: "key", label: "Key", className: "prio-col-key" },
-  { field: "title", label: "Summary" },
-  { field: "status", label: "Status", className: "prio-col-status" },
-  { field: "priority", label: "Priority", className: "prio-col-priority" },
-  { field: null, label: "Assignee", className: "prio-col-person" },
-  { field: null, label: "Reporter", className: "prio-col-person" },
+  { id: "key", field: "key", label: "Key", className: "prio-col-key" },
+  { id: "title", field: "title", label: "Summary" },
+  { id: "status", field: "status", label: "Status", className: "prio-col-status" },
+  { id: "priority", field: "priority", label: "Priority", className: "prio-col-priority" },
+  { id: "assignee", field: null, label: "Assignee", className: "prio-col-person" },
+  { id: "reporter", field: null, label: "Reporter", className: "prio-col-person" },
   /* Who finished it, which is not the same question as who holds it — see the
      cell below. Empty for anything that is not Done. */
-  { field: null, label: "Completed by", className: "prio-col-person" },
+  { id: "completedBy", field: null, label: "Completed by", className: "prio-col-person" },
   /* When it was finished, beside who finished it. Both are blank until an
      issue is Done, which is the only state that records either. */
-  { field: null, label: "Completed", className: "prio-col-date" },
-  { field: "due", label: "Due", className: "prio-col-date" },
-  { field: "updated", label: "Updated", className: "prio-col-date" },
-  { field: null, label: "", className: "prio-col-actions" },
+  { id: "completed", field: null, label: "Completed", className: "prio-col-date" },
+  { id: "due", field: "due", label: "Due", className: "prio-col-date" },
+  { id: "updated", field: "updated", label: "Updated", className: "prio-col-date" },
+  { id: "actions", field: null, label: "", className: "prio-col-actions" },
 ];
 
 function buildHref(
@@ -84,6 +87,15 @@ export interface IssueTableProps {
   emptyBody?: string;
   emptyAction?: React.ReactNode;
   /**
+   * The columns to draw, already resolved from the reader's own preference.
+   *
+   * Passed in rather than read here because this component renders on the
+   * server for four different pages, and the cookie belongs to the request
+   * rather than to the table. Absent means the full default set, which is what
+   * every caller that has not adopted the chooser still gets.
+   */
+  visibleColumns?: readonly TableColumnId[];
+  /**
    * Who is looking at the table, so each row's ⋮ menu can decide for itself
    * whether Delete belongs on it — the reporter and an administrator get it,
    * everyone else gets Open/Edit only. Optional because a handful of surfaces
@@ -103,7 +115,12 @@ export function IssueTable({
   emptyBody = "Create an issue to start tracking work.",
   emptyAction,
   currentUser,
+  visibleColumns = DEFAULT_COLUMNS,
 }: IssueTableProps) {
+  /* One answer, consulted by the header and by each cell, so a column can
+     never be dropped from one and kept in the other. */
+  const shown = new Set(visibleColumns);
+  const show = (id: TableColumnId) => shown.has(id);
   if (result.rows.length === 0) {
     return (
       <div className="prio-card">
@@ -136,7 +153,7 @@ export function IssueTable({
         <table className="prio-table prio-table--compact">
           <thead>
             <tr>
-              {COLUMNS.map((column) => {
+              {COLUMNS.filter((column) => show(column.id)).map((column) => {
                 if (!column.field) {
                   return (
                     <th key={column.label} className={column.className} scope="col">
@@ -243,59 +260,67 @@ export function IssueTable({
                     </span>
                   </td>
 
-                  <td className="prio-col-status">
-                    <StatusPill status={issue.status} />
-                  </td>
+                  {show("status") ? (
+                    <td className="prio-col-status">
+                      <StatusPill status={issue.status} />
+                    </td>
+                  ) : null}
 
-                  <td className="prio-col-priority">
-                    <PriorityIndicator priority={issue.priority} />
-                  </td>
+                  {show("priority") ? (
+                    <td className="prio-col-priority">
+                      <PriorityIndicator priority={issue.priority} />
+                    </td>
+                  ) : null}
 
-                  <td className="prio-col-person">
-                    {issue.assignee ? (
-                      <span className="prio-person">
-                        <Avatar
-                          name={issue.assignee.name}
-                          image={issue.assignee.image}
-                          size="xs"
-                        />
-                        <span className="prio-truncate">
-                          {issue.assignee.name}
-                        </span>
-                        {mine ? (
-                          <span
-                            className="prio-badge prio-badge--pill"
-                            data-tone="brand"
-                          >
-                            You
+                  {show("assignee") ? (
+                    <td className="prio-col-person">
+                      {issue.assignee ? (
+                        <span className="prio-person">
+                          <Avatar
+                            name={issue.assignee.name}
+                            image={issue.assignee.image}
+                            size="xs"
+                          />
+                          <span className="prio-truncate">
+                            {issue.assignee.name}
                           </span>
-                        ) : null}
-                      </span>
-                    ) : (
-                      <span className="prio-person">
-                        <Avatar name={null} size="xs" empty />
-                        <span className="prio-text-disabled">Unassigned</span>
-                      </span>
-                    )}
-                  </td>
+                          {mine ? (
+                            <span
+                              className="prio-badge prio-badge--pill"
+                              data-tone="brand"
+                            >
+                              You
+                            </span>
+                          ) : null}
+                        </span>
+                      ) : (
+                        <span className="prio-person">
+                          <Avatar name={null} size="xs" empty />
+                          <span className="prio-text-disabled">Unassigned</span>
+                        </span>
+                      )}
+                    </td>
+                  ) : null}
 
                   {/* Who raised it. `reporterId` is required on an issue and
                       the relation is never optional, so there is no
                       "unreported" state to render — but the name is shown
                       defensively in case the account was removed. */}
-                  <td className="prio-col-person">
-                    <span className="prio-person">
-                      <Avatar
-                        name={issue.reporter?.name ?? null}
-                        image={issue.reporter?.image ?? null}
-                        size="xs"
-                        empty={!issue.reporter}
-                      />
-                      <span className="prio-truncate">
-                        {issue.reporter?.name ?? "Unknown"}
+                  {show("reporter") ? (
+                    <td className="prio-col-person">
+                      <span className="prio-person">
+                        <Avatar
+                          name={issue.reporter?.name ?? null}
+                          image={issue.reporter?.image ?? null}
+                          size="xs"
+                          empty={!issue.reporter}
+                        />
+                        <span className="prio-truncate">
+                          {issue.reporter?.name ?? "Unknown"}
+                        </span>
                       </span>
-                    </span>
-                  </td>
+                    </td>
+                  ) : null}
 
                   {/*
                     * Who actually completed it, read from the status trail
@@ -305,49 +330,57 @@ export function IssueTable({
                     * Blank while the issue is unfinished; "Not recorded" when
                     * it is done but the trail does not say who did it.
                     */}
-                  <td className="prio-col-person">
-                    {issue.status !== "DONE" ? (
-                      <span className="prio-text-disabled">—</span>
-                    ) : issue.completedBy ? (
-                      <span className="prio-person">
-                        <Avatar
-                          name={issue.completedBy.name}
-                          image={issue.completedBy.image}
-                          size="xs"
-                        />
-                        <span className="prio-truncate">
-                          {issue.completedBy.name}
+                  {show("completedBy") ? (
+                    <td className="prio-col-person">
+                      {issue.status !== "DONE" ? (
+                        <span className="prio-text-disabled">—</span>
+                      ) : issue.completedBy ? (
+                        <span className="prio-person">
+                          <Avatar
+                            name={issue.completedBy.name}
+                            image={issue.completedBy.image}
+                            size="xs"
+                          />
+                          <span className="prio-truncate">
+                            {issue.completedBy.name}
+                          </span>
                         </span>
-                      </span>
-                    ) : (
-                      <span className="prio-person">
-                        <Avatar name={null} size="xs" empty title="Not recorded" />
-                        <span className="prio-text-disabled">Not recorded</span>
-                      </span>
-                    )}
-                  </td>
+                      ) : (
+                        <span className="prio-person">
+                          <Avatar name={null} size="xs" empty title="Not recorded" />
+                          <span className="prio-text-disabled">Not recorded</span>
+                        </span>
+                      )}
+                    </td>
+                  ) : null}
 
-                  <td className="prio-col-date">
-                    {issue.completedAt ? (
-                      formatDateCompact(issue.completedAt)
-                    ) : (
-                      <span className="prio-text-disabled">—</span>
-                    )}
-                  </td>
+                  {show("completed") ? (
+                    <td className="prio-col-date">
+                      {issue.completedAt ? (
+                        formatDateCompact(issue.completedAt)
+                      ) : (
+                        <span className="prio-text-disabled">—</span>
+                      )}
+                    </td>
+                  ) : null}
 
-                  <td className="prio-col-date">
-                    {issue.dueDate ? (
-                      <span className={overdue ? "prio-due--overdue" : undefined}>
-                        {formatDateCompact(issue.dueDate)}
-                      </span>
-                    ) : (
-                      <span className="prio-text-disabled">—</span>
-                    )}
-                  </td>
+                  {show("due") ? (
+                    <td className="prio-col-date">
+                      {issue.dueDate ? (
+                        <span className={overdue ? "prio-due--overdue" : undefined}>
+                          {formatDateCompact(issue.dueDate)}
+                        </span>
+                      ) : (
+                        <span className="prio-text-disabled">—</span>
+                      )}
+                    </td>
+                  ) : null}
 
-                  <td className="prio-col-date prio-text-muted">
-                    {formatRelative(issue.updatedAt)}
-                  </td>
+                  {show("updated") ? (
+                    <td className="prio-col-date prio-text-muted">
+                      {formatRelative(issue.updatedAt)}
+                    </td>
+                  ) : null}
 
                   <td className="prio-col-actions">
                     {currentUser ? (

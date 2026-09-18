@@ -2796,3 +2796,36 @@ a.prio-stat:focus-visible {
   outline-offset: 2px;
   border-radius: var(--prio-radius-xs);
 }
+
+/*
+ * What to correct in a spreadsheet that would not import.
+ *
+ * A scrolling list rather than a dialog that grows: fifty rows of corrections
+ * must not push the Import button off the screen. Monospaced row numbers so a
+ * column of them reads straight down, which is how somebody checks them off
+ * against the spreadsheet beside them.
+ */
+.prio-importproblems {
+  margin: 0;
+  padding: var(--prio-space-2) var(--prio-space-3);
+  max-height: 220px;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-sm);
+  background: var(--prio-bg-subtle);
+  font-size: var(--prio-text-xs);
+  line-height: 1.6;
+  color: var(--prio-text-secondary);
+}
+
+.prio-importproblems li + li {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--prio-border-subtle);
+}
+
+.prio-importproblems strong {
+  color: var(--prio-red-600);
+  font-variant-numeric: tabular-nums;
+}
