@@ -522,6 +522,23 @@ test.describe("A sprint's own page", () => {
     await expect(progressBlock.getByText(newA!.key)).toBeVisible();
     await expect(newBlock.getByText(newA!.key)).toHaveCount(0);
 
+    /*
+     * The two assertions above are satisfied by the optimistic move alone, so
+     * at this point the write may still be in flight. Reloading here renders
+     * the issue where it still is — and a reloaded page never re-renders, so
+     * the retries below would wait out their timeout against a snapshot taken
+     * before the change landed. It looks exactly like a lost write and is not
+     * one.
+     *
+     * The board says when it is settled, so wait for that rather than for a
+     * duration. It clears only once `updateIssue` has answered and the
+     * refresh it triggers has re-rendered.
+     */
+    await expect(page.locator(".prio-sprint__board")).not.toHaveAttribute(
+      "data-pending",
+      "true",
+    );
+
     // And it is the server's answer, not only the screen's.
     await page.reload();
     await expect(
