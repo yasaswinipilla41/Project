@@ -10,10 +10,11 @@ import {
   MAX_PER_RUN,
   planBacklogAllocation,
   type Allocation,
+  type AllocationPlan,
   type BacklogPlan,
 } from "@/lib/backlogAllocation";
 import {
-  backlogToAllocateFilter,
+  assignableWorkFilter,
   loadAllocationInputs,
 } from "@/server/queries/backlogAllocation";
 
@@ -52,7 +53,7 @@ function failure(error: unknown): { ok: false; error: string } {
 }
 
 /** The plan, computed from the database and from nothing the caller sent. */
-async function computePlan(projectId: string): Promise<Allocation[]> {
+async function computePlan(projectId: string): Promise<AllocationPlan> {
   const { issues, candidates } = await loadAllocationInputs(
     projectId,
     MAX_PER_RUN,
@@ -62,7 +63,7 @@ async function computePlan(projectId: string): Promise<Allocation[]> {
 
 async function waitingCount(projectId: string): Promise<number> {
   return prisma.issue.count({
-    where: { projectId, ...backlogToAllocateFilter() },
+    where: { projectId, ...assignableWorkFilter() },
   });
 }
 
@@ -80,13 +81,14 @@ export async function previewBacklogAllocation(
     }
     await assertProjectAccess(user, parsed.data.projectId);
 
-    const allocations = await computePlan(parsed.data.projectId);
+    const plan = await computePlan(parsed.data.projectId);
 
     return {
       ok: true,
       data: {
-        allocations,
-        totals: allocationTotals(allocations),
+        allocations: plan.allocations,
+        unplaced: plan.unplaced,
+        totals: allocationTotals(plan.allocations),
         waiting: await waitingCount(parsed.data.projectId),
         perRun: MAX_PER_RUN,
         assigned: 0,
@@ -111,16 +113,29 @@ export async function applyBacklogAllocation(
     }
     await assertProjectAccess(user, parsed.data.projectId);
 
-    const allocations = await computePlan(parsed.data.projectId);
+    const plan = await computePlan(parsed.data.projectId);
 
     /*
      * One at a time, through the one assignment write in Prio. An issue that
      * is refused — somebody assigned it a moment ago, or it left the backlog —
      * does not take the rest of the run with it; it simply is not reported as
      * assigned.
+     *
+     * Each one is re-read immediately before it is written, and skipped when
+     * it already holds the assignment this run would make. Two administrators
+     * pressing Apply at the same moment plan against the same queues and
+     * arrive at the same answer, so without this the second run would write
+     * every assignment again and send every notice again. It reports them as
+     * not assigned instead, which is what they were: it did not assign them.
      */
     const applied: Allocation[] = [];
-    for (const allocation of allocations) {
+    for (const allocation of plan.allocations) {
+      const current = await prisma.issue.findUnique({
+        where: { id: allocation.issueId },
+        select: { assigneeId: true },
+      });
+      if (!current || current.assigneeId === allocation.assigneeId) continue;
+
       const result = await updateIssue({
         issueId: allocation.issueId,
         assigneeId: allocation.assigneeId,
@@ -132,6 +147,7 @@ export async function applyBacklogAllocation(
       ok: true,
       data: {
         allocations: applied,
+        unplaced: plan.unplaced,
         totals: allocationTotals(applied),
         waiting: await waitingCount(parsed.data.projectId),
         perRun: MAX_PER_RUN,

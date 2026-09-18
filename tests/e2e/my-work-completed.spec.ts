@@ -151,13 +151,22 @@ test("Completed replaces Bugs, Waiting for testing is gone, and Ready for QA sta
   const tile = statTile(page, "Completed");
   await expect(tile.locator(".prio-stat__value")).toHaveText(String(expected));
 
-  // And opens exactly that list, for the signed-in user.
+  /*
+   * And opens exactly that list, for the signed-in user — on this page now
+   * rather than on the global issue list. The rows are what matters and they
+   * are unchanged: this person's finished work, not the work they currently
+   * hold and not somebody else's.
+   */
   await tile.click();
-  await expect(page).toHaveURL(new RegExp(`completedBy=${admin.id}`));
-  const table = page.locator("table.prio-table");
-  await expect(table).toContainText(mine.key);
-  await expect(table).not.toContainText(theirs.key);
-  await expect(table).not.toContainText(ready.key);
+  await expect(page).toHaveURL(/\/my-work\?show=completed$/);
+  const list = page.locator(".prio-card").filter({
+    has: page.locator(".prio-issue__section-title", {
+      hasText: "Completed by me",
+    }),
+  });
+  await expect(list).toContainText(mine.key);
+  await expect(list).not.toContainText(theirs.key);
+  await expect(list).not.toContainText(ready.key);
 
   // The underlying state is untouched: Ready for QA is still a status.
   expect(
@@ -219,13 +228,15 @@ test("a member's My Work has Completed instead of Bugs, and no Waiting for testi
   expect(labels).not.toContain("Bugs");
   await expect(page.getByRole("heading", { name: /waiting for testing/i })).toHaveCount(0);
 
-  const member = await prisma.user.findFirstOrThrow({
-    where: { email: "priya.nair@symbiosystech.com" },
-    select: { id: true },
-  });
+  /*
+   * The tile used to link to the global issue list, which meant leaving My
+   * Work to read one of My Work's own figures — and telling that list who
+   * "me" was in its query string. It chooses the list on this page now, and
+   * the identity stays where it always belonged: the session.
+   */
   await expect(statTile(page, "Completed")).toHaveAttribute(
     "href",
-    `/issues?completedBy=${member.id}`,
+    "/my-work?show=completed",
   );
   await context.close();
 });

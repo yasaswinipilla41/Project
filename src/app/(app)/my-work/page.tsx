@@ -25,7 +25,7 @@ import { prisma } from "@/lib/prisma";
 import { completedByFilter } from "@/server/queries/completedWork";
 import { dueThisWeekFilter, overdueFilter } from "@/server/queries/due";
 import { requireUser } from "@/lib/session";
-import type { IssueStatus } from "@prisma/client";
+import type { IssueStatus, IssueType, Prisma, Priority } from "@prisma/client";
 
 export const metadata: Metadata = { title: "My Work" };
 export const dynamic = "force-dynamic";
@@ -62,9 +62,96 @@ export const dynamic = "force-dynamic";
  * parameter to change: the query is built from who the request is
  * authenticated as, and the database applies it.
  */
-export default async function MyWorkPage() {
+/**
+ * The four figures, and the one of them whose list is showing.
+ *
+ * The tiles used to be links to `/issues?assignee=<me>` — pressing Completed
+ * left My Work for the global list, which then had to be told who "me" was in
+ * its own query string. The question belongs here, so the answer does too: the
+ * tile chooses which list sits beneath it and the page stays where it was.
+ *
+ * Held in the URL rather than in component state, for the same reason the
+ * issue table's sort is: this page is server-rendered, a chosen tile survives
+ * a refresh and a back button, and the list works with no JavaScript at all.
+ */
+const TABS = ["open", "completed", "overdue", "dueWeek"] as const;
+type Tab = (typeof TABS)[number];
+
+function tabOf(raw: string | string[] | undefined): Tab {
+  const wanted = Array.isArray(raw) ? raw[0] : raw;
+  return (TABS as readonly string[]).includes(wanted ?? "")
+    ? (wanted as Tab)
+    : "open";
+}
+
+/**
+ * How many rows a list other than Open shows at once.
+ *
+ * Open is one person's current workload and is shown whole. The other three
+ * are historical or forward-looking and have no natural end — a year of
+ * completed work is not a list anybody reads to the bottom of. The figure on
+ * the tile is counted separately and is never this number, so the count stays
+ * the truth about how much there is.
+ */
+const LIST_LIMIT = 50;
+
+/** One issue as this page draws it, in whichever list it appears. */
+interface WorkRowData {
+  id: string;
+  key: string;
+  type: IssueType;
+  title: string;
+  status: IssueStatus;
+  priority: Priority;
+  dueDate: Date | null;
+  project: { key: string; name: string };
+}
+
+/**
+ * A row in any of the four lists.
+ *
+ * Extracted so the chosen tile's list is the same row the Open list has always
+ * drawn — a second, slightly different row would be the beginning of two ideas
+ * of what an issue looks like here.
+ */
+function WorkRow({ issue, showStatus }: { issue: WorkRowData; showStatus?: boolean }) {
+  const overdue = isOverdue(issue.dueDate, false);
+
+  return (
+    <Link
+      href={`/issues/${issue.key.toLowerCase()}`}
+      className="prio-worklink"
+    >
+      <IssueTypeIcon type={issue.type} size={17} />
+      <span className="prio-worklink__body">
+        <span className="prio-worklink__title prio-truncate">{issue.title}</span>
+        <span className="prio-worklink__meta">
+          <IssueKey issueKey={issue.key} />
+          <span className="prio-text-muted">{issue.project.name}</span>
+          {showStatus ? <StatusPill status={issue.status} /> : null}
+          {issue.dueDate ? (
+            <span className={overdue ? "prio-due--overdue" : "prio-text-muted"}>
+              {overdue ? "Overdue " : "Due "}
+              {formatDateCompact(issue.dueDate)}
+            </span>
+          ) : null}
+        </span>
+      </span>
+      <span className="prio-worklink__right">
+        <PriorityIndicator priority={issue.priority} showLabel={false} />
+      </span>
+    </Link>
+  );
+}
+
+export default async function MyWorkPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const user = await requireUser();
   const scope = issueScope(user);
+  const tab = tabOf((await searchParams).show);
   /*
    * One clock reading for the whole page, handed to the due fragments so
    * every bucket on it describes the same instant.
@@ -82,28 +169,61 @@ export default async function MyWorkPage() {
     status: { in: [...OPEN_STATUSES] },
   };
 
+  /*
+   * One where-clause per tile, and each is the only definition of its figure.
+   *
+   * The tile counts it and the list beneath it selects it, so a count and its
+   * own rows cannot describe different sets — which is the whole reason the
+   * lists live here rather than on a page that would have to be told who to
+   * ask about.
+   *
+   * Overdue and Due this week are composed with `AND` rather than by spreading
+   * the fragment over `assignedWhere`. Spreading overwrote `status`: the open
+   * restriction was replaced by the fragment's own, and the two only agreed
+   * because the open statuses happen to be exactly the not-closed ones today.
+   * The next status added to the model would have parted them silently.
+   */
+  const WHERE: Record<Tab, Prisma.IssueWhereInput> = {
+    open: assignedWhere,
+    /* Not `assigneeId`: finished work is whoever finished it, which the
+       activity trail knows and the current holder does not. */
+    completed: { ...scope, ...completedByFilter([user.id]) },
+    overdue: {
+      ...scope,
+      assigneeId: user.id,
+      AND: [{ status: { in: [...OPEN_STATUSES] } }, overdueFilter(now)],
+    },
+    dueWeek: {
+      ...scope,
+      assigneeId: user.id,
+      AND: [{ status: { in: [...OPEN_STATUSES] } }, dueThisWeekFilter(now)],
+    },
+  };
+
+  /** Everything a row on this page draws, whichever list it is in. */
+  const rowSelect = {
+    id: true,
+    key: true,
+    type: true,
+    title: true,
+    status: true,
+    priority: true,
+    dueDate: true,
+    updatedAt: true,
+    project: { select: { key: true, name: true } },
+  } satisfies Prisma.IssueSelect;
+
   const [
     assigned,
     overdueCount,
     dueSoonCount,
-    resolvedCount,
     completedCount,
     handedBack,
   ] = await Promise.all([
       prisma.issue.findMany({
         where: assignedWhere,
         orderBy: [{ priority: "asc" }, { dueDate: { sort: "asc", nulls: "last" } }],
-        select: {
-          id: true,
-          key: true,
-          type: true,
-          title: true,
-          status: true,
-          priority: true,
-          dueDate: true,
-          updatedAt: true,
-          project: { select: { key: true, name: true } },
-        },
+        select: rowSelect,
       }),
       /*
        * Overdue and Due this week, from the fragments every other surface
@@ -115,29 +235,19 @@ export default async function MyWorkPage() {
        * the list it opened were answering two different questions and could
        * not agree. There is one answer now, in `queries/due`.
        */
-      prisma.issue.count({ where: { ...assignedWhere, ...overdueFilter(now) } }),
-      prisma.issue.count({
-        where: { ...assignedWhere, ...dueThisWeekFilter(now) },
-      }),
-      prisma.issue.count({
-        where: {
-          ...scope,
-          assigneeId: user.id,
-          status: { in: [...CLOSED_STATUSES] },
-        },
-      }),
+      prisma.issue.count({ where: WHERE.overdue }),
+      prisma.issue.count({ where: WHERE.dueWeek }),
 
       /*
        * Completed, for this person.
        *
-       * The same fragment the list behind the tile filters on
-       * (`completedBy=<id>`), so the number and the rows it opens cannot
-       * disagree. Scoped like everything else on the page; see
-       * `completedByFilter` for what makes finished work somebody's own.
+       * The same fragment the list beneath the tile selects on, so the number
+       * and the rows cannot disagree. See `completedByFilter` for what makes
+       * finished work somebody's own — it is the trail, not the current
+       * holder, because work reassigned after it was finished was still
+       * finished by whoever finished it.
        */
-      prisma.issue.count({
-        where: { ...scope, ...completedByFilter([user.id]) },
-      }),
+      prisma.issue.count({ where: WHERE.completed }),
 
       // Their own work that QA has handed back: the developer's queue.
       prisma.issue.findMany({
@@ -162,6 +272,60 @@ export default async function MyWorkPage() {
         },
       }),
     ]);
+
+  /*
+   * The rows for the chosen tile, selected with that tile's own where-clause.
+   *
+   * Open is already loaded whole above — it is the page's own subject and the
+   * status grouping needs all of it. The other three are loaded only when
+   * their tile is the chosen one, so choosing a tile costs one query rather
+   * than the page costing four.
+   */
+  const chosen =
+    tab === "open"
+      ? []
+      : await prisma.issue.findMany({
+          where: WHERE[tab],
+          orderBy:
+            tab === "completed"
+              ? [{ completedAt: { sort: "desc", nulls: "last" } }, { updatedAt: "desc" }]
+              : [{ dueDate: { sort: "asc", nulls: "last" } }, { priority: "asc" }],
+          take: LIST_LIMIT,
+          select: rowSelect,
+        });
+
+  const counts: Record<Tab, number> = {
+    open: assigned.length,
+    completed: completedCount,
+    overdue: overdueCount,
+    dueWeek: dueSoonCount,
+  };
+
+  const TAB_TITLE: Record<Tab, string> = {
+    open: "Open",
+    completed: "Completed by me",
+    overdue: "Overdue",
+    dueWeek: "Due this week",
+  };
+
+  const EMPTY_TITLE: Record<Tab, string> = {
+    open: "Nothing assigned to you",
+    completed: "Nothing finished yet",
+    overdue: "Nothing overdue",
+    dueWeek: "Nothing due this week",
+  };
+
+  const EMPTY_BODY: Record<Tab, string> = {
+    open: "When someone assigns you an issue or a bug it will appear here.",
+    completed:
+      "Work you move to Done — or hand to testing and testing passes — is counted here, even if somebody else holds it now.",
+    overdue: "Nothing assigned to you is past its due date.",
+    dueWeek: "Nothing assigned to you falls due before the week is out.",
+  };
+
+  /** Where a tile points: this page, with that tile chosen. */
+  const tabHref = (which: Tab) =>
+    which === "open" ? "/my-work" : `/my-work?show=${which}`;
 
   // Group in memory: this is one person's open work, not a large set.
   const byStatus = new Map<IssueStatus, typeof assigned>();
@@ -188,55 +352,68 @@ export default async function MyWorkPage() {
         </div>
       </div>
 
+      {/*
+        * The four figures, each choosing the list below it.
+        *
+        * Every tile stays a link, so the keyboard, the back button and a
+        * middle click all still work and the page needs no JavaScript to
+        * change what it shows — it is the destination that changed, from the
+        * global issue list to this page with a different tile chosen.
+        */}
       <div className="row g-3" style={{ marginBottom: "var(--prio-space-6)" }}>
         <div className="col-6 col-xl-3">
           <Stat
             label="Open"
-            value={assigned.length}
+            value={counts.open}
             tone="brand"
             hint="Assigned to me"
-            href={`/issues?assignee=${user.id}&resolution=open`}
+            href={tabHref("open")}
+            selected={tab === "open"}
           />
         </div>
         <div className="col-6 col-xl-3">
           {/* Where Bugs used to be. Completed work is the other half of the
               answer to "what is mine", and it is this person's alone — the
-              list it opens is filtered on who the session says they are. */}
+              list is filtered on who the session says they are. */}
           <Stat
             label="Completed"
-            value={completedCount}
+            value={counts.completed}
             icon={<IconCheck size={13} />}
-            tone={completedCount > 0 ? "success" : "default"}
+            tone={counts.completed > 0 ? "success" : "default"}
             hint="Completed by me"
-            href={`/issues?completedBy=${user.id}`}
+            href={tabHref("completed")}
+            selected={tab === "completed"}
           />
         </div>
         <div className="col-6 col-xl-3">
           <Stat
             label="Overdue"
-            value={overdueCount}
+            value={counts.overdue}
             icon={<IconWarning size={13} />}
-            tone={overdueCount > 0 ? "danger" : "default"}
+            tone={counts.overdue > 0 ? "danger" : "default"}
             hint="Past their due date"
-            href={`/issues?assignee=${user.id}&resolution=open&overdue=1`}
+            href={tabHref("overdue")}
+            selected={tab === "overdue"}
           />
         </div>
         <div className="col-6 col-xl-3">
           <Stat
             label="Due this week"
-            value={dueSoonCount}
+            value={counts.dueWeek}
             icon={<IconCalendar size={13} />}
-            tone={dueSoonCount > 0 ? "warning" : "default"}
-            hint={`${resolvedCount} completed all time`}
-            href={`/issues?assignee=${user.id}&resolution=open&dueWeek=1&sort=due&dir=asc`}
+            tone={counts.dueWeek > 0 ? "warning" : "default"}
+            hint="Due before the week is out"
+            href={tabHref("dueWeek")}
+            selected={tab === "dueWeek"}
           />
         </div>
       </div>
 
       {/* ------------------------------------------------ QA collaboration */}
       {/* Shown only when there is something to act on, so the page stays a
-          to-do list rather than a wall of empty sections. */}
-      {handedBack.length > 0 ? (
+          to-do list rather than a wall of empty sections — and only beside
+          the open work it is about. */}
+      {tab === "open" && handedBack.length > 0 ? (
         <div className="row g-4" style={{ marginBottom: "var(--prio-space-4)" }}>
           {handedBack.length > 0 ? (
             <div className="col-12 col-xl-6">
@@ -283,75 +460,80 @@ export default async function MyWorkPage() {
         </div>
       ) : null}
 
-      {assigned.length === 0 ? (
-        <Card>
-          <EmptyState
-            icon={<IconEmptyBox />}
-            title="Nothing assigned to you"
-            body="When someone assigns you an issue or a bug it will appear here, grouped by status."
-          />
-        </Card>
+      {/*
+        * One list at a time, and it is the chosen tile's.
+        *
+        * Open keeps its status grouping — it is a queue, and which column the
+        * work is in is the first thing somebody wants from it. The other three
+        * are one flat list each: a set defined by a date or by history has no
+        * useful grouping, only an order.
+        */}
+      {tab === "open" ? (
+        assigned.length === 0 ? (
+          <Card>
+            <EmptyState
+              icon={<IconEmptyBox />}
+              title="Nothing assigned to you"
+              body="When someone assigns you an issue or a bug it will appear here, grouped by status."
+            />
+          </Card>
+        ) : (
+          <div className="row g-4">
+            {OPEN_STATUSES.map((status) => {
+              const items = byStatus.get(status) ?? [];
+              if (items.length === 0) return null;
+
+              return (
+                <div key={status} className="col-12 col-xl-6">
+                  <Card style={{ height: "100%" }}>
+                    <CardBody>
+                      <h2 className="prio-issue__section-title">
+                        <StatusPill status={status} />
+                        <span className="prio-text-muted">{items.length}</span>
+                      </h2>
+
+                      {items.map((issue) => (
+                        <WorkRow key={issue.id} issue={issue} />
+                      ))}
+                    </CardBody>
+                  </Card>
+                </div>
+              );
+            })}
+          </div>
+        )
       ) : (
-        <div className="row g-4">
-          {OPEN_STATUSES.map((status) => {
-            const items = byStatus.get(status) ?? [];
-            if (items.length === 0) return null;
+        <Card>
+          <CardBody>
+            <h2 className="prio-issue__section-title">
+              {TAB_TITLE[tab]}
+              <span className="prio-text-muted">{counts[tab]}</span>
+            </h2>
 
-            return (
-              <div key={status} className="col-12 col-xl-6">
-                <Card style={{ height: "100%" }}>
-                  <CardBody>
-                    <h2 className="prio-issue__section-title">
-                      <StatusPill status={status} />
-                      <span className="prio-text-muted">{items.length}</span>
-                    </h2>
+            {chosen.length === 0 ? (
+              <EmptyState
+                icon={<IconEmptyBox />}
+                title={EMPTY_TITLE[tab]}
+                body={EMPTY_BODY[tab]}
+              />
+            ) : (
+              <>
+                {chosen.map((issue) => (
+                  <WorkRow key={issue.id} issue={issue} showStatus />
+                ))}
 
-                    {items.map((issue) => {
-                      const overdue = isOverdue(issue.dueDate, false);
-                      return (
-                        <Link
-                          key={issue.id}
-                          href={`/issues/${issue.key.toLowerCase()}`}
-                          className="prio-worklink"
-                        >
-                          <IssueTypeIcon type={issue.type} size={17} />
-                          <span className="prio-worklink__body">
-                            <span className="prio-worklink__title prio-truncate">
-                              {issue.title}
-                            </span>
-                            <span className="prio-worklink__meta">
-                              <IssueKey issueKey={issue.key} />
-                              <span className="prio-text-muted">
-                                {issue.project.name}
-                              </span>
-                              {issue.dueDate ? (
-                                <span
-                                  className={
-                                    overdue ? "prio-due--overdue" : "prio-text-muted"
-                                  }
-                                >
-                                  {overdue ? "Overdue " : "Due "}
-                                  {formatDateCompact(issue.dueDate)}
-                                </span>
-                              ) : null}
-                            </span>
-                          </span>
-                          <span className="prio-worklink__right">
-                            <PriorityIndicator
-                              priority={issue.priority}
-                              showLabel={false}
-                            />
-                          </span>
-                        </Link>
-                      );
-                    })}
-                  </CardBody>
-                </Card>
-              </div>
-            );
-          })}
-
-        </div>
+                {/* The figure above counts everything; this list is capped.
+                    Said plainly, so a reader is never left working out why
+                    the number and the rows differ. */}
+                {counts[tab] > chosen.length ? (
+                  <p className="prio-text-muted" style={{ marginTop: "var(--prio-space-3)" }}>
+                    Showing the first {chosen.length} of {counts[tab]}.
+                  </p>
+                ) : null}
+              </>
+            )}
+          </CardBody>
+        </Card>
       )}
     </>
   );

@@ -18,6 +18,7 @@ import {
   createProjectSchema,
   deleteProjectSchema,
   fieldErrors,
+  projectDesignationSchema,
   projectIdSchema,
   projectMemberSchema,
   updateProjectSchema,
@@ -1010,6 +1011,67 @@ export async function addProjectMember(
     if (project) {
       revalidatePath(`/projects/${project.key.toLowerCase()}`);
       revalidatePath(`/projects/${project.key.toLowerCase()}/summary`);
+    }
+
+    return { ok: true, data: undefined };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/**
+ * Naming what somebody does on one project.
+ *
+ * An administrator's act, like adding and removing a member, and guarded the
+ * same way — the control being hidden is presentation; `assertAdmin` is the
+ * rule.
+ *
+ * It writes a label and nothing else. Nobody gains or loses a permission by
+ * being called a tester here: `workRoleOf` still derives what anybody may do
+ * from their account role and their work teams, and no guard reads this column.
+ * That separation is the point of it — a person can be this project's tester
+ * and that project's developer without either project altering what they may
+ * do in the other.
+ *
+ * Only an existing membership is named. Designating somebody who is not on the
+ * project would be a role for a person who cannot open the work, so the update
+ * matches on the pair and reports when it matched nothing.
+ */
+export async function setProjectMemberDesignation(
+  raw: unknown,
+): Promise<ProjectActionResult> {
+  try {
+    const user = await requireUser();
+    assertAdmin(user);
+
+    const parsed = projectDesignationSchema.safeParse(raw);
+    if (!parsed.success) {
+      return { ok: false, error: "Choose a member and a designation." };
+    }
+
+    const updated = await prisma.projectMember.updateMany({
+      where: {
+        projectId: parsed.data.projectId,
+        userId: parsed.data.userId,
+      },
+      data: { designation: parsed.data.designation },
+    });
+
+    if (updated.count === 0) {
+      return { ok: false, error: "That person is not a member of this project." };
+    }
+
+    const project = await prisma.project.findUnique({
+      where: { id: parsed.data.projectId },
+      select: { key: true },
+    });
+    if (project) {
+      const base = `/projects/${project.key.toLowerCase()}`;
+      /* The Welcome screen is where a person reads their own role, and the
+         settings page is where this was just changed. */
+      revalidatePath(`${base}/welcome`);
+      revalidatePath(`${base}/settings`);
+      revalidatePath(`${base}/summary`);
     }
 
     return { ok: true, data: undefined };

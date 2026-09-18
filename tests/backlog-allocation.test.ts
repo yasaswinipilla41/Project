@@ -35,6 +35,20 @@ const FOUR: AllocationCandidate[] = [
   { id: "d", name: "D", workload: 5 },
 ];
 
+/**
+ * Just the placements.
+ *
+ * The planner answers with what it placed *and* what it deliberately did not,
+ * because "nothing happened to these four" is information somebody needs. The
+ * balancing assertions below are about the placements, so they take that half.
+ */
+function allocationsOf(
+  issues: AllocationIssue[],
+  candidates: AllocationCandidate[],
+): Allocation[] {
+  return planBacklogAllocation(issues, candidates).allocations;
+}
+
 function distribution(plan: Allocation[]): Record<string, number> {
   const counts: Record<string, number> = {};
   for (const row of plan) {
@@ -47,7 +61,7 @@ describe("A = 100, B = 10, C = 30, D = 5", () => {
   it("gives the first five issues to D, and nobody else", () => {
     /* D starts five behind B, so the first five issues close that gap and none
        of them has any reason to go anywhere else. */
-    const plan = planBacklogAllocation(issues(5), FOUR);
+    const plan = allocationsOf(issues(5), FOUR);
 
     expect(plan.map((row) => row.assigneeName)).toEqual([
       "D",
@@ -64,7 +78,7 @@ describe("A = 100, B = 10, C = 30, D = 5", () => {
        D has reached 10 and B was already there. The tie goes to B by name, and
        from then on the two swap. This is the recalculation doing its job — a
        planner that sorted once would have put all eight on D. */
-    const plan = planBacklogAllocation(issues(8), FOUR);
+    const plan = allocationsOf(issues(8), FOUR);
 
     expect(plan.map((row) => row.assigneeName)).toEqual([
       "D",
@@ -79,7 +93,7 @@ describe("A = 100, B = 10, C = 30, D = 5", () => {
   });
 
   it("over twelve issues, splits them 8 to D and 4 to B — A and C get none", () => {
-    const plan = planBacklogAllocation(issues(12), FOUR);
+    const plan = allocationsOf(issues(12), FOUR);
 
     expect(distribution(plan)).toEqual({ D: 8, B: 4 });
 
@@ -100,7 +114,7 @@ describe("A = 100, B = 10, C = 30, D = 5", () => {
   it("reaches C only once D and B have caught up with it", () => {
     /* Fifty issues is enough to level D and B with C at 30 and then start
        feeding all three. A, a hundred deep, still gets nothing. */
-    const plan = planBacklogAllocation(issues(50), FOUR);
+    const plan = allocationsOf(issues(50), FOUR);
     const counts = distribution(plan);
 
     expect(counts.C, "C is reached").toBeGreaterThan(0);
@@ -123,7 +137,7 @@ describe("the two rules", () => {
       { id: "medium", key: "ENG-001", title: "Medium", priority: "MEDIUM" },
     ];
 
-    const plan = planBacklogAllocation(mixed, [
+    const plan = allocationsOf(mixed, [
       { id: "solo", name: "Solo", workload: 0 },
     ]);
 
@@ -137,7 +151,7 @@ describe("the two rules", () => {
   it("recalculates after every allocation rather than sorting once", () => {
     /* Two empty queues and four issues. Sorting once and dealing would put all
        four on whoever sorted first; recalculating splits them evenly. */
-    const plan = planBacklogAllocation(issues(4), [
+    const plan = allocationsOf(issues(4), [
       { id: "x", name: "X", workload: 0 },
       { id: "y", name: "Y", workload: 0 },
     ]);
@@ -148,13 +162,13 @@ describe("the two rules", () => {
 
   it("gives the same plan for the same input, every time", () => {
     /* A preview is only a promise if applying it does the same thing. */
-    const first = planBacklogAllocation(issues(20), FOUR);
-    const second = planBacklogAllocation(issues(20), FOUR);
+    const first = allocationsOf(issues(20), FOUR);
+    const second = allocationsOf(issues(20), FOUR);
     expect(second).toEqual(first);
   });
 
   it("explains each choice in the row itself", () => {
-    const [first] = planBacklogAllocation(issues(1, "URGENT"), FOUR);
+    const [first] = allocationsOf(issues(1, "URGENT"), FOUR);
     expect(first!.reason).toContain("Urgent");
     expect(first!.reason).toContain("D");
     expect(first!.reason).toContain("5");
@@ -162,11 +176,21 @@ describe("the two rules", () => {
 });
 
 describe("nothing to do", () => {
-  it("plans nothing when there is nobody to give work to", () => {
-    expect(planBacklogAllocation(issues(5), [])).toEqual([]);
+  it("assigns nothing when there is nobody to give work to, and says so", () => {
+    const plan = planBacklogAllocation(issues(5), []);
+
+    expect(plan.allocations).toEqual([]);
+    /* Not silence: five issues went in and five are accounted for, each with
+       the reason it was left alone. An engine that returned an empty list
+       would be indistinguishable from one that had found nothing to do. */
+    expect(plan.unplaced).toHaveLength(5);
+    expect(plan.unplaced[0]!.reason).toMatch(/no developer/i);
   });
 
   it("plans nothing when the backlog is empty", () => {
-    expect(planBacklogAllocation([], FOUR)).toEqual([]);
+    expect(planBacklogAllocation([], FOUR)).toEqual({
+      allocations: [],
+      unplaced: [],
+    });
   });
 });

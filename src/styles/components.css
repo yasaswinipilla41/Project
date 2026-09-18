@@ -200,6 +200,20 @@
     box-shadow var(--prio-duration-fast) var(--prio-ease);
 }
 
+/*
+ * A select that sits in a row rather than in a form.
+ *
+ * The full-width control is right in a field with a label above it and wrong
+ * beside a person's name in a roster, where it would push the row's own
+ * actions off the end.
+ */
+.prio-select--sm {
+  width: auto;
+  min-height: 28px;
+  padding: 2px var(--prio-space-3);
+  font-size: var(--prio-text-xs);
+}
+
 .prio-input::placeholder,
 .prio-textarea::placeholder {
   color: var(--prio-text-disabled);
@@ -1503,6 +1517,24 @@ a.prio-stat:focus-visible {
   outline: none;
   border-color: var(--prio-border-focus);
   box-shadow: var(--prio-shadow-focus);
+}
+
+/*
+ * The chosen tile, where the tiles decide what is beneath them.
+ *
+ * Marked with the brand edge rather than a fill: the figure is what the tile
+ * is for and a tinted panel behind it is harder to read, so the selection sits
+ * at the border and the top edge instead. The hover lift is dropped for this
+ * one — a tile cannot usefully be lifted towards a list it is already showing.
+ */
+a.prio-stat[data-selected="true"] {
+  border-color: var(--prio-primary-400);
+  box-shadow: inset 0 3px 0 0 var(--prio-primary-600);
+}
+
+a.prio-stat[data-selected="true"]:hover {
+  transform: none;
+  border-color: var(--prio-primary-500);
 }
 
 /* ------------------------------------------------------------- segmented */
@@ -2843,21 +2875,51 @@ a.prio-stat:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 
-/* A completed iteration in the Iteration filter: its name, then a green
-   check. The check's colour (#10B981) is also set on the icon itself; this
-   rule is scoped to the menu row, including its hover and selected states, so
-   it wins over their inherited text colour as well. */
-.prio-filter__iteration {
+/* ------------------------------------------------------- split button --- */
+
+/*
+ * One button with a caret beside it: the common action stays one click, and
+ * the alternatives live behind the caret.
+ *
+ * Deliberately not `.prio-create`, which is the top bar's brand-gradient
+ * control at its own size — sharing that class would tie the shape of a list
+ * toolbar to the shape of the create control, and the next change to either
+ * would move both. What they share is the idea, not the stylesheet.
+ *
+ * The two halves keep their own button styling and lose only the radii that
+ * face each other, so the pair reads as one control while each half stays
+ * independently clickable.
+ */
+.prio-splitbtn {
+  position: relative;
   display: inline-flex;
-  align-items: center;
-  gap: var(--prio-space-2);
-  min-width: 0;
+  align-items: stretch;
 }
 
-.prio-menu__item .prio-filter__iteration-done,
-.prio-menu__item:hover .prio-filter__iteration-done,
-.prio-menu__item[aria-checked="true"] .prio-filter__iteration-done {
-  flex-shrink: 0;
-  color: #10b981;
-  stroke: #10b981;
+/* The Menu component wraps its trigger; keep that wrapper out of the layout. */
+.prio-splitbtn > * {
+  display: flex;
+}
+
+.prio-splitbtn .prio-splitbtn__main {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.prio-splitbtn .prio-splitbtn__caret {
+  position: relative;
+  width: 26px;
+  /* Icon-only: the inherited side padding would leave no room for the glyph. */
+  padding: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  /* A hairline between the halves, in the button's own foreground colour so
+     it holds in both themes without a second variable. */
+  box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.28);
+}
+
+/* Lift the focused half so its ring is not painted over by its sibling. */
+.prio-splitbtn .prio-splitbtn__main:focus-visible,
+.prio-splitbtn .prio-splitbtn__caret:focus-visible {
+  z-index: 1;
 }

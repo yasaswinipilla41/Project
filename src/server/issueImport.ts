@@ -191,8 +191,25 @@ export async function importWorkItems(
     if (name !== "") columnOf.set(name.toLowerCase(), index);
   });
 
+  /*
+   * The project this import is pinned to, on a surface that is one project's
+   * own list.
+   *
+   * Resolved here rather than trusted: the id arrives from the browser, and
+   * the only thing that makes it safe is that it is looked up inside
+   * `accessibleProjectIds` below. An id for a project the caller cannot reach
+   * resolves to nothing and the import refuses, exactly as a spreadsheet
+   * naming that project's key would.
+   */
+  const pinnedId = formData.get("projectId");
+  const pinnedTo = typeof pinnedId === "string" && pinnedId !== "" ? pinnedId : null;
+
   const missing = REQUIRED_HEADERS.filter(
-    (header) => !columnOf.has(header.toLowerCase()),
+    (header) =>
+      /* Pinned to a project, the key column is optional: the surface already
+         says which project this is, and every row goes there. */
+      !(pinnedTo !== null && header === HEADERS.projectKey) &&
+      !columnOf.has(header.toLowerCase()),
   );
   if (missing.length > 0) {
     return {
@@ -220,6 +237,20 @@ export async function importWorkItems(
   });
   const projectByKey = new Map(projects.map((p) => [p.key.toUpperCase(), p]));
 
+  /*
+   * The pinned project, found among the ones this person may write into — so
+   * an id from the browser naming a project they cannot reach lands here as
+   * `undefined` and the whole import stops, rather than as a project.
+   */
+  const pinnedProject =
+    pinnedTo === null ? null : projects.find((p) => p.id === pinnedTo);
+  if (pinnedTo !== null && !pinnedProject) {
+    return {
+      ok: false,
+      error: "You cannot add work to that project.",
+    };
+  }
+
   const problems: ImportProblem[] = [];
   const prepared: PreparedRow[] = [];
 
@@ -244,7 +275,29 @@ export async function importWorkItems(
       continue;
     }
 
-    const project = projectByKey.get(projectKey);
+    /*
+     * Which project the row lands in.
+     *
+     * Pinned to one, that project wins and a row naming a different one is
+     * refused rather than quietly moved — somebody importing on the
+     * Engineering tab should not discover afterwards that half the sheet went
+     * to Website, and the refusal says which row disagreed.
+     */
+    let project;
+    if (pinnedProject) {
+      if (projectKey !== "" && projectKey !== pinnedProject.key.toUpperCase()) {
+        problems.push({
+          row: number,
+          column: HEADERS.projectKey,
+          message: `This import is ${pinnedProject.key}'s — remove the key or set it to ${pinnedProject.key}.`,
+        });
+        continue;
+      }
+      project = pinnedProject;
+    } else {
+      project = projectByKey.get(projectKey);
+    }
+
     if (!project) {
       problems.push({
         row: number,

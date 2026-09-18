@@ -501,6 +501,50 @@ export async function displayRoleOf(user: CurrentUser): Promise<DisplayRole> {
   );
 }
 
+/**
+ * What somebody is called **on one project**.
+ *
+ * Every other role in Prio is one answer per person: the account role, the
+ * work role derived from team membership, and the badge derived from that.
+ * They have to be — a guard cannot ask "may they, here?" if "here" is not part
+ * of the question, and the teams that carry "what do they do" have no project
+ * dimension at all.
+ *
+ * A project can still say what somebody is *on it*, and that is what
+ * `ProjectMember.designation` holds. Somebody may be the tester on one project
+ * and building on another, and the Welcome screen of each should say so
+ * instead of printing one global answer twice.
+ *
+ * Three cases, in order:
+ *
+ *  1. an administrator is an administrator everywhere — there is no project
+ *     they are less than that on, and saying otherwise on one screen would be
+ *     a lie about what they can do;
+ *  2. a designation on the membership is what this project calls them;
+ *  3. otherwise their organisation-wide badge, which is what every membership
+ *     read as before this column existed and what an unnamed one still reads
+ *     as today.
+ *
+ * **This decides nothing.** It is the display concept `DisplayRole` already
+ * is: no guard consults it, no capability is derived from it, and a
+ * designation cannot widen or narrow what anybody may do. `workRoleOf` remains
+ * the single authority on that, unchanged and still global — which is why a
+ * QA designation here does not make somebody a tester to `canSetStatus`.
+ */
+export async function projectDisplayRoleOf(
+  user: CurrentUser,
+  projectId: string,
+): Promise<DisplayRole> {
+  if (user.role === "ADMIN") return "ADMIN";
+
+  const membership = await prisma.projectMember.findUnique({
+    where: { projectId_userId: { projectId, userId: user.id } },
+    select: { designation: true },
+  });
+
+  return membership?.designation ?? displayRoleOf(user);
+}
+
 /** The display role of several people, in one query — see `workRolesFor`. */
 export async function displayRolesFor(
   userIds: string[],

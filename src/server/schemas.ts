@@ -158,6 +158,19 @@ export const projectMemberSchema = z.object({
   userId: z.string().min(1),
 });
 
+/**
+ * What a project calls one of its members.
+ *
+ * `null` is a real choice and not an omission — it clears the designation and
+ * returns the person to whatever they are across Prio, which is what every
+ * membership said before designations existed.
+ */
+export const projectDesignationSchema = z.object({
+  projectId: z.string().min(1),
+  userId: z.string().min(1),
+  designation: z.enum(["DEVELOPER", "QA", "FULLSTACK"]).nullable(),
+});
+
 export const shareMemberSchema = z.object({
   userId: z.string().min(1),
   permission: z.enum(["VIEW"]).default("VIEW"),
