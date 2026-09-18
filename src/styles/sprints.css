@@ -305,6 +305,14 @@
   overflow-x: auto;
   overflow-y: hidden;
   padding-bottom: var(--prio-space-2);
+  transition: opacity var(--prio-duration) var(--prio-ease);
+}
+
+/* A status change is still being written. The same dimming the filter bar
+   uses while the server is catching up, for the same reason: what is on
+   screen is what was asked for, not yet what is stored. */
+.prio-sprint__board[data-pending="true"] {
+  opacity: 0.6;
 }
 
 .prio-sprint__column {

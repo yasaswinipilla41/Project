@@ -37,7 +37,22 @@ export function SprintIssueBoard({
 }) {
   const router = useRouter();
   const { toast } = useToast();
-  const [, startTransition] = useTransition();
+  /*
+   * Whether a status change is still being written.
+   *
+   * The card moves the instant it is chosen, which is the right feel and also
+   * a claim the page cannot yet make: the server has not answered. Until this
+   * clears, the board is showing what it *expects* rather than what is stored,
+   * and a reload in that window renders the issue where it still is — which
+   * looks exactly like the change having been lost, even though it lands.
+   *
+   * So the board says so. It dims while the write is in flight and is marked
+   * busy for anything reading the page, and the state clears only after
+   * `updateIssue` has answered and the refresh it triggers has re-rendered —
+   * so "not busy" means the server agrees, not merely that the click was
+   * handled.
+   */
+  const [saving, startTransition] = useTransition();
 
   const [shown, moveIssue] = useOptimistic(
     issues,
@@ -80,7 +95,11 @@ export function SprintIssueBoard({
   })).filter((block) => block.issues.length > 0);
 
   return (
-    <div className="prio-sprint__board prio-scroll">
+    <div
+      className="prio-sprint__board prio-scroll"
+      data-pending={saving || undefined}
+      aria-busy={saving || undefined}
+    >
       {blocks.map(({ status, issues: inBlock }) => (
         <section
           key={status}
