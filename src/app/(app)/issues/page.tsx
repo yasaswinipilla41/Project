@@ -70,6 +70,7 @@ export default async function IssuesPage({
         sprints={options.sprints.map((sprint) => ({
           id: sprint.id,
           name: `${sprint.project.key} · ${sprint.name}`,
+          completed: sprint.status === "COMPLETED",
         }))}
         currentUserId={user.id}
         total={result.total}

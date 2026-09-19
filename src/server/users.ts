@@ -466,16 +466,23 @@ export async function changeOwnPassword(
      * them, and a conditional would be a second place that has to know the
      * default.
      */
-    await prisma.$transaction([
-      prisma.account.update({
+    /*
+     * The interactive form: the array/"batch" form hands both writes to the
+     * query engine as a plan it interprets without actually awaiting each in
+     * turn, which can reach the pg client with the second query before the
+     * first has returned and trip its "already executing a query" guard.
+     */
+    const hashedPassword = await hashPassword(parsed.data.newPassword);
+    await prisma.$transaction(async (tx) => {
+      await tx.account.update({
         where: { id: account.id },
-        data: { password: await hashPassword(parsed.data.newPassword) },
-      }),
-      prisma.user.update({
+        data: { password: hashedPassword },
+      });
+      await tx.user.update({
         where: { id: user.id },
         data: { mustChangePassword: false },
-      }),
-    ]);
+      });
+    });
 
     return { ok: true, data: undefined };
   } catch (error) {
