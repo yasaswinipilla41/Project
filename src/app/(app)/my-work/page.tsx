@@ -369,6 +369,7 @@ export default async function MyWorkPage({
             hint="Assigned to me"
             href={tabHref("open")}
             selected={tab === "open"}
+            pendingIndicator
           />
         </div>
         <div className="col-6 col-xl-3">
@@ -383,6 +384,7 @@ export default async function MyWorkPage({
             hint="Completed by me"
             href={tabHref("completed")}
             selected={tab === "completed"}
+            pendingIndicator
           />
         </div>
         <div className="col-6 col-xl-3">
@@ -394,6 +396,7 @@ export default async function MyWorkPage({
             hint="Past their due date"
             href={tabHref("overdue")}
             selected={tab === "overdue"}
+            pendingIndicator
           />
         </div>
         <div className="col-6 col-xl-3">
@@ -405,6 +408,7 @@ export default async function MyWorkPage({
             hint="Due before the week is out"
             href={tabHref("dueWeek")}
             selected={tab === "dueWeek"}
+            pendingIndicator
           />
         </div>
       </div>

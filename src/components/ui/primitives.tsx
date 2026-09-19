@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { LinkPending } from "@/components/ui/LinkPending";
 import type {
   AnchorHTMLAttributes,
   ButtonHTMLAttributes,
@@ -364,6 +365,7 @@ export function Stat({
   tone,
   href,
   selected,
+  pendingIndicator,
 }: {
   label: string;
   value: ReactNode;
@@ -380,6 +382,15 @@ export function Stat({
    * nothing saying which of them produced it.
    */
   selected?: boolean;
+  /**
+   * Show a spinner on this tile while pressing it is still being answered.
+   *
+   * Opt-in, and only meaningful with `href`. A tile that navigates somewhere
+   * else needs nothing: the page changes and that is the feedback. A tile that
+   * chooses what is shown *below* it does, because until the new render lands
+   * the address bar has changed and the screen has not.
+   */
+  pendingIndicator?: boolean;
 }) {
   const body = (
     <>
@@ -387,7 +398,10 @@ export function Stat({
         {icon}
         {label}
       </span>
-      <span className="prio-stat__value">{value}</span>
+      <span className="prio-stat__value">
+        {value}
+        {href && pendingIndicator ? <LinkPending /> : null}
+      </span>
       {hint ? <span className="prio-stat__hint">{hint}</span> : null}
     </>
   );

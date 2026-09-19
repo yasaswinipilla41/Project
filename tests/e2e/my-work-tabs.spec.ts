@@ -128,3 +128,75 @@ test.describe("the figure and its list are the same question", () => {
     }
   });
 });
+
+test.describe("choosing a tile says so while it is being answered", () => {
+  /*
+   * Pressing a tile is a server navigation: the address bar changes at once
+   * and the list cannot, so without a word from the page the press reads as
+   * ignored and the previous tile's rows sit there looking like the answer.
+   *
+   * The signal is on the tile that was pressed rather than over the list,
+   * which also marks which answer is coming.
+   */
+  test("marks the pressed tile until its answer arrives, then stops", async ({
+    page,
+  }) => {
+    await page.goto("/my-work");
+    await expect(tile(page, "Open")).toHaveAttribute("data-selected", "true");
+
+    /* Watched from the moment of the press, because it clears as soon as the
+       server answers and a single look afterwards would always miss it. */
+    let pending = false;
+    const watch = (async () => {
+      for (let i = 0; i < 100; i += 1) {
+        if (await page.locator(".prio-stat__pending").count()) {
+          pending = true;
+          return;
+        }
+        await page.waitForTimeout(8);
+      }
+    })();
+
+    await tile(page, "Completed").click();
+    await watch;
+    await expect(page).toHaveURL(/show=completed/);
+
+    expect(pending, "the pressed tile said it was working").toBe(true);
+
+    /* And it is gone once the list is there — a spinner that outlives its
+       answer is worse than none. */
+    await expect(
+      page.getByRole("heading", { name: "Completed by me" }),
+    ).toBeVisible();
+    await expect(page.locator(".prio-stat__pending")).toHaveCount(0);
+  });
+
+  test("keeps every figure on screen while another tile's list loads", async ({
+    page,
+  }) => {
+    await page.goto("/my-work");
+
+    /* The summary row is not what changes, so it is never blanked or drawn
+       twice: four tiles before, four after, and the pressed one marked. */
+    await tile(page, "Overdue").click();
+    await expect(page).toHaveURL(/show=overdue/);
+
+    await expect(page.locator("a.prio-stat")).toHaveCount(4);
+    for (const label of ["Open", "Completed", "Overdue", "Due this week"]) {
+      await expect(tile(page, label)).toHaveCount(1);
+    }
+    await expect(tile(page, "Overdue")).toHaveAttribute("data-selected", "true");
+    await expect(tile(page, "Open")).not.toHaveAttribute("data-selected", "true");
+  });
+
+  test("stands the whole page in while it is first opened", async ({ page }) => {
+    /* Arriving at My Work from elsewhere is a segment change, which is the one
+       Next shows route loading UI for. Verified from the response rather than
+       the screen, since it is replaced the moment the page itself arrives. */
+    const response = await page.request.get("/my-work");
+    expect(response.ok()).toBe(true);
+    const html = await response.text();
+    expect(html).toContain("prio-skeleton");
+    expect(html).toContain("Loading your work");
+  });
+});

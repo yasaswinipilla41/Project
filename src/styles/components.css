@@ -1537,6 +1537,22 @@ a.prio-stat[data-selected="true"]:hover {
   border-color: var(--prio-primary-500);
 }
 
+/* The tile that was pressed, while its answer is on its way. Sits beside the
+   figure rather than replacing it, so the number does not jump out and back. */
+.prio-stat__pending {
+  display: inline-flex;
+  align-items: center;
+  margin-left: var(--prio-space-2);
+  color: var(--prio-primary-600);
+  vertical-align: middle;
+}
+
+.prio-stat__pending .prio-spinner {
+  width: 12px;
+  height: 12px;
+  border-width: 2px;
+}
+
 /* ------------------------------------------------------------- segmented */
 .prio-segmented {
   display: inline-flex;
