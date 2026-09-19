@@ -6,6 +6,7 @@ import {
   TABLE_COLUMNS,
   parseColumnPreference,
   serializeColumnPreference,
+  visibleColumnCount,
 } from "@/lib/tableColumns";
 
 /**
@@ -111,5 +112,70 @@ describe("the column list itself", () => {
   it("has no duplicate ids", () => {
     const ids = TABLE_COLUMNS.map((c) => c.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+describe("counting the columns on screen", () => {
+  it("counts what is shown, never what is hidden", () => {
+    /* The bug this replaces: the badge counted the columns that were turned
+       off, so turning one on made the number go down. */
+    const chosen = parseColumnPreference("key,title,status,actions");
+    expect(visibleColumnCount(chosen)).toBe(3);
+  });
+
+  it("counts the whole default set when nothing was chosen", () => {
+    /* Every column except the actions cell, which has no header to count. */
+    expect(visibleColumnCount(DEFAULT_COLUMNS)).toBe(TABLE_COLUMNS.length - 1);
+    expect(visibleColumnCount(DEFAULT_COLUMNS)).toBe(
+      OPTIONAL_COLUMNS.length + REQUIRED_COLUMNS.length - 1,
+    );
+  });
+
+  it("goes up by one when a column is turned on", () => {
+    const before = parseColumnPreference("key,title,actions");
+    const after = parseColumnPreference("key,title,actions,priority");
+    expect(visibleColumnCount(after)).toBe(visibleColumnCount(before) + 1);
+  });
+
+  it("goes down by one when a column is turned off", () => {
+    const before = parseColumnPreference("key,title,actions,priority,status");
+    const after = parseColumnPreference("key,title,actions,status");
+    expect(visibleColumnCount(after)).toBe(visibleColumnCount(before) - 1);
+  });
+
+  it("never falls below the columns that cannot be turned off", () => {
+    /* A cookie asking for nothing still draws Key and Summary, so the badge
+       may not read nought while a table is on screen. */
+    const chosen = parseColumnPreference(serializeColumnPreference([]));
+    expect(visibleColumnCount(chosen)).toBe(REQUIRED_COLUMNS.length - 1);
+    expect(visibleColumnCount(chosen)).toBeGreaterThan(0);
+  });
+
+  it("leaves the unnamed actions cell out of the count", () => {
+    const withActions = visibleColumnCount(["key", "title", "actions"]);
+    const without = visibleColumnCount(["key", "title"]);
+    expect(withActions).toBe(without);
+  });
+
+  it("ignores names the table does not draw", () => {
+    /* A stale cookie may still be in a browser; the badge counts the columns
+       that exist, in step with the table, which draws the same set. */
+    const chosen = parseColumnPreference("key,title,actions,nonsense,status");
+    expect(visibleColumnCount(chosen)).toBe(3);
+    expect(visibleColumnCount(["key", "nonsense" as never])).toBe(1);
+  });
+
+  it("agrees with the table for every preference that can be stored", () => {
+    /* The property the badge rests on: whatever the cookie says, the number
+       equals the headers the table will draw. */
+    for (const column of OPTIONAL_COLUMNS) {
+      const chosen = parseColumnPreference(
+        serializeColumnPreference([column.id]),
+      );
+      const drawn = TABLE_COLUMNS.filter(
+        (c) => chosen.includes(c.id) && c.label !== "",
+      ).length;
+      expect(visibleColumnCount(chosen), column.id).toBe(drawn);
+    }
   });
 });

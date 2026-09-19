@@ -101,6 +101,11 @@ export default async function BugsPage({
       <IssueFilters
         projects={options.projects}
         people={options.people}
+        /* The same division the other lists draw: Assignee names the people
+           who build, Reporter the people who check, classified on the server
+           from the role model every guard reads. */
+        assignees={options.assignees}
+        reporters={options.reporters}
         labels={options.labels}
         /* Cross-project, so each sprint carries its project's key — as on
            /issues, for the same reason. */

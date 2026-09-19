@@ -19,6 +19,7 @@ export function AppShell({
   user,
   workRole,
   displayRole,
+  projectRoles,
   projects,
   unreadNotifications,
   newUserAlerts = [],
@@ -34,6 +35,13 @@ export function AppShell({
   workRole: WorkRole;
   /** What to call that role on screen — see `displayRoleOf`. */
   displayRole: DisplayRole;
+  /**
+   * What each project this person belongs to calls them, keyed by the project
+   * key in lower case — see `projectDisplayRolesByKey`. The header reads the
+   * active project out of the path and looks it up here, so the same person
+   * can be offered different controls on different projects.
+   */
+  projectRoles: Record<string, DisplayRole>;
   projects: SidebarProject[];
   unreadNotifications: number;
   /** Admin-only; always empty for a Member. */
@@ -71,6 +79,7 @@ export function AppShell({
               user={user}
               workRole={workRole}
               displayRole={displayRole}
+              projectRoles={projectRoles}
               projects={projects}
               unreadNotifications={unreadNotifications}
               onOpenMobileNav={openMobile}

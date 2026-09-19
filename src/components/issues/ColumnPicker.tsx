@@ -8,6 +8,7 @@ import {
   COLUMN_COOKIE,
   OPTIONAL_COLUMNS,
   serializeColumnPreference,
+  visibleColumnCount,
   type TableColumnId,
 } from "@/lib/tableColumns";
 
@@ -52,7 +53,29 @@ export function ColumnPicker({
   visible: readonly TableColumnId[];
 }) {
   const router = useRouter();
-  const [chosen, setChosen] = useState<Set<TableColumnId>>(new Set(visible));
+
+  /*
+   * One source of truth, with the tick following the finger.
+   *
+   * The table is drawn by the server, so what it drew — `visible` — is the
+   * truth. Toggling writes the cookie and asks for a fresh render, and the
+   * set held here is the optimistic picture in between, so the tick and the
+   * count move on the click rather than a round trip later.
+   *
+   * The moment the server comes back with a different set, that set wins:
+   * `rendered` is compared against what was last adopted, and the state is
+   * re-seeded during the render React then restarts. Without that the chooser
+   * would keep its own answer for the life of the page and could drift from
+   * the table it describes — which is the bug this state used to have.
+   */
+  const rendered = serializeColumnPreference(visible);
+  const [chosen, setChosen] = useState<Set<TableColumnId>>(() => new Set(visible));
+  const [adopted, setAdopted] = useState(rendered);
+
+  if (adopted !== rendered) {
+    setAdopted(rendered);
+    setChosen(new Set(visible));
+  }
 
   function toggle(id: TableColumnId) {
     const next = new Set(chosen);
@@ -65,8 +88,18 @@ export function ColumnPicker({
     router.refresh();
   }
 
-  /* Only the optional ones are counted: "3" beside the control should mean
-     three things turned off, not three things that were never negotiable. */
+  /*
+   * The badge counts the columns that are on, not the ones that are off.
+   *
+   * It used to show how many optional columns were hidden, so turning a column
+   * on made the number go down and a table showing everything had no number at
+   * all. It now says what it appears to say: how many columns the table is
+   * drawing. `visibleColumnCount` derives it from the same set the table
+   * renders from — see `lib/tableColumns`.
+   */
+  const shown = visibleColumnCount(chosen);
+  /* The chip still marks itself active when something is turned off, which is
+     what the other filter chips mean by it: this one is not at its default. */
   const hidden = OPTIONAL_COLUMNS.filter((column) => !chosen.has(column.id)).length;
 
   return (
@@ -82,9 +115,7 @@ export function ColumnPicker({
           {...props}
         >
           Columns
-          {hidden > 0 ? (
-            <span className="prio-filterchip__count">{hidden}</span>
-          ) : null}
+          <span className="prio-filterchip__count">{shown}</span>
           <IconChevronDown size={12} />
         </button>
       )}

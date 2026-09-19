@@ -58,6 +58,12 @@ export default async function IssuesPage({
       <IssueFilters
         projects={options.projects}
         people={options.people}
+        /* Assignee names the people who build, Reporter the people who check —
+           classified on the server from the same role model every guard reads.
+           This list is global, so both are drawn from every project the reader
+           can open. */
+        assignees={options.assignees}
+        reporters={options.reporters}
         labels={options.labels}
         /* Every project's sprints reach this list, so each carries its own
            project's key — two projects may both have a "Sprint 4". */

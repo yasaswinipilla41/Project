@@ -3,24 +3,35 @@
  * the same on the board, the table, the detail page and reports.
  */
 
-const DATE_FMT = new Intl.DateTimeFormat("en-GB", {
-  day: "numeric",
+/*
+ * One convention for every date Prio prints: `Aug 8, 2026` for a day, and
+ * `Jul 14, 2026, 10:15 AM` when the time matters.
+ *
+ * Defined once here and nowhere else, so the work item table, the issue page,
+ * the activity trail and every card read the same way. Changing the shape of a
+ * date is a change to these three formatters and to nothing else.
+ *
+ * The timezone is untouched: no `timeZone` is set, so every date is rendered
+ * in the reader's own, exactly as before.
+ */
+const DATE_FMT = new Intl.DateTimeFormat("en-US", {
   month: "short",
+  day: "numeric",
   year: "numeric",
 });
 
-const DATE_SHORT_FMT = new Intl.DateTimeFormat("en-GB", {
-  day: "numeric",
+const DATE_SHORT_FMT = new Intl.DateTimeFormat("en-US", {
   month: "short",
+  day: "numeric",
 });
 
-const DATETIME_FMT = new Intl.DateTimeFormat("en-GB", {
-  day: "numeric",
+const DATETIME_FMT = new Intl.DateTimeFormat("en-US", {
   month: "short",
+  day: "numeric",
   year: "numeric",
-  hour: "2-digit",
+  hour: "numeric",
   minute: "2-digit",
-  hour12: false,
+  hour12: true,
 });
 
 export function formatDate(value: Date | string | null | undefined): string {

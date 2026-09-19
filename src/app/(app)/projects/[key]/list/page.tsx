@@ -50,7 +50,10 @@ export default async function ProjectListPage({
 
   const [result, options] = await Promise.all([
     listIssues(user, filters),
-    filterOptions(user),
+    /* Scoped to this project, so the people menus name the people on it rather
+       than everybody the reader could reach from another project. The scope is
+       intersected with what they may already see, so it can only narrow. */
+    filterOptions(user, [project.id]),
   ]);
 
   /* Read server-side, so this table is rendered with the columns somebody
@@ -68,6 +71,10 @@ export default async function ProjectListPage({
            assignee, reporter, labels, resolution — is untouched. */
         showProjectFilter={false}
         people={options.people}
+        /* This project's developers and testers, in that division: Assignee
+           names who builds here, Reporter who checks here. */
+        assignees={options.assignees}
+        reporters={options.reporters}
         labels={options.labels}
         /* This project's own sprints, by their plain names: the route already
            fixes the project, so prefixing its key would only repeat it. A

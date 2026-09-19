@@ -35,6 +35,7 @@ import {
   type AssignmentActivityEntry,
 } from "@/components/projects/AssignmentActivity";
 import { ProjectAttachments } from "@/components/projects/ProjectAttachments";
+import { ProjectProgressBar } from "@/components/projects/ProjectProgressBar";
 import { ProjectMembers } from "@/components/projects/ProjectMembers";
 import { ProjectAccess } from "@/components/projects/ProjectAccess";
 import {
@@ -47,6 +48,7 @@ import {
   PRIORITY_LABEL,
 } from "@/lib/domain";
 import { barWidth, dueWindow, formatRelative, percent } from "@/lib/format";
+import { countsAsCompleted, projectProgress } from "@/lib/projectProgress";
 import { listActivity } from "@/server/queries/activity";
 import { prisma } from "@/lib/prisma";
 import { recordProjectVisit } from "@/lib/recents";
@@ -446,21 +448,30 @@ export default async function ProjectOverviewPage({
     .reduce((sum, r) => sum + r._count._all, 0);
 
   /*
-   * Completed means DONE.
+   * Two different questions, kept apart.
    *
-   * This used to sum `CLOSED_STATUSES`, which also holds Cancelled and
-   * Rejected — so abandoning work or deciding it was never a defect counted
-   * towards the completion rate. Closed and completed are different questions
-   * and are answered separately below.
+   * `done` is the Done status and nothing else: it is what the QA cards below
+   * mean by finished, and it is the figure this page has always shown.
+   *
+   * How far through the project is, though, is the directory's question, and
+   * the directory answers it for every project at once. Asking it a second way
+   * here is how the same project came to read as two percentages depending on
+   * which page you opened, so the figure now comes from `projectProgress` on
+   * the counts the directory counts — all closed work, cancelled and rejected
+   * included, because that work is off the board either way.
    */
   const done = statusCount("DONE");
+  const completedWork = byStatus
+    .filter((r) => countsAsCompleted(r.status))
+    .reduce((sum, r) => sum + r._count._all, 0);
+  const progress = projectProgress(project.id, completedWork, total);
   const cancelled = statusCount("CANCELLED");
   const rejected = statusCount("REJECTED");
   const reopened = statusCount("REOPENED");
   const readyForQa = statusCount("IN_REVIEW");
   const inQa = statusCount("IN_QA");
   const inProgress = statusCount("IN_PROGRESS");
-  const remaining = total - done;
+  const remaining = total - completedWork;
 
 
   const [overdue, dueToday, dueThisWeek, upcoming, noDueDate] = dueCounts;
@@ -903,19 +914,12 @@ export default async function ProjectOverviewPage({
         <Card className="prio-issue__section">
           <CardBody>
             <h2 className="prio-issue__section-title">Completion</h2>
-            {total === 0 ? (
+            {progress.isEmpty ? (
               <p className="prio-text-muted">No issues yet.</p>
             ) : (
               <>
-                <div className="prio-progress" aria-hidden>
-                  <div
-                    className="prio-progress__bar"
-                    style={{ width: `${percent(done, total)}%` }}
-                  />
-                </div>
-                <p className="prio-summary__caption">
-                  {percent(done, total)}% completed
-                </p>
+                <ProjectProgressBar progress={progress} />
+                <p className="prio-summary__caption">{progress.label}</p>
                 <ul className="prio-breakdown">
                   <li className="prio-breakdown__row">
                     <span className="prio-breakdown__label">Total</span>
@@ -925,15 +929,24 @@ export default async function ProjectOverviewPage({
                   <li className="prio-breakdown__row">
                     <span className="prio-breakdown__label">Completed</span>
                     <span />
-                    <span className="prio-breakdown__value">{done}</span>
+                    <span className="prio-breakdown__value">
+                      {progress.completed}
+                    </span>
                   </li>
                   <li className="prio-breakdown__row">
                     <span className="prio-breakdown__label">Remaining</span>
                     <span />
                     <span className="prio-breakdown__value">{remaining}</span>
                   </li>
-                  {/* Closed but not finished, kept apart from Completed so the
-                      rate above cannot be inflated by them. */}
+                  {/* What the figure above is made of. Done is work that was
+                      finished; the other two are work that was closed without
+                      being finished, and they are named rather than folded
+                      away so nobody has to guess what the rate contains. */}
+                  <li className="prio-breakdown__row">
+                    <span className="prio-breakdown__label">Done</span>
+                    <span />
+                    <span className="prio-breakdown__value">{done}</span>
+                  </li>
                   <li className="prio-breakdown__row">
                     <span className="prio-breakdown__label">Cancelled</span>
                     <span />
@@ -989,9 +1002,10 @@ export default async function ProjectOverviewPage({
          * question — how much of this project is finished — so it carries a
          * single figure rather than a breakdown by person.
          *
-         * "Completed" is DONE and nothing else, the same definition the
-         * Completion card and the Home card use; cancelled and rejected work
-         * is closed, not finished.
+         * "Completed" here is the Done status and nothing else, which is the
+         * question this card asks: how much work was finished. The rate in the
+         * Completion card answers the other one — how much is off the board —
+         * and counts cancelled and rejected work with it.
          */}
         <Card className="prio-issue__section">
           <CardBody>

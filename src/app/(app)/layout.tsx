@@ -3,7 +3,12 @@ import { redirect } from "next/navigation";
 import { AppShell } from "@/components/shell/AppShell";
 import { SIDEBAR_COOKIE } from "@/components/shell/Sidebar";
 import { prisma } from "@/lib/prisma";
-import { displayRoleOf, projectScope, workRoleOf } from "@/lib/authz";
+import {
+  displayRoleOf,
+  projectDisplayRolesByKey,
+  projectScope,
+  workRoleOf,
+} from "@/lib/authz";
 import { needsPasswordChange, requireUser } from "@/lib/session";
 
 /**
@@ -43,35 +48,56 @@ export default async function AppLayout({
      work team is a DEVELOPER to every guard and a "Member" on screen. */
   const displayRole = await displayRoleOf(user);
 
-  const [projectRows, unreadNotifications, pendingNewUserAlerts, favorites, recents] =
-    await Promise.all([
-      prisma.project.findMany({
-        where: { ...projectScope(user), isArchived: false },
-        select: { id: true, name: true, key: true },
-        orderBy: { name: "asc" },
-        take: 12,
-      }),
-      prisma.notification.count({
-        where: { userId: user.id, readAt: null },
-      }),
-      // Admin-only: the toast that announces a new teammate's first sign-in.
-      isAdmin
-        ? prisma.notification.findMany({
-            where: { userId: user.id, type: "USER_JOINED", readAt: null },
-            select: { id: true, message: true, actor: { select: { name: true } } },
-            orderBy: { createdAt: "asc" },
-            take: 5,
-          })
-        : Promise.resolve([]),
-      prisma.projectFavorite.findMany({
-        where: { userId: user.id },
-        select: { projectId: true },
-      }),
-      prisma.projectRecent.findMany({
-        where: { userId: user.id },
-        select: { projectId: true, lastVisitedAt: true },
-      }),
-    ]);
+  const [
+    projectRoles,
+    projectRows,
+    unreadNotifications,
+    pendingNewUserAlerts,
+    favorites,
+    recents,
+  ] = await Promise.all([
+    /*
+     * What each project calls them, which the header needs because a
+     * designation is per project: the same person can be this project's
+     * tester and that one's developer. Resolved here, from the session, so
+     * the chrome never takes a role from the page it is drawn above.
+     *
+     * The badge above is handed in rather than looked up again — it is the
+     * fallback for a membership that names no designation, and it has just
+     * been resolved.
+     */
+    projectDisplayRolesByKey(user, displayRole),
+    prisma.project.findMany({
+      where: { ...projectScope(user), isArchived: false },
+      select: { id: true, name: true, key: true },
+      orderBy: { name: "asc" },
+      take: 12,
+    }),
+    prisma.notification.count({
+      where: { userId: user.id, readAt: null },
+    }),
+    // Admin-only: the toast that announces a new teammate's first sign-in.
+    isAdmin
+      ? prisma.notification.findMany({
+          where: { userId: user.id, type: "USER_JOINED", readAt: null },
+          select: {
+            id: true,
+            message: true,
+            actor: { select: { name: true } },
+          },
+          orderBy: { createdAt: "asc" },
+          take: 5,
+        })
+      : Promise.resolve([]),
+    prisma.projectFavorite.findMany({
+      where: { userId: user.id },
+      select: { projectId: true },
+    }),
+    prisma.projectRecent.findMany({
+      where: { userId: user.id },
+      select: { projectId: true, lastVisitedAt: true },
+    }),
+  ]);
 
   const favoriteIds = new Set(favorites.map((f) => f.projectId));
   const lastVisitedAt = new Map(
@@ -109,6 +135,7 @@ export default async function AppLayout({
       }}
       workRole={workRole}
       displayRole={displayRole}
+      projectRoles={projectRoles}
       projects={projects}
       unreadNotifications={unreadNotifications}
       newUserAlerts={pendingNewUserAlerts.map((n) => ({

@@ -34,6 +34,11 @@ export const TABLE_COLUMNS = [
   { id: "completedBy", label: "Completed by", required: false },
   { id: "completed", label: "Completed", required: false },
   { id: "due", label: "Due", required: false },
+  /* Beside Updated, because the pair is read together: when it was raised and
+     when it last moved. Added after the others, so a stored preference written
+     before it existed simply does not carry it and the reader turns it on if
+     they want it. */
+  { id: "created", label: "Created", required: false },
   { id: "updated", label: "Updated", required: false },
   { id: "actions", label: "", required: true },
 ] as const;
@@ -99,6 +104,24 @@ export function parseColumnPreference(
   return TABLE_COLUMNS.filter((column) => chosen.has(column.id)).map(
     (column) => column.id,
   );
+}
+
+/**
+ * How many columns a chosen set actually draws — what the chooser's badge says.
+ *
+ * Counted from the same set the table renders from, so the number beside the
+ * control and the columns on screen cannot disagree; there is no second piece
+ * of state to keep in step.
+ *
+ * The row-actions cell is left out because it is not a column anybody chose:
+ * it has no header, it is not offered in the chooser, and counting it would
+ * make the badge one more than the columns a reader can see and name.
+ */
+export function visibleColumnCount(columns: Iterable<TableColumnId>): number {
+  const chosen = new Set(columns);
+  return TABLE_COLUMNS.filter(
+    (column) => column.label !== "" && chosen.has(column.id),
+  ).length;
 }
 
 /** The cookie value for a chosen set. */

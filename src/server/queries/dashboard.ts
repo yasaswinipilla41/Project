@@ -8,6 +8,7 @@ import {
   overdueFilter,
 } from "@/server/queries/due";
 import { CLOSED_STATUSES, OPEN_STATUSES } from "@/lib/domain";
+import { countsAsCompleted } from "@/lib/projectProgress";
 import type { CurrentUser } from "@/lib/session";
 
 /**
@@ -62,6 +63,15 @@ export interface DashboardProject {
   total: number;
   open: number;
   done: number;
+  /**
+   * Work in a closed status — Done, Reject / Not an Issue or Cancelled.
+   *
+   * Separate from `done`, which counts Done alone and is what the card's "N
+   * done" line has always said. This is what the progress bar reads, because
+   * it is what the project directory has always counted, and the two surfaces
+   * have to agree about the same project. See `lib/projectProgress`.
+   */
+  completed: number;
   bugs: number;
   openBugs: number;
   overdue: number;
@@ -503,7 +513,14 @@ export async function loadDashboard(user: CurrentUser): Promise<DashboardData> {
   // Per-project rollup from the single grouped result.
   const perProject = new Map<
     string,
-    { total: number; open: number; done: number; bugs: number; openBugs: number }
+    {
+      total: number;
+      open: number;
+      done: number;
+      completed: number;
+      bugs: number;
+      openBugs: number;
+    }
   >();
 
   for (const row of projectStatRows) {
@@ -511,6 +528,7 @@ export async function loadDashboard(user: CurrentUser): Promise<DashboardData> {
       total: 0,
       open: 0,
       done: 0,
+      completed: 0,
       bugs: 0,
       openBugs: 0,
     };
@@ -520,6 +538,10 @@ export async function loadDashboard(user: CurrentUser): Promise<DashboardData> {
     entry.total += n;
     if (isOpen) entry.open += n;
     if (row.status === "DONE") entry.done += n;
+    /* Progress counts every closed status, which is what `/projects` counts —
+       one definition, in `lib/projectProgress`, so Home cannot disagree with
+       the directory about how far through a project is. */
+    if (countsAsCompleted(row.status)) entry.completed += n;
     if (row.type === "BUG") {
       entry.bugs += n;
       if (isOpen) entry.openBugs += n;
@@ -552,6 +574,7 @@ export async function loadDashboard(user: CurrentUser): Promise<DashboardData> {
       total: 0,
       open: 0,
       done: 0,
+      completed: 0,
       bugs: 0,
       openBugs: 0,
     };

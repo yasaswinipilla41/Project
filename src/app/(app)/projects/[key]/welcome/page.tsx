@@ -12,7 +12,10 @@ import {
 import { WelcomeCreateProject } from "@/components/projects/WelcomeCreateProject";
 import { projectDisplayRoleOf, projectScope } from "@/lib/authz";
 import { DISPLAY_ROLE_LABEL, OPEN_STATUSES, type DisplayRole } from "@/lib/domain";
-import { percent } from "@/lib/format";
+import {
+  COMPLETED_STATUSES,
+  projectProgress,
+} from "@/lib/projectProgress";
 import { prisma } from "@/lib/prisma";
 import { requireUser, type CurrentUser } from "@/lib/session";
 
@@ -157,13 +160,17 @@ export default async function ProjectWelcomePage({
   const base = `/projects/${project.key.toLowerCase()}`;
   const workspaceHref = `${base}/summary`;
 
-  const [openIssues, totalIssues, doneIssues, assignedToMe, lastActivity] =
+  const [openIssues, totalIssues, completedIssues, assignedToMe, lastActivity] =
     await Promise.all([
       prisma.issue.count({
         where: { projectId: project.id, status: { in: [...OPEN_STATUSES] } },
       }),
       prisma.issue.count({ where: { projectId: project.id } }),
-      prisma.issue.count({ where: { projectId: project.id, status: "DONE" } }),
+      /* Counted the way the project directory counts finished work, from the
+         same definition, so the figure below is the figure its card shows. */
+      prisma.issue.count({
+        where: { projectId: project.id, status: { in: [...COMPLETED_STATUSES] } },
+      }),
       prisma.issue.count({
         where: {
           projectId: project.id,
@@ -193,7 +200,7 @@ export default async function ProjectWelcomePage({
     named: membership?.designation != null,
   });
   const members = project.members.map((m) => m.user);
-  const complete = percent(doneIssues, totalIssues);
+  const progress = projectProgress(project.id, completedIssues, totalIssues);
 
   /* Creating a project is an administrator's action — the same rule the
      directory's "New project" button follows, and the same rule `createProject`
@@ -287,7 +294,7 @@ export default async function ProjectWelcomePage({
             <p className="prio-welcome__facthint">
               {totalIssues === 0
                 ? "Nothing has been filed yet."
-                : `${totalIssues} in total · ${complete}% complete`}
+                : `${totalIssues} in total · ${progress.percentage}% complete`}
             </p>
           </div>
 

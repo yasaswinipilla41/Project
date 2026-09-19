@@ -82,6 +82,7 @@ export function Topbar({
   user,
   workRole,
   displayRole,
+  projectRoles,
   projects,
   unreadNotifications,
   onOpenMobileNav,
@@ -90,6 +91,13 @@ export function Topbar({
   workRole: WorkRole;
   /** The badge's wording, which differs for a member with no team assigned. */
   displayRole: DisplayRole;
+  /**
+   * What each project calls this person, keyed by project key in lower case —
+   * resolved on the server by `projectDisplayRolesByKey`. Read here, never
+   * written: the bar takes no role from the URL, only the project key it is
+   * already looking at.
+   */
+  projectRoles: Record<string, DisplayRole>;
   user: TopbarUser;
   projects: TopbarProject[];
   unreadNotifications: number;
@@ -136,6 +144,29 @@ export function Topbar({
   const currentProject = projectInPath
     ? projects.find((p) => p.key.toLowerCase() === projectInPath.toLowerCase())
     : undefined;
+
+  /*
+   * What the project being looked at calls this person.
+   *
+   * A designation belongs to a membership, so the answer changes with the
+   * project: somebody can be the tester on one and a developer on the next.
+   * It is read from the path on every render, which is what makes switching
+   * projects — by link, by direct URL, by refresh or with the back button —
+   * re-resolve it rather than carry the previous project's answer over.
+   *
+   * Falling back to the organisation-wide badge is the same order
+   * `projectDisplayRoleOf` applies: a project with no designation of its own,
+   * and every page that is not inside a project, reads as whatever Prio calls
+   * them everywhere. An administrator has no entries at all and lands here,
+   * which is correct — they are an administrator on every project.
+   *
+   * `projects` is the sidebar's list and is capped, so the lookup is by key
+   * against the map rather than against that list: a project further down the
+   * alphabet still resolves.
+   */
+  const activeRole: DisplayRole =
+    (projectInPath ? projectRoles[projectInPath.toLowerCase()] : undefined) ??
+    displayRole;
 
   /* What this reader may raise, from the one table that decides it. */
   const creatable = creatableWorkItems(workRole);
@@ -301,7 +332,21 @@ export function Topbar({
           * now. `createIssue` still refuses the call on its own, so this is the
           * offer and not the rule.
           */}
-        {creatable.length > 0 ? (
+        {/*
+          * A developer raises work from inside a project, not from the header.
+          *
+          * The whole control is left unrendered rather than disabled, so the
+          * actions row closes up behind it: no empty button, no gap, and the
+          * bar keeps its height and alignment. Which projects this applies to
+          * is `activeRole` above — a designation, not the account role, so a
+          * person developing here and testing there is offered it in one place
+          * and not the other.
+          *
+          * Presentation only. `assertCanCreateWork` and `createIssue` still
+          * decide on the server, and a developer who calls them directly is
+          * answered by exactly the rules that answered before this.
+          */}
+        {activeRole !== "DEVELOPER" && creatable.length > 0 ? (
         <div className="prio-create">
           <button
             type="button"

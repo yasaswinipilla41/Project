@@ -97,6 +97,11 @@ export default async function SharedIssuesPage({
       <IssueFilters
         projects={options.projects}
         people={options.people}
+        /* Named by the same server-side classification the live sheet uses,
+           and scoped to what this viewer could already open — a share widens
+           nothing. */
+        assignees={options.assignees}
+        reporters={options.reporters}
         labels={options.labels}
         currentUserId={user.id}
         total={result.total}

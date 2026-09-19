@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { MemberDetailButton } from "@/components/dashboard/MemberDetailDialog";
+import { ProjectProgressBar } from "@/components/projects/ProjectProgressBar";
+import { projectProgress } from "@/lib/projectProgress";
 import { Avatar, Card, CardBody } from "@/components/ui/primitives";
 import {
   IssueKey,
@@ -363,14 +365,21 @@ export function TypeDistribution({
  * reader is to it.
  */
 export function ProjectRow({ project }: { project: DashboardProject }) {
-  const complete = percent(project.done, project.total);
+  /*
+   * The canonical contract, built from the closed-work count the query now
+   * returns. Home used to divide Done alone by the total while the project
+   * directory divided every closed status, so the same project read as two
+   * different percentages depending on where you looked. There is one figure
+   * now, and `lib/projectProgress` is where it is defined.
+   */
+  const progress = projectProgress(project.id, project.completed, project.total);
 
   return (
     <Link
       href={`/projects/${project.key.toLowerCase()}/welcome`}
       className="prio-projrow"
       data-health={project.health}
-      aria-label={`${project.name} (${project.key}): ${complete}% complete, ${project.open} open`}
+      aria-label={`${project.name} (${project.key}): ${progress.percentage}% complete, ${project.open} open`}
     >
       <span className="prio-projrow__top">
         <span className="prio-project-chip" aria-hidden>
@@ -392,15 +401,12 @@ export function ProjectRow({ project }: { project: DashboardProject }) {
         ) : null}
       </span>
 
-      <span className="prio-progress" aria-hidden>
-        <span
-          className="prio-progress__bar"
-          style={{ width: `${complete}%` }}
-        />
-      </span>
+      {/* Decorative here: the link's own accessible name above already says
+          the percentage, and announcing it twice helps nobody. */}
+      <ProjectProgressBar progress={progress} as="span" decorative />
 
       <span className="prio-projrow__stats">
-        <span>{complete}% complete</span>
+        <span>{progress.percentage}% complete</span>
         <span>{project.open} open</span>
         <span>{project.done} done</span>
         {project.openBugs > 0 ? (

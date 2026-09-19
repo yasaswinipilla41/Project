@@ -51,6 +51,28 @@ export interface FilterOption {
 export interface IssueFiltersProps {
   projects: FilterOption[];
   people: FilterOption[];
+  /**
+   * Who may hold work here — the Assignee list.
+   *
+   * Classified and scoped by `filterOptions` on the server: the people who do
+   * development on the projects in view, plus anybody who actually holds an
+   * issue in scope. That second half matters because Prio hands work back to
+   * the tester who raised it, so a tester can legitimately be an assignee and
+   * must stay filterable.
+   *
+   * Absent means the surface does not narrow it and the full scoped list of
+   * people is offered, which is what every caller did before this existed.
+   */
+  assignees?: FilterOption[];
+  /**
+   * Who raises work here — the Reporter list.
+   *
+   * The QA members and full stack developers of the projects in view, by the
+   * same role model the rest of Prio reads, plus anybody who actually raised
+   * an issue in scope so that historical reporters never drop out of the
+   * filter.
+   */
+  reporters?: FilterOption[];
   labels: FilterOption[];
   /**
    * The sprints this surface can filter by, already named for it — a
@@ -181,6 +203,8 @@ function FilterMenu({
 export function IssueFilters({
   projects,
   people,
+  assignees,
+  reporters,
   labels,
   sprints = [],
   showProjectFilter = true,
@@ -456,9 +480,12 @@ export function IssueFilters({
           selected={values("assignee")}
           onToggle={toggle}
           options={[
-            { value: currentUserId, node: "Assigned to me" },
+            /* Unassigned leads the list: work nobody holds is the first thing
+               anybody filters for here, and it is the one option that is not a
+               person. "Assigned to me" follows, then the people who build. */
             { value: "none", node: "Unassigned" },
-            ...people
+            { value: currentUserId, node: "Assigned to me" },
+            ...(assignees ?? people)
               .filter((p) => p.id !== currentUserId)
               .map((p) => ({ value: p.id, node: p.name })),
           ]}
@@ -471,7 +498,7 @@ export function IssueFilters({
           onToggle={toggle}
           options={[
             { value: currentUserId, node: "Reported by me" },
-            ...people
+            ...(reporters ?? people)
               .filter((p) => p.id !== currentUserId)
               .map((p) => ({ value: p.id, node: p.name })),
           ]}

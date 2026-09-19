@@ -5,7 +5,7 @@ import {
   completedByFilter,
   completersFor,
 } from "@/server/queries/completedWork";
-import { issueScope } from "@/lib/authz";
+import { issueScope, workRolesFor } from "@/lib/authz";
 import { monthWindow } from "@/lib/format";
 import {
   dueThisWeekFilter,
@@ -16,6 +16,8 @@ import type { CurrentUser } from "@/lib/session";
 import {
   CLOSED_STATUSES,
   OPEN_STATUSES,
+  doesDeveloperWork,
+  doesQaWork,
   isIssueStatus,
   isIssueType,
   isPriority,
@@ -553,7 +555,10 @@ export async function countByStatus(
  * only people who are members of those projects, only labels and sprints in
  * them.
  */
-export async function filterOptions(user: CurrentUser) {
+export async function filterOptions(
+  user: CurrentUser,
+  scopeToProjectIds?: readonly string[],
+) {
   const projects = await prisma.project.findMany({
     where: {
       isArchived: false,
@@ -565,11 +570,27 @@ export async function filterOptions(user: CurrentUser) {
 
   const projectIds = projects.map((p) => p.id);
 
-  const [people, labels, sprints] = await Promise.all([
+  /*
+   * Who the people menus may name.
+   *
+   * A project's own List tab passes that project, so its Assignee and Reporter
+   * menus offer the people on it rather than everybody the reader could reach
+   * from somewhere else. The global list passes nothing and keeps the scope it
+   * always had.
+   *
+   * The narrowing is intersected with what the caller can already see, so a
+   * project id in the request can only ever remove names from this list and
+   * never add one: an id they have no access to matches nothing.
+   */
+  const peopleScope = scopeToProjectIds?.length
+    ? projectIds.filter((id) => scopeToProjectIds.includes(id))
+    : projectIds;
+
+  const [people, labels, sprints, holdingRows, raisingRows] = await Promise.all([
     prisma.user.findMany({
       where: {
         isActive: true,
-        projectMemberships: { some: { projectId: { in: projectIds } } },
+        projectMemberships: { some: { projectId: { in: peopleScope } } },
       },
       select: { id: true, name: true, image: true },
       orderBy: { name: "asc" },
@@ -596,9 +617,65 @@ export async function filterOptions(user: CurrentUser) {
       },
       orderBy: [{ startDate: "desc" }, { name: "asc" }],
     }),
+    /* Who actually holds and who actually raised work in scope. Grouped in the
+       database rather than listed and de-duplicated here, so the cost does not
+       grow with the number of issues. */
+    prisma.issue.groupBy({
+      by: ["assigneeId"],
+      where: { projectId: { in: peopleScope }, assigneeId: { not: null } },
+      _count: { _all: true },
+    }),
+    prisma.issue.groupBy({
+      by: ["reporterId"],
+      where: { projectId: { in: peopleScope } },
+      _count: { _all: true },
+    }),
   ]);
 
-  return { projects, people, labels, sprints };
+  /*
+   * Assignee and Reporter name different populations, from the role model the
+   * rest of Prio already reads — `workRolesFor`, the same derivation every
+   * guard uses, never a name or an email.
+   *
+   *   Assignee   the people who build: developers and full stack developers
+   *   Reporter   the people who check: QA members and full stack developers
+   *
+   * Plus, in both cases, anybody who genuinely holds or raised an issue in
+   * scope. That union is deliberate. Prio hands work back to the tester who
+   * raised it, so testers really do hold issues; and every role may raise
+   * work, so reporters really are not only testers. Leaving those people out
+   * would produce a filter that cannot select rows the table is showing.
+   *
+   * Administrators are not offered as a designation-based option — assigning
+   * to an administrator is not what the create rules allow either — but an
+   * administrator who does hold or raise something appears through the union,
+   * for the same reason.
+   */
+  const roles = await workRolesFor(people.map((person) => person.id));
+  const holdsWork = new Set(
+    holdingRows
+      .map((row) => row.assigneeId)
+      .filter((id): id is string => id !== null),
+  );
+  const raisedWork = new Set(raisingRows.map((row) => row.reporterId));
+
+  const assignees = people.filter((person) => {
+    const role = roles.get(person.id);
+    return (
+      (role !== undefined && role !== "ADMIN" && doesDeveloperWork(role)) ||
+      holdsWork.has(person.id)
+    );
+  });
+
+  const reporters = people.filter((person) => {
+    const role = roles.get(person.id);
+    return (
+      (role !== undefined && role !== "ADMIN" && doesQaWork(role)) ||
+      raisedWork.has(person.id)
+    );
+  });
+
+  return { projects, people, assignees, reporters, labels, sprints };
 }
 
 /**

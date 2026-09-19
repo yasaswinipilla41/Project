@@ -545,6 +545,55 @@ export async function projectDisplayRoleOf(
   return membership?.designation ?? displayRoleOf(user);
 }
 
+/**
+ * What this person is called on **each** project they belong to, in one query.
+ *
+ * The same three cases `projectDisplayRoleOf` applies, asked once for every
+ * membership instead of once per project — the bulk form `workRolesFor` is to
+ * `workRoleOf`. The chrome needs it because the header is rendered above the
+ * routes and cannot know in advance which project the reader will open.
+ *
+ * Keyed by the project key in lower case, which is what a URL carries.
+ *
+ * An administrator gets an empty map on purpose: they are an administrator on
+ * every project, so there is nothing to look up and the caller's own
+ * organisation-wide role already answers it. A project the reader is not a
+ * member of is absent for the same reason — there is no designation to read,
+ * so the organisation-wide answer stands.
+ *
+ * **This decides nothing**, exactly as `projectDisplayRoleOf` decides nothing.
+ * It chooses what a control says and whether it is offered; every action it
+ * leads to re-checks the caller on the server.
+ */
+export async function projectDisplayRolesByKey(
+  user: CurrentUser,
+  /**
+   * Their organisation-wide badge, when the caller already has it.
+   *
+   * The fallback for a membership that names no designation is exactly what
+   * `displayRoleOf` answers, and the chrome resolves that one line earlier for
+   * the avatar. Passing it in spends the query once instead of twice; leaving
+   * it out resolves it here, so every other caller is unaffected.
+   */
+  organisationWide?: DisplayRole,
+): Promise<Record<string, DisplayRole>> {
+  if (user.role === "ADMIN") return {};
+
+  const [memberships, fallback] = await Promise.all([
+    prisma.projectMember.findMany({
+      where: { userId: user.id },
+      select: { designation: true, project: { select: { key: true } } },
+    }),
+    organisationWide ?? displayRoleOf(user),
+  ]);
+
+  const roles: Record<string, DisplayRole> = {};
+  for (const row of memberships) {
+    roles[row.project.key.toLowerCase()] = row.designation ?? fallback;
+  }
+  return roles;
+}
+
 /** The display role of several people, in one query — see `workRolesFor`. */
 export async function displayRolesFor(
   userIds: string[],

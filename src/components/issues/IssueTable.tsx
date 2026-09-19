@@ -17,7 +17,7 @@ import {
   IconSubIssue,
 } from "@/components/ui/Icon";
 import { isClosedStatus, type WorkRole } from "@/lib/domain";
-import { formatDateCompact, formatRelative, isOverdue } from "@/lib/format";
+import { formatDate, formatDateTime, isOverdue } from "@/lib/format";
 import type { IssueListResult, SortField } from "@/server/queries/issues";
 import { DEFAULT_COLUMNS, type TableColumnId } from "@/lib/tableColumns";
 import { IssueRowActions } from "@/components/issues/IssueRowActions";
@@ -51,6 +51,9 @@ const COLUMNS: Column[] = [
      issue is Done, which is the only state that records either. */
   { id: "completed", field: null, label: "Completed", className: "prio-col-date" },
   { id: "due", field: "due", label: "Due", className: "prio-col-date" },
+  /* When it was raised, beside when it last moved. Sortable through the same
+     `created` field the list query already orders by. */
+  { id: "created", field: "created", label: "Created", className: "prio-col-date" },
   { id: "updated", field: "updated", label: "Updated", className: "prio-col-date" },
   { id: "actions", field: null, label: "", className: "prio-col-actions" },
 ];
@@ -354,21 +357,25 @@ export function IssueTable({
                     </td>
                   ) : null}
 
+                  {/* Resolved: the issue's own `completedAt`, never inferred
+                      from when the row was last touched. Blank while it is
+                      unfinished, which is the state the column describes. */}
                   {show("completed") ? (
                     <td className="prio-col-date">
                       {issue.completedAt ? (
-                        formatDateCompact(issue.completedAt)
+                        formatDate(issue.completedAt)
                       ) : (
                         <span className="prio-text-disabled">—</span>
                       )}
                     </td>
                   ) : null}
 
+                  {/* A due date is a day, not a moment, so it prints as one. */}
                   {show("due") ? (
                     <td className="prio-col-date">
                       {issue.dueDate ? (
                         <span className={overdue ? "prio-due--overdue" : undefined}>
-                          {formatDateCompact(issue.dueDate)}
+                          {formatDate(issue.dueDate)}
                         </span>
                       ) : (
                         <span className="prio-text-disabled">—</span>
@@ -376,9 +383,19 @@ export function IssueTable({
                     </td>
                   ) : null}
 
+                  {/* Raised and last moved, both as the timestamp the row
+                      actually carries. Updated used to read "4h ago", which
+                      is friendly and answers a different question than a table
+                      column is asked: these are sortable, comparable dates. */}
+                  {show("created") ? (
+                    <td className="prio-col-date prio-text-muted">
+                      {formatDateTime(issue.createdAt)}
+                    </td>
+                  ) : null}
+
                   {show("updated") ? (
                     <td className="prio-col-date prio-text-muted">
-                      {formatRelative(issue.updatedAt)}
+                      {formatDateTime(issue.updatedAt)}
                     </td>
                   ) : null}
 

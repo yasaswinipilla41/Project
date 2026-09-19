@@ -11,8 +11,9 @@ import {
 } from "@/components/ui/primitives";
 import { IconBug, IconEmptyBox, IconIssues, IconStar, IconUsers } from "@/components/ui/Icon";
 import { projectScope } from "@/lib/authz";
-import { CLOSED_STATUSES, OPEN_STATUSES } from "@/lib/domain";
-import { percent } from "@/lib/format";
+import { OPEN_STATUSES } from "@/lib/domain";
+import { ProjectProgressBar } from "@/components/projects/ProjectProgressBar";
+import { countsAsCompleted, projectProgress } from "@/lib/projectProgress";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 
@@ -100,13 +101,23 @@ export default async function ProjectsPage({
 
   const summary = new Map<
     string,
-    { open: number; done: number; bugs: number; openBugs: number; total: number }
+    {
+      open: number;
+      /* Finished work by the one definition in `lib/projectProgress`, which is
+         every closed status. Deliberately not called `done`: the dashboard's
+         `done` counts the Done status alone, and one word for two counts is
+         how the two surfaces drifted apart in the first place. */
+      completed: number;
+      bugs: number;
+      openBugs: number;
+      total: number;
+    }
   >();
 
   for (const project of projects) {
     summary.set(project.id, {
       open: 0,
-      done: 0,
+      completed: 0,
       bugs: 0,
       openBugs: 0,
       total: 0,
@@ -119,7 +130,9 @@ export default async function ProjectsPage({
     const count = row._count._all;
     entry.total += count;
     if ((OPEN_STATUSES as readonly string[]).includes(row.status)) entry.open += count;
-    if ((CLOSED_STATUSES as readonly string[]).includes(row.status)) entry.done += count;
+    /* The one definition of finished work, shared with every other surface
+       that draws this project's progress. */
+    if (countsAsCompleted(row.status)) entry.completed += count;
     if (row.type === "BUG") {
       entry.bugs += count;
       if ((OPEN_STATUSES as readonly string[]).includes(row.status)) {
@@ -170,7 +183,9 @@ export default async function ProjectsPage({
         <div className="row g-4">
           {projects.map((project) => {
             const s = summary.get(project.id)!;
-            const progress = percent(s.done, s.total);
+            /* The canonical contract, built from this page's own counts: the
+               figure every other surface now shows for the same project. */
+            const progress = projectProgress(project.id, s.completed, s.total);
 
             return (
               <div key={project.id} className="col-12 col-lg-6 col-xxl-4">
@@ -228,16 +243,9 @@ export default async function ProjectsPage({
                     </div>
 
                     <div className="prio-projectcard__progress">
-                      <div className="prio-progress" aria-hidden>
-                        <div
-                          className="prio-progress__bar"
-                          style={{ width: `${progress}%` }}
-                        />
-                      </div>
+                      <ProjectProgressBar progress={progress} />
                       <span className="prio-projectcard__progress-label">
-                        {s.total === 0
-                          ? "No issues yet"
-                          : `${progress}% complete · ${s.done} of ${s.total}`}
+                        {progress.label}
                       </span>
                     </div>
 
