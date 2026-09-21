@@ -175,6 +175,18 @@
   color: var(--prio-text-muted);
 }
 
+/*
+ * The template offer, under the sentence that describes the columns.
+ *
+ * Its own row so the button never sits on the hint's baseline or crowds the
+ * file picker above it, and left-aligned with both — it belongs to the field,
+ * not to the dialog's footer where the actions are.
+ */
+.prio-importtemplate {
+  display: flex;
+  margin-top: var(--prio-space-3);
+}
+
 .prio-error {
   display: flex;
   align-items: center;
@@ -834,6 +846,47 @@ a.prio-key:hover {
   letter-spacing: var(--prio-tracking-caps);
   text-transform: uppercase;
   color: var(--prio-text-muted);
+}
+
+/*
+ * A standing fact inside a menu, as opposed to something to choose.
+ *
+ * Deliberately not a `prio-menu__item`: it takes no click, holds no tick and
+ * is skipped by the arrow keys, so it must not look like a row that does.
+ * Quieter than the items, and set on the menu's own surface rather than a
+ * tinted panel, which would read as a warning.
+ */
+.prio-menu__note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--prio-space-2);
+  margin: 0;
+  padding: 0 var(--prio-space-3) var(--prio-space-3);
+  font-size: var(--prio-text-xs);
+  line-height: 1.45;
+  color: var(--prio-text-secondary);
+}
+
+.prio-menu__note > svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--prio-text-muted);
+}
+
+/* The count and the way back, on one line under the choices. */
+.prio-menu__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--prio-space-3);
+  flex-wrap: wrap;
+  padding: var(--prio-space-2) var(--prio-space-3) var(--prio-space-3);
+}
+
+.prio-menu__footertext {
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .prio-menu__item {

@@ -239,6 +239,47 @@ function stamp(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+/**
+ * What to call this export, read from what is actually in it.
+ *
+ * A file named `prio-issues` tells somebody who exported three projects on
+ * Tuesday nothing about which one they are looking at. When every row belongs
+ * to one project the file says so, and it is read from the rows themselves
+ * rather than from the `project` parameter: the parameter says what was
+ * asked for, the rows say what was given, and those differ whenever scope
+ * narrowed the request. No extra query either — these rows are already here.
+ *
+ * `prio-issues` stays the name for everything else, which is what an export
+ * spanning projects honestly is.
+ */
+function exportBasename(rows: readonly { project: { name: string } }[]): string {
+  const first = rows[0]?.project.name;
+  const single =
+    first !== undefined && rows.every((row) => row.project.name === first);
+  return single ? `${filenameSlug(first)}-issues` : "prio-issues";
+}
+
+/**
+ * A project name as a filename may carry it.
+ *
+ * Kept to the shape the rest of these filenames already have — lower case,
+ * words joined by hyphens — so a project export sorts beside the others
+ * instead of looking like it came from somewhere else. Anything that is not
+ * a letter or a digit becomes a separator, which also disposes of the path
+ * characters, quotes and control codes a `Content-Disposition` header must
+ * not carry. A name with nothing left in it falls back rather than producing
+ * a file called `-issues`.
+ */
+function filenameSlug(name: string): string {
+  const slug = name
+    .normalize("NFKD")
+    .replace(/[^a-zA-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase()
+    .slice(0, 60);
+  return slug.length > 0 ? slug : "prio";
+}
+
 /** The three shapes this export comes in. Anything else falls back to Excel. */
 const FORMATS = ["xlsx", "csv", "html"] as const;
 type ExportFormat = (typeof FORMATS)[number];
@@ -332,7 +373,7 @@ export async function GET(request: Request) {
      */
     if (format !== "xlsx") {
       const headers = columns.map((column) => column.header);
-      const filename = `prio-issues-${stamp(new Date())}.${format}`;
+      const filename = `${exportBasename(rows)}-${stamp(new Date())}.${format}`;
 
       const document =
         format === "csv"
@@ -434,7 +475,7 @@ export async function GET(request: Request) {
     });
     const buffer = await file.toBuffer();
 
-    const filename = `prio-issues-${stamp(new Date())}.xlsx`;
+    const filename = `${exportBasename(rows)}-${stamp(new Date())}.xlsx`;
 
     return new Response(new Uint8Array(buffer), {
       headers: {

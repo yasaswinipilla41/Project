@@ -80,15 +80,30 @@ function place(start: number, end: number, from: number, span: number) {
   };
 }
 
-/**
- * How much of the track one date needs beside a bar, as a percentage.
+/*
+ * How much of the track one date needs beside a bar.
  *
- * A date reads about 70px at this size; the timeline never draws narrower
- * than its own 640px minimum, which leaves a track of roughly 470px. 15% of
- * that is ~70px, so below this there is genuinely nowhere to put the date
- * except on the bar itself.
+ * A percentage, because that is what the bar's position is in — but derived
+ * from the three lengths it actually depends on rather than written down as
+ * a number, so that changing any of them moves it and none of them is a
+ * secret. Each is a constant of the layout, not a measurement: reading the
+ * real width would mean measuring in the browser after paint, which is a
+ * layout read, a hydration mismatch and a resize listener for the sake of one
+ * spacing decision that only matters at the two extreme edges.
+ *
+ * If the date's font size or the timeline's minimum width changes, this
+ * follows. The edge cases it governs are pinned by tests rather than by
+ * trusting the arithmetic — see `sprint-timeline-total-move.spec.ts`.
  */
-const EDGE_ROOM = 15;
+
+/** `.prio-timeline` never draws narrower than this; below it, the page scrolls. */
+const MIN_TIMELINE_PX = 640;
+/** The name column beside the track at that width — the 767.98px rule. */
+const LABEL_COLUMN_PX = 150;
+/** "01 Sep 2026" at `--prio-text-2xs`, tabular figures. */
+const DATE_LABEL_PX = 70;
+
+const EDGE_ROOM = (DATE_LABEL_PX / (MIN_TIMELINE_PX - LABEL_COLUMN_PX)) * 100;
 
 /**
  * One end of a sprint bar, dated.
@@ -199,7 +214,18 @@ export default async function ProjectTimelinePage({
     where: { projectId: project.id, dueDate: { not: null } },
   });
 
-  if (scheduled.length === 0) {
+  /*
+   * Nothing to draw at all — no dated work *and* no sprints.
+   *
+   * A sprint is scheduled by its own start and end dates, which owe nothing
+   * to whether anybody has given an issue a due date. This page used to stand
+   * down whenever no issue was dated, which took the sprint bars with it: a
+   * project running a fortnight's sprint was told "nothing is scheduled yet"
+   * while a sprint was in progress. The bars are drawn whenever there are
+   * sprints, and the missing issue rows are explained where they would have
+   * been rather than by replacing the whole page.
+   */
+  if (scheduled.length === 0 && sprints.length === 0) {
     return (
       <Card>
         <EmptyState
@@ -207,7 +233,7 @@ export default async function ProjectTimelinePage({
           title="Nothing is scheduled yet"
           body={
             unscheduled === 0
-              ? "The timeline draws work that has a due date. Give an issue one and it appears here."
+              ? "The timeline draws work that has a due date, and sprints by their own dates. Give an issue a due date — or plan a sprint — and it appears here."
               : `${unscheduled} ${
                   unscheduled === 1 ? "issue has" : "issues have"
                 } no due date, so there is no span to draw. Set one and it appears here.`
@@ -408,6 +434,24 @@ export default async function ProjectTimelinePage({
                     );
                   })}
                 </section>
+              ) : null}
+
+              {/*
+                * Why there are no issue rows, said where they would be.
+                *
+                * Only ever reached with sprints on screen above it — with
+                * neither, the page stood down entirely further up. So this is
+                * not "nothing is scheduled": it is the sprints being
+                * scheduled and the work in them not being, which is a
+                * different thing and a fixable one.
+                */}
+              {scheduled.length === 0 ? (
+                <p className="prio-timeline__empty">
+                  No work item has a due date yet, so the sprints above have no
+                  issue rows beneath them.{" "}
+                  <Link href={`${base}/list`}>Open the list</Link> to give one a
+                  due date.
+                </p>
               ) : null}
 
               {ordered.map(([id, group]) => (

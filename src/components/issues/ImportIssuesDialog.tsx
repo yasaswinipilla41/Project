@@ -5,7 +5,12 @@ import { useRef, useState } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { Alert, Button } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/Toast";
-import { IconWarning } from "@/components/ui/Icon";
+import { IconDownload, IconWarning } from "@/components/ui/Icon";
+import {
+  TEMPLATE_FILENAME,
+  templateColumns,
+  templateRows,
+} from "@/lib/importTemplate";
 import { importWorkItems, type ImportProblem } from "@/server/issueImport";
 
 /**
@@ -19,6 +24,11 @@ import { importWorkItems, type ImportProblem } from "@/server/issueImport";
  * The errors are shown in full rather than summarised. "Import failed" sends
  * somebody back to a spreadsheet with nothing to look for; "Row 7: Unknown
  * priority" sends them to row 7.
+ *
+ * Download Template answers the question before it is asked: the columns the
+ * parser matches on, spelled the way it spells them, in an empty sheet. See
+ * `lib/importTemplate`, which is checked against the parser's own header list
+ * so the offer and the requirement cannot drift.
  */
 export function ImportIssuesDialog({
   project,
@@ -41,8 +51,42 @@ export function ImportIssuesDialog({
 
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
+  const [building, setBuilding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [problems, setProblems] = useState<ImportProblem[]>([]);
+
+  /**
+   * Writes the empty template and hands it to the browser.
+   *
+   * Entirely in the browser: `write-excel-file` — the library the export
+   * already writes workbooks with — ships a browser build, and a sheet of
+   * nine headers needs nothing from the server. So this asks the database
+   * nothing, costs a request nothing, and works the same whether or not the
+   * import it belongs to ever runs.
+   *
+   * Imported on demand rather than at the top of the file so the workbook
+   * writer is fetched by the people who press the button, not by everyone who
+   * opens a list with an Import button on it.
+   */
+  async function downloadTemplate() {
+    setBuilding(true);
+    try {
+      const { default: writeXlsxFile } = await import("write-excel-file/browser");
+      /* The browser build hands back the file rather than writing one, so the
+         name is given to `toFile` — the node build's `fileName` option does
+         not exist here. */
+      await writeXlsxFile(templateRows(), {
+        columns: templateColumns(),
+        sheet: "Work items",
+      }).toFile(TEMPLATE_FILENAME);
+    } catch {
+      /* Said rather than swallowed: a download that silently does nothing is
+         indistinguishable from a button that is broken. */
+      toast("That template could not be prepared.", "error");
+    } finally {
+      setBuilding(false);
+    }
+  }
 
   async function submit() {
     if (!file) return;
@@ -141,6 +185,20 @@ export function ImportIssuesDialog({
           . Type, Status, Priority, Assignee, Labels, Due date and Description
           are used when present.
         </span>
+
+        {/* Directly under the sentence that describes the columns, because it
+            is the same sentence made into a file. */}
+        <div className="prio-importtemplate">
+          <button
+            type="button"
+            className="prio-btn prio-btn--secondary prio-btn--sm"
+            onClick={() => void downloadTemplate()}
+            disabled={building}
+          >
+            <IconDownload size={13} />
+            {building ? "Preparing…" : "Download Template"}
+          </button>
+        </div>
       </div>
 
       {problems.length > 0 ? (

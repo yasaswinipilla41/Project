@@ -2,10 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Menu, MenuItem, MenuLabel } from "@/components/ui/Menu";
-import { IconChevronDown } from "@/components/ui/Icon";
+import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/Menu";
+import { IconChevronDown, IconInfo, IconRefresh } from "@/components/ui/Icon";
 import {
   COLUMN_COOKIE,
+  DEFAULT_COLUMNS,
   OPTIONAL_COLUMNS,
   serializeColumnPreference,
   visibleColumnCount,
@@ -77,6 +78,21 @@ export function ColumnPicker({
     setChosen(new Set(visible));
   }
 
+  /**
+   * Back to the columns the table draws when nobody has chosen.
+   *
+   * `DEFAULT_COLUMNS` is the application's own answer, read from the same
+   * table definition everything else here reads — not a second list written
+   * down beside it, which is how a "default" starts disagreeing with the
+   * default. Written through the same cookie and the same refresh a toggle
+   * uses, so the ticks, the count and the table all land together.
+   */
+  function reset() {
+    setChosen(new Set(DEFAULT_COLUMNS));
+    rememberColumns(DEFAULT_COLUMNS);
+    router.refresh();
+  }
+
   function toggle(id: TableColumnId) {
     const next = new Set(chosen);
     if (!next.delete(id)) next.add(id);
@@ -101,6 +117,7 @@ export function ColumnPicker({
   /* The chip still marks itself active when something is turned off, which is
      what the other filter chips mean by it: this one is not at its default. */
   const hidden = OPTIONAL_COLUMNS.filter((column) => !chosen.has(column.id)).length;
+  const optionalOn = OPTIONAL_COLUMNS.length - hidden;
 
   return (
     <Menu
@@ -121,6 +138,21 @@ export function ColumnPicker({
       )}
     >
       <MenuLabel>Columns to show</MenuLabel>
+
+      {/*
+        * Why Key and Summary are not on the list.
+        *
+        * They were always absent — they are the link into a work item, and a
+        * table with neither is a list nobody can open — but absence explains
+        * nothing. Somebody looking for Key and failing to find it cannot tell
+        * a deliberate rule from a missing row, so the rule is stated where
+        * the row would have been.
+        */}
+      <p className="prio-menu__note">
+        <IconInfo size={14} />
+        <span>Key and Summary are always visible and cannot be hidden.</span>
+      </p>
+
       {OPTIONAL_COLUMNS.map((column) => (
         <MenuItem
           key={column.id}
@@ -131,6 +163,36 @@ export function ColumnPicker({
           {column.label}
         </MenuItem>
       ))}
+
+      <MenuSeparator />
+
+      {/*
+        * How many of the optional columns are on, and the way back.
+        *
+        * `role="menuitem"` on a real button rather than a `MenuItem`, because
+        * this is not one of the things being chosen between and should not
+        * look like one — but the menu's arrow keys walk exactly that role, so
+        * without it the control would be reachable by mouse alone: Tab closes
+        * the menu, and the arrows would step straight past it.
+        */}
+      <div className="prio-menu__footer">
+        <span className="prio-menu__footertext">
+          {optionalOn} of {OPTIONAL_COLUMNS.length} selected
+        </span>
+        <button
+          type="button"
+          role="menuitem"
+          /* Stays open, the same way the column toggles do: what Reset did is
+             nine ticks coming back, and a menu that shuts on the click hides
+             its own result. */
+          data-menu-keep-open
+          className="prio-btn prio-btn--secondary prio-btn--sm"
+          onClick={reset}
+        >
+          <IconRefresh size={13} />
+          Reset to default
+        </button>
+      </div>
     </Menu>
   );
 }

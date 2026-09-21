@@ -233,18 +233,33 @@
   display: flex;
   flex-direction: column;
   gap: var(--prio-space-2);
-  flex: 1;
-  /* Deep enough to be an easy target even when the column holds nothing. */
-  min-height: 160px;
   /*
-   * How much sits above a column before its cards begin: the top bar, the
-   * page header, the board toolbar, the column's own heading and the page
-   * padding. That total grows as the header wraps on narrower screens, so a
-   * single constant leaves the page a little taller than the viewport at some
-   * widths — the allowance is stepped instead, measured at each width rather
-   * than guessed.
+   * The height comes from the column, and from nowhere else.
+   *
+   * This used to carry its own `max-height: calc(100vh - 370px)` — a second
+   * guess at the same space the container above already measures with
+   * `100dvh - var(--prio-board-top) - space-6`, stepped through two media
+   * queries because the constant was never right at every width. Two
+   * formulas for one height disagree by construction, and they disagree
+   * worst where `dvh` and `vh` differ: on a phone with a retracting toolbar
+   * `vh` is the taller of the two, so the body claimed more height than the
+   * column it sits in and its last cards were clipped by the board's own
+   * overflow rather than being scrolled to.
+   *
+   * `flex: 1` with `min-height: 0` takes exactly what the column has left
+   * after its heading — the canonical way to make a flex child scroll — so
+   * there is one number, the container's, and the body cannot exceed it.
+   * `min-height: 0` is what permits that: a column flex item defaults to
+   * `min-height: auto`, which is its content, and 1,186 cards of content is
+   * precisely what the old `max-height` existed to cap.
+   *
+   * An empty column still fills to the bottom, because `flex-basis: 0` plus
+   * `flex-grow: 1` distributes the whole remainder whatever the content — so
+   * the generous drop target the old `min-height: 160px` was there to
+   * guarantee is now a property of the layout rather than a floor under it.
    */
-  max-height: calc(100vh - 370px);
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   /*
    * The column already scrolls its own cards, but without containment its
@@ -490,27 +505,6 @@
   opacity: 1;
 }
 
-
-/*
- * The 1366px step is deliberately taller than the window it is measured
- * against: at this width the board's header and toolbar wrap onto more rows
- * than the constant above them allows for, and capping the column at what is
- * strictly visible left the last card of a full column unreachable. 112vh
- * gives the column body the extra tenth it needs; the column still scrolls
- * its own cards, and `contain: paint` on the rule above still keeps that
- * overflow out of the document's height.
- */
-@media (max-width: 1366px) {
-  .prio-board__column-body {
-    max-height: calc(112vh - 415px);
-  }
-}
-
-@media (max-width: 900px) {
-  .prio-board__column-body {
-    max-height: calc(100vh - 455px);
-  }
-}
 
 @media (max-width: 640px) {
   .prio-board__toolbar {

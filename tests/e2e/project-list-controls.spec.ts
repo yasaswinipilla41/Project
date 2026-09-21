@@ -20,7 +20,7 @@ import { prisma } from "@/lib/prisma";
 async function aProject() {
   return prisma.project.findFirstOrThrow({
     where: { isArchived: false, issues: { some: {} } },
-    select: { id: true, key: true },
+    select: { id: true, key: true, name: true },
     orderBy: { key: "asc" },
   });
 }
@@ -93,7 +93,22 @@ test.describe("export from a project's list", () => {
       page.waitForEvent("download"),
       page.getByRole("button", { name: "Export Excel" }).click(),
     ]);
-    expect(download.suggestedFilename()).toMatch(/^prio-issues-\d{4}-\d{2}-\d{2}\.xlsx$/);
+    /*
+     * Named after the project it came from.
+     *
+     * This used to expect `prio-issues-…` from every surface, which told
+     * somebody who had exported three projects on the same day nothing about
+     * which file was which. The name is derived from the project's own name,
+     * so it is asserted against that name rather than against a literal.
+     */
+    const slug = project.name
+      .normalize("NFKD")
+      .replace(/[^a-zA-Z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .toLowerCase();
+    expect(download.suggestedFilename()).toBe(
+      `${slug}-issues-${new Date().toISOString().slice(0, 10)}.xlsx`,
+    );
 
     /* The header the route sets, read from the response rather than by
        opening the workbook: it says how many rows went into the file. */

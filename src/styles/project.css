@@ -687,6 +687,14 @@ a.prio-timeline__label:focus-visible {
  * every other axis label here uses — the bar keeps its colour, and this adds
  * nothing to compete with it.
  */
+/* Said in the lane where the issue rows would be, when the sprints above are
+   the only thing scheduled. */
+.prio-timeline__empty {
+  margin: var(--prio-space-4) 0 0;
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-secondary);
+}
+
 .prio-timeline__sprintdate {
   position: absolute;
   top: 50%;

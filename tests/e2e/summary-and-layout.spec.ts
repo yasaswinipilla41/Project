@@ -451,19 +451,39 @@ test.describe("Collapsing the sidebar", () => {
 });
 
 test.describe("The Flow Board's own styling", () => {
-  test("gives a column body the taller allowance at 1366px", async ({ page }) => {
+  test("gives a column body exactly the height its column has", async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 1300, height: 800 });
     await page.goto("/projects/eng/board");
 
     const body = page.locator(".prio-board__column-body").first();
     await expect(body).toBeVisible();
 
-    /* `calc(112vh - 415px)` at 800px tall — resolved rather than compared as a
-       string, because that is what the browser actually applies. */
-    const maxHeight = await body.evaluate(
-      (el) => parseFloat(getComputedStyle(el).maxHeight),
-    );
-    expect(Math.round(maxHeight)).toBe(Math.round(800 * 1.12 - 415));
+    /*
+     * This used to assert `calc(112vh - 415px)` — one of three stepped
+     * guesses at a height the column above already knew, kept in step by
+     * hand. The body now takes what the column has left, so there is nothing
+     * to compare against a formula; what there is to check is that it
+     * actually fills it, which is the property the guesses were reaching for
+     * and never quite had.
+     */
+    const fit = await body.evaluate((el) => {
+      const column = el.closest(".prio-board__column")!;
+      const bodyBox = el.getBoundingClientRect();
+      const columnBox = column.getBoundingClientRect();
+      return {
+        maxHeight: getComputedStyle(el).maxHeight,
+        /* Only the column's own bottom padding should be left over. */
+        spare: columnBox.bottom - bodyBox.bottom,
+        height: bodyBox.height,
+      };
+    });
+
+    expect(fit.maxHeight).toBe("none");
+    expect(fit.height).toBeGreaterThan(100);
+    expect(fit.spare).toBeLessThanOrEqual(8);
+    expect(fit.spare).toBeGreaterThanOrEqual(0);
   });
 
   test("paints a cancelled card white", async ({ page }) => {
