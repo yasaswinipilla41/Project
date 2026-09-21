@@ -551,6 +551,161 @@ test.describe("A sprint's own page", () => {
     ).toBeVisible();
   });
 
+  test("opens each figure's own work inside the sprint page, and Back restores it", async ({
+    page,
+  }) => {
+    /* Four issues: one finished, one in progress, two new — Total 4 ·
+       Completed 1 · Remaining 3 · Progress 25%. Every list a figure opens has
+       to agree with the figure that opened it. */
+    const { key, sprint, issues } = await seedSprintWith([
+      "DONE",
+      "IN_PROGRESS",
+      "TODO",
+      "TODO",
+    ]);
+    const [done] = issues;
+
+    await page.goto(`/projects/${key}/sprints/${sprint.id}`);
+    const view = page.locator(".prio-summaryview");
+    const rows = view.locator(".prio-sprint__issue");
+    /* The page's own issues section, by its heading — "All issues in this
+       sprint", the title the Total view carries, would otherwise match it
+       too. */
+    const issuesSection = page.getByRole("heading", {
+      name: "Issues in this sprint",
+      exact: true,
+    });
+    const figure = (label: string) =>
+      page.locator("button.prio-sprint__stat--button", { hasText: label }).first();
+
+    /* Closed to begin with, and the page's own sections are where they
+       always are. */
+    await expect(view).toBeHidden();
+    await expect(issuesSection).toBeVisible();
+
+    // ------------------------------------------------------------ Total: 4
+    await figure("Total").click();
+    await expect(view).toBeVisible();
+    await expect(view.locator(".prio-summaryview__title")).toHaveText(
+      "All issues in this sprint",
+    );
+    await expect(rows).toHaveCount(4);
+
+    /* Opening a figure is not a navigation: same page, same URL, and the
+       sprint's other sections are untouched underneath it. */
+    await expect(page).toHaveURL(new RegExp(`${key}/sprints/${sprint.id}$`));
+    await expect(issuesSection).toBeVisible();
+    await expect(page.locator(".prio-sprint__board")).toBeVisible();
+
+    // -------------------------------------------------------- Completed: 1
+    await figure("Completed").click();
+    await expect(view.locator(".prio-summaryview__title")).toHaveText(
+      "Completed",
+    );
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText(done!.key);
+
+    // -------------------------------------------------------- Remaining: 3
+    await figure("Remaining").click();
+    await expect(view.locator(".prio-summaryview__title")).toHaveText(
+      "Remaining",
+    );
+    await expect(rows).toHaveCount(3);
+    await expect(view.getByText(done!.key)).toHaveCount(0);
+
+    // ------------------------------------------------------- Progress: 25%
+    await figure("Progress").click();
+    await expect(view.locator(".prio-summaryview__title")).toHaveText(
+      "Progress",
+    );
+    await expect(view.getByText("25% — 1 finished of 4, 3 to go.")).toBeVisible();
+    /* What is left is what Remaining holds. */
+    await expect(rows).toHaveCount(3);
+
+    // ------------------------------------------------------- Assignees: 0
+    await figure("Assignees").click();
+    await expect(view.locator(".prio-summaryview__title")).toHaveText(
+      "Assignees",
+    );
+    /* Nobody is assigned in this fixture, so every issue is in the
+       unassigned pile — which is shown, and is not one of the people the
+       figure counts. */
+    await expect(view.getByText("Unassigned")).toBeVisible();
+    await expect(rows).toHaveCount(4);
+
+    // ---------------------------------------------------------------- Back
+    await view.locator(".prio-summaryview__back").click();
+    await expect(view).toBeHidden();
+    /* Exactly the page it was: same URL, and every section still in place. */
+    await expect(page).toHaveURL(new RegExp(`${key}/sprints/${sprint.id}$`));
+    await expect(issuesSection).toBeVisible();
+    await expect(page.locator(".prio-sprint__total")).toHaveText(
+      "Total Issues: 4",
+    );
+
+    /* And a second click on the figure that is open closes it too, so the
+       control is a toggle rather than a trap. */
+    await figure("Total").click();
+    await expect(view).toBeVisible();
+    await figure("Total").click();
+    await expect(view).toBeHidden();
+  });
+
+  test("keeps all five figures on the sprint block and on the sprint's own page, without navigating", async ({
+    page,
+  }) => {
+    /* Four issues, one of them finished and none of them assigned to
+       anybody: Total 4 · Completed 1 · Remaining 3 · Progress 25% ·
+       Assignees 0. The figures are read from the sprint's own work, so the
+       two places they appear have to agree with each other and with it. */
+    const { key, sprint } = await seedSprintWith([
+      "DONE",
+      "TODO",
+      "TODO",
+      "IN_PROGRESS",
+    ]);
+
+    const figures = async () => {
+      const strip = page.locator(".prio-sprint__summary").first();
+      await strip.waitFor({ timeout: 45_000 });
+      return page.locator(".prio-sprint__summary").first().evaluate((el) =>
+        [...el.querySelectorAll(".prio-sprint__stat")].map((stat) => ({
+          label: stat
+            .querySelector(".prio-sprint__statlabel")!
+            .textContent!.trim(),
+          value: stat
+            .querySelector(".prio-sprint__statvalue")!
+            .textContent!.trim(),
+          /* A figure is information, not a link: clicking one must not take
+             the reader off the Sprints tab. */
+          link: stat.tagName === "A" || stat.closest("a") !== null,
+        })),
+      );
+    };
+
+    // ------------------------------------------------- on the sprint block
+    await page.goto(`/projects/${key}/sprints`);
+    const onBlock = await figures();
+    expect(onBlock.map((f) => f.label)).toEqual([
+      "Total",
+      "Completed",
+      "Remaining",
+      "Progress",
+      "Assignees",
+    ]);
+    expect(onBlock.map((f) => f.value)).toEqual(["4", "1", "3", "25%", "0"]);
+    expect(onBlock.some((f) => f.link)).toBe(false);
+
+    /* Clicking one stays put — the sprint's name is still the way in. */
+    await page.locator(".prio-sprint__stat").first().click();
+    await expect(page).toHaveURL(new RegExp(`${key}/sprints$`));
+
+    // --------------------------------------------- and on the sprint's page
+    await page.goto(`/projects/${key}/sprints/${sprint.id}`);
+    const onDetails = await figures();
+    expect(onDetails).toEqual(onBlock);
+  });
+
   test("counts the sprint's issues above the chart, and follows one moved to another sprint", async ({
     page,
   }) => {
@@ -579,7 +734,7 @@ test.describe("A sprint's own page", () => {
 
     await page.goto(`/projects/${key}/sprints/${sprint.id}`);
 
-    const total = page.locator(".prio-isochart__total");
+    const total = page.locator(".prio-sprint__total");
     await expect(total).toHaveText("Total Issues: 3");
 
     /* The figure and the bars are the same count read twice — the bars'

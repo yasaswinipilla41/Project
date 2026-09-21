@@ -1089,6 +1089,7 @@ export function BoardCard({
   onDragStart,
   onDragEnd,
   inSprint = false,
+  actions,
 }: {
   issue: BoardIssue;
   /** False whenever the column isn't a status — a group like "Assignee" has
@@ -1107,6 +1108,12 @@ export function BoardCard({
   /** Shown as part of a sprint, so the card's menu can offer Move to next
    *  sprint. Off on the board, where a card may belong to no sprint. */
   inSprint?: boolean;
+  /**
+   * Anything else this card's surface offers, drawn beside its own menu — the
+   * sprint page puts Move to there, so a sprint's work can be moved from the
+   * same card it is read on. The Flow Board passes nothing and is unchanged.
+   */
+  actions?: ReactNode;
 }) {
   const href = `/issues/${issue.key.toLowerCase()}`;
   const cancelled = issue.status === "CANCELLED";
@@ -1147,6 +1154,7 @@ export function BoardCard({
           onClick={(event) => event.stopPropagation()}
           onMouseDown={(event) => event.stopPropagation()}
         >
+          {actions}
           <IssueRowActions
             workRole={workRole}
             issueId={issue.id}

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Card, CardBody } from "@/components/ui/primitives";
-import { IconCalendar, IconUsers } from "@/components/ui/Icon";
+import { IconCalendar } from "@/components/ui/Icon";
+import { SprintSummaryStrip } from "@/components/sprints/SprintSummaryStrip";
 import {
   ISSUE_STATUSES,
   SPRINT_STATUS_LABEL,
@@ -14,8 +15,11 @@ import {
 import type { SprintView } from "@/server/queries/sprints";
 
 /**
- * A sprint's details, read only: its own card (name, status, goal, dates,
- * stats, progress) plus an isometric bar chart of its issues by status.
+ * A sprint's details: its own card (name, status, goal, dates, figures and
+ * progress) plus an isometric bar chart of its issues by status.
+ *
+ * The five figures open the work they count, in place — see
+ * `SprintSummaryStrip`. Everything else here is read only.
  *
  * Shared by both places a sprint has a dedicated details page — reached from
  * the Projects directory's Iterations/Sprints block, and from a project's own
@@ -83,52 +87,12 @@ export function SprintDetailsView({
             </div>
           </header>
 
-          <div className="prio-sprint__summary">
-            <span className="prio-sprint__stat">
-              <span className="prio-sprint__statvalue">{sprint.stats.total}</span>
-              <span className="prio-sprint__statlabel">Total</span>
-            </span>
-            <span className="prio-sprint__stat" data-tone="success">
-              <span className="prio-sprint__statvalue">
-                {sprint.stats.completed}
-              </span>
-              <span className="prio-sprint__statlabel">Completed</span>
-            </span>
-            <span className="prio-sprint__stat">
-              <span className="prio-sprint__statvalue">
-                {sprint.stats.remaining}
-              </span>
-              <span className="prio-sprint__statlabel">Remaining</span>
-            </span>
-            <span className="prio-sprint__stat">
-              <span className="prio-sprint__statvalue">
-                {sprint.stats.progress}%
-              </span>
-              <span className="prio-sprint__statlabel">Progress</span>
-            </span>
-            <span className="prio-sprint__stat">
-              <span className="prio-sprint__statvalue">
-                <IconUsers size={13} /> {sprint.stats.assignees}
-              </span>
-              <span className="prio-sprint__statlabel">Assignees</span>
-            </span>
-          </div>
-
-          <div className="prio-sprint__progressrow">
-            <div
-              className="prio-progress"
-              role="img"
-              aria-label={`${sprint.stats.progress}% of this sprint's work is finished`}
-            >
-              <div
-                className="prio-progress__bar"
-                style={{ width: `${sprint.stats.progress}%` }}
-              />
-            </div>
-            <span className="prio-sprint__progresslabel" aria-hidden>
-              {sprint.stats.progress}%
-            </span>
-          </div>
+          {/* The five figures, and the work behind whichever one is
+              opened. A client component because opening a figure is local to
+              this page: nothing is fetched and nothing is navigated, so Back
+              leaves this view exactly as it was. The progress bar travels
+              with it, so the card's order is unchanged. */}
+          <SprintSummaryStrip sprint={sprint} />
         </CardBody>
       </section>
 

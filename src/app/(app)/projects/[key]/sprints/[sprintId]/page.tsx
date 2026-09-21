@@ -6,6 +6,7 @@ import { SprintIssueBoard } from "@/components/sprints/SprintIssueBoard";
 import { BurndownChart } from "@/components/sprints/BurndownChart";
 import { Card, CardBody } from "@/components/ui/primitives";
 import { projectScope, workRoleOf } from "@/lib/authz";
+import { canEditSprintIssues } from "@/lib/domain";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { loadBurndown, loadSprints } from "@/server/queries/sprints";
@@ -69,12 +70,34 @@ export default async function ProjectSprintDetailsPage({
       priority: true,
       sortIndex: true,
       reporterId: true,
+      /* Where each issue came from, so a card can offer to put it back. */
+      previousSprintId: true,
       assignee: { select: { id: true, name: true, image: true } },
       labels: {
         select: { label: { select: { id: true, name: true, color: true } } },
       },
     },
   });
+
+  /*
+   * What Restore would mean for each card: the sprint the issue was moved out
+   * of, when that sprint is one of this project's and is still open. Resolved
+   * from the sprints already read for this page rather than queried again, and
+   * a sprint that has since been completed or deleted is left out — there is
+   * nothing to restore into, so nothing is offered.
+   */
+  const openBySprintId = new Map(
+    sprints
+      .filter((one) => one.status !== "COMPLETED")
+      .map((one) => [one.id, { id: one.id, name: one.name }]),
+  );
+  const previousSprints: Record<string, { id: string; name: string }> = {};
+  for (const issue of issues) {
+    const previous = issue.previousSprintId
+      ? openBySprintId.get(issue.previousSprintId)
+      : undefined;
+    if (previous && previous.id !== sprint.id) previousSprints[issue.id] = previous;
+  }
 
   const base = `/projects/${project.key.toLowerCase()}/sprints`;
   const back =
@@ -113,6 +136,22 @@ export default async function ProjectSprintDetailsPage({
                 workRole={workRole}
                 currentUserId={user.id}
                 isAdmin={user.role === "ADMIN"}
+                /* Where a card's Move to can send its work: this project's
+                   other sprints that are still open, from the same
+                   `loadSprints` read the rest of this page is drawn from. */
+                previousSprints={previousSprints}
+                otherOpenSprints={sprints
+                  .filter(
+                    (other) =>
+                      other.id !== sprint.id && other.status !== "COMPLETED",
+                  )
+                  .map((other) => ({ id: other.id, name: other.name }))}
+                /* Filling a sprint, emptying it or moving its work is every
+                   working role's, and the server says so again. A completed
+                   sprint is a closed record, so nothing moves out of one. */
+                canMoveIssues={
+                  canEditSprintIssues(workRole) && sprint.status !== "COMPLETED"
+                }
               />
             </CardBody>
           </Card>

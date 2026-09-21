@@ -202,3 +202,163 @@ describe("the same input twice", () => {
     expect(backwards).toEqual(forwards);
   });
 });
+
+/**
+ * What a status means for the line.
+ *
+ * Finishing an issue in Prio does not touch its remaining hours — nothing
+ * asks anybody to write "0h left" on work they have just marked Done — so a
+ * burndown read from remainders alone ran flat across a sprint that was being
+ * finished, which is the one thing a burndown exists to show. Closed work has
+ * nothing left to burn, and reopened work has its estimate to burn again.
+ */
+describe("what a status means for what is left", () => {
+  /** The same item, referred to by every test below. */
+  const ONE = [{ issueId: "a", effortHours: 10, remainingHours: 10 }];
+
+  it("drops a finished item's effort out of what is left", () => {
+    const chart = burndown({
+      startDate: START,
+      endDate: END,
+      items: [{ ...ONE[0]!, status: "DONE" }],
+      history: [],
+      now: at(16),
+    });
+
+    /* The commitment does not change — it was still ten hours of work — but
+       none of it is outstanding. */
+    expect(chart.totalEffort).toBe(10);
+    expect(chart.remaining).toBe(0);
+  });
+
+  it("counts Reject / Not an Issue and Cancelled as nothing left, the same as Done", () => {
+    for (const status of ["REJECTED", "CANCELLED"] as const) {
+      const chart = burndown({
+        startDate: START,
+        endDate: END,
+        items: [{ ...ONE[0]!, status }],
+        history: [],
+        now: at(16),
+      });
+
+      expect(chart.remaining, status).toBe(0);
+    }
+  });
+
+  it("falls on the day the work was finished, not across the whole sprint", () => {
+    /* Marked Done on the 14th, and the trail says so. Before that the ten
+       hours were outstanding; after it they are not. */
+    const chart = burndown({
+      startDate: START,
+      endDate: END,
+      items: [{ ...ONE[0]!, status: "DONE" }],
+      history: [],
+      statusHistory: [
+        { at: at(14, 9), issueId: "a", from: "IN_PROGRESS", to: "DONE" },
+      ],
+      now: at(16),
+    });
+
+    expect(chart.points.map((point) => point.actual)).toEqual([
+      10, 10, 0, 0, 0,
+    ]);
+  });
+
+  it("gives a reopened item its work back", () => {
+    /*
+     * Finished on the 13th and reopened on the 15th. The nought it was
+     * closed on says nothing about it once it is open again, so its estimate
+     * is outstanding once more — that is what "Reopen counts as remaining
+     * work again" has to mean, or a reopened sprint reads as finished.
+     */
+    const chart = burndown({
+      startDate: START,
+      endDate: END,
+      items: [{ issueId: "a", effortHours: 10, remainingHours: 0, status: "REOPENED" }],
+      history: [{ at: at(13, 10), issueId: "a", remainingHours: 0 }],
+      statusHistory: [
+        { at: at(13, 9), issueId: "a", from: "IN_PROGRESS", to: "DONE" },
+        { at: at(15, 9), issueId: "a", from: "DONE", to: "REOPENED" },
+      ],
+      now: at(16),
+    });
+
+    expect(chart.points.map((point) => point.actual)).toEqual([
+      10, 0, 0, 10, 10,
+    ]);
+    expect(chart.remaining).toBe(10);
+  });
+
+  it("keeps a remainder recorded after the work was reopened", () => {
+    /* Somebody said four hours were left *after* reopening it, which is
+       better information than the estimate. */
+    const chart = burndown({
+      startDate: START,
+      endDate: END,
+      items: [{ issueId: "a", effortHours: 10, remainingHours: 4, status: "REOPENED" }],
+      history: [
+        { at: at(13, 10), issueId: "a", remainingHours: 0 },
+        { at: at(15, 10), issueId: "a", remainingHours: 4 },
+      ],
+      statusHistory: [
+        { at: at(13, 9), issueId: "a", from: "IN_PROGRESS", to: "DONE" },
+        { at: at(15, 9), issueId: "a", from: "DONE", to: "REOPENED" },
+      ],
+      now: at(16),
+    });
+
+    expect(chart.remaining).toBe(4);
+    expect(chart.points.at(-1)!.actual).toBe(4);
+  });
+
+  it("burns a sprint down as its items are finished one by one", () => {
+    /* The shape the chart is for: 40 hours committed, finished in three
+       bites, ending at nothing. */
+    const chart = burndown({
+      startDate: START,
+      endDate: END,
+      items: [
+        { issueId: "a", effortHours: 16, remainingHours: 16, status: "DONE" },
+        { issueId: "b", effortHours: 16, remainingHours: 16, status: "DONE" },
+        { issueId: "c", effortHours: 8, remainingHours: 8, status: "DONE" },
+      ],
+      history: [],
+      statusHistory: [
+        { at: at(13, 9), issueId: "a", from: "IN_PROGRESS", to: "DONE" },
+        { at: at(15, 9), issueId: "b", from: "IN_PROGRESS", to: "DONE" },
+        { at: at(16, 9), issueId: "c", from: "IN_PROGRESS", to: "DONE" },
+      ],
+      now: at(16, 18),
+    });
+
+    expect(chart.totalEffort).toBe(40);
+    expect(chart.points.map((point) => point.actual)).toEqual([
+      40, 24, 24, 8, 0,
+    ]);
+    /* And the ideal line is the straight run from the commitment to nothing
+       across the sprint's own days, which is what the actual is read
+       against. */
+    expect(chart.points.map((point) => point.ideal)).toEqual([40, 30, 20, 10, 0]);
+    expect(chart.remaining).toBe(0);
+  });
+
+  it("still reads remainders for work that was never closed", () => {
+    /* The behaviour that was already there, unchanged: an open item follows
+       what people recorded about it. */
+    const chart = burndown({
+      startDate: START,
+      endDate: END,
+      items: [
+        { issueId: "a", effortHours: 10, remainingHours: 6, status: "IN_PROGRESS" },
+      ],
+      history: [{ at: at(13, 10), issueId: "a", remainingHours: 6 }],
+      statusHistory: [
+        { at: at(13, 9), issueId: "a", from: "TODO", to: "IN_PROGRESS" },
+      ],
+      now: at(16),
+    });
+
+    expect(chart.remaining).toBe(6);
+    expect(chart.points.map((point) => point.actual)).toEqual([10, 6, 6, 6, 6]);
+  });
+});

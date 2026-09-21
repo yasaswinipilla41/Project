@@ -371,6 +371,12 @@
    every column reads the same as before at rest — it's discoverable, not
    decorative clutter on every card at once. */
 .prio-board__card-menu {
+  /* One control on the Flow Board, two on a sprint's own page where Move to
+     sits beside the card's menu — a row either way, so the single-control
+     case looks exactly as it did. */
+  display: flex;
+  align-items: center;
+  gap: 2px;
   flex-shrink: 0;
   margin: -2px -4px 0 0;
   opacity: 0;

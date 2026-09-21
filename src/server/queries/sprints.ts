@@ -1,6 +1,6 @@
 import type { IssueStatus, IssueType, SprintStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { isClosedStatus, OPEN_STATUSES } from "@/lib/domain";
+import { isClosedStatus, isIssueStatus, OPEN_STATUSES } from "@/lib/domain";
 import { burndown, type Burndown } from "@/lib/burndown";
 
 /**
@@ -221,7 +221,16 @@ export async function loadBurndown(
       startDate: true,
       endDate: true,
       issues: {
-        select: { id: true, effortHours: true, remainingHours: true },
+        select: {
+          id: true,
+          effortHours: true,
+          remainingHours: true,
+          /* Read because closed work has nothing left to burn whatever its
+             remainder says: finishing an issue does not touch its remaining
+             hours, so a chart drawn from remainders alone ran flat across a
+             sprint that was being finished. */
+          status: true,
+        },
       },
     },
   });
@@ -229,24 +238,49 @@ export async function loadBurndown(
 
   const issueIds = sprint.issues.map((issue) => issue.id);
 
-  /* Only the readings, and only for this sprint's own work. `newValue` is
-     text in the trail — it is one column shared by every kind of field — so
-     the numbers are parsed back here and anything unparseable is dropped
-     rather than guessed at. */
+  /* The readings and the status changes, in one pass over this sprint's own
+     work. `newValue` is text in the trail — it is one column shared by every
+     kind of field — so both are parsed back here and anything unparseable is
+     dropped rather than guessed at. */
   const entries =
     issueIds.length === 0
       ? []
       : await prisma.activityLogEntry.findMany({
-          where: { issueId: { in: issueIds }, field: "remainingHours" },
-          select: { issueId: true, newValue: true, createdAt: true },
+          where: {
+            issueId: { in: issueIds },
+            field: { in: ["remainingHours", "status"] },
+          },
+          select: {
+            issueId: true,
+            field: true,
+            oldValue: true,
+            newValue: true,
+            createdAt: true,
+          },
           orderBy: { createdAt: "asc" },
         });
 
   const history = entries.flatMap((entry) => {
-    if (entry.newValue === null) return [];
+    if (entry.field !== "remainingHours" || entry.newValue === null) return [];
     const hours = Number(entry.newValue);
     if (!Number.isFinite(hours)) return [];
     return [{ at: entry.createdAt, issueId: entry.issueId, remainingHours: hours }];
+  });
+
+  /* When each item was in which status, so the actual line falls on the day
+     work was finished rather than on the day the chart is read. `oldValue` is
+     kept: it is what makes the days before an item's first recorded change
+     knowable instead of guessed. */
+  const statusHistory = entries.flatMap((entry) => {
+    if (entry.field !== "status" || !isIssueStatus(entry.newValue)) return [];
+    return [
+      {
+        at: entry.createdAt,
+        issueId: entry.issueId,
+        from: isIssueStatus(entry.oldValue) ? entry.oldValue : null,
+        to: entry.newValue,
+      },
+    ];
   });
 
   return burndown({
@@ -256,8 +290,10 @@ export async function loadBurndown(
       issueId: issue.id,
       effortHours: issue.effortHours,
       remainingHours: issue.remainingHours,
+      status: issue.status,
     })),
     history,
+    statusHistory,
     now,
   });
 }

@@ -10,11 +10,18 @@ import { moveIssueToSprint } from "@/server/sprints";
 type Destination =
   | { type: "BACKLOG" }
   | { type: "NEXT_SPRINT" }
-  | { type: "SPRINT"; sprintId: string };
+  | { type: "SPRINT"; sprintId: string }
+  | { type: "PREVIOUS" };
 
 /**
- * Where one sprint issue can go: the next open sprint, a specific other
- * sprint in this project, or back to the backlog.
+ * Where one sprint issue can go: back to the sprint it came from, the next
+ * open sprint, a specific other sprint in this project, or the backlog.
+ *
+ * Restore is offered only when there is somewhere to restore to — the issue
+ * was moved here out of a sprint that is still open — and it names that
+ * sprint, because "Restore" on its own does not say where the work would go.
+ * The destination is the issue's own record of the move, never anything this
+ * menu chooses, so the server decides it and this only asks.
  *
  * Offered to the same people the Add issues button is — filling a sprint,
  * emptying it or moving its issues elsewhere is every working role's, not a
@@ -26,11 +33,15 @@ export function MoveIssueMenu({
   issueKey,
   /** This project's other sprints that are not completed. */
   otherOpenSprints,
+  previousSprint,
   disabled,
 }: {
   issueId: string;
   issueKey: string;
   otherOpenSprints: { id: string; name: string }[];
+  /** The still-open sprint this issue was moved out of, when there is one —
+   *  what Restore puts it back into. Absent means no Restore is offered. */
+  previousSprint?: { id: string; name: string } | null;
   disabled?: boolean;
 }) {
   const router = useRouter();
@@ -69,6 +80,11 @@ export function MoveIssueMenu({
       )}
     >
       <MenuLabel>Move to</MenuLabel>
+      {previousSprint ? (
+        <MenuItem onSelect={() => void move({ type: "PREVIOUS" })}>
+          Restore to {previousSprint.name}
+        </MenuItem>
+      ) : null}
       <MenuItem onSelect={() => void move({ type: "NEXT_SPRINT" })}>
         Next sprint
       </MenuItem>
