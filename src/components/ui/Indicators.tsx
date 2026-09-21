@@ -35,7 +35,11 @@ export function StatusPill({
       data-status={status}
     >
       <span className="prio-status__dot" aria-hidden />
-      {STATUS_LABEL[status]}
+      {/* The label in its own element so it can be the thing that gives way
+          where a pill is squeezed — a bare text node is an anonymous flex
+          item and cannot be told to truncate. Everywhere with room this
+          changes nothing at all. */}
+      <span className="prio-status__label">{STATUS_LABEL[status]}</span>
     </span>
   );
 }

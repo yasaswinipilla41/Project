@@ -123,6 +123,9 @@ export function SprintIssueBoard({
                 workRole={workRole}
                 currentUserId={currentUserId}
                 isAdmin={isAdmin}
+                /* These cards are a sprint's own, so the card's existing
+                   menu carries Move to next sprint here and nowhere else. */
+                inSprint
               />
             ))}
           </div>

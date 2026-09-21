@@ -136,7 +136,22 @@ export function SprintDetailsView({
 
       <Card style={{ marginTop: "var(--prio-space-4)" }}>
         <CardBody>
-          <h2 className="prio-issue__section-title">Issues by status</h2>
+          {/*
+            * The chart's heading, and how much work the chart is drawing.
+            *
+            * `stats.total` is every issue in the sprint whatever its status —
+            * the same figure the summary strip above counts, read from the
+            * same `loadSprints` query, so the two can never disagree and no
+            * second count is fetched. Moving an issue between sprints changes
+            * only `sprintId`, so both sprints' totals follow from the next
+            * read of this page, which `router.refresh()` already triggers.
+            */}
+          <div className="prio-sprint__charthead">
+            <h2 className="prio-issue__section-title">Issues by status</h2>
+            <p className="prio-sprint__total">
+              Total Issues: <strong>{total}</strong>
+            </p>
+          </div>
           {total === 0 ? (
             <p className="prio-text-muted">No issues in this sprint yet.</p>
           ) : (
