@@ -636,7 +636,7 @@ a.prio-kpi:focus-visible {
   gap: 1px;
   border-radius: var(--prio-radius-md);
   overflow: hidden;
-  background: var(--prio-border);
+  /* background: var(--prio-border); */
 }
 
 .prio-worktile {

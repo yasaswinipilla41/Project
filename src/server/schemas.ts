@@ -432,6 +432,10 @@ export const moveIssueSchema = z.object({
     z.object({ type: z.literal("BACKLOG") }),
     z.object({ type: z.literal("NEXT_SPRINT") }),
     z.object({ type: z.literal("SPRINT"), sprintId: z.string().min(1) }),
+    /* Back where the issue came from. It carries no sprint id: which sprint
+       that is, is the issue's own record of the move that brought it here, not
+       something the caller gets to name. */
+    z.object({ type: z.literal("PREVIOUS") }),
   ]),
 });
 

@@ -452,6 +452,18 @@ model Issue {
   sprintId String?
   sprint   Sprint? @relation(fields: [sprintId], references: [id], onDelete: SetNull)
 
+  /// The sprint this issue was in immediately before its current one, so
+  /// "Move to" can put it back where it came from.
+  ///
+  /// Written only by a move between sprints, and overwritten by the next one,
+  /// so it is always the *immediately* previous sprint rather than a history.
+  /// Null when the issue has never been moved out of a sprint — which is what
+  /// tells the menu there is nothing to restore to. Deliberately a plain id
+  /// with no relation of its own: it is a note about where the work came
+  /// from, not a second membership, and a sprint that is deleted simply
+  /// leaves nothing to restore to.
+  previousSprintId String?
+
   // --- bug-specific (nullable for TASK / STORY) ---
   severity         Severity?
   stepsToReproduce String?
@@ -514,6 +526,7 @@ model Issue {
   @@index([dueDate])
   @@index([parentId])
   @@index([sprintId])
+  @@index([previousSprintId])
   @@index([updatedAt])
   @@index([testResult])
   @@index([projectId, status, sortIndex])

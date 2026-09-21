@@ -386,6 +386,12 @@
    every column reads the same as before at rest — it's discoverable, not
    decorative clutter on every card at once. */
 .prio-board__card-menu {
+  /* One control on the Flow Board, two on a sprint's own page where Move to
+     sits beside the card's menu — a row either way, so the single-control
+     case looks exactly as it did. */
+  display: flex;
+  align-items: center;
+  gap: 2px;
   flex-shrink: 0;
   margin: -2px -4px 0 0;
   opacity: 0;
@@ -432,32 +438,68 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--prio-space-3);
+  min-width: 0;
+  /*
+   * The footer holds three things — the issue's key, its status and its
+   * assignee — and a 240px column is not always wide enough for all three in
+   * one row. "Reject / Not an Issue" is the longest status in the set, and
+   * beside a long project key it used to overrun the avatar: the key escaped
+   * its own box and the status trigger refused to shrink, so the three drew on
+   * top of each other.
+   *
+   * Wrapping is what fixes that, rather than shrinking any of them into
+   * illegibility: when the row does not fit, the status and the avatar drop
+   * together to a second line and every part stays whole and readable. A card
+   * with room reads exactly as it did before.
+   */
   flex-wrap: wrap;
-  gap: var(--prio-space-2) var(--prio-space-3);
+  row-gap: var(--prio-space-2);
 }
 
+/* The key identifies the card, so it keeps its own text and only gives way at
+   the very end — but it gives way inside its box now, rather than spilling
+   out of it over whatever is next. */
 .prio-board__card-key {
   display: flex;
   align-items: center;
   gap: var(--prio-space-2);
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   color: var(--prio-text-secondary);
 }
 
-/* Pushed to the end whatever else the row is doing, so the avatar is always
-   the last thing on the line and never lands between the key and the
-   status. */
-.prio-board__card-footer > .prio-avatar {
-  flex: 0 0 auto;
+.prio-board__card-key .prio-key {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Status and assignee, as one group at the card's right edge. They wrap as a
+   pair, so a long status never leaves the avatar stranded on a line of its
+   own or hidden underneath it. */
+.prio-board__card-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-3);
+  flex: 0 1 auto;
+  min-width: 0;
   margin-left: auto;
 }
 
-/* The card's status, and the control that changes it. The one item in the
-   footer whose width varies with its content — "Reject / Not an Issue" is the
-   longest in the set — so it is the one that gives way when a column is
-   narrow, rather than pushing the key or the avatar off the end. */
+/* The avatar is the one thing that never shrinks: an assignee you cannot see
+   is worse than a status you have to hover to finish reading. */
+.prio-board__card-meta > .prio-avatar {
+  flex: 0 0 auto;
+}
+
+/* The card's status, and the control that changes it.
+   "Reject / Not an Issue" is the longest label in the set. It fits a card's
+   footer beside the key and an avatar at a comfortable column width, and
+   wraps with the avatar below that; the `max-width` and `overflow` here are
+   the last-resort safety net for a very narrow column, where the pill is
+   clipped rather than allowed to push past the avatar. */
 .prio-board__card-status {
   display: flex;
   align-items: center;
@@ -471,6 +513,10 @@
   align-items: center;
   gap: var(--prio-space-1);
   min-width: 0;
+  /* Kept inside the slot the footer gave it: a button's own content width
+     would otherwise reach past the avatar. */
+  max-width: 100%;
+  overflow: hidden;
   padding: 0;
   border: none;
   background: none;

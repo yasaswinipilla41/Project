@@ -1,3 +1,6 @@
+import type { IssueStatus } from "@prisma/client";
+import { isClosedStatus } from "@/lib/domain";
+
 /**
  * A sprint's burndown: what was committed, and what is left.
  *
@@ -22,6 +25,35 @@ export interface BurndownItem {
   effortHours: number | null;
   /** What is thought to be left. Null when nobody has said. */
   remainingHours: number | null;
+  /**
+   * The status it is in now.
+   *
+   * Closed work has nothing left to burn whatever its remainder says, and
+   * that is the whole reason this is here: finishing an issue in Prio does
+   * not touch its remaining hours, so a burndown read from remainders alone
+   * ran flat across a sprint that was being finished.
+   *
+   * Optional, and absent means "not known to the caller", which is treated as
+   * open — the behaviour before statuses were read at all.
+   */
+  status?: IssueStatus;
+}
+
+/**
+ * A recorded status change, from the issue's own trail.
+ *
+ * `from` is what it was before, which is what makes the days before the first
+ * recorded change knowable rather than guessed.
+ */
+export interface StatusChange {
+  /** When the change was recorded. */
+  at: Date;
+  /** The item it belongs to. */
+  issueId: string;
+  /** The status it left, where the trail says. */
+  from: IssueStatus | null;
+  /** The status it moved to. */
+  to: IssueStatus;
 }
 
 /** A recorded change to one item's remaining hours. */
@@ -93,9 +125,17 @@ export function burndown(params: {
   endDate: Date;
   items: BurndownItem[];
   history: RemainingChange[];
+  /**
+   * Every recorded status change for the sprint's items - the same trail the
+   * remainders come from. Without it a closed item reads as closed for the
+   * whole sprint, because nothing says when it closed; with it the actual
+   * line falls on the day the work was actually finished.
+   */
+  statusHistory?: StatusChange[];
   now: Date;
 }): Burndown {
   const { startDate, endDate, items, history, now } = params;
+  const statusHistory = params.statusHistory ?? [];
 
   const totalEffort = items.reduce(
     (sum, item) => sum + (item.effortHours ?? 0),
@@ -104,15 +144,109 @@ export function burndown(params: {
   const unestimated = items.filter((item) => item.effortHours === null).length;
 
   /*
-   * What is left right now.
+   * ---------------------------------------------------------------- the rule
    *
-   * An item nobody has given a remainder to counts as all of its estimate
-   * still outstanding: it was committed to the sprint and nothing says any of
-   * it is done. An item with neither number contributes nothing, because
-   * there is nothing to contribute.
+   * What one item has left, at a given moment:
+   *
+   *   1. **Nothing, if it was closed then.** Done, Reject / Not an Issue and
+   *      Cancelled are all work the sprint no longer has to do, whatever
+   *      anybody last said was remaining on them. Finishing an issue in Prio
+   *      does not touch its remaining hours, so a burndown that read only
+   *      remainders ran flat across a sprint that was being finished.
+   *   2. Otherwise the most recent remainder recorded *since the work last
+   *      became open*. A figure recorded while an item was finished says
+   *      nothing about it once it has been reopened, so a reopened item does
+   *      not keep the nought it was closed on.
+   *   3. Otherwise its whole estimate: it is in the sprint, it is open, and
+   *      nothing says any of it is done.
+   *
+   * An item with no estimate and no remainder contributes nothing, because
+   * there is nothing to contribute - it is counted in `unestimated` instead.
    */
+  const changesFor = new Map<string, StatusChange[]>();
+  for (const change of [...statusHistory].sort(
+    (a, b) => a.at.getTime() - b.at.getTime(),
+  )) {
+    const list = changesFor.get(change.issueId);
+    if (list) list.push(change);
+    else changesFor.set(change.issueId, [change]);
+  }
+
+  const readingsFor = new Map<string, RemainingChange[]>();
+  for (const reading of [...history].sort(
+    (a, b) => a.at.getTime() - b.at.getTime(),
+  )) {
+    const list = readingsFor.get(reading.issueId);
+    if (list) list.push(reading);
+    else readingsFor.set(reading.issueId, [reading]);
+  }
+
+  /** The status an item was in at `cutoff`, as far as the record says. */
+  function statusAt(item: BurndownItem, cutoff: number): IssueStatus | null {
+    const changes = changesFor.get(item.issueId) ?? [];
+    let latest: IssueStatus | null = null;
+    let seen = false;
+
+    for (const change of changes) {
+      if (change.at.getTime() >= cutoff) break;
+      latest = change.to;
+      seen = true;
+    }
+    if (seen) return latest;
+
+    /* Before the first recorded change the item was whatever that change says
+       it left; with no trail at all, the status it is in now is the only thing
+       there is to go on. */
+    return changes[0]?.from ?? item.status ?? null;
+  }
+
+  /**
+   * When the item last became open, as of `cutoff` - `-Infinity` when it has
+   * been open all along, which is the ordinary case.
+   */
+  function openedAt(item: BurndownItem, cutoff: number): number {
+    let opened = -Infinity;
+    for (const change of changesFor.get(item.issueId) ?? []) {
+      if (change.at.getTime() >= cutoff) break;
+      const wasClosed = change.from !== null && isClosedStatus(change.from);
+      if (wasClosed && !isClosedStatus(change.to)) opened = change.at.getTime();
+    }
+    return opened;
+  }
+
+  /** The rule above, for one item at one moment. */
+  function remainderAt(
+    item: BurndownItem,
+    cutoff: number,
+    /** Whether the item's own live remainder counts as evidence - it does for
+     *  "right now", and never for a past day, which has readings of its own. */
+    live: boolean,
+  ): number {
+    const status = statusAt(item, cutoff);
+    if (status !== null && isClosedStatus(status)) return 0;
+
+    const since = openedAt(item, cutoff);
+    let reading: number | undefined;
+    for (const entry of readingsFor.get(item.issueId) ?? []) {
+      const when = entry.at.getTime();
+      if (when >= cutoff) break;
+      if (when >= since) reading = entry.remainingHours;
+    }
+    if (reading !== undefined) return reading;
+
+    /* The live column is the same kind of evidence as a reading, and is where
+       an edit made before the trail existed lands - but it is unusable once
+       the work has been reopened, for the reason step 2 gives. */
+    if (live && item.remainingHours !== null && since === -Infinity) {
+      return item.remainingHours;
+    }
+
+    return item.effortHours ?? 0;
+  }
+
+  /* What is left right now, by that rule. */
   const remaining = items.reduce(
-    (sum, item) => sum + (item.remainingHours ?? item.effortHours ?? 0),
+    (sum, item) => sum + remainderAt(item, now.getTime() + 1, true),
     0,
   );
 
@@ -120,24 +254,11 @@ export function burndown(params: {
   const lastIdeal = days.length - 1;
   const today = startOfDay(now).getTime();
 
-  /* The latest reading per item at the end of each day, walked forward once
-     rather than re-scanned per day. */
-  const ordered = [...history].sort((a, b) => a.at.getTime() - b.at.getTime());
-  const latest = new Map<string, number>();
-  let cursor = 0;
-
   const points: BurndownPoint[] = days.map((date, index) => {
     const ideal =
       lastIdeal <= 0
         ? 0
         : totalEffort - (totalEffort * index) / lastIdeal;
-
-    const endOfDay = date.getTime() + DAY;
-    while (cursor < ordered.length && ordered[cursor]!.at.getTime() < endOfDay) {
-      const change = ordered[cursor]!;
-      latest.set(change.issueId, change.remainingHours);
-      cursor += 1;
-    }
 
     /*
      * A day the sprint has not reached has no actual value — not zero, and
@@ -148,16 +269,12 @@ export function burndown(params: {
       return { date, ideal, actual: null };
     }
 
-    /*
-     * What was outstanding at the end of this day: the latest reading for
-     * every item that has one, plus the full estimate of every item that does
-     * not, because nothing has yet said any of it is done.
-     */
-    const actual = items.reduce((sum, item) => {
-      const reading = latest.get(item.issueId);
-      if (reading !== undefined) return sum + reading;
-      return sum + (item.effortHours ?? 0);
-    }, 0);
+    /* What was outstanding at the end of this day, by the same rule that
+       decides what is outstanding now. */
+    const actual = items.reduce(
+      (sum, item) => sum + remainderAt(item, date.getTime() + DAY, false),
+      0,
+    );
 
     return { date, ideal: Math.max(0, ideal), actual };
   });

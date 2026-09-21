@@ -1089,6 +1089,7 @@ export function BoardCard({
   onDragStart,
   onDragEnd,
   inSprint = false,
+  actions,
 }: {
   issue: BoardIssue;
   /** False whenever the column isn't a status — a group like "Assignee" has
@@ -1107,6 +1108,12 @@ export function BoardCard({
   /** Shown as part of a sprint, so the card's menu can offer Move to next
    *  sprint. Off on the board, where a card may belong to no sprint. */
   inSprint?: boolean;
+  /**
+   * Anything else this card's surface offers, drawn beside its own menu — the
+   * sprint page puts Move to there, so a sprint's work can be moved from the
+   * same card it is read on. The Flow Board passes nothing and is unchanged.
+   */
+  actions?: ReactNode;
 }) {
   const href = `/issues/${issue.key.toLowerCase()}`;
   const cancelled = issue.status === "CANCELLED";
@@ -1147,6 +1154,7 @@ export function BoardCard({
           onClick={(event) => event.stopPropagation()}
           onMouseDown={(event) => event.stopPropagation()}
         >
+          {actions}
           <IssueRowActions
             workRole={workRole}
             issueId={issue.id}
@@ -1195,49 +1203,58 @@ export function BoardCard({
          * a stopped propagation -- so reaching for the status never starts a
          * drag.
          */}
-        <div
-          className="prio-board__card-status"
-          draggable={false}
-          onClick={(event) => event.stopPropagation()}
-          onMouseDown={(event) => event.stopPropagation()}
-        >
-          <Menu
-            align="end"
-            width={210}
-            label={`Change status of ${issue.key}`}
-            trigger={(props) => (
-              <button
-                type="button"
-                className="prio-board__card-statustrigger"
-                draggable={false}
-                {...props}
-              >
-                <StatusPill status={issue.status} />
-                <IconChevronDown size={11} />
-              </button>
-            )}
+        {/* The status and the assignee travel together at the card's right
+            edge. Grouping them is what keeps the footer from colliding on a
+            narrow card: a long status — "Reject / Not an Issue" is the
+            longest — drops to a second line with the avatar beside it,
+            rather than the key, the pill and the avatar drawing over each
+            other in one row. With room for all three, the row reads exactly
+            as it did before. */}
+        <div className="prio-board__card-meta">
+          <div
+            className="prio-board__card-status"
+            draggable={false}
+            onClick={(event) => event.stopPropagation()}
+            onMouseDown={(event) => event.stopPropagation()}
           >
-            <MenuLabel>Move to</MenuLabel>
-            {/* The same set, in the same order, that the issue page's own
-                status menu offers this person: what their half of the job may
-                declare, and nothing that belongs to the other half. */}
-            {allowedStatusesFor(workRole, issue.status).map((option) => (
-              <MenuItem
-                key={option}
-                selected={option === issue.status}
-                onSelect={() =>
-                  option !== issue.status && onStatusChange(option)
-                }
-              >
-                <StatusPill status={option} />
-              </MenuItem>
-            ))}
-          </Menu>
-        </div>
+            <Menu
+              align="end"
+              width={210}
+              label={`Change status of ${issue.key}`}
+              trigger={(props) => (
+                <button
+                  type="button"
+                  className="prio-board__card-statustrigger"
+                  draggable={false}
+                  {...props}
+                >
+                  <StatusPill status={issue.status} />
+                  <IconChevronDown size={11} />
+                </button>
+              )}
+            >
+              <MenuLabel>Move to</MenuLabel>
+              {/* The same set, in the same order, that the issue page's own
+                  status menu offers this person: what their half of the job
+                  may declare, and nothing that belongs to the other half. */}
+              {allowedStatusesFor(workRole, issue.status).map((option) => (
+                <MenuItem
+                  key={option}
+                  selected={option === issue.status}
+                  onSelect={() =>
+                    option !== issue.status && onStatusChange(option)
+                  }
+                >
+                  <StatusPill status={option} />
+                </MenuItem>
+              ))}
+            </Menu>
+          </div>
 
-        {issue.assignee ? (
-          <Avatar name={issue.assignee.name} image={issue.assignee.image} />
-        ) : null}
+          {issue.assignee ? (
+            <Avatar name={issue.assignee.name} image={issue.assignee.image} />
+          ) : null}
+        </div>
       </div>
     </div>
   );

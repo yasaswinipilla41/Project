@@ -55,6 +55,27 @@ async function makeSprint(projectId: string, name: string) {
   return result.data.id;
 }
 
+/**
+ * A sprint on dates of the test's choosing, so "which sprint comes next" can
+ * be set up deliberately — `makeSprint` puts every sprint on the same dates,
+ * which is itself worth testing but cannot express "the one after this".
+ */
+async function makeSprintOn(
+  projectId: string,
+  name: string,
+  offsetDays: number,
+) {
+  const result = await createSprint({
+    projectId,
+    name,
+    goal: "",
+    ...dates(offsetDays),
+  });
+  if (!result.ok) throw new Error(`createSprint failed: ${result.error}`);
+  createdSprints.push(result.data.id);
+  return result.data.id;
+}
+
 /** A fresh issue in a project, so no test depends on the seeded backlog. */
 async function makeIssue(projectId: string, title: string) {
   const result = await createIssue({ projectId, type: "TASK", title });
@@ -855,6 +876,376 @@ describe("Moving an issue", () => {
     expect(entry).toMatchObject({
       oldValue: "Move source",
       newValue: "Move destination",
+    });
+  });
+
+  /*
+   * The figure the sprint details page's chart shows — "Total Issues: n" — is
+   * `stats.total`, and nothing stores it. A move has to be visible in both
+   * sprints at once: one short, the other long, with the issue's status the
+   * same as it was. Counted through `loadSprints`, which is what that page
+   * reads, in a project of its own so the numbers are exact.
+   */
+  it("changes both sprints' issue totals, and neither issue's status", async () => {
+    await actAs(ADMIN);
+    const project = await makeIsolatedProject();
+    const from = await makeSprint(project.id, "Total source");
+    const to = await makeSprint(project.id, "Total destination");
+
+    const staying = await makeIssue(project.id, "Stays behind");
+    const moving = await makeIssue(project.id, "Moves across");
+    await addIssuesToSprint({
+      sprintId: from,
+      issueIds: [staying.id, moving.id],
+    });
+    const alreadyThere = await makeIssue(project.id, "Already in the other");
+    await addIssuesToSprint({ sprintId: to, issueIds: [alreadyThere.id] });
+    await updateIssue({ issueId: moving.id, status: "IN_PROGRESS" });
+
+    const totals = async () => {
+      const sprints = await loadSprints(project.id);
+      return {
+        from: sprints.find((s) => s.id === from)!.stats.total,
+        to: sprints.find((s) => s.id === to)!.stats.total,
+      };
+    };
+
+    expect(await totals()).toEqual({ from: 2, to: 1 });
+
+    const result = await moveIssueToSprint({
+      issueId: moving.id,
+      destination: { type: "SPRINT", sprintId: to },
+    });
+    expect(result.ok).toBe(true);
+
+    /* One out of the source, one into the destination — the two figures move
+       together because both are counted from the same membership. */
+    expect(await totals()).toEqual({ from: 1, to: 2 });
+
+    /* The move is a move. It is not a status change. */
+    expect(
+      await prisma.issue.findUniqueOrThrow({
+        where: { id: moving.id },
+        select: { status: true, sprintId: true },
+      }),
+    ).toMatchObject({ status: "IN_PROGRESS", sprintId: to });
+  });
+
+  /*
+   * "Next sprint", and what counts as next.
+   *
+   * Two sprints planned for the same dates are ordinary, and the rule used to
+   * be a strictly later start date — so every same-day sprint was invisible to
+   * it and the move was refused with "No future Sprint is available." while the
+   * project's own Sprints page listed the sprint it should have offered.
+   */
+  it("moves it to the next sprint even when that sprint starts the same day", async () => {
+    await actAs(ADMIN);
+    const project = await makeIsolatedProject();
+    /* `makeSprint` puts both on the same dates, which is exactly the case
+       that was broken. */
+    const first = await makeSprint(project.id, "Same day source");
+    const second = await makeSprint(project.id, "Same day destination");
+    const issue = await makeIssue(project.id, "Carried to the next sprint");
+    await addIssuesToSprint({ sprintId: first, issueIds: [issue.id] });
+    await updateIssue({ issueId: issue.id, status: "IN_PROGRESS" });
+
+    const result = await moveIssueToSprint({
+      issueId: issue.id,
+      destination: { type: "NEXT_SPRINT" },
+    });
+
+    expect(result).toMatchObject({ ok: true });
+    expect(
+      await prisma.issue.findUniqueOrThrow({
+        where: { id: issue.id },
+        select: { sprintId: true, status: true },
+      }),
+      /* Out of the one, into the other, and still In Progress: a move is not
+         a status change. */
+    ).toMatchObject({ sprintId: second, status: "IN_PROGRESS" });
+  });
+
+  it("takes the soonest later sprint when several are open", async () => {
+    await actAs(ADMIN);
+    const project = await makeIsolatedProject();
+    const current = await makeSprintOn(project.id, "Next-of-three current", 0);
+    const soonest = await makeSprintOn(project.id, "Next-of-three soonest", 14);
+    await makeSprintOn(project.id, "Next-of-three later", 28);
+    const issue = await makeIssue(project.id, "Off to the soonest");
+    await addIssuesToSprint({ sprintId: current, issueIds: [issue.id] });
+
+    const result = await moveIssueToSprint({
+      issueId: issue.id,
+      destination: { type: "NEXT_SPRINT" },
+    });
+
+    expect(result).toMatchObject({ ok: true });
+    expect(
+      await prisma.issue.findUniqueOrThrow({
+        where: { id: issue.id },
+        select: { sprintId: true },
+      }),
+    ).toMatchObject({ sprintId: soonest });
+  });
+
+  it("still says there is no next sprint when every other open sprint is earlier", async () => {
+    await actAs(ADMIN);
+    const project = await makeIsolatedProject();
+    await makeSprintOn(project.id, "Only earlier one", 0);
+    const latest = await makeSprintOn(project.id, "The last sprint there is", 21);
+    const issue = await makeIssue(project.id, "Nowhere left to go");
+    await addIssuesToSprint({ sprintId: latest, issueIds: [issue.id] });
+
+    const result = await moveIssueToSprint({
+      issueId: issue.id,
+      destination: { type: "NEXT_SPRINT" },
+    });
+
+    /* The message is still the right answer here, and the issue has not
+       moved. */
+    expect(result).toMatchObject({
+      ok: false,
+      error: "No future Sprint is available.",
+    });
+    expect(
+      await prisma.issue.findUniqueOrThrow({
+        where: { id: issue.id },
+        select: { sprintId: true },
+      }),
+    ).toMatchObject({ sprintId: latest });
+  });
+
+  it("carries an issue out of the backlog into the soonest open sprint", async () => {
+    await actAs(ADMIN);
+    const project = await makeIsolatedProject();
+    const soonest = await makeSprintOn(project.id, "Backlog pickup soonest", 3);
+    await makeSprintOn(project.id, "Backlog pickup later", 30);
+    const issue = await makeIssue(project.id, "Straight from the backlog");
+
+    const result = await moveIssueToSprint({
+      issueId: issue.id,
+      destination: { type: "NEXT_SPRINT" },
+    });
+
+    expect(result).toMatchObject({ ok: true });
+    expect(
+      await prisma.issue.findUniqueOrThrow({
+        where: { id: issue.id },
+        select: { sprintId: true },
+      }),
+    ).toMatchObject({ sprintId: soonest });
+  });
+
+  /*
+   * Restore: back to the sprint the issue came from.
+   *
+   * The destination is the issue's own note of its last move, so these tests
+   * are about that note being right — after one move, after several, and after
+   * a restore, which is itself a move and leaves its own note.
+   */
+  describe("restoring it to the sprint it came from", () => {
+    it("puts it back, and leaves everything about the issue alone", async () => {
+      await actAs(ADMIN);
+      const project = await makeIsolatedProject();
+      const from = await makeSprintOn(project.id, "Restore source", 0);
+      const to = await makeSprintOn(project.id, "Restore destination", 14);
+      const issue = await makeIssue(project.id, "Work that goes back");
+
+      /* The issue as it is before anything moves: these are the facts a move
+         must not touch. */
+      await addIssuesToSprint({ sprintId: from, issueIds: [issue.id] });
+      await updateIssue({
+        issueId: issue.id,
+        status: "IN_PROGRESS",
+        priority: "HIGH",
+      });
+      const before = await prisma.issue.findUniqueOrThrow({
+        where: { id: issue.id },
+        select: {
+          status: true,
+          priority: true,
+          assigneeId: true,
+          title: true,
+          effortHours: true,
+        },
+      });
+
+      const moved = await moveIssueToSprint({
+        issueId: issue.id,
+        destination: { type: "SPRINT", sprintId: to },
+      });
+      expect(moved.ok).toBe(true);
+
+      const restored = await moveIssueToSprint({
+        issueId: issue.id,
+        destination: { type: "PREVIOUS" },
+      });
+      expect(restored).toMatchObject({ ok: true });
+
+      const after = await prisma.issue.findUniqueOrThrow({
+        where: { id: issue.id },
+        select: {
+          sprintId: true,
+          previousSprintId: true,
+          status: true,
+          priority: true,
+          assigneeId: true,
+          title: true,
+          effortHours: true,
+        },
+      });
+
+      /* Back in the sprint it started in, and able to go forward again:
+         restoring is a move, so it leaves its own note. */
+      expect(after.sprintId).toBe(from);
+      expect(after.previousSprintId).toBe(to);
+
+      /* Nothing else about the issue moved. */
+      expect({
+        status: after.status,
+        priority: after.priority,
+        assigneeId: after.assigneeId,
+        title: after.title,
+        effortHours: after.effortHours,
+      }).toEqual(before);
+    });
+
+    it("tracks the immediately previous sprint across repeated moves", async () => {
+      await actAs(ADMIN);
+      const project = await makeIsolatedProject();
+      const a = await makeSprintOn(project.id, "Chain A", 0);
+      const b = await makeSprintOn(project.id, "Chain B", 14);
+      const c = await makeSprintOn(project.id, "Chain C", 28);
+      const issue = await makeIssue(project.id, "Work that travels");
+      await addIssuesToSprint({ sprintId: a, issueIds: [issue.id] });
+
+      const previous = async () =>
+        (
+          await prisma.issue.findUniqueOrThrow({
+            where: { id: issue.id },
+            select: { previousSprintId: true },
+          })
+        ).previousSprintId;
+
+      await moveIssueToSprint({
+        issueId: issue.id,
+        destination: { type: "SPRINT", sprintId: b },
+      });
+      expect(await previous()).toBe(a);
+
+      await moveIssueToSprint({
+        issueId: issue.id,
+        destination: { type: "SPRINT", sprintId: c },
+      });
+      /* A → B → C: the note is B, the sprint it was *immediately* in, not the
+         one it started in. */
+      expect(await previous()).toBe(b);
+
+      const restored = await moveIssueToSprint({
+        issueId: issue.id,
+        destination: { type: "PREVIOUS" },
+      });
+      expect(restored).toMatchObject({ ok: true, data: { sprintId: b } });
+      expect(
+        await prisma.issue.findUniqueOrThrow({
+          where: { id: issue.id },
+          select: { sprintId: true, previousSprintId: true },
+        }),
+      ).toMatchObject({ sprintId: b, previousSprintId: c });
+    });
+
+    it("refuses when the issue has never been moved out of a sprint", async () => {
+      await actAs(ADMIN);
+      const project = await makeIsolatedProject();
+      const only = await makeSprintOn(project.id, "Nowhere to go back to", 0);
+      const issue = await makeIssue(project.id, "Never been anywhere");
+      await addIssuesToSprint({ sprintId: only, issueIds: [issue.id] });
+
+      const result = await moveIssueToSprint({
+        issueId: issue.id,
+        destination: { type: "PREVIOUS" },
+      });
+
+      /* Nothing to restore to, and the issue stays where it is — the menu
+         does not offer Restore here either. */
+      expect(result.ok).toBe(false);
+      expect(
+        await prisma.issue.findUniqueOrThrow({
+          where: { id: issue.id },
+          select: { sprintId: true },
+        }),
+      ).toMatchObject({ sprintId: only });
+    });
+
+    it("refuses to restore into a sprint that has been completed", async () => {
+      await actAs(ADMIN);
+      const project = await makeIsolatedProject();
+      const from = await makeSprintOn(project.id, "Closed behind it", 0);
+      const to = await makeSprintOn(project.id, "Still open", 14);
+      const issue = await makeIssue(project.id, "Work with no way back");
+      /* A sprint cannot be started empty, and this one has to be startable to
+         be completed — so it keeps a second issue of its own after the first
+         one leaves. */
+      const stays = await makeIssue(project.id, "Work that stays behind");
+      await addIssuesToSprint({ sprintId: from, issueIds: [issue.id, stays.id] });
+      await moveIssueToSprint({
+        issueId: issue.id,
+        destination: { type: "SPRINT", sprintId: to },
+      });
+
+      /* The sprint it came from is started and closed out behind it. */
+      const started = await startSprint({ sprintId: from });
+      expect(started.ok).toBe(true);
+      const closed = await completeSprint({
+        sprintId: from,
+        moveIncompleteTo: "BACKLOG",
+      });
+      expect(closed.ok).toBe(true);
+
+      const result = await moveIssueToSprint({
+        issueId: issue.id,
+        destination: { type: "PREVIOUS" },
+      });
+
+      expect(result.ok).toBe(false);
+      expect(
+        await prisma.issue.findUniqueOrThrow({
+          where: { id: issue.id },
+          select: { sprintId: true },
+        }),
+      ).toMatchObject({ sprintId: to });
+    });
+
+    it("carries the issue's totals with it, in both sprints", async () => {
+      await actAs(ADMIN);
+      const project = await makeIsolatedProject();
+      const from = await makeSprintOn(project.id, "Totals source", 0);
+      const to = await makeSprintOn(project.id, "Totals destination", 14);
+      const issue = await makeIssue(project.id, "One issue, two sprints");
+      await addIssuesToSprint({ sprintId: from, issueIds: [issue.id] });
+
+      const totals = async () => {
+        const all = await loadSprints(project.id);
+        return {
+          from: all.find((one) => one.id === from)!.stats.total,
+          to: all.find((one) => one.id === to)!.stats.total,
+        };
+      };
+
+      await moveIssueToSprint({
+        issueId: issue.id,
+        destination: { type: "SPRINT", sprintId: to },
+      });
+      expect(await totals()).toEqual({ from: 0, to: 1 });
+
+      await moveIssueToSprint({
+        issueId: issue.id,
+        destination: { type: "PREVIOUS" },
+      });
+      /* The figures the sprint page and its Issues by status chart are drawn
+         from follow the restore, because nothing stores them. */
+      expect(await totals()).toEqual({ from: 1, to: 0 });
     });
   });
 

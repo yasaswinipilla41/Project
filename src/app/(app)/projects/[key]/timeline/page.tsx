@@ -7,7 +7,12 @@ import { IssueKey, IssueTypeIcon, StatusPill } from "@/components/ui/Indicators"
 import { IconEmptyBox } from "@/components/ui/Icon";
 import { projectScope } from "@/lib/authz";
 import { CLOSED_STATUSES, STATUS_LABEL } from "@/lib/domain";
-import { formatDate, formatDateRange, formatDayMonthYear } from "@/lib/format";
+import {
+  formatDate,
+  formatDateCompact,
+  formatDateRange,
+  formatDayMonthYear,
+} from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 
@@ -390,7 +395,30 @@ export default async function ProjectTimelinePage({
                               left: `${bar.left}%`,
                               width: `${bar.width}%`,
                             }}
+                            /* Both dates are drawn on the bar, but a short
+                               sprint on a long window leaves no room for
+                               them; the tooltip says them whatever the bar's
+                               width, as the hidden text below does for a
+                               screen reader. */
+                            title={`${sprint.name}: ${formatDate(
+                              sprint.startDate,
+                            )} to ${formatDate(sprint.endDate)}`}
                           >
+                            {/* Start at the bar's start, end at its end —
+                                the sprint's own dates, formatted the way
+                                every other sprint date in Prio is. */}
+                            <span
+                              className="prio-timeline__barlabel prio-timeline__barlabel--start"
+                              aria-hidden
+                            >
+                              {formatDateCompact(sprint.startDate)}
+                            </span>
+                            <span
+                              className="prio-timeline__barlabel prio-timeline__barlabel--end"
+                              aria-hidden
+                            >
+                              {formatDateCompact(sprint.endDate)}
+                            </span>
                             <span className="prio-visually-hidden">
                               {sprint.name} (
                               {formatDateRange(sprint.startDate, sprint.endDate)})

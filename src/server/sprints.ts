@@ -619,6 +619,8 @@ export async function moveIssueToSprint(
         id: true,
         projectId: true,
         sprintId: true,
+        /* Where it was before it came here, for a Restore. */
+        previousSprintId: true,
         sprint: {
           select: { id: true, name: true, status: true, startDate: true },
         },
@@ -663,18 +665,70 @@ export async function moveIssueToSprint(
       }
       destinationSprintId = target.id;
       destinationSprintName = target.name;
+    } else if (destination.type === "PREVIOUS") {
+      /*
+       * Back to the sprint this issue was moved out of.
+       *
+       * The sprint is the issue's own note of its last move, so a Restore
+       * cannot be aimed anywhere else, and it is checked here like any named
+       * sprint would be: it has to still exist, belong to this project, and
+       * still be open. A record pointing at a sprint that has since been
+       * deleted or closed is simply nothing to restore to.
+       */
+      if (!issue.previousSprintId) {
+        return {
+          ok: false,
+          error: "This issue has no previous sprint to restore it to.",
+        };
+      }
+
+      const previous = await prisma.sprint.findUnique({
+        where: { id: issue.previousSprintId },
+        select: { id: true, projectId: true, name: true, status: true },
+      });
+      if (!previous || previous.projectId !== issue.projectId) {
+        return {
+          ok: false,
+          error: "The sprint this issue came from no longer exists.",
+        };
+      }
+      if (previous.status === "COMPLETED") {
+        return {
+          ok: false,
+          error: `${previous.name} has been completed, so this issue cannot be restored to it.`,
+        };
+      }
+
+      destinationSprintId = previous.id;
+      destinationSprintName = previous.name;
     } else if (destination.type === "NEXT_SPRINT") {
-      /* The next open sprint after this issue's own, by start date — or, for
-         an issue already in the backlog, simply the soonest open sprint in
-         the project. Never a sprint this issue is already in. */
+      /*
+       * The next open sprint this issue can go to: the soonest one that does
+       * not start before the sprint it is in now, and is not that sprint.
+       * For an issue already in the backlog, simply the soonest open sprint
+       * in the project.
+       *
+       * `gte`, not `gt`. Two sprints planned for the same dates are ordinary
+       * — a team splitting a fortnight's work across two boards has them —
+       * and a strict `gt` excluded every one of them, so "Next sprint"
+       * reported that no future sprint existed while the project's own list
+       * was showing several. The sprint it is in is excluded by id, so an
+       * equal start date can only ever match a different sprint.
+       *
+       * Ordered by start date and then by when the sprint was created, so
+       * two sprints sharing a start date still have one definite order — the
+       * same order the project's Sprints page lists them in.
+       */
       const next = await prisma.sprint.findFirst({
         where: {
           projectId: issue.projectId,
           status: { in: ["PLANNED", "ACTIVE"] },
           ...(issue.sprintId ? { id: { not: issue.sprintId } } : {}),
-          ...(issue.sprint ? { startDate: { gt: issue.sprint.startDate } } : {}),
+          ...(issue.sprint
+            ? { startDate: { gte: issue.sprint.startDate } }
+            : {}),
         },
-        orderBy: { startDate: "asc" },
+        orderBy: [{ startDate: "asc" }, { createdAt: "asc" }],
         select: { id: true, name: true },
       });
       if (!next) {
@@ -697,7 +751,17 @@ export async function moveIssueToSprint(
     await prisma.$transaction(async (tx) => {
       await tx.issue.update({
         where: { id: issue.id },
-        data: { sprintId: destinationSprintId },
+        data: {
+          sprintId: destinationSprintId,
+          /*
+           * The sprint it is leaving, so this move can be undone by the next
+           * one. Overwritten rather than appended to: "previous" is the one
+           * sprint before this, so moving A → B → C leaves C able to go back
+           * to B, and a Restore from B to A leaves it able to return to B.
+           * Only the status and these two fields ever change here.
+           */
+          previousSprintId: issue.sprintId,
+        },
       });
       await recordFieldChanges(tx, {
         issueId: issue.id,

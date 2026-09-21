@@ -217,6 +217,135 @@
   gap: 2px;
 }
 
+/*
+ * A figure that opens the work it counts, on the sprint's own page.
+ *
+ * A button rather than a link, because the work opens on this page and
+ * nothing is navigated. It has to be indistinguishable from the plain figures
+ * in a sprint block, so everything a button brings of its own is removed and
+ * the padding is cancelled by an equal negative margin — the strip's spacing
+ * is what it always was. What is added is only the affordance: a hover, a
+ * focus ring, and a quiet marker on the one that is open.
+ */
+.prio-sprint__stat--button {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  padding: var(--prio-space-1) var(--prio-space-2);
+  margin: calc(-1 * var(--prio-space-1)) calc(-1 * var(--prio-space-2));
+  border-radius: var(--prio-radius-sm);
+  transition: background var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-sprint__stat--button:hover {
+  background: var(--prio-bg-hover);
+}
+
+.prio-sprint__stat--button:focus-visible {
+  outline: none;
+  box-shadow: var(--prio-shadow-focus);
+}
+
+.prio-sprint__stat--button[data-open] {
+  background: var(--prio-bg-subtle);
+  box-shadow: inset 0 0 0 1px var(--prio-border);
+}
+
+/* ------------------------------------------- one figure's work, in place */
+
+.prio-summaryview {
+  margin-top: var(--prio-space-4);
+  padding-top: var(--prio-space-4);
+  border-top: 1px solid var(--prio-border-subtle);
+}
+
+.prio-summaryview[hidden] {
+  display: none;
+}
+
+.prio-summaryview__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--prio-space-3);
+  /* A narrow card puts Back under the title rather than squeezing both. */
+  flex-wrap: wrap;
+}
+
+.prio-summaryview__title {
+  margin: 0;
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-semibold);
+  letter-spacing: var(--prio-tracking-caps);
+  text-transform: uppercase;
+  color: var(--prio-text-muted);
+}
+
+/* The Back control is the same one the page's own Back link is, as a button:
+   it returns to this view rather than going anywhere. */
+.prio-summaryview__back {
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  background: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--prio-text-xs);
+  font-weight: var(--prio-weight-medium);
+}
+
+.prio-summaryview__back:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.prio-summaryview__back:focus-visible {
+  outline: none;
+  box-shadow: var(--prio-shadow-focus);
+  border-radius: var(--prio-radius-sm);
+}
+
+.prio-summaryview__figure {
+  margin: var(--prio-space-3) 0 0;
+  font-size: var(--prio-text-sm);
+  color: var(--prio-text-secondary);
+}
+
+.prio-summaryview__subtitle {
+  margin: var(--prio-space-4) 0 0;
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-semibold);
+  letter-spacing: var(--prio-tracking-caps);
+  text-transform: uppercase;
+  color: var(--prio-text-muted);
+}
+
+.prio-summaryview__group {
+  margin-top: var(--prio-space-4);
+}
+
+.prio-summaryview__person {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-3);
+  min-width: 0;
+}
+
+/* The rows themselves are the sprint's own issue rows, so a figure's work
+   reads exactly like the sprint's work reads everywhere else. The status and
+   the assignee at the end of each row never shrink. */
+.prio-summaryview .prio-sprint__issue > .prio-status,
+.prio-summaryview .prio-sprint__issue > .prio-avatar {
+  flex-shrink: 0;
+}
+
 .prio-sprint__statvalue {
   display: flex;
   align-items: center;
@@ -306,6 +435,20 @@
   overflow-y: hidden;
   padding-bottom: var(--prio-space-2);
   transition: opacity var(--prio-duration) var(--prio-ease);
+  /*
+   * Positioned, so that this row is the containing block for the absolutely
+   * positioned things inside it — chiefly the `prio-visually-hidden` labels
+   * every card carries.
+   *
+   * Without it their containing block is the page, and an element positioned
+   * against the page is not clipped by this row's `overflow` however far
+   * along the scrolled content it sits. A sprint in nine statuses put those
+   * labels some 1,800px out and the whole page gained a horizontal scrollbar
+   * for them, while the row beside it scrolled correctly on its own. Nothing
+   * moves visually: the labels are invisible, and every other child is in
+   * normal flow.
+   */
+  position: relative;
 }
 
 /* A status change is still being written. The same dimming the filter bar
@@ -667,9 +810,19 @@
   margin: 0;
 }
 
+.prio-burndown__scroll {
+  /* Nothing to scroll until the chart's floor width bites, below. */
+  overflow-x: auto;
+}
+
 .prio-burndown__svg {
+  display: block;
   width: 100%;
   height: auto;
+  /* A ceiling for the very widest cards, so the chart cannot grow into a
+     tower on a large monitor. At the width it is usually given, its natural
+     height is already just under this. */
+  max-height: 320px;
   overflow: visible;
 }
 
@@ -678,10 +831,53 @@
   stroke-width: 1;
 }
 
+/*
+ * Axis type, in the drawing's own units.
+ *
+ * Those units are scaled by however much the chart's box is stretched to fit
+ * its card: about 1.2 on a full-width card, but well under 1 on a phone. So
+ * the size is stepped back up as the screen narrows, which keeps the labels
+ * at roughly the same size on the glass instead of shrinking with the chart.
+ */
 .prio-burndown__axis {
   fill: var(--prio-text-muted);
-  font-size: 10px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 1199.98px) {
+  .prio-burndown__axis {
+    font-size: 19px;
+  }
+
+  .prio-burndown__ideal {
+    stroke-width: 2;
+  }
+
+  .prio-burndown__actual {
+    stroke-width: 3.5;
+  }
+}
+
+@media (max-width: 767.98px) {
+  /* A floor, so the chart stays a chart: at a phone's width the card scrolls
+     sideways to reach the rest of it rather than squashing the plot. */
+  .prio-burndown__svg {
+    min-width: 620px;
+  }
+
+  .prio-burndown__axis {
+    font-size: 24px;
+  }
+
+  .prio-burndown__ideal {
+    stroke-width: 3;
+    stroke-dasharray: 8 6;
+  }
+
+  .prio-burndown__actual {
+    stroke-width: 5;
+  }
 }
 
 /* The reference, not a measurement: dashed and receding. */

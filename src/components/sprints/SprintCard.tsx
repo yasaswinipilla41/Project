@@ -83,6 +83,7 @@ export function SprintCard({
   const { stats } = sprint;
   const live = sprint.status !== "COMPLETED";
 
+
   async function start() {
     setStarting(true);
     const result = await startSprint({ sprintId: sprint.id });
@@ -240,6 +241,14 @@ export function SprintCard({
         {/* ------------------------------------------------------ summary */}
         {/* Counted from the issues themselves every time this renders, so a
             status change anywhere in Prio moves these figures. */}
+        {/*
+         * The sprint's own figures, counted from its issues on every render.
+         *
+         * Plain text, not links: these belong to the sprint block, and the
+         * same five are repeated on the sprint's own page, so reading them
+         * never costs a navigation. `stats` is the single count behind both
+         * places, which is what keeps them in step with the work.
+         */}
         <div className="prio-sprint__summary">
           <span className="prio-sprint__stat">
             <span className="prio-sprint__statvalue">{stats.total}</span>

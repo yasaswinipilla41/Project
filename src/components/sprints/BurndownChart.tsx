@@ -8,18 +8,40 @@ import { formatDayMonthYear } from "@/lib/format";
  * decision: Prio has no chart dependency, and two polylines over a labelled
  * grid do not justify adding one.
  *
- * Two lines and they mean different things, so they are drawn differently. The
- * ideal is arithmetic — where an evenly burning sprint would be — and is
- * dashed and muted, because it is a reference rather than a measurement. The
- * actual is what was recorded, and is solid. Where nothing has been recorded
+ * Two lines and they mean different things, so they are drawn differently and
+ * each is named. The **ideal** is arithmetic — where an evenly burning sprint
+ * would be, from the whole estimate down to nothing across the sprint's own
+ * dates — and is dashed and muted, because it is a reference rather than a
+ * measurement. The **actual** is what the sprint's own work says is left, and
+ * is solid. Where nothing has been recorded
  * yet the actual line simply stops: the days a sprint has not reached are left
  * blank rather than drawn flat or drawn to zero, either of which would be a
  * claim about work that has not happened.
  */
 
-const WIDTH = 640;
-const HEIGHT = 260;
-const PAD = { top: 16, right: 16, bottom: 34, left: 44 };
+/*
+ * The drawing's own coordinate space.
+ *
+ * The chart is `width: 100%` with the aspect ratio kept, so this box is
+ * scaled to whatever the card gives it — and everything in it, the type
+ * included, is scaled by the same factor. A 640-wide box on a 1,550-wide card
+ * meant a scale of nearly 2.5: 10px axis labels arriving as 24px, strokes as
+ * 6px, and a chart more than 600px tall for a plot that needed a third of it.
+ *
+ * So the box is wide and four times as wide as it is tall. At a full-width
+ * card it now draws at roughly 1:1, which leaves the type the size it is
+ * written at and the whole chart about 300px tall rather than 600. The axis
+ * type is stepped per breakpoint in the stylesheet, because the scale falls
+ * below 1 on a narrow screen and the labels would shrink away with it; below
+ * the tablet step the chart keeps a floor width and its card scrolls, so a
+ * phone gets a readable chart rather than a 70px strip.
+ */
+const WIDTH = 1200;
+const HEIGHT = 300;
+/* The left gutter holds the scale's own labels — "40h" — and has to hold
+   them at the largest size the stylesheet gives them, which is the phone
+   step; too narrow and the first digit is cut off by the edge of the box. */
+const PAD = { top: 14, right: 24, bottom: 34, left: 58 };
 
 export function BurndownChart({ data }: { data: Burndown }) {
   const { points, totalEffort } = data;
@@ -62,6 +84,9 @@ export function BurndownChart({ data }: { data: Burndown }) {
     )
     .join(" ");
 
+  /* The scale down the left, in the unit it is measured in: this axis is
+     remaining effort in hours, and a column of bare numbers does not say
+     so. */
   const gridlines = [0, 0.25, 0.5, 0.75, 1].map((share) => ({
     share,
     hours: Math.round(ceiling * (1 - share)),
@@ -72,8 +97,41 @@ export function BurndownChart({ data }: { data: Burndown }) {
      long enough that they would collide. */
   const labelEvery = points.length > 10 ? Math.ceil(points.length / 8) : 1;
 
+  /*
+   * The dates along the bottom.
+   *
+   * The day on its own is enough while a sprint stays inside one month, but a
+   * fortnight rarely does: "28, 30, 1, 3" reads as four days in no particular
+   * month. So the month is named on the first date shown and again on the
+   * first one shown in each new month — on a label that is being drawn
+   * anyway, rather than by adding labels between the others and crowding
+   * them.
+   */
+  const dated = points
+    .map((point, index) => ({ point, index }))
+    .filter(({ index }) => index % labelEvery === 0);
+  const dateLabels = new Map<number, string>();
+  let lastMonth: number | null = null;
+  for (const { point, index } of dated) {
+    const month = point.date.getMonth();
+    dateLabels.set(
+      index,
+      month === lastMonth
+        ? `${point.date.getDate()}`
+        : `${point.date.getDate()} ${point.date.toLocaleDateString("en-GB", {
+            month: "short",
+          })}`,
+    );
+    lastMonth = month;
+  }
+
   return (
     <figure className="prio-burndown">
+      {/* The scroller matters only on a narrow screen, where the chart keeps
+          a floor width (see the stylesheet) instead of flattening to an
+          unreadable strip. At any ordinary width there is nothing to
+          scroll. */}
+      <div className="prio-burndown__scroll prio-scroll">
       <svg
         viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
         className="prio-burndown__svg"
@@ -96,32 +154,37 @@ export function BurndownChart({ data }: { data: Burndown }) {
               textAnchor="end"
               className="prio-burndown__axis"
             >
-              {line.hours}
+              {line.hours}h
             </text>
           </g>
         ))}
 
-        {points.map((point, index) =>
-          index % labelEvery === 0 ? (
+        {points.map((point, index) => {
+          const label = dateLabels.get(index);
+          return label ? (
             <text
               key={point.date.toISOString()}
               x={x(index)}
-              y={HEIGHT - 12}
+              y={HEIGHT - 10}
               textAnchor="middle"
               className="prio-burndown__axis"
             >
-              {point.date.getDate()}
+              {label}
             </text>
-          ) : null,
-        )}
+          ) : null;
+        })}
 
         <polyline points={idealLine} className="prio-burndown__ideal" />
         {actualLine ? (
           <polyline points={actualLine} className="prio-burndown__actual" />
         ) : null}
       </svg>
+      </div>
 
       <figcaption className="prio-burndown__legend">
+        {/* "Remaining" rather than "Actual": it is the same line a burndown
+            report calls the actual, and this is what it is showing — the
+            hours this sprint still has to do. */}
         <span className="prio-burndown__key" data-line="actual">
           Remaining
         </span>
