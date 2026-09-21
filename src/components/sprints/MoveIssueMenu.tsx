@@ -23,6 +23,12 @@ type Destination =
  * The destination is the issue's own record of the move, never anything this
  * menu chooses, so the server decides it and this only asks.
  *
+ * Next sprint is offered on the same terms, for the same reason. A project
+ * running its only sprint has none after it, and the entry used to be there
+ * regardless — failing with "No future Sprint is available." every time it
+ * was used. Whether there is one is worked out by the page from the sprints
+ * it has already loaded; see `lib/sprintMove`.
+ *
  * Offered to the same people the Add issues button is — filling a sprint,
  * emptying it or moving its issues elsewhere is every working role's, not a
  * lifecycle change — and `moveIssueToSprint` asserts that same rule again on
@@ -34,6 +40,7 @@ export function MoveIssueMenu({
   /** This project's other sprints that are not completed. */
   otherOpenSprints,
   previousSprint,
+  hasNextSprint = true,
   disabled,
 }: {
   issueId: string;
@@ -42,6 +49,10 @@ export function MoveIssueMenu({
   /** The still-open sprint this issue was moved out of, when there is one —
    *  what Restore puts it back into. Absent means no Restore is offered. */
   previousSprint?: { id: string; name: string } | null;
+  /** Whether this issue's sprint has an open one on or after it. Defaults to
+   *  offering the move, so a caller that does not know keeps the old
+   *  behaviour and the server still has the final word. */
+  hasNextSprint?: boolean;
   disabled?: boolean;
 }) {
   const router = useRouter();
@@ -85,9 +96,11 @@ export function MoveIssueMenu({
           Restore to {previousSprint.name}
         </MenuItem>
       ) : null}
-      <MenuItem onSelect={() => void move({ type: "NEXT_SPRINT" })}>
-        Next sprint
-      </MenuItem>
+      {hasNextSprint ? (
+        <MenuItem onSelect={() => void move({ type: "NEXT_SPRINT" })}>
+          Next sprint
+        </MenuItem>
+      ) : null}
       {otherOpenSprints.length > 0 ? (
         <>
           <MenuSeparator />

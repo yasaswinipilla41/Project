@@ -182,7 +182,16 @@ test.describe("the Timeline's sprint bars", () => {
        and all of which share the lane the sprint dates were added to. */
     await expect(page.locator(".prio-timeline__bar").first()).toBeVisible();
     await expect(page.getByText("Not in an epic").first()).toBeVisible();
-    await expect(page.locator(".prio-timeline__barlabel").first()).toBeVisible();
+    /* The issue bar's own due-date label — matched without the modifiers the
+       sprint bars now add, because those are deliberately hidden on a bar too
+       narrow to hold two dates and would make this assert the wrong thing. */
+    await expect(
+      page
+        .locator(
+          ".prio-timeline__barlabel:not(.prio-timeline__barlabel--start):not(.prio-timeline__barlabel--end)",
+        )
+        .first(),
+    ).toBeVisible();
   });
 });
 
@@ -236,25 +245,37 @@ test.describe("Move, from the issue's own menu", () => {
       card.locator(".prio-board__card-status .prio-status"),
     ).toHaveAttribute("data-status", "IN_REVIEW");
 
-    await card.getByRole("button", { name: `Actions for ${issueKey}` }).click();
-
     /*
-     * The existing menu, with Move added to it — not a second menu beside it.
-     * The actions that were already there are asserted as still being there,
-     * because "add without removing" is the requirement and a menu is the
-     * easiest place to lose something.
+     * Driven through the card's own Move to control.
+     *
+     * This used to go through the ⋮ menu, which carried a single "Move to
+     * next sprint". That entry has since been replaced by a dedicated
+     * control offering the whole set — restore, next sprint, a named sprint,
+     * the backlog — so the move is driven where it now lives. What is
+     * asserted below is unchanged: where the issue ends up, what its status
+     * is, and that both sprints' figures follow it.
+     *
+     * The ⋮ menu is still checked for the actions it has always had, because
+     * gaining a control beside it must not cost it any of them.
      */
-    const menu = page.getByRole("menu", { name: `Actions for ${issueKey}` });
-    await expect(menu.getByRole("menuitem", { name: "Open / edit" })).toBeVisible();
-    await expect(menu.getByRole("menuitem", { name: "Clone" })).toBeVisible();
-    await expect(menu.getByRole("menuitem", { name: "Delete" })).toBeVisible();
+    await card.getByRole("button", { name: `Actions for ${issueKey}` }).click();
+    const actions = page.getByRole("menu", { name: `Actions for ${issueKey}` });
+    await expect(actions.getByRole("menuitem", { name: "Open / edit" })).toBeVisible();
+    await expect(actions.getByRole("menuitem", { name: "Clone" })).toBeVisible();
+    await expect(actions.getByRole("menuitem", { name: "Delete" })).toBeVisible();
+    await page.keyboard.press("Escape");
 
-    await menu
-      .getByRole("menuitem", { name: "Move to next sprint" })
+    await card.hover();
+    await card
+      .getByRole("button", { name: new RegExp(`Move ${issueKey} to another`) })
       .click();
 
+    const menu = page.getByRole("menu", { name: new RegExp(`Move ${issueKey}`) });
+    await menu.getByRole("menuitem", { name: "Next sprint" }).click();
+
+    /* The control's own wording: "<key> moved to <sprint>". */
     await expect(page.locator(".prio-toast")).toContainText(
-      `Moved ${issueKey}`,
+      `${issueKey} moved to`,
     );
 
     /* The database is the arbiter: the sprint changed, the status did not. */
@@ -310,8 +331,13 @@ test.describe("Move, from the issue's own menu", () => {
     const menu = page.getByRole("menu", { name: `Actions for ${key}` });
     await expect(menu.getByRole("menuitem", { name: "Open / edit" })).toBeVisible();
     await expect(menu.getByRole("menuitem", { name: "Clone" })).toBeVisible();
+    /* Moving between sprints is a sprint's own control and belongs to the
+       sprint board; a board card, whose issue may be in no sprint at all, is
+       given neither a sprint entry in its ⋮ menu nor the Move control. */
+    await expect(menu.getByRole("menuitem", { name: /sprint/i })).toHaveCount(0);
+    await page.keyboard.press("Escape");
     await expect(
-      menu.getByRole("menuitem", { name: "Move to next sprint" }),
+      card.getByRole("button", { name: new RegExp(`Move ${key} to another`) }),
     ).toHaveCount(0);
   });
 });

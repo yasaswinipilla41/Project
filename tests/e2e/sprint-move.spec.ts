@@ -10,6 +10,11 @@ import { prisma } from "@/lib/prisma";
  * sprint it should have offered. This drives the real menu and then checks
  * three things the move has to leave true: the issue is in the other sprint,
  * its status is untouched, and both sprints' figures have followed it.
+ *
+ * The second describe covers the other half of the same question: a project
+ * with nowhere to move to should not offer the move. Restore was already
+ * gated that way; Next sprint was not, so on a project running its only
+ * sprint the entry sat on every card and failed every time.
  */
 
 const createdProjects: string[] = [];
@@ -88,6 +93,97 @@ async function seedSameDaySprints() {
 
   return { key: project.key.toLowerCase(), from, to, issue };
 }
+
+/** A project with one sprint and one issue in it: nowhere to move on to. */
+async function seedLonelySprint() {
+  const admin = await prisma.user.findFirstOrThrow({
+    where: { role: "ADMIN" },
+    select: { id: true },
+  });
+  const key = `LN${Date.now().toString(36).toUpperCase()}`.slice(0, 10);
+  const project = await prisma.project.create({
+    data: {
+      key,
+      name: `Lonely sprint fixture ${key}`,
+      createdById: admin.id,
+      members: { create: { userId: admin.id } },
+      issueSequence: 1,
+    },
+    select: { id: true, key: true },
+  });
+  createdProjects.push(project.id);
+
+  const sprint = await prisma.sprint.create({
+    data: {
+      name: `E2E only sprint ${Date.now()}`,
+      startDate: new Date(),
+      endDate: new Date(Date.now() + 13 * 86_400_000),
+      projectId: project.id,
+      createdById: admin.id,
+      status: "ACTIVE",
+    },
+    select: { id: true, name: true },
+  });
+
+  const issue = await prisma.issue.create({
+    data: {
+      projectId: project.id,
+      key: `${project.key}-1`,
+      number: 1,
+      title: "Work with nowhere to go",
+      type: "TASK",
+      status: "IN_PROGRESS",
+      reporterId: admin.id,
+      sprintId: sprint.id,
+    },
+    select: { id: true, key: true },
+  });
+
+  return { key: project.key.toLowerCase(), sprint, issue };
+}
+
+test.describe("Move to · when there is no next sprint", () => {
+  test("does not offer it, and still offers the backlog", async ({ page }) => {
+    const { key, sprint, issue } = await seedLonelySprint();
+
+    await page.goto(`/projects/${key}/sprints/${sprint.id}`);
+
+    const card = page
+      .locator(".prio-board__card")
+      .filter({ hasText: issue.key });
+    await card.hover();
+    await card
+      .getByRole("button", { name: new RegExp(`Move ${issue.key} to another`) })
+      .click();
+
+    const menu = page.getByRole("menu", { name: `Move ${issue.key}` });
+
+    /* The entry that could only ever fail here is gone. */
+    await expect(
+      menu.getByRole("menuitem", { name: "Next sprint" }),
+    ).toHaveCount(0);
+
+    /* The menu is still worth opening: the backlog is a real destination and
+       is still offered. */
+    await expect(menu.getByRole("menuitem", { name: "Backlog" })).toBeVisible();
+
+    /* And the move it does offer still works, so gating one entry has not
+       taken the control with it. */
+    await menu.getByRole("menuitem", { name: "Backlog" }).click();
+    await expect
+      .poll(
+        async () =>
+          (
+            await prisma.issue.findUniqueOrThrow({
+              where: { id: issue.id },
+              select: { sprintId: true },
+            })
+          ).sprintId,
+        { timeout: 15_000 },
+      )
+      .toBeNull();
+  });
+});
 
 test.describe("Move to · next sprint", () => {
   test("moves the issue to the next sprint even when both sprints run the same dates", async ({

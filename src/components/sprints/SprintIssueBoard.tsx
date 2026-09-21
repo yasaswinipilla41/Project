@@ -37,6 +37,7 @@ export function SprintIssueBoard({
   otherOpenSprints = [],
   previousSprints = {},
   canMoveIssues = false,
+  hasNextSprint = true,
 }: {
   issues: BoardIssue[];
   workRole: WorkRole;
@@ -51,6 +52,10 @@ export function SprintIssueBoard({
   /** Whether this reader may move a sprint's issues at all. Presentation
    *  only: `moveIssueToSprint` asserts the same rule on the server. */
   canMoveIssues?: boolean;
+  /** Whether this sprint has an open one on or after it, so a card's Move to
+   *  can offer Next sprint. The same for every issue here, so the page works
+   *  it out once rather than each card asking. */
+  hasNextSprint?: boolean;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -157,6 +162,7 @@ export function SprintIssueBoard({
                       issueKey={issue.key}
                       otherOpenSprints={otherOpenSprints}
                       previousSprint={previousSprints[issue.id]}
+                      hasNextSprint={hasNextSprint}
                     />
                   ) : undefined
                 }

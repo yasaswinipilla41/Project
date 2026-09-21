@@ -6,6 +6,7 @@ import { SprintIssueBoard } from "@/components/sprints/SprintIssueBoard";
 import { BurndownChart } from "@/components/sprints/BurndownChart";
 import { Card, CardBody } from "@/components/ui/primitives";
 import { projectScope, workRoleOf } from "@/lib/authz";
+import { canMoveToNextSprint } from "@/lib/sprintMove";
 import { canEditSprintIssues } from "@/lib/domain";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
@@ -152,6 +153,11 @@ export default async function ProjectSprintDetailsPage({
                 canMoveIssues={
                   canEditSprintIssues(workRole) && sprint.status !== "COMPLETED"
                 }
+                /* Offered only where there is one to reach — otherwise the
+                   entry is there and the move comes back "No future Sprint is
+                   available." Read from the same `loadSprints` above, so it
+                   costs nothing to ask. */
+                hasNextSprint={canMoveToNextSprint(sprints, sprint)}
               />
             </CardBody>
           </Card>
