@@ -144,21 +144,33 @@ describe("what dropping a card on a column means", () => {
     expect(dropStatusFor("IN_PROGRESS", "TODO")).toBe("TODO");
   });
 
-  it("refuses a drop the workflow has no answer for", () => {
-    // Backlog is not a review queue, and neither status Done's column holds
-    // is reachable from Ready for QA's own column going backwards.
-    expect(dropStatusFor("IN_QA", "BACKLOG")).toBeNull();
-    expect(dropStatusFor("BACKLOG", "IN_REVIEW")).toBeNull();
+  it("takes a drop the workflow has nothing to say about at face value", () => {
+    /*
+     * These two used to be refused: Backlog is not a review queue, and
+     * nothing Done's column holds is reachable backwards out of In QA. A
+     * board that turns the card away is the wrong answer to work that was
+     * finished out of order — the card lands where it was dropped, and the
+     * trail records the jump.
+     */
+    expect(dropStatusFor("IN_QA", "BACKLOG")).toBe("BACKLOG");
+    expect(dropStatusFor("BACKLOG", "IN_REVIEW")).toBe("IN_REVIEW");
   });
 
-  it("only ever chooses a status the workflow already permits", () => {
+  it("always chooses a status drawn in the column it was dropped on", () => {
+    /*
+     * The guarantee that survives now that nothing is refused: whatever a
+     * drop resolves to, the card is drawn in the column the person let go
+     * over. A resolution that landed a card somewhere else would make the
+     * board lie about what just happened.
+     *
+     * Where the ordinary path *does* connect the two, it still decides which
+     * of the column's statuses is meant — Done → New is Reopened, not New —
+     * and the tests above pin those.
+     */
     for (const from of ISSUE_STATUSES) {
       for (const column of BOARD_STATUSES) {
         const to = dropStatusFor(from, column);
-        if (to === null) continue;
-        expect(canTransition(from, to), `${from} -> ${to}`).toBe(true);
-        // And whatever it chose is drawn in the column it was dropped on.
-        expect(boardColumnFor(to)).toBe(column);
+        expect(boardColumnFor(to), `${from} -> ${column}`).toBe(column);
       }
     }
   });

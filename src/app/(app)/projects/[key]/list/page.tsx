@@ -6,6 +6,7 @@ import { IssueTable } from "@/components/issues/IssueTable";
 import { filterOptions, listIssues } from "@/server/queries/issues";
 import { parseIssueParams, type SearchParams } from "@/server/queries/params";
 import { projectScope, workRoleOf } from "@/lib/authz";
+import { formatDateRange } from "@/lib/format";
 import { COLUMN_COOKIE, parseColumnPreference } from "@/lib/tableColumns";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
@@ -84,7 +85,7 @@ export default async function ProjectListPage({
           .filter((sprint) => sprint.projectId === project.id)
           .map((sprint) => ({
             id: sprint.id,
-            name: sprint.name,
+            name: `${sprint.name} (${formatDateRange(sprint.startDate, sprint.endDate)})`,
             completed: sprint.status === "COMPLETED",
           }))}
         currentUserId={user.id}

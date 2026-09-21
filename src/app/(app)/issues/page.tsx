@@ -5,6 +5,7 @@ import { IssueFilters } from "@/components/issues/IssueFilters";
 import { IssueTable } from "@/components/issues/IssueTable";
 import { filterOptions, listIssues } from "@/server/queries/issues";
 import { parseIssueParams, type SearchParams } from "@/server/queries/params";
+import { formatDateRange } from "@/lib/format";
 import { requireUser } from "@/lib/session";
 import { workRoleOf } from "@/lib/authz";
 import { COLUMN_COOKIE, parseColumnPreference } from "@/lib/tableColumns";
@@ -69,7 +70,10 @@ export default async function IssuesPage({
            project's key — two projects may both have a "Sprint 4". */
         sprints={options.sprints.map((sprint) => ({
           id: sprint.id,
-          name: `${sprint.project.key} · ${sprint.name}`,
+          /* Name, then the period it covers — the same range the sprint's own
+             card shows, so a cross-project list says which weeks each of two
+             "Sprint 4"s means. */
+          name: `${sprint.project.key} · ${sprint.name} (${formatDateRange(sprint.startDate, sprint.endDate)})`,
           completed: sprint.status === "COMPLETED",
         }))}
         currentUserId={user.id}

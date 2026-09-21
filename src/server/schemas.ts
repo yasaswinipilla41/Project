@@ -69,6 +69,35 @@ const patchId = z
   .nullable()
   .optional();
 
+/**
+ * Hours, as an estimate somebody typed — or cleared.
+ *
+ * Accepts a number or the string a form field gives, refuses anything
+ * negative or absurd, and treats an empty field as "no estimate" rather than
+ * as zero. Zero is a real and different answer: nothing left to do.
+ */
+const patchHours = z
+  .union([z.number(), z.string()])
+  .nullable()
+  .optional()
+  .transform((v) => {
+    if (v === undefined) return undefined;
+    if (v === null) return null;
+    if (typeof v === "string") {
+      const trimmed = v.trim();
+      if (trimmed.length === 0) return null;
+      return Number(trimmed);
+    }
+    return v;
+  })
+  .refine(
+    (v) =>
+      v === undefined ||
+      v === null ||
+      (Number.isFinite(v) && v >= 0 && v <= 10_000),
+    "Enter hours between 0 and 10,000.",
+  );
+
 const patchDate = z
   .string()
   .trim()
@@ -258,6 +287,8 @@ export const updateIssueSchema = z.object({
   priority: prioritySchema.optional(),
   assigneeId: patchId,
   dueDate: patchDate,
+  effortHours: patchHours,
+  remainingHours: patchHours,
   parentId: patchId,
   environment: patchText(120),
   browser: patchText(120),

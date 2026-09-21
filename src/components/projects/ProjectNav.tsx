@@ -10,7 +10,8 @@ export type ProjectTab =
   | "sprints"
   | "calendar"
   | "timeline"
-  | "activity";
+  | "activity"
+  | "backlog";
 
 /**
  * The views of one project.
@@ -72,6 +73,14 @@ export function ProjectNav({
     { id: "calendar", label: "Calendar", href: `${base}/calendar` },
     { id: "timeline", label: "Timeline", href: `${base}/timeline` },
     { id: "activity", label: "Activity", href: `${base}/activity` },
+    /* Where this project's work has been handed around. Beside Activity
+       because it answers the same kind of question — what happened, and who
+       did it — narrowed to the one thing people argue about. */
+    {
+      id: "backlog",
+      label: "Backlog History",
+      href: `${base}/backlog/history`,
+    },
   ];
 
   /*

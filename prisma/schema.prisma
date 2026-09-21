@@ -469,6 +469,22 @@ model Issue {
   testedBy   User?      @relation("IssueTestedBy", fields: [testedById], references: [id], onDelete: SetNull)
   testedAt   DateTime?
 
+  /// The total effort this work was estimated to need, in hours.
+  ///
+  /// An estimate of the whole job, agreed when the work is planned into a
+  /// sprint — not a record of time already spent, which Prio does not ask
+  /// anybody to log. It is written once and then left alone: a burndown is
+  /// only meaningful if the line it is measured against stays still.
+  effortHours Float?
+
+  /// How much of that effort is still thought to be left, in hours.
+  ///
+  /// Starts life equal to `effortHours` and comes down as the work is done.
+  /// Deliberately a second column rather than a subtraction: "how much is
+  /// left" is a judgement somebody makes, and it is not always the estimate
+  /// minus the hours worked — that is exactly what a burndown is for showing.
+  remainingHours Float?
+
   completedAt DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt

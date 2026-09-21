@@ -1,14 +1,9 @@
 import Link from "next/link";
 import { Card, CardBody, EmptyState } from "@/components/ui/primitives";
 import { IconEmptyBox } from "@/components/ui/Icon";
-import { formatDateCompact } from "@/lib/format";
+import { SPRINT_STATUS_LABEL } from "@/lib/domain";
+import { formatDateRange } from "@/lib/format";
 import type { SprintView } from "@/server/queries/sprints";
-
-const STATUS_LABEL: Record<SprintView["status"], string> = {
-  PLANNED: "Planned",
-  ACTIVE: "Active",
-  COMPLETED: "Completed",
-};
 
 /**
  * The directory's Iterations/Sprints block: one project's sprints, read only.
@@ -52,13 +47,13 @@ export function ProjectSprintsBlock({
           {sprints.map((sprint) => (
             <li key={sprint.id} className="prio-memberrow">
               <span className="prio-sprint__status" data-status={sprint.status}>
-                {STATUS_LABEL[sprint.status]}
+                {SPRINT_STATUS_LABEL[sprint.status]}
               </span>
               <span className="prio-memberpicker__text">
                 <span className="prio-memberpicker__name">{sprint.name}</span>
                 <span className="prio-memberpicker__meta">
-                  {formatDateCompact(sprint.startDate)} →{" "}
-                  {formatDateCompact(sprint.endDate)} · {sprint.stats.progress}%
+                  {formatDateRange(sprint.startDate, sprint.endDate)} ·{" "}
+                  {sprint.stats.progress}%
                   complete · {sprint.stats.total}{" "}
                   {sprint.stats.total === 1 ? "issue" : "issues"}
                 </span>

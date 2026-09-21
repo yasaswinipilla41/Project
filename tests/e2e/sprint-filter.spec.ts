@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 import { prisma } from "@/lib/prisma";
 import { ADMIN_STATE } from "./support";
 
@@ -85,6 +85,23 @@ test.afterAll(async () => {
   }
 });
 
+/**
+ * One iteration in the filter menu, matched by name *and* period.
+ *
+ * The options carry the range each iteration covers — the same bracketed form
+ * the sprint cards and the details page print — so that choosing between
+ * "Sprint 1" and "Sprint 2" is choosing between two dates rather than two
+ * numbers. Matched on name-plus-range rather than on the exact name, which is
+ * what this asserted before and which would now pass only if the range had
+ * gone missing.
+ */
+function iterationOption(menu: Locator, name: string): Locator {
+  const range = String.raw`\(\d{2} \w{3} \d{4} - \d{2} \w{3} \d{4}\)`;
+  return menu.getByRole("menuitemradio", {
+    name: new RegExp(`^${name} ${range}$`),
+  });
+}
+
 test.describe("The iteration filter on a project's list", () => {
   test.use({ storageState: ADMIN_STATE });
 
@@ -114,9 +131,7 @@ test.describe("The iteration filter on a project's list", () => {
     // Only real iterations are listed — no Backlog entry.
     await expect(menu.getByRole("menuitemradio", { name: /Backlog/ })).toHaveCount(0);
 
-    await menu
-      .getByRole("menuitemradio", { name: sprint.name, exact: true })
-      .click();
+    await iterationOption(menu, sprint.name).click();
     await page.keyboard.press("Escape");
 
     await expect(page).toHaveURL(new RegExp(`sprint=${sprint.id}`));
@@ -127,9 +142,7 @@ test.describe("The iteration filter on a project's list", () => {
     /* Picking the ticked entry again clears it, which is how every chip on
        this bar clears; both issues are back. */
     await page.getByRole("button", { name: "Iteration" }).click();
-    await menu
-      .getByRole("menuitemradio", { name: sprint.name, exact: true })
-      .click();
+    await iterationOption(menu, sprint.name).click();
     await page.keyboard.press("Escape");
 
     await expect(page).not.toHaveURL(new RegExp(`sprint=${sprint.id}`));

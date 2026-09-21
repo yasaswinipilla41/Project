@@ -409,13 +409,6 @@
   overflow-wrap: anywhere;
 }
 
-.recording {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
 .dot {
   width: 9px;
   height: 9px;
@@ -442,22 +435,7 @@
   color: var(--prio-text-primary);
 }
 
-/* ------------------------------------------ recording, from the title bar */
-
-/* Shown on the bar only while minimised, so Stop never needs the window
-   restored first. Compact by necessity: it shares the bar with the title. */
-.barRecording {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-left: auto;
-  padding-left: 8px;
-}
-
-.barRecording .elapsed {
-  font-size: var(--prio-text-xs);
-  white-space: nowrap;
-}
+/* ------------------------------------ the strip that stops a recording */
 
 .barAction {
   display: inline-flex;
@@ -591,5 +569,91 @@
 @media (prefers-reduced-motion: reduce) {
   .dot {
     animation: none;
+  }
+}
+
+/*
+ * The strip that runs a recording once the window has stood down.
+ *
+ * Bottom-right, small, and above everything so it cannot be lost behind the
+ * page being demonstrated. It is the only Prio control on screen while
+ * recording, which is the point: anything more would be in the file.
+ */
+.recordingBar {
+  position: fixed;
+  right: var(--prio-space-5);
+  bottom: var(--prio-space-5);
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  padding: var(--prio-space-2) var(--prio-space-3);
+  border: 1px solid var(--prio-border-strong);
+  border-radius: var(--prio-radius-pill);
+  background: var(--prio-bg-surface);
+  box-shadow: var(--prio-shadow-lg);
+  font-size: var(--prio-text-xs);
+}
+
+/* Said in the preview when the browser shared pictures but no sound. */
+.warn {
+  color: var(--prio-amber-700, var(--prio-text-secondary));
+}
+
+/*
+ * Where the pointer was pressed during a recording.
+ *
+ * Above everything and deaf to the pointer: the ring is a mark on the picture,
+ * never something that can be clicked or that can take a click away from what
+ * is underneath it.
+ */
+.pulseLayer {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  pointer-events: none;
+}
+
+.pulse {
+  position: absolute;
+  width: 34px;
+  height: 34px;
+  margin: -17px 0 0 -17px;
+  border: 3px solid #e5484d;
+  border-radius: 50%;
+  opacity: 0;
+  animation: prio-click-pulse 550ms ease-out forwards;
+}
+
+/* Out from the click and away — a blink that says "here", not a marker that
+   stays and clutters the recording. */
+@keyframes prio-click-pulse {
+  0% {
+    transform: scale(0.4);
+    opacity: 0.95;
+  }
+  60% {
+    opacity: 0.75;
+  }
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+/* Somebody who prefers less motion still needs to see the click; they get the
+   ring without the expansion. */
+@media (prefers-reduced-motion: reduce) {
+  .pulse {
+    animation: prio-click-fade 550ms ease-out forwards;
+  }
+
+  @keyframes prio-click-fade {
+    0% {
+      opacity: 0.95;
+    }
+    100% {
+      opacity: 0;
+    }
   }
 }

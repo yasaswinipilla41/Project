@@ -198,10 +198,22 @@ describe("QA reopens work", () => {
     );
     expect(reopen?.actorId, "QA reopened it").toBe(testerId);
 
-    const handBack = entries.find(
-      (row) => row.field === "assigneeId" && row.newValue === developerId,
-    );
+    /*
+     * The *last* assignment row, not the first.
+     *
+     * Work that is created already assigned now records that too, so this
+     * issue's trail opens with an assignment to the same developer. The row
+     * under test here is the one the reopen produced, which is the latest.
+     */
+    const assignments = entries.filter((row) => row.field === "assigneeId");
+    expect(
+      assignments[0]?.oldValue,
+      "the issue was created assigned, and says so",
+    ).toBeNull();
+
+    const handBack = assignments.at(-1);
     expect(handBack, "the hand-back is on the record").toBeTruthy();
+    expect(handBack!.newValue, "it went to the developer").toBe(developerId);
     expect(handBack!.oldValue, "it came off the tester").toBe(testerId);
     expect(
       handBack!.actorId,

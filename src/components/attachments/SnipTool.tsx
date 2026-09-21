@@ -10,7 +10,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type ComponentType,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
@@ -21,7 +20,6 @@ import {
   IconClock,
   IconClose,
   IconEdit,
-  IconExternal,
   IconImage,
   IconMaximize,
   IconMinimize,
@@ -31,7 +29,6 @@ import {
   IconRestoreWindow,
   IconStopSquare,
   IconTrash,
-  type IconProps,
 } from "@/components/ui/Icon";
 import { ScreenshotEditor } from "@/components/attachments/ScreenshotEditor";
 import { annotatedFilename, formatBytes } from "@/lib/attachments";
@@ -40,10 +37,10 @@ import {
   uploadStagedAttachment,
 } from "@/lib/uploadAttachment";
 import styles from "./SnipTool.module.css";
+import { ClickPulse } from "./ClickPulse";
 import {
   canCaptureScreen,
   canRecordScreen,
-  captureScreenshot,
   CaptureError,
   formatDuration,
   retainCaptureSource,
@@ -119,6 +116,8 @@ type Receiver = (deliveries: SnipDelivery[]) => Promise<string[]> | string[];
 interface Capture {
   file: File;
   durationMs?: number;
+  /** Recordings only: whether the browser actually shared any sound. */
+  hasAudio?: boolean;
 }
 
 /** One snip taken in this session. */
@@ -158,8 +157,6 @@ interface SnipToolValue {
  * camera at, which is either the tab they are on or a surface the browser let
  * them pick.
  */
-type SourceChoice = "this-tab" | "other";
-
 const SnipToolContext = createContext<SnipToolValue | null>(null);
 
 function keyOf(target: SnipTarget): string {
@@ -232,7 +229,6 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
   const [minimized, setMinimized] = useState(false);
   const [maximized, setMaximized] = useState(false);
 
-  const [source, setSource] = useState<SourceChoice>("this-tab");
   /**
    * The tab or window chosen in the browser's picker, kept between snips.
    *
@@ -382,6 +378,58 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
     };
   });
 
+  /**
+   * Ctrl / Cmd + Shift + A takes a snip.
+   *
+   * The one thing somebody wants a shortcut for here is starting a capture
+   * without first finding the window — usually while already looking at the
+   * thing they want a picture of. It opens the tool for whatever surface is
+   * registered and goes straight into a snip, which is the same path New Snip
+   * takes.
+   *
+   * Three deliberate restraints, all borrowed from the search shortcut:
+   *   - **not while typing**, so an `A` inside a comment is an `A`;
+   *   - **not while a capture is already in flight**, so a second press
+   *     cannot start one over the top of another;
+   *   - **`preventDefault` only when it actually acts**, so the combination
+   *     is left to the browser in every case this does not handle.
+   *
+   * `Shift` puts it clear of the browser's own Ctrl+A, and nothing in Prio
+   * binds it.
+   */
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (!(event.ctrlKey || event.metaKey) || !event.shiftKey) return;
+      if (event.key.toLowerCase() !== "a") return;
+
+      const target = event.target as HTMLElement | null;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target?.isContentEditable === true
+      ) {
+        return;
+      }
+
+      /* Nothing to snip into: the tool is opened for a work item or a form,
+         and without one there is nowhere for the picture to go. */
+      if (!target) return;
+      if (captureRef.current || recordingRef.current || selecting) return;
+
+      event.preventDefault();
+      /* Brought back first. Closing the window leaves its target behind, so
+         the shortcut still knows where a picture would go — but the preview
+         it is about to produce lives in the window, and capturing into a
+         window that is not on screen is capturing into nowhere. */
+      setOpen(true);
+      setMinimized(false);
+      void newSnip();
+    }
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  });
+
   // Ticks while recording, and not while it is paused.
   useEffect(() => {
     if (!recording || paused) return;
@@ -498,7 +546,6 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
     retained.current?.stop();
     retained.current = null;
     setSharing(null);
-    setSource("this-tab");
   }
 
   /**
@@ -518,62 +565,50 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
    * Nothing here navigates anything. The picker is the browser's, the choice in
    * it is the person's, and Prio never sees a surface they did not pick.
    */
-  async function chooseSource(choice: SourceChoice) {
-    setError(null);
+  /**
+   * Gets hold of a surface to capture, asking the browser once.
+   *
+   * The surface somebody wants a picture of is usually one they have to go and
+   * find first, so the share is arranged once and then kept: the person
+   * navigates wherever they need to — in that tab, in this one, however they
+   * like — and each New Snip copies whatever the chosen surface is showing by
+   * then. Asking again per snip would both re-prompt and give them no chance
+   * to get there.
+   *
+   * Nothing here navigates anything. The picker is the browser's, the choice
+   * in it is the person's, and Prio never sees a surface they did not pick.
+   */
+  async function acquireSource(): Promise<RetainedSource> {
+    if (retained.current) return retained.current;
 
-    if (choice === "this-tab") {
-      releaseSource();
-      return;
-    }
+    const picked = await retainCaptureSource({ source: "any" });
+    retained.current = picked;
+    setSharing(picked.label);
 
-    // Already sharing something: keep it rather than asking again.
-    if (retained.current) {
-      setSource("other");
-      return;
-    }
+    /* The browser's own "Stop sharing" bar can end it at any moment. When it
+       does, the window says so and asks again at the next snip rather than
+       failing. */
+    picked.onEnded(() => {
+      retained.current = null;
+      setSharing(null);
+    });
 
-    setBusy("source");
-    try {
-      const picked = await retainCaptureSource({ source: "any" });
-      retained.current = picked;
-      setSharing(picked.label);
-      setSource("other");
-
-      /* The browser's own "Stop sharing" bar can end it at any moment. When it
-         does, the window says so and falls back rather than failing at the
-         next snip. */
-      picked.onEnded(() => {
-        retained.current = null;
-        setSharing(null);
-        setSource("this-tab");
-      });
-    } catch (failure) {
-      setSource("this-tab");
-      setError(
-        failure instanceof CaptureError
-          ? failure.message
-          : "That tab or window could not be shared.",
-      );
-    } finally {
-      setBusy(null);
-    }
+    return picked;
   }
 
-  /** + New snip: a fresh capture, then the area to keep. */
+  /** New Snip: a fresh capture of the shared surface, then the area to keep. */
   async function newSnip() {
     if (busy !== null) return;
     setError(null);
     setNotice(null);
     setBusy("screenshot");
     try {
-      /* The tab or window already being shared, if one was chosen — sampled
-         as it looks right now, wherever the person has got to. Otherwise this
-         tab, asked for fresh, so "This tab" never holds a share open between
-         snips. */
-      const frame = retained.current
-        ? await retained.current.grab()
-        : await captureScreenshot({ source: "this-tab" });
-      setSelecting(frame);
+      /* The surface already being shared, sampled as it looks right now —
+         wherever the person has got to. The first snip of a session asks the
+         browser which surface that is, which is also the only way another tab
+         can ever be reached. */
+      const source = await acquireSource();
+      setSelecting(await source.grab());
     } catch (failure) {
       setError(
         failure instanceof CaptureError
@@ -586,7 +621,7 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  /** The area chosen — or the whole capture — becomes a snip, into the editor. */
+  /** The area chosen — or the whole capture — becomes the capture to review. */
   async function finishSelection(area: Area | null) {
     const frame = selecting;
     setSelecting(null);
@@ -595,15 +630,17 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
     try {
       const picture = await cropImage(frame, area);
       const name = nameFor(".png");
-      const snip: Snip = {
-        id: snipId(),
-        name,
-        file: new File([picture], name, { type: "image/png" }),
-        savedAs: null,
-        dirty: true,
-      };
-      setSnips((list) => [...list, snip]);
-      setEditing(snip.id);
+      /*
+       * Straight to the preview, not into the editor.
+       *
+       * The editor used to sit between every capture and its attachment, so
+       * the ordinary case — take a picture of the thing, put it on the work
+       * item — cost a crop tool, a Save and a choice about copies. It is
+       * still one click away from the attachment itself for the times
+       * somebody genuinely wants to draw on a screenshot; it is no longer the
+       * toll on the times they do not.
+       */
+      setCapture({ file: new File([picture], name, { type: "image/png" }) });
     } catch {
       setError("That area could not be captured. Please try again.");
     }
@@ -788,6 +825,11 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
           type: result.mimeType || "video/webm",
         }),
         durationMs: result.durationMs,
+        /* Read off the stream when the recording began. Said in the preview
+           rather than discovered on playback: a silent file looks like a
+           fault, and "no sound was shared" is the truth about the surface
+           that was picked. */
+        hasAudio: active.hasAudio,
       });
     } catch (failure) {
       setError(
@@ -852,11 +894,51 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
 
     setBusy("attach");
     try {
-      await deliver([{ file: capture.file, durationMs: capture.durationMs }]);
+      const [id] = await deliver([
+        { file: capture.file, durationMs: capture.durationMs },
+      ]);
+      /*
+       * Kept in the session list once it has landed.
+       *
+       * The list is what the window has sent for this target — it is how
+       * somebody sees that the third snip really did go, and it carries the
+       * way back to the work item. Added here, after the upload, so a row
+       * only ever describes something that exists.
+       */
+      setSnips((list) => [
+        ...list,
+        {
+          id: snipId(),
+          name: capture.file.name,
+          file: capture.file,
+          savedAs: id ?? null,
+          dirty: false,
+        },
+      ]);
       setCapture(null);
       setError(null);
-      toast(<>Attached {capture.file.name}</>);
+      toast(<>Uploaded {capture.file.name}</>);
     } catch (failure) {
+      /*
+       * Kept rather than lost.
+       *
+       * The usual reason delivery fails is that the form this was opened for
+       * has been closed, and the capture has nowhere to go *yet*. Throwing it
+       * away would punish somebody for the order they did things in, so it
+       * joins the list unsent, with its own Save, and waits for the form to
+       * come back.
+       */
+      setSnips((list) => [
+        ...list,
+        {
+          id: snipId(),
+          name: capture.file.name,
+          file: capture.file,
+          savedAs: null,
+          dirty: true,
+        },
+      ]);
+      setCapture(null);
       setError(
         failure instanceof Error
           ? failure.message
@@ -886,12 +968,86 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
     <SnipToolContext.Provider value={value}>
       {children}
 
+      {/* Where the pointer was pressed, for as long as a recording is
+          running. See `ClickPulse` for what it can and cannot reach. */}
+      <ClickPulse active={recording} />
+
+      {/*
+       * The one control a running recording needs, and nothing else.
+       *
+       * The window itself is away while recording — controls sitting over the
+       * thing being recorded end up in the file — so this strip is what stops
+       * it. Kept to the bottom-right corner, small, and out of the way of the
+       * content somebody is demonstrating.
+       *
+       * It cannot be hidden from every recording: a person who shares their
+       * whole screen shares the window Prio is in, and nothing inside a page
+       * can opt an element out of the compositor. Recording another tab or
+       * another window — what the picker offers first — leaves it out
+       * entirely. That limit is the browser's, and is stated rather than
+       * papered over.
+       */}
+      {open && recording ? (
+        <div className={styles.recordingBar} role="status" aria-live="polite">
+          <span
+            className={styles.dot}
+            data-paused={paused || undefined}
+            aria-hidden
+          />
+          <span className={styles.elapsed}>
+            {paused ? "Paused" : "Recording"} {formatDuration(elapsedMs)}
+          </span>
+          {canPause ? (
+            <button
+              type="button"
+              className={styles.barAction}
+              onClick={togglePause}
+              disabled={busy === "record"}
+              aria-label={paused ? "Resume recording" : "Pause recording"}
+              title={paused ? "Resume recording" : "Pause recording"}
+            >
+              {paused ? <IconPlay size={13} /> : <IconPause size={13} />}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className={styles.barAction}
+            data-stop
+            onClick={() => void finishRecording()}
+            disabled={busy === "record"}
+            aria-label="Stop recording"
+            title="Stop recording"
+          >
+            <IconStopSquare size={13} />
+          </button>
+          <button
+            type="button"
+            className={styles.barAction}
+            onClick={discardRecording}
+            disabled={busy === "record"}
+            aria-label="Discard recording"
+            title="Discard recording"
+          >
+            <IconTrash size={13} />
+          </button>
+        </div>
+      ) : null}
+
       {/* Stood down while the capture is being taken, while its area is being
-          chosen and while the editor is up — the window is not part of what
-          is being captured, and the editor is a full modal it would only
-          overlap. It is hidden, not closed: everything it holds is state up
-          here and comes back with it. */}
-      {open && !editingSnip && !selecting && busy !== "screenshot" ? (
+          chosen, while the editor is up, and while a recording is running —
+          the window is not part of what is being captured, and the editor is
+          a full modal it would only overlap. It is hidden, not closed:
+          everything it holds is state up here and comes back with it.
+
+          A recording hides it for the same reason a snip does: controls that
+          sit over the thing being recorded end up in the file. What replaces
+          them is the small strip below, which is how the recording is stopped
+          while the window itself is away. */}
+      {open &&
+      !editingSnip &&
+      !selecting &&
+      busy !== "screenshot" &&
+      !recording ? (
         <div
           ref={windowRef}
           className={styles.window}
@@ -926,57 +1082,6 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
             <span className={styles.target} title={destination}>
               {destination}
             </span>
-
-            {/*
-             * Stopping a recording, from the collapsed window.
-             *
-             * The body below is not rendered while minimised, which used to
-             * take Stop with it — so the one control somebody urgently needs
-             * was behind restoring the window first. It lives on the bar
-             * instead whenever a recording is running, which is the only state
-             * that shows it, and `stopPropagation` keeps a press on it from
-             * starting a drag of the window underneath.
-             */}
-            {recording && minimized ? (
-              <span
-                className={styles.barRecording}
-                role="status"
-                aria-live="polite"
-                onPointerDown={(event) => event.stopPropagation()}
-              >
-                <span
-                  className={styles.dot}
-                  data-paused={paused || undefined}
-                  aria-hidden
-                />
-                <span className={styles.elapsed}>
-                  {paused ? "Paused" : "Recording"} {formatDuration(elapsedMs)}
-                </span>
-                {canPause ? (
-                  <button
-                    type="button"
-                    className={styles.barAction}
-                    onClick={togglePause}
-                    disabled={busy === "record"}
-                    aria-label={paused ? "Resume recording" : "Pause recording"}
-                    title={paused ? "Resume recording" : "Pause recording"}
-                  >
-                    {paused ? <IconPlay size={13} /> : <IconPause size={13} />}
-                  </button>
-                ) : null}
-                <button
-                  type="button"
-                  className={styles.barAction}
-                  data-stop
-                  onClick={() => void finishRecording()}
-                  disabled={busy === "record"}
-                  aria-label="Stop recording"
-                  title="Stop recording"
-                >
-                  <IconStopSquare size={13} />
-                </button>
-              </span>
-            ) : null}
 
             <button
               type="button"
@@ -1027,50 +1132,7 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
 
           {minimized ? null : (
             <div className={styles.body}>
-              {recording ? (
-                <div
-                  className={styles.recording}
-                  role="status"
-                  aria-live="polite"
-                >
-                  <span
-                    className={styles.dot}
-                    data-paused={paused || undefined}
-                    aria-hidden
-                  />
-                  <span className={styles.elapsed}>
-                    {paused ? "Paused" : "Recording"} {formatDuration(elapsedMs)}
-                  </span>
-                  {canPause ? (
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      onClick={togglePause}
-                      disabled={busy === "record"}
-                    >
-                      {paused ? "Resume" : "Pause"}
-                    </Button>
-                  ) : null}
-                  <Button
-                    type="button"
-                    variant="primary"
-                    size="sm"
-                    onClick={() => void finishRecording()}
-                    disabled={busy === "record"}
-                  >
-                    Stop recording
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={discardRecording}
-                  >
-                    Discard
-                  </Button>
-                </div>
-              ) : capture ? (
+              {capture ? (
                 <CapturePreview
                   capture={capture}
                   busy={busy === "attach"}
@@ -1079,60 +1141,32 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
                     setError(null);
                   }}
                   onAttach={() => void attach()}
+                  /* Offered for a recording only: a snip's "again" is New
+                     Snip, which is already the first thing on the screen it
+                     returns to. */
+                  onRecordAgain={
+                    capture.file.type.startsWith("video/")
+                      ? () => {
+                          setCapture(null);
+                          setError(null);
+                          void beginRecording();
+                        }
+                      : undefined
+                  }
                 />
               ) : (
                 <>
-                  <fieldset className={styles.section}>
-                    <legend className={styles.sectionLabel}>Capture from</legend>
-
-                    <div className={styles.sourceGrid}>
-                      <SourceOption
-                        label="This tab"
-                        hint="The page on screen now"
-                        Icon={IconImage}
-                        selected={source === "this-tab"}
-                        onChoose={() => void chooseSource("this-tab")}
-                      />
-                      <SourceOption
-                        label="Another tab or window"
-                        hint={
-                          sharing ? "Selected — ready to snip" : "Choose in the browser"
-                        }
-                        Icon={IconExternal}
-                        selected={source === "other"}
-                        onChoose={() => void chooseSource("other")}
-                      />
-                    </div>
-
-                    {/*
-                     * What Prio is capturing from, and the way out of it.
-                     *
-                     * Worded as capture rather than sharing. Nothing is being
-                     * sent anywhere: the browser hands Prio frames of a surface
-                     * the person picked, to put on a work item. "Sharing your
-                     * screen" describes a call, and reading it here invites the
-                     * reasonable worry that somebody is watching.
-                     *
-                     * The browser's own indicator and its own Stop are separate
-                     * and untouched — this is Prio's, beside the choice that
-                     * started it.
-                     */}
-                    {sharing ? (
-                      <p className={styles.sharing}>
-                        <span className={styles.sharingName} title={sharing}>
-                          Capturing from {sharing}
-                        </span>
-                        <button
-                          type="button"
-                          className="prio-btn prio-btn--ghost prio-btn--sm"
-                          onClick={releaseSource}
-                        >
-                          Release source
-                        </button>
-                      </p>
-                    ) : null}
-                  </fieldset>
-
+                  {/*
+                   * Two things to choose between, and nothing else.
+                   *
+                   * This used to open on a choice of capture source — "This
+                   * tab" or "Another tab or window" — which asked a question
+                   * the browser is about to ask anyway, and asked it before
+                   * the person had said what they wanted to do. New Snip now
+                   * goes straight to the browser's own picker, which is the
+                   * only thing that can offer another tab, so any surface is
+                   * reachable without Prio holding an opinion about it.
+                   */}
                   <div className={styles.actions}>
                     <Button
                       type="button"
@@ -1142,7 +1176,7 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
                       onClick={() => void newSnip()}
                     >
                       <IconPlus size={13} />
-                      New snip
+                      New Snip
                     </Button>
                     <Button
                       type="button"
@@ -1152,26 +1186,52 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
                       onClick={() => void beginRecording()}
                     >
                       <IconClock size={13} />
-                      Record
+                      Recorder
                     </Button>
                   </div>
+
+                  {/*
+                   * What Prio is capturing from, and the way out of it.
+                   *
+                   * Worded as capture rather than sharing. Nothing is being
+                   * sent anywhere: the browser hands Prio frames of a surface
+                   * the person picked, to put on a work item. "Sharing your
+                   * screen" describes a call, and reading it here invites the
+                   * reasonable worry that somebody is watching.
+                   *
+                   * Shown only once a surface is actually being held, so it
+                   * reports a fact rather than offering a setting.
+                   */}
+                  {sharing ? (
+                    <p className={styles.sharing}>
+                      <span className={styles.sharingName} title={sharing}>
+                        Capturing from {sharing}
+                      </span>
+                      <button
+                        type="button"
+                        className="prio-btn prio-btn--ghost prio-btn--sm"
+                        onClick={releaseSource}
+                      >
+                        Release source
+                      </button>
+                    </p>
+                  ) : null}
+
                   <p className={styles.hint}>
-                    Pick what to capture, then New snip. Drag over the capture
-                    to keep the part that matters, mark it up, and Save — it
-                    goes to {destination || "where you opened this"}. Each New
-                    snip is a separate capture, and taking one never discards
-                    the snips already listed.
+                    New Snip hides this window and asks which surface to
+                    capture. Go to the page you want, drag over the part that
+                    matters, then Upload — it goes to{" "}
+                    {destination || "where you opened this"}. Each New Snip is
+                    a separate capture.
                   </p>
                   {/* The genuine limit, said plainly rather than worked
                       around. A page cannot enumerate your tabs and should not
                       be able to; what it can do is ask the browser to ask you,
-                      which is what "Another tab or window" does. */}
+                      which is what the picker is. */}
                   <p className={styles.hint}>
-                    Another tab or window opens the browser&rsquo;s own picker
-                    once and keeps what you choose — go to the page you want,
-                    then New snip. A page cannot list your tabs or read one you
-                    have not shared, so the choice is made there, and Prio only
-                    ever receives the surface you picked.
+                    A page cannot list your tabs or read one you have not
+                    shared, so the choice is made in the browser&rsquo;s own
+                    picker, and Prio only ever receives the surface you picked.
                   </p>
                   {!captureSupported && !recordSupported ? (
                     <p className={styles.error}>
@@ -1248,38 +1308,6 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
         />
       ) : null}
     </SnipToolContext.Provider>
-  );
-}
-
-/** One place to capture from, as a card with a real radio in it. */
-function SourceOption({
-  label,
-  hint,
-  Icon,
-  selected,
-  onChoose,
-}: {
-  label: string;
-  hint: string;
-  Icon: ComponentType<IconProps>;
-  selected: boolean;
-  onChoose: () => void;
-}) {
-  return (
-    <label className={styles.source} data-selected={selected || undefined}>
-      <input
-        type="radio"
-        name="prio-snip-source"
-        className="prio-visually-hidden"
-        checked={selected}
-        onChange={onChoose}
-      />
-      <span className={styles.sourceIcon} aria-hidden>
-        <Icon size={15} />
-      </span>
-      <span className={styles.sourceName}>{label}</span>
-      <span className={styles.sourceHint}>{hint}</span>
-    </label>
   );
 }
 
@@ -1367,23 +1395,52 @@ function SnipRow({
 }
 
 /** The held recording, with the two things that can be done to it. */
+/**
+ * What was just captured, and the two or three things to do with it.
+ *
+ * One preview for both kinds of capture: a recording plays, a snip is shown
+ * as a picture, and in each case the question is the same — is this the thing
+ * you wanted, and shall it go on the work item? Upload and Cancel, with
+ * Record Again offered for a recording because taking another is the common
+ * answer to a recording that came out wrong, and making somebody close this
+ * and find Recorder again is a screen for nothing.
+ *
+ * There is deliberately no Save, no Save as copy and no editing step between
+ * here and the attachment. Marking a screenshot up is still possible — the
+ * attachment's own Annotate opens the editor — but it is no longer in the way
+ * of the ordinary case, which is capture, look, upload.
+ */
 function CapturePreview({
   capture,
   busy,
   onDiscard,
   onAttach,
+  onRecordAgain,
 }: {
   capture: Capture;
   busy: boolean;
   onDiscard: () => void;
   onAttach: () => void;
+  /** Offered for a recording only; a snip's equivalent is New Snip. */
+  onRecordAgain?: () => void;
 }) {
   const url = useObjectUrl(capture.file);
+  const isVideo = capture.file.type.startsWith("video/");
 
   return (
     <>
       <div className={styles.preview}>
-        {url ? <video src={url} controls preload="metadata" playsInline /> : null}
+        {url ? (
+          isVideo ? (
+            /* `autoPlay` is deliberately absent and `preload` deliberately
+               present: the recording is cued at its beginning, ready to be
+               played, rather than starting to talk the moment it appears. */
+            <video src={url} controls preload="metadata" playsInline />
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={url} alt={`Snip: ${capture.file.name}`} />
+          )
+        ) : null}
       </div>
 
       <p className={styles.meta}>
@@ -1391,6 +1448,9 @@ function CapturePreview({
         {capture.durationMs === undefined
           ? ""
           : ` · ${formatDuration(capture.durationMs)}`}
+        {isVideo && capture.hasAudio === false ? (
+          <span className={styles.warn}> · no sound was shared</span>
+        ) : null}
       </p>
 
       <div className={styles.actions}>
@@ -1401,8 +1461,20 @@ function CapturePreview({
           onClick={onAttach}
           disabled={busy}
         >
-          {busy ? "Attaching…" : "Attach"}
+          {busy ? "Uploading…" : "Upload"}
         </Button>
+        {onRecordAgain ? (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={onRecordAgain}
+            disabled={busy}
+          >
+            <IconClock size={13} />
+            Record Again
+          </Button>
+        ) : null}
         <Button
           type="button"
           variant="ghost"
@@ -1411,7 +1483,7 @@ function CapturePreview({
           disabled={busy}
         >
           <IconTrash size={13} />
-          Discard
+          Cancel
         </Button>
       </div>
     </>

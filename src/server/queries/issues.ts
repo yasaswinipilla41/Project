@@ -624,6 +624,10 @@ export async function filterOptions(
         /* Read so a surface can mark a completed sprint as one — from the
            sprint's own status, never from its name. */
         status: true,
+        /* The period it covers, so every surface that names a sprint can say
+           which dates it means rather than leaving the reader to open it. */
+        startDate: true,
+        endDate: true,
         project: { select: { key: true } },
       },
       orderBy: [{ startDate: "desc" }, { name: "asc" }],

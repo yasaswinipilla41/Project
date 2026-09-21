@@ -6,6 +6,7 @@ import {
   type SortDirection,
   type SortField,
 } from "@/server/queries/issues";
+import type { AssignmentHistoryFilters } from "@/server/queries/assignmentHistory";
 
 /** Next gives repeated query params as string[] and single ones as string. */
 export type SearchParams = Record<string, string | string[] | undefined>;
@@ -75,5 +76,38 @@ export function parseIssueParams(params: SearchParams): IssueFilters {
     dir,
     page,
     pageSize,
+  };
+}
+
+/**
+ * Backlog History's own filters, read from the URL.
+ *
+ * Same discipline as `parseIssueParams`: unrecognised values are dropped
+ * rather than trusted, because this is user-controlled input that reaches a
+ * database query. The project is deliberately absent — a project-scoped
+ * history page fixes its project from the route, so accepting one here would
+ * be a way to ask about a different project's work.
+ */
+export function parseAssignmentHistoryParams(
+  params: SearchParams,
+): AssignmentHistoryFilters {
+  const kindRaw = one(params.kind);
+  const kind =
+    kindRaw === "Manual" || kindRaw === "Automatic" ? kindRaw : undefined;
+
+  const pageRaw = Number(one(params.page) ?? "1");
+  const page = Number.isFinite(pageRaw) && pageRaw > 0 ? Math.floor(pageRaw) : 1;
+
+  /** Only a plain `yyyy-mm-dd`; anything else is no filter at all. */
+  const day = (value: string | undefined) =>
+    value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : undefined;
+
+  return {
+    q: one(params.q),
+    kind,
+    userId: one(params.user),
+    from: day(one(params.from)),
+    to: day(one(params.to)),
+    page,
   };
 }

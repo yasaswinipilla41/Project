@@ -1,15 +1,17 @@
 import type { ReactNode } from "react";
 import { Card, CardBody } from "@/components/ui/primitives";
 import { IconCalendar, IconUsers } from "@/components/ui/Icon";
-import { ISSUE_STATUSES, STATUS_LABEL as ISSUE_STATUS_LABEL } from "@/lib/domain";
-import { formatDateCompact, workingDaysBetween } from "@/lib/format";
+import {
+  ISSUE_STATUSES,
+  SPRINT_STATUS_LABEL,
+  STATUS_LABEL as ISSUE_STATUS_LABEL,
+} from "@/lib/domain";
+import {
+  formatDateRange,
+  formatOrdinalDate,
+  workingDaysBetween,
+} from "@/lib/format";
 import type { SprintView } from "@/server/queries/sprints";
-
-const STATUS_LABEL: Record<SprintView["status"], string> = {
-  PLANNED: "Planned",
-  ACTIVE: "Active",
-  COMPLETED: "Completed",
-};
 
 /**
  * A sprint's details, read only: its own card (name, status, goal, dates,
@@ -50,8 +52,11 @@ export function SprintDetailsView({
             <div className="prio-sprint__identity">
               <h1 className="prio-sprint__name">
                 {sprint.name}
+                <span className="prio-sprint__range">
+                  ({formatDateRange(sprint.startDate, sprint.endDate)})
+                </span>
                 <span className="prio-sprint__status" data-status={sprint.status}>
-                  {STATUS_LABEL[sprint.status]}
+                  {SPRINT_STATUS_LABEL[sprint.status]}
                 </span>
               </h1>
               {sprint.goal ? (
@@ -59,8 +64,8 @@ export function SprintDetailsView({
               ) : null}
               <p className="prio-sprint__dates">
                 <IconCalendar size={13} />
-                {formatDateCompact(sprint.startDate)} →{" "}
-                {formatDateCompact(sprint.endDate)}
+                Start Date: {formatOrdinalDate(sprint.startDate)} · End Date:{" "}
+                {formatOrdinalDate(sprint.endDate)}
                 {/* Working days, not calendar days: a fortnight's sprint is
                     ten days of work because nobody works the weekends in
                     it. One shared `workingDaysBetween` decides this. */}
@@ -71,7 +76,7 @@ export function SprintDetailsView({
                 {sprint.completedAt ? (
                   <span className="prio-text-muted">
                     {" "}
-                    · closed {formatDateCompact(sprint.completedAt)}
+                    · closed {formatOrdinalDate(sprint.completedAt)}
                   </span>
                 ) : null}
               </p>

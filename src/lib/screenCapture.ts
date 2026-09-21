@@ -102,6 +102,25 @@ export type CaptureSource = "this-tab" | "any";
 
 export interface CaptureOptions {
   source?: CaptureSource;
+  /**
+   * Ask the browser for sound as well as pictures.
+   *
+   * A recording of a walkthrough with the narration missing is half a
+   * recording, so the recorder asks — but only asks. What arrives depends on
+   * the surface somebody picks and on the permission they give: a browser tab
+   * can usually share its own audio, a whole screen often cannot, and a
+   * refusal here is not a failure of the capture. See `startScreenRecording`,
+   * which reports what it actually got.
+   */
+  audio?: boolean;
+  /**
+   * Keep the pointer in the picture where the browser can.
+   *
+   * A recording made to show somebody where to click is worth much less
+   * without the cursor in it. `cursor: "always"` is a hint: a browser that
+   * does not implement it ignores it, and nothing here depends on it.
+   */
+  cursor?: boolean;
 }
 
 /** The newer picker hints, which not every DOM typing knows about yet. */
@@ -111,6 +130,9 @@ type DisplayMediaHints = DisplayMediaStreamOptions & {
   surfaceSwitching?: "include" | "exclude";
   controller?: unknown;
 };
+
+/** `cursor` is a display capture constraint the DOM typings do not carry. */
+type CursorHint = MediaTrackConstraints & { cursor?: "always" | "motion" | "never" };
 
 interface FocusController {
   setFocusBehavior?: (behavior: "focus-captured-surface" | "no-focus-change") => void;
@@ -126,7 +148,7 @@ async function requestDisplayStream(
     );
   }
 
-  const hints: DisplayMediaHints = { video: true, audio: false };
+  const hints: DisplayMediaHints = { video: true, audio: options.audio === true };
   if (options.source === "this-tab") {
     hints.video = { displaySurface: "browser" } as MediaTrackConstraints;
     hints.preferCurrentTab = true;
@@ -134,6 +156,18 @@ async function requestDisplayStream(
     hints.surfaceSwitching = "exclude";
   } else if (options.source === "any") {
     hints.selfBrowserSurface = "exclude";
+  }
+
+  /* Asked for on top of whatever the source already decided, so a recording
+     shows where the pointer went. Merged rather than assigned: `this-tab`
+     has already put a constraints object here. */
+  if (options.cursor) {
+    const video: CursorHint =
+      typeof hints.video === "object" && hints.video !== null
+        ? { ...(hints.video as MediaTrackConstraints) }
+        : {};
+    video.cursor = "always";
+    hints.video = video;
   }
 
   /* Capturing another tab would normally switch the browser to it. A snip
@@ -328,6 +362,15 @@ export interface ActiveRecording {
   resume: () => boolean;
   /** Whether it is paused right now, asked of the recorder itself. */
   isPaused: () => boolean;
+  /**
+   * Whether sound is actually being recorded.
+   *
+   * Asked of the stream rather than of what was requested: a tab usually
+   * shares its audio, a whole screen usually cannot, and somebody can untick
+   * the box in the picker. The caller uses this to say so plainly instead of
+   * producing a silent file that looks like a fault.
+   */
+  hasAudio: boolean;
 }
 
 /**
@@ -383,7 +426,14 @@ export async function startScreenRecording(): Promise<ActiveRecording> {
    * window contains the toolbar too. That case cannot be excluded from inside
    * the page, and is documented rather than papered over.
    */
-  const stream = await requestDisplayStream({ source: "any" });
+  const stream = await requestDisplayStream({
+    source: "any",
+    /* A walkthrough without its narration is half a recording, and one
+       without the pointer is hard to follow. Both are asked for; neither is
+       required, and `hasAudio` below reports what was actually shared. */
+    audio: true,
+    cursor: true,
+  });
 
   let recorder: MediaRecorder;
   try {
@@ -480,6 +530,8 @@ export async function startScreenRecording(): Promise<ActiveRecording> {
 
   return {
     canPause,
+    /* What the browser actually handed over, not what was asked for. */
+    hasAudio: stream.getAudioTracks().length > 0,
     isPaused: () => recorder.state === "paused",
     pause: () => {
       if (!canPause || recorder.state !== "recording") return false;

@@ -3,7 +3,13 @@ import { prisma } from "@/lib/prisma";
 import { ADMIN_STATE } from "./support";
 
 /**
- * Worked time, on the page that shows it.
+ * Time to complete, on the page that shows it.
+ *
+ * The row was labelled "Worked" until the effort requirements landed. It
+ * measures calendar time between the item being raised and it being closed,
+ * so "Worked" claimed something it never measured — and sat next to Effort,
+ * which is an estimate. Renamed to what it is; the fact and its arithmetic
+ * are untouched.
  *
  * The arithmetic is pinned in `tests/worked-time.test.ts`; this is the other
  * half — that the row appears where it was asked for, reads the two stored
@@ -16,7 +22,7 @@ import { ADMIN_STATE } from "./support";
 
 const created: string[] = [];
 
-test.describe("Worked time on a work item", () => {
+test.describe("Time to complete, on a work item", () => {
   test.use({ storageState: ADMIN_STATE });
 
   test.afterAll(async () => {
@@ -79,7 +85,9 @@ test.describe("Worked time on a work item", () => {
 
     await page.goto(`/issues/${issue.key.toLowerCase()}`);
 
-    const worked = page.locator(".prio-meta-row", { hasText: "Worked" }).first();
+    const worked = page
+      .locator(".prio-meta-row", { hasText: "Time to complete" })
+      .first();
     await expect(worked).toBeVisible();
     await expect(worked).toContainText("2d 4h");
 
@@ -88,12 +96,12 @@ test.describe("Worked time on a work item", () => {
       .locator(".prio-meta-row")
       .allInnerTexts();
     const completedAtIndex = rows.findIndex((t) => /Completed date/i.test(t));
-    const workedIndex = rows.findIndex((t) => /Worked/i.test(t));
+    const workedIndex = rows.findIndex((t) => /Time to complete/i.test(t));
     expect(completedAtIndex).toBeGreaterThan(-1);
     expect(workedIndex).toBe(completedAtIndex + 1);
   });
 
-  test("shows no worked row for work that has not finished", async ({ page }) => {
+  test("shows no duration for work that has not finished", async ({ page }) => {
     /* The claim that matters: an open item must not carry a duration, because
        a number there reads as "this took that long" on work still running. */
     const issue = await seed({
@@ -106,12 +114,12 @@ test.describe("Worked time on a work item", () => {
 
     // The page is the right one…
     await expect(page.getByText(issue.key).first()).toBeVisible();
-    // …and carries neither a completion date nor a worked span.
+    // …and carries neither a completion date nor an elapsed span.
     await expect(
       page.locator(".prio-meta-row", { hasText: "Completed date" }),
     ).toHaveCount(0);
     await expect(
-      page.locator(".prio-meta-row", { hasText: "Worked" }),
+      page.locator(".prio-meta-row", { hasText: "Time to complete" }),
     ).toHaveCount(0);
   });
 });

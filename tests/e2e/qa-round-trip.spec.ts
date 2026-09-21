@@ -218,6 +218,54 @@ test.describe("Admin → QA → Developer → QA, end to end", () => {
     expect(afterHandover.status).toBe("IN_REVIEW");
     expect(afterHandover.reporterId, "who raised it is unchanged").toBe(testerId);
 
+    /*
+     * And it reads as Prio's decision, not the developer's.
+     *
+     * The row records the developer as actor — marking the work ready is
+     * what caused the hand-over — but they did not choose the tester, and a
+     * sentence saying they did is the misreading the Automatic type exists
+     * to prevent. Both surfaces that report it are checked: the item's own
+     * trail, and Backlog History's Type column.
+     */
+    await developer.goto(`/issues/${issueKey.toLowerCase()}`);
+
+    /* Waited for rather than skipped when absent: the tabs have not rendered
+       the instant a navigation settles, and a `count()` guard here silently
+       leaves Comments showing. Both tabs render the same `<ol>`, so the tab
+       reporting itself selected is the signal that the swap happened. */
+    const activityTab = developer.getByRole("tab", { name: /^Activity/ });
+    await activityTab.waitFor({ timeout: 15_000 });
+    await activityTab.click();
+    await expect(activityTab).toHaveAttribute("aria-selected", "true");
+
+    /* Older events collapse behind a toggle, and this trail is long by now. */
+    const more = developer.locator(".prio-conversation__more");
+    if (await more.count()) await more.click();
+
+    await expect(developer.locator(".prio-activity")).toContainText(
+      /Prio (assigned it to|passed it from)/,
+    );
+
+    await developer.goto("/backlog/history");
+    const historyRow = developer
+      .locator("tbody tr")
+      .filter({ hasText: issueKey.toUpperCase() })
+      .first();
+    await expect(historyRow).toContainText("Automatic");
+    /* The recipient is in "Assigned To" and must not also be the actor. The
+       name is read from the database rather than written down here, so this
+       cannot pass by comparing against a person who is not in the fixture. */
+    const testerName = (
+      await prisma.user.findUniqueOrThrow({
+        where: { id: testerId },
+        select: { name: true },
+      })
+    ).name;
+    /* Cross-project view, so: Work Item, Project, Previous Assignee,
+       Assigned To, Type, Assigned By, Date & Time. */
+    await expect(historyRow.locator("td").nth(3)).toContainText(testerName);
+    await expect(historyRow.locator("td").nth(5)).not.toContainText(testerName);
+
     /* The tester is told, by name, and it is in their own work. */
     await tester.goto("/notifications");
     await expect(

@@ -52,10 +52,13 @@ import { updateIssue } from "@/server/issues";
  * status in `BOARD_STATUSES` — Backlog included, so filed-but-unplanned work
  * is visible on the board rather than only in the issue list.
  *
- * No column carries a rule of its own. Which moves are offered, and which
- * drops are refused, come from `canTransition` below — so Backlog is an
- * ordinary column that happens to lead into Todo, In Progress and Cancelled,
- * and is never a stand-in for review or QA.
+ * No column carries a rule of its own, and no drop is refused for being out
+ * of order. `dropStatusFor` reads a drop — which of a column's statuses the
+ * card is landing in, so Done dropped on New still means Reopened — and where
+ * the ordinary path has nothing to say, the column is taken at face value.
+ * The only thing that turns a drop away is `canSetStatus`: whether this
+ * person's half of the job may declare that status at all, which the server
+ * asks again.
  *
  * Dragging a card between columns — the board's only way to change status,
  * matching the reference design's plain, menu-free cards — calls the same
@@ -629,14 +632,14 @@ export function FlowBoard({
   })();
 
   /* Asks exactly what the drop will ask, so the no-entry cursor and the drop
-     can never disagree: a column takes a card if it has *any* status it can
-     put it in, its own or the one it also holds. */
+     can never disagree. Every column resolves to some status now — out of
+     order is not a refusal — so what is left to check is the only thing that
+     still refuses: whether this person may set it. */
   const columnAccepts = (column: IssueStatus): boolean =>
     draggingStatuses.length === 0 ||
-    draggingStatuses.some((from) => {
-      const to = dropStatusFor(from, column);
-      return to !== null && canSetStatus(workRole, from, to);
-    });
+    draggingStatuses.some((from) =>
+      canSetStatus(workRole, from, dropStatusFor(from, column)),
+    );
 
   function handleDrop(event: DragEvent<HTMLDivElement>, status: IssueStatus) {
     event.preventDefault();
@@ -985,6 +988,18 @@ export function FlowBoard({
               data-drop-active={(status && dropTarget === status) || undefined}
               data-refuses={
                 status && dragIssueId && !columnAccepts(status) ? "true" : undefined
+              }
+              /* Entering the column is enough to arm it. `dragover` alone
+                 armed it too, but only once the pointer had moved *inside*;
+                 on a fast drag that first event can land late, so the target
+                 lit up after the card was already over it. */
+              onDragEnter={
+                status
+                  ? (event) => {
+                      event.preventDefault();
+                      if (columnAccepts(status)) setDropTarget(status);
+                    }
+                  : undefined
               }
               onDragOver={
                 status

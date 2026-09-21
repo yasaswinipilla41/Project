@@ -2939,3 +2939,92 @@ a.prio-stat[data-selected="true"]:hover {
 .prio-splitbtn .prio-splitbtn__caret:focus-visible {
   z-index: 1;
 }
+
+/* ----------------------------------------------------------- effort ---- */
+
+/*
+ * Effort and Remaining, side by side in a meta row.
+ *
+ * Two small number boxes rather than a dialog: an estimate is revised in
+ * passing, usually while looking at something else, and a form that has to be
+ * opened and submitted is how a remainder stops being updated at all.
+ */
+.prio-effort {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--prio-space-4);
+  flex-wrap: wrap;
+}
+
+.prio-effort__field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+}
+
+.prio-effort__label {
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-muted);
+}
+
+.prio-effort__input {
+  width: 5.5rem;
+  min-height: 28px;
+  padding: 2px var(--prio-space-2);
+  font-size: var(--prio-text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.prio-effort__unit {
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-muted);
+}
+
+/* ------------------------------------------------- backlog history ---- */
+
+/*
+ * A work item inside a history row: its key, then its title.
+ *
+ * The key is what identifies it and the title is what reminds you which one
+ * it is, so both are in the link and the title gives way first when the
+ * column is narrow.
+ */
+.prio-historylink {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  min-width: 0;
+  color: inherit;
+}
+
+.prio-historylink:hover {
+  text-decoration: none;
+}
+
+.prio-historylink:hover .prio-truncate {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/*
+ * Manual or Automatic, as a quiet chip.
+ *
+ * Two words that need to be told apart at a glance down a column, without
+ * either looking like a warning: an automatic assignment is ordinary, it is
+ * just not somebody's personal choice.
+ */
+.prio-badge[data-kind="Automatic"] {
+  background: var(--prio-primary-50);
+  color: var(--prio-primary-700);
+}
+
+/* The date pair above the history table. */
+.prio-filters__date > .prio-input {
+  width: auto;
+}
+
+.prio-input--sm {
+  min-height: 28px;
+  padding: 2px var(--prio-space-2);
+  font-size: var(--prio-text-xs);
+}

@@ -276,3 +276,132 @@ export function AssigneeControl({
     </Menu>
   );
 }
+
+/* ---------------------------------------------------------------- effort */
+
+/**
+ * Effort and Remaining Hours, edited in place.
+ *
+ * Two fields rather than one, because they answer two questions: what this was
+ * estimated to need, and how much of it somebody now thinks is left. The first
+ * is set when the work is planned and then left alone; the second is revised
+ * as the work goes, and is what a sprint's burndown is drawn from.
+ *
+ * Neither is "time worked". Prio does not ask anybody to log hours against a
+ * work item, and these are not a back door to it: a remainder that stops
+ * moving says the estimate needs revisiting, which is the conversation the
+ * numbers exist to start.
+ *
+ * Saved on blur and on Enter rather than behind a Save button — the same way
+ * the rest of this page edits — and only when the value actually changed, so
+ * tabbing through writes nothing.
+ */
+export function EffortControl({
+  issueId,
+  effortHours,
+  remainingHours,
+  disabled,
+}: BaseProps & {
+  effortHours: number | null;
+  remainingHours: number | null;
+}) {
+  const { update, busy } = useFieldUpdate(issueId);
+
+  return (
+    <span className="prio-effort">
+      <HoursField
+        label="Effort"
+        name={`effort-${issueId}`}
+        value={effortHours}
+        disabled={disabled || busy}
+        onCommit={(next) =>
+          update(
+            { effortHours: next },
+            next === null ? "Estimate cleared" : `Effort set to ${next}h`,
+          )
+        }
+      />
+      <HoursField
+        label="Remaining"
+        name={`remaining-${issueId}`}
+        value={remainingHours}
+        disabled={disabled || busy}
+        onCommit={(next) =>
+          update(
+            { remainingHours: next },
+            next === null ? "Remaining cleared" : `${next}h remaining`,
+          )
+        }
+      />
+    </span>
+  );
+}
+
+/** One hours box: a number, or empty for "nobody has said". */
+function HoursField({
+  label,
+  name,
+  value,
+  disabled,
+  onCommit,
+}: {
+  label: string;
+  name: string;
+  value: number | null;
+  disabled?: boolean;
+  onCommit: (next: number | null) => void;
+}) {
+  const asText = (v: number | null) => (v === null ? "" : String(v));
+  const [text, setText] = useState(asText(value));
+
+  /* What the server last confirmed, so a value changed elsewhere — or a save
+     that was refused — is not overwritten by a stale box. */
+  const [known, setKnown] = useState(asText(value));
+  if (asText(value) !== known) {
+    setKnown(asText(value));
+    setText(asText(value));
+  }
+
+  function commit() {
+    const trimmed = text.trim();
+    if (trimmed === known.trim()) return;
+
+    if (trimmed === "") {
+      onCommit(null);
+      return;
+    }
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      setText(known);
+      return;
+    }
+    onCommit(parsed);
+  }
+
+  return (
+    <label className="prio-effort__field">
+      <span className="prio-effort__label">{label}</span>
+      <input
+        id={name}
+        type="number"
+        inputMode="decimal"
+        min={0}
+        step="0.5"
+        className="prio-input prio-effort__input"
+        placeholder="—"
+        value={text}
+        disabled={disabled}
+        onChange={(event) => setText(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            event.currentTarget.blur();
+          }
+          if (event.key === "Escape") setText(known);
+        }}
+      />
+      <span className="prio-effort__unit">h</span>
+    </label>
+  );
+}

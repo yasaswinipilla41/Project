@@ -7,7 +7,7 @@ import { IssueKey, IssueTypeIcon, StatusPill } from "@/components/ui/Indicators"
 import { IconEmptyBox } from "@/components/ui/Icon";
 import { projectScope } from "@/lib/authz";
 import { CLOSED_STATUSES, STATUS_LABEL } from "@/lib/domain";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatDateRange } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 
@@ -289,7 +289,23 @@ export default async function ProjectTimelinePage({
                     );
                     return (
                       <div key={sprint.id} className="prio-timeline__row">
-                        <span className="prio-timeline__label prio-truncate">
+                        {/*
+                          * The name here, the period on the bar beside it.
+                          *
+                          * Every surface that *lists* sprints prints the
+                          * bracketed range next to the name; this one does
+                          * not, and deliberately. The label column is 220px,
+                          * and "(01 Sep 2026 - 07 Sep 2026)" is most of that
+                          * on its own — printing it here would truncate away
+                          * the one thing that tells two rows apart, to say
+                          * something the bar's position and width already
+                          * say. It is on the title and in the row's
+                          * accessible text instead, in the same format.
+                          */}
+                        <span
+                          className="prio-timeline__label prio-truncate"
+                          title={`${sprint.name} (${formatDateRange(sprint.startDate, sprint.endDate)})`}
+                        >
                           {sprint.name}
                         </span>
                         <div className="prio-timeline__track">
@@ -302,8 +318,8 @@ export default async function ProjectTimelinePage({
                             }}
                           >
                             <span className="prio-visually-hidden">
-                              {sprint.name}: {formatDate(sprint.startDate)} to{" "}
-                              {formatDate(sprint.endDate)}
+                              {sprint.name} (
+                              {formatDateRange(sprint.startDate, sprint.endDate)})
                             </span>
                           </span>
                         </div>

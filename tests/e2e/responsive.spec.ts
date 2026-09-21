@@ -32,6 +32,10 @@ const PAGES = [
   { path: "/projects/eng/welcome", name: "Project welcome" },
   { path: "/projects/eng/summary", name: "Project summary" },
   { path: "/projects/eng/timeline", name: "Project timeline" },
+  /* Seven columns of names and timestamps — the widest table Prio has, and
+     so the one most likely to push a phone sideways. */
+  { path: "/backlog/history", name: "Backlog history" },
+  { path: "/projects/eng/backlog/history", name: "Project backlog history" },
 ] as const;
 
 /**

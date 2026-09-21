@@ -16,8 +16,8 @@ import {
   IconWarning,
 } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/Toast";
-import { isClosedStatus } from "@/lib/domain";
-import { formatDateCompact } from "@/lib/format";
+import { isClosedStatus, SPRINT_STATUS_LABEL } from "@/lib/domain";
+import { formatDateRange, formatOrdinalDate } from "@/lib/format";
 import { deleteSprint, startSprint } from "@/server/sprints";
 import type { SprintIssueSummary, SprintView } from "@/server/queries/sprints";
 import { AddSprintIssuesDialog } from "./AddSprintIssuesDialog";
@@ -143,14 +143,17 @@ export function SprintCard({
                 title={`Open ${sprint.name}`}
               >
                 {sprint.name}
+                {/* The period, beside the name rather than only below it: a
+                    list of sprints is read to find out which one covers now,
+                    and that question should be answered by the line that
+                    names them. */}
+                <span className="prio-sprint__range">
+                  ({formatDateRange(sprint.startDate, sprint.endDate)})
+                </span>
                 <IconArrowRight size={14} aria-hidden />
               </Link>
               <span className="prio-sprint__status" data-status={sprint.status}>
-                {sprint.status === "ACTIVE"
-                  ? "Active"
-                  : sprint.status === "PLANNED"
-                    ? "Planned"
-                    : "Completed"}
+                {SPRINT_STATUS_LABEL[sprint.status]}
               </span>
             </h3>
             {sprint.goal ? (
@@ -158,12 +161,12 @@ export function SprintCard({
             ) : null}
             <p className="prio-sprint__dates">
               <IconCalendar size={13} />
-              {formatDateCompact(sprint.startDate)} →{" "}
-              {formatDateCompact(sprint.endDate)}
+              {formatOrdinalDate(sprint.startDate)} →{" "}
+              {formatOrdinalDate(sprint.endDate)}
               {sprint.completedAt ? (
                 <span className="prio-text-muted">
                   {" "}
-                  · closed {formatDateCompact(sprint.completedAt)}
+                  · closed {formatOrdinalDate(sprint.completedAt)}
                 </span>
               ) : null}
             </p>

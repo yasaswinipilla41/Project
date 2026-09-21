@@ -3,11 +3,12 @@ import { notFound } from "next/navigation";
 import { BackLink } from "@/components/shell/BackLink";
 import { SprintDetailsView } from "@/components/sprints/SprintDetailsView";
 import { SprintIssueBoard } from "@/components/sprints/SprintIssueBoard";
+import { BurndownChart } from "@/components/sprints/BurndownChart";
 import { Card, CardBody } from "@/components/ui/primitives";
 import { projectScope, workRoleOf } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
-import { loadSprints } from "@/server/queries/sprints";
+import { loadBurndown, loadSprints } from "@/server/queries/sprints";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Sprint" };
@@ -81,12 +82,29 @@ export default async function ProjectSprintDetailsPage({
       ? { href: `${base}/iterations`, label: "Back to iterations" }
       : { href: base, label: "Back to sprints" };
 
+  /* Read here, on the server, from the sprint's own work and the trail its
+     remaining-hours changes are already written to. */
+  const chart = await loadBurndown(sprint.id);
+
   return (
     <>
       <BackLink href={back.href} label={back.label} tone="sprint" />
 
       <div style={{ marginTop: "var(--prio-space-3)" }}>
         <SprintDetailsView sprint={sprint}>
+          {/* Beside the sprint's own figures rather than on a page of its
+              own: a burndown answers a question somebody is already asking
+              while looking at this screen, and sending them elsewhere to see
+              it is how it stops being looked at. */}
+          {chart ? (
+            <Card style={{ marginTop: "var(--prio-space-4)" }}>
+              <CardBody>
+                <h2 className="prio-issue__section-title">Burndown Chart</h2>
+                <BurndownChart data={chart} />
+              </CardBody>
+            </Card>
+          ) : null}
+
           <Card style={{ marginTop: "var(--prio-space-4)" }}>
             <CardBody>
               <h2 className="prio-issue__section-title">Issues in this sprint</h2>

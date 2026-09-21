@@ -8,6 +8,7 @@ import type {
   Priority,
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { AUTOMATIC_ASSIGNMENT_ACTION } from "@/lib/activity";
 import { listIssues } from "@/server/queries/issues";
 import {
   assertIssueAccess,
@@ -394,6 +395,30 @@ export async function createIssue(
         isBug: input.type === "BUG",
       });
 
+      /*
+       * Work that is born assigned is still work that was assigned.
+       *
+       * The creation row names the type and the actor but carries no field,
+       * so an issue filed straight to somebody had no assignment history at
+       * all — including every row brought in by the spreadsheet import and
+       * every clone, which both go through here. The history then answered
+       * "who gave this to me?" with silence for exactly the cases where
+       * nobody remembers.
+       */
+      if (input.assigneeId) {
+        await recordFieldChanges(tx, {
+          issueId: issue.id,
+          actorId: user.id,
+          changes: [
+            {
+              field: "assigneeId",
+              oldValue: null,
+              newValue: input.assigneeId,
+            },
+          ],
+        });
+      }
+
       await addWatchers(tx, issue.id, [user.id, input.assigneeId]);
 
       if (input.assigneeId) {
@@ -499,6 +524,8 @@ export async function updateIssue(
            them without the request being allowed to say who that is. */
         reporterId: true,
         dueDate: true,
+        effortHours: true,
+        remainingHours: true,
         parentId: true,
         environment: true,
         browser: true,
@@ -652,6 +679,8 @@ export async function updateIssue(
       "priority",
       "assigneeId",
       "dueDate",
+      "effortHours",
+      "remainingHours",
       "parentId",
       "environment",
       "browser",
@@ -668,6 +697,7 @@ export async function updateIssue(
 
       const nextValue = input[field as keyof typeof input] as
         | string
+        | number
         | Date
         | null
         | undefined;
@@ -675,11 +705,21 @@ export async function updateIssue(
 
       const prevValue = existing[field as keyof typeof existing] as
         | string
+        | number
         | Date
         | null;
 
-      const asText = (v: string | Date | null): string | null =>
-        v === null ? null : v instanceof Date ? v.toISOString() : v;
+      /* Everything in the trail is text, including the hours — one column of
+         old and new values that reads the same whatever kind of field it
+         describes. */
+      const asText = (v: string | number | Date | null): string | null =>
+        v === null
+          ? null
+          : v instanceof Date
+            ? v.toISOString()
+            : typeof v === "number"
+              ? String(v)
+              : v;
 
       if (asText(prevValue) === asText(nextValue)) continue;
 
@@ -688,6 +728,29 @@ export async function updateIssue(
         field,
         oldValue: asText(prevValue),
         newValue: asText(nextValue),
+      });
+    }
+
+    /*
+     * An estimate arriving for the first time also says how much is left.
+     *
+     * "Remaining" starts as the whole of it — there is nothing else it could
+     * honestly be before anybody has worked on it — and only afterwards moves
+     * on its own. Done here rather than in the form so that every path which
+     * sets an estimate gets it, and only when the caller did not say
+     * otherwise in the same breath.
+     */
+    if (
+      input.effortHours !== undefined &&
+      input.effortHours !== null &&
+      input.remainingHours === undefined &&
+      existing.remainingHours === null
+    ) {
+      (data as Record<string, unknown>).remainingHours = input.effortHours;
+      changes.push({
+        field: "remainingHours",
+        oldValue: null,
+        newValue: String(input.effortHours),
       });
     }
 
@@ -832,10 +895,13 @@ export async function updateIssue(
             });
             /* The same activity row any reassignment writes, so the handover
                reads as one move in the history rather than appearing from
-               nowhere. The actor is the developer who finished the work. */
+               nowhere. The actor is the developer who finished the work —
+               they caused it — but the decision was Prio's, so the row is
+               marked automatic and the history can say which it was. */
             await recordFieldChanges(tx, {
               issueId,
               actorId: user.id,
+              action: AUTOMATIC_ASSIGNMENT_ACTION,
               changes: [
                 {
                   field: "assigneeId",
@@ -888,9 +954,14 @@ export async function updateIssue(
               where: { id: issueId },
               data: { assigneeId: developer },
             });
+            /* Prio's decision, not the tester's: they reopened the work,
+               and where it goes back to is read from the trail. Marked as
+               such so the history distinguishes it from somebody choosing
+               this developer by hand. */
             await recordFieldChanges(tx, {
               issueId,
               actorId: user.id,
+              action: AUTOMATIC_ASSIGNMENT_ACTION,
               changes: [
                 {
                   field: "assigneeId",

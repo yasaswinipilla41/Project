@@ -41,6 +41,78 @@ export function formatDate(value: Date | string | null | undefined): string {
   return DATE_FMT.format(date);
 }
 
+/**
+ * A sprint's own date form: `01 Sep 2026`.
+ *
+ * Day first, and the year always present. A sprint is a period rather than a
+ * moment, and a range whose year is dropped inside the current year — as
+ * `formatDateCompact` does — reads as a different kind of fact from the one
+ * beside it the moment a sprint crosses a December.
+ */
+export function formatDayMonthYear(
+  value: Date | string | null | undefined,
+): string {
+  if (!value) return "—";
+  const date = typeof value === "string" ? new Date(value) : value;
+  if (Number.isNaN(date.getTime())) return "—";
+
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = MONTH_SHORT[date.getMonth()];
+  return `${day} ${month} ${date.getFullYear()}`;
+}
+
+const MONTH_SHORT = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+] as const;
+
+const MONTH_LONG = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+] as const;
+
+/**
+ * The long form a sprint's own fields are written in: `11th October 2026`.
+ *
+ * Spelled out because these are the two dates a team commits to, read once
+ * and remembered — `11/10/26` is ambiguous between two continents and `Oct 11`
+ * loses the year the moment a sprint is looked at again next January.
+ */
+export function formatOrdinalDate(
+  value: Date | string | null | undefined,
+): string {
+  if (!value) return "—";
+  const date = typeof value === "string" ? new Date(value) : value;
+  if (Number.isNaN(date.getTime())) return "—";
+
+  return `${ordinal(date.getDate())} ${MONTH_LONG[date.getMonth()]} ${date.getFullYear()}`;
+}
+
+/** 1st, 2nd, 3rd, 4th … 11th, 12th, 13th — the teens are the exceptions. */
+function ordinal(day: number): string {
+  const tens = day % 100;
+  if (tens >= 11 && tens <= 13) return `${day}th`;
+  if (day % 10 === 1) return `${day}st`;
+  if (day % 10 === 2) return `${day}nd`;
+  if (day % 10 === 3) return `${day}rd`;
+  return `${day}th`;
+}
+
+/**
+ * The period a sprint covers, as it is shown beside the sprint's name:
+ * `01 Sep 2026 - 07 Sep 2026`.
+ *
+ * One helper rather than four sites each spelling out their own separator,
+ * which is how the board, the list, the details page and the iterations row
+ * came to disagree about what a date range looks like.
+ */
+export function formatDateRange(
+  start: Date | string | null | undefined,
+  end: Date | string | null | undefined,
+): string {
+  return `${formatDayMonthYear(start)} - ${formatDayMonthYear(end)}`;
+}
+
 /** Omits the year for dates inside the current year (board cards, tables). */
 export function formatDateCompact(
   value: Date | string | null | undefined,

@@ -83,7 +83,7 @@ export function boardColumnFor(status: IssueStatus): IssueStatus {
 }
 
 /**
- * What dropping an issue onto a column means, or `null` if it may not land.
+ * What dropping an issue onto a column means. Every drop means something.
  *
  * A column named for a status can still hold another, so "where does this card
  * go" is not always the column's own name. The rule is: **the column's own
@@ -99,18 +99,29 @@ export function boardColumnFor(status: IssueStatus): IssueStatus {
  *                   but it can be Rejected, which is what dragging it to the
  *                   end of the board actually means: it was not work.
  *
- * The workflow itself is untouched: every candidate is still checked against
- * `canTransition`, so this can only ever choose between moves the rules
- * already permit.
+ * **A drop is never refused.** `STATUS_TRANSITIONS` still decides which of a
+ * column's statuses is the apt one — that is what keeps Done → New meaning
+ * Reopened rather than New — but where it has nothing to say, the card lands
+ * in the column's own status instead of being turned away. Work is finished
+ * out of order often enough that a board refusing to record it is the thing
+ * that is wrong: somebody who has already built, deployed and checked a change
+ * should be able to drag it to Ready for QA, and a cancelled requirement
+ * should be able to go straight to Cancelled from wherever it is.
+ *
+ * Who may do it is a separate question, asked separately: the board checks
+ * `canSetStatus` against the reader's work role, and `updateIssue` checks it
+ * again on the server. This function answers only *what a drop means*.
  */
 export function dropStatusFor(
   from: IssueStatus,
   column: IssueStatus,
-): IssueStatus | null {
+): IssueStatus {
   for (const candidate of statusesInColumn(column)) {
     if (canTransition(from, candidate)) return candidate;
   }
-  return null;
+  /* Nothing in the ordinary path connects these two, so the drop is taken at
+     face value: the column the card was let go over. */
+  return column;
 }
 
 /**

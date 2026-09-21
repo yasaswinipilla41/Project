@@ -1,6 +1,7 @@
 import type { IssueStatus, IssueType, SprintStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { isClosedStatus, OPEN_STATUSES } from "@/lib/domain";
+import { burndown, type Burndown } from "@/lib/burndown";
 
 /**
  * Everything the sprint views read, in one place and one shape.
@@ -192,5 +193,71 @@ export async function loadSprintBacklog(
     },
     select: ISSUE_SELECT,
     orderBy: [{ priority: "asc" }, { sortIndex: "asc" }, { number: "asc" }],
+  });
+}
+
+/**
+ * A sprint's burndown, read from what is actually recorded.
+ *
+ * Two sources, both of them already there:
+ *
+ *  - **the items**, for the estimates committed to this sprint and what is
+ *    left of them right now;
+ *  - **the activity trail**, for how the remainder moved. Every change to
+ *    `remainingHours` is written there by `updateIssue` like any other field,
+ *    so the history a burndown needs is a query rather than a second table
+ *    quietly kept in step with the first.
+ *
+ * Where the trail has nothing to say, neither does the chart: a sprint nobody
+ * has estimated draws no line at all rather than a flattering one.
+ */
+export async function loadBurndown(
+  sprintId: string,
+  now: Date = new Date(),
+): Promise<Burndown | null> {
+  const sprint = await prisma.sprint.findUnique({
+    where: { id: sprintId },
+    select: {
+      startDate: true,
+      endDate: true,
+      issues: {
+        select: { id: true, effortHours: true, remainingHours: true },
+      },
+    },
+  });
+  if (!sprint) return null;
+
+  const issueIds = sprint.issues.map((issue) => issue.id);
+
+  /* Only the readings, and only for this sprint's own work. `newValue` is
+     text in the trail — it is one column shared by every kind of field — so
+     the numbers are parsed back here and anything unparseable is dropped
+     rather than guessed at. */
+  const entries =
+    issueIds.length === 0
+      ? []
+      : await prisma.activityLogEntry.findMany({
+          where: { issueId: { in: issueIds }, field: "remainingHours" },
+          select: { issueId: true, newValue: true, createdAt: true },
+          orderBy: { createdAt: "asc" },
+        });
+
+  const history = entries.flatMap((entry) => {
+    if (entry.newValue === null) return [];
+    const hours = Number(entry.newValue);
+    if (!Number.isFinite(hours)) return [];
+    return [{ at: entry.createdAt, issueId: entry.issueId, remainingHours: hours }];
+  });
+
+  return burndown({
+    startDate: sprint.startDate,
+    endDate: sprint.endDate,
+    items: sprint.issues.map((issue) => ({
+      issueId: issue.id,
+      effortHours: issue.effortHours,
+      remainingHours: issue.remainingHours,
+    })),
+    history,
+    now,
   });
 }

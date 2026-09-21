@@ -193,9 +193,14 @@ test.describe("The sprint workflow", () => {
 
     // ------------------------------------------------------------ start
     await card.getByRole("button", { name: "Start sprint" }).click();
-    await expect(card.locator(".prio-sprint__status")).toHaveText(/active/i, {
-      timeout: 15_000,
-    });
+    /* The running sprint reads "Current Sprint" rather than "Active": a list
+       of sprints is read to find out which one is *now*, and the old word
+       answered that only for somebody who already knew the vocabulary. The
+       stored status is untouched — this is what the badge calls it. */
+    await expect(card.locator(".prio-sprint__status")).toHaveText(
+      /current sprint/i,
+      { timeout: 15_000 },
+    );
 
     // Active, and still a summary: no issue board inside the block.
     await expect(card.locator(".prio-sprint__board")).toHaveCount(0);

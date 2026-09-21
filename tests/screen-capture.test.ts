@@ -204,6 +204,11 @@ describe("pausing a recording", () => {
     const stream = {
       getTracks: () => [track],
       getVideoTracks: () => [track],
+      /* A real MediaStream always answers this. The double did not, and the
+         moment the recorder started reporting whether sound was actually
+         shared, the gap showed up here rather than in a browser. No audio
+         track: this stub shares a picture only. */
+      getAudioTracks: () => [],
     };
 
     const Recorder = function () {

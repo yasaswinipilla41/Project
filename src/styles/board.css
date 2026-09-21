@@ -125,7 +125,16 @@
  */
 .prio-board__columns {
   display: flex;
-  align-items: flex-start;
+  /*
+   * Columns fill the board's height rather than shrinking to their cards.
+   *
+   * With `flex-start` a column holding one card was about 130px tall inside a
+   * full-height board, and everything below it was dead space belonging to
+   * this container — which has no drop handlers, so a card let go there was
+   * simply lost. Stretching gives every column the same generous target from
+   * its heading to the bottom of the board.
+   */
+  align-items: stretch;
   gap: var(--prio-space-4);
   height: calc(100dvh - var(--prio-board-top, 300px) - var(--prio-space-6));
   min-height: 260px;
@@ -175,8 +184,18 @@
   border-top: 3px solid #ef4444;
 }
 
+/*
+ * The column a card would land in.
+ *
+ * A tinted fill alone was easy to miss against an already-tinted board, so the
+ * active target also carries a ring: the answer to "will this drop register?"
+ * should be legible before the card is let go, not after it springs back.
+ * Exactly one column ever carries this — the board holds a single target.
+ */
 .prio-board__column[data-drop-active="true"] {
   background: var(--prio-primary-50);
+  border-color: var(--prio-primary-400);
+  box-shadow: inset 0 0 0 2px var(--prio-primary-400);
 }
 
 .prio-board__column-header {
@@ -215,7 +234,8 @@
   flex-direction: column;
   gap: var(--prio-space-2);
   flex: 1;
-  min-height: 80px;
+  /* Deep enough to be an easy target even when the column holds nothing. */
+  min-height: 160px;
   /*
    * How much sits above a column before its cards begin: the top bar, the
    * page header, the board toolbar, the column's own heading and the page

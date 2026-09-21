@@ -6,13 +6,13 @@ import { watchForProblems } from "./support";
  * The Snip Tool window (§ Create-flow attachments, Issue attachments).
  *
  * What is worth proving here is not that a screenshot can be taken — the unit
- * tests cover the capture library — but the workflow around it: that
- * Screenshot opens the window on a choice of what to capture rather than
- * forcing a capture; that + New snip is a fresh capture every time; that the
- * area dragged out is the picture the editor opens on; that Save and Save as
- * copy land on the issue the window was opened for, and on no other, even
- * after walking off to another page; and that the window is a window —
- * minimised, maximised and restored without losing anything.
+ * tests cover the capture library — but the workflow around it: that opening
+ * the tool captures nothing; that New Snip is a fresh capture every time and
+ * goes straight from the area dragged out to Upload, with no editing step in
+ * between; that what is uploaded lands on the work item the window was opened
+ * for, and on no other, even after walking off to another page; and that the
+ * window is a window — minimised, maximised and restored without losing
+ * anything.
  *
  * The browser's screen picker cannot be driven from a test, so the capture API
  * is replaced before the page loads with one that shares a canvas. That is a
@@ -95,23 +95,31 @@ async function dragArea(
   await expect(selector).toBeHidden();
 }
 
-/** + New snip → drag an area → the editor, open on it. */
-async function newSnip(page: Page): Promise<Locator> {
-  await snipWindow(page).getByRole("button", { name: "New snip" }).click();
-  await dragArea(page);
-  const editor = page.getByRole("dialog", { name: "Edit screenshot" });
-  await expect(editor).toBeVisible();
-  await expect(editor.locator("canvas").first()).toBeVisible();
-  return editor;
+/** The capture being reviewed, as opposed to the thumbnails of ones already sent. */
+function previewImage(snip: Locator) {
+  return snip.getByRole("img", { name: /^Snip: / });
 }
 
 /**
- * Chooses a source by its card, the way a person does. The radio inside is
- * visually hidden and the card is its label, so the label is what is clicked.
+ * New Snip → drag an area → the preview of what was caught.
+ *
+ * There is no editor in this path any more. A capture used to be pushed
+ * through the annotation editor before it could become an attachment, so the
+ * ordinary case — take a picture of the thing, put it on the work item — cost
+ * a crop tool, a Save and a choice about copies. The editor is still reachable
+ * from the attachment itself for the times somebody wants to draw on a
+ * screenshot; it is no longer the toll on the times they do not.
  */
-async function chooseSource(snip: Locator, name: string) {
-  await snip.locator("label").filter({ hasText: new RegExp(`^${name}`) }).click();
-  await expect(snip.getByRole("radio", { name: new RegExp(`^${name}`) })).toBeChecked();
+async function newSnip(page: Page): Promise<Locator> {
+  await snipWindow(page).getByRole("button", { name: "New Snip" }).click();
+  await dragArea(page);
+  const snip = snipWindow(page);
+  await expect(snip.getByRole("button", { name: "Upload" })).toBeVisible();
+  /* By its alt text, not `locator("img")`: every snip already sent shows a
+     thumbnail in the list below, so the bare locator matches more and more
+     images as a session goes on. Only the preview is captioned. */
+  await expect(previewImage(snip)).toBeVisible();
+  return snip;
 }
 
 /** An issue page, opened from the list, and its attachment count. */
@@ -157,7 +165,7 @@ test.describe("Snip Tool — screenshot workflow on an issue", () => {
     await stubDisplayCapture(page);
   });
 
-  test("Screenshot opens the window on a choice of source, without capturing", async ({
+  test("opens on New Snip and Recorder, and captures nothing by itself", async ({
     page,
   }) => {
     const { consoleErrors } = watchForProblems(page);
@@ -171,52 +179,37 @@ test.describe("Snip Tool — screenshot workflow on an issue", () => {
     await expect(snip).toContainText(projectName);
 
     // Nothing was captured just by opening it.
-    await expect(page.getByRole("dialog", { name: "Edit screenshot" })).toBeHidden();
     expect(
       await page.evaluate(
         () => (window as unknown as { __displayMediaCalls: unknown[] }).__displayMediaCalls.length,
       ),
     ).toBe(0);
 
-    /* The two that are offered whatever the page turns out to hold, and this
-       tab is the one chosen. */
-    for (const name of ["This tab", "Another tab or window"]) {
-      await expect(
-        snip.getByRole("radio", { name: new RegExp(`^${name}`) }),
-      ).toHaveCount(1);
-    }
-    await expect(snip.getByRole("radio", { name: /^This tab/ })).toBeChecked();
-
     /*
-     * And those two are the whole of it. Prio's own pages were briefly offered
-     * here as a third kind of source, under a "Primary" heading read off the
-     * sidebar — a second, worse copy of navigation the application already
-     * has. Going to a page is something you do in the application; this window
-     * only decides what to point the camera at.
+     * Two things to choose between, and nothing else.
+     *
+     * The window used to open on a choice of capture source — "This tab" or
+     * "Another tab or window" — which asked a question the browser is about to
+     * ask anyway, and asked it before the person had said what they wanted to
+     * do. There is no source control at all now: New Snip goes to the
+     * browser's own picker, which is the only thing that can offer another
+     * tab.
      */
-    await expect(snip.getByText("Primary", { exact: true })).toHaveCount(0);
-    await expect(snip.getByRole("radio")).toHaveCount(2);
-    for (const name of ["Home", "Projects", "Issues", "Reports"]) {
-      await expect(
-        snip.getByRole("radio", { name: new RegExp(`^${name}`) }),
-        `${name} is not a capture source`,
-      ).toHaveCount(0);
-    }
-    await expect(snip.getByRole("button", { name: "New snip" })).toBeEnabled();
+    await expect(snip.getByRole("button", { name: "New Snip" })).toBeEnabled();
+    await expect(snip.getByRole("button", { name: "Recorder" })).toBeEnabled();
+    await expect(snip.getByRole("radio")).toHaveCount(0);
 
-    // Minimise, restore, maximise, restore — the choice survives all of it.
-    await chooseSource(snip, "Another tab or window");
+    // Minimise, restore, maximise, restore — the window survives all of it.
     await snip.getByRole("button", { name: "Minimise Snip Tool" }).click();
-    await expect(snip.getByRole("button", { name: "New snip" })).toBeHidden();
+    await expect(snip.getByRole("button", { name: "New Snip" })).toBeHidden();
     await snip.getByRole("button", { name: "Restore Snip Tool" }).click();
-    await expect(snip.getByRole("radio", { name: /^Another tab or window/ })).toBeChecked();
+    await expect(snip.getByRole("button", { name: "New Snip" })).toBeVisible();
 
     const floating = (await snip.boundingBox())!;
     await snip.getByRole("button", { name: "Maximise Snip Tool" }).click();
     const big = (await snip.boundingBox())!;
     expect(big.width).toBeGreaterThan(floating.width * 2);
     expect(big.height).toBeGreaterThan(floating.height);
-    await expect(snip.getByRole("radio", { name: /^Another tab or window/ })).toBeChecked();
     await snip.getByRole("button", { name: "Restore Snip Tool size" }).click();
     const restored = (await snip.boundingBox())!;
     expect(Math.round(restored.width)).toBe(Math.round(floating.width));
@@ -228,7 +221,7 @@ test.describe("Snip Tool — screenshot workflow on an issue", () => {
     expect(consoleErrors).toEqual([]);
   });
 
-  test("New snip → area → editor → Save lands on the same issue, and Save again updates it", async ({
+  test("New Snip → area → preview → Upload lands on the same issue", async ({
     page,
   }) => {
     const { consoleErrors } = watchForProblems(page);
@@ -236,107 +229,70 @@ test.describe("Snip Tool — screenshot workflow on an issue", () => {
     const before = await prisma.attachment.count({ where: { issueId } });
 
     await openScreenshot(page);
-    const snip = snipWindow(page);
+    const snip = await newSnip(page);
 
-    const editor = await newSnip(page);
-    // The picker was asked to lead with this tab.
-    const calls = await page.evaluate(
-      () => (window as unknown as { __displayMediaCalls: { preferCurrentTab?: boolean }[] }).__displayMediaCalls,
-    );
-    expect(calls.at(-1)?.preferCurrentTab).toBe(true);
-
-    /* The editor opened on the dragged area, not the whole 640×400 frame:
-       60% by 40% of it. Crop is the tool armed, as it always has been. */
-    const size = await editor
-      .locator("canvas")
-      .first()
-      .evaluate((canvas: HTMLCanvasElement) => [canvas.width, canvas.height]);
+    /*
+     * The area dragged out is the picture, not the whole 640×400 frame: 50%
+     * by 40% of it. Read off the preview image itself, which is what the
+     * person is looking at when they decide whether to upload.
+     */
+    const size = await previewImage(snip).evaluate((img: HTMLImageElement) => [
+      img.naturalWidth,
+      img.naturalHeight,
+    ]);
     expect(size[0]).toBeGreaterThan(280);
     expect(size[0]).toBeLessThan(360);
     expect(size[1]).toBeGreaterThan(130);
     expect(size[1]).toBeLessThan(190);
-    await expect(editor.getByRole("button", { name: "Crop", exact: true })).toHaveAttribute(
-      "data-active",
-      "true",
-    );
 
-    // A mark with an existing tool, then Save.
-    await editor.getByRole("button", { name: "Rectangle" }).click();
-    const canvas = editor.locator("canvas").nth(1);
-    const area = (await canvas.boundingBox())!;
-    await page.mouse.move(area.x + 20, area.y + 20);
-    await page.mouse.down();
-    await page.mouse.move(area.x + area.width / 2, area.y + area.height / 2, { steps: 5 });
-    await page.mouse.up();
-    await editor.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(editor).toBeHidden();
+    /*
+     * Two actions and no more. There is no Save, no Save as copy and no
+     * editing step between the capture and the attachment — marking a
+     * screenshot up is still possible from the attachment itself, and is no
+     * longer the toll on the ordinary case.
+     */
+    await expect(snip.getByRole("button", { name: "Upload" })).toBeVisible();
+    await expect(snip.getByRole("button", { name: "Cancel" })).toBeVisible();
+    await expect(snip.getByRole("button", { name: "Save", exact: true })).toHaveCount(0);
+    await expect(snip.getByRole("button", { name: "Save as copy" })).toHaveCount(0);
+    await expect(page.getByRole("dialog", { name: "Edit screenshot" })).toHaveCount(0);
 
-    await expect(snip.getByRole("status")).toContainText("Saved");
+    await snip.getByRole("button", { name: "Upload" }).click();
+
     await expect.poll(() => prisma.attachment.count({ where: { issueId } })).toBe(before + 1);
 
     const saved = await prisma.attachment.findFirstOrThrow({
       where: { issueId },
       orderBy: { createdAt: "desc" },
-      select: { id: true, filename: true, storageKey: true },
+      select: { id: true, filename: true },
     });
     createdAttachmentNames.push(saved.filename);
     expect(saved.filename).toMatch(/^screenshot-.*\.png$/);
+
     // Visible in the issue's own Attachments without a reload.
-    await expect(page.locator(".prio-attachment").filter({ hasText: saved.filename })).toHaveCount(1);
-
-    // Edit it again from the window, and Save: the same attachment, updated.
-    await snip.getByRole("button", { name: `Edit ${saved.filename}` }).click();
-    const again = page.getByRole("dialog", { name: "Edit screenshot" });
-    await expect(again).toBeVisible();
-    await again.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(again).toBeHidden();
-    await expect(snip.getByRole("status")).toContainText("Updated");
-
-    await expect.poll(() => prisma.attachment.count({ where: { issueId } })).toBe(before + 1);
-    await expect
-      .poll(async () =>
-        (await prisma.attachment.findUniqueOrThrow({ where: { id: saved.id }, select: { storageKey: true } }))
-          .storageKey,
-      )
-      .not.toBe(saved.storageKey);
+    await expect(
+      page.locator(".prio-attachment").filter({ hasText: saved.filename }),
+    ).toHaveCount(1);
 
     expect(consoleErrors).toEqual([]);
   });
 
-  test("Save as copy keeps the original and adds an -annotated copy to the same issue", async ({
-    page,
-  }) => {
-    const { consoleErrors } = watchForProblems(page);
+  test("Cancel keeps the capture off the work item", async ({ page }) => {
     const { issueId } = await openAnIssue(page);
     const before = await prisma.attachment.count({ where: { issueId } });
 
     await openScreenshot(page);
-    const snip = snipWindow(page);
-    const editor = await newSnip(page);
-    await editor.getByRole("button", { name: "Save as copy" }).click();
-    await expect(editor).toBeHidden();
+    const snip = await newSnip(page);
 
-    await expect(snip.getByRole("status")).toContainText("-annotated");
-    await expect.poll(() => prisma.attachment.count({ where: { issueId } })).toBe(before + 2);
+    await snip.getByRole("button", { name: "Cancel" }).click();
 
-    const newest = await prisma.attachment.findMany({
-      where: { issueId },
-      orderBy: { createdAt: "desc" },
-      take: 2,
-      select: { filename: true },
-    });
-    const names = newest.map((row) => row.filename).sort();
-    createdAttachmentNames.push(...names);
-    const original = names.find((name) => !name.includes("-annotated"))!;
-    expect(names).toContain(original.replace(/\.png$/, "-annotated.png"));
-
-    // Both are rows in the window, and both say where they went.
-    await expect(snipRows(snip)).toHaveCount(2);
-
-    expect(consoleErrors).toEqual([]);
+    /* Back to where a fresh capture starts, and nothing was attached. */
+    await expect(snip.getByRole("button", { name: "New Snip" })).toBeVisible();
+    await expect(snip.getByRole("button", { name: "Upload" })).toHaveCount(0);
+    expect(await prisma.attachment.count({ where: { issueId } })).toBe(before);
   });
 
-  test("each New snip is separate, and the issue stays the one it was opened for across navigation", async ({
+  test("each New Snip is separate, and the issue stays the one it was opened for across navigation", async ({
     page,
   }) => {
     const { consoleErrors } = watchForProblems(page);
@@ -346,10 +302,9 @@ test.describe("Snip Tool — screenshot workflow on an issue", () => {
     await openScreenshot(page);
     const snip = snipWindow(page);
 
-    // Snip one, from this tab.
-    let editor = await newSnip(page);
-    await editor.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(editor).toBeHidden();
+    // Snip one.
+    await newSnip(page);
+    await snip.getByRole("button", { name: "Upload" }).click();
     await expect.poll(() => prisma.attachment.count({ where: { issueId } })).toBe(before + 1);
 
     /* Walk off to another page, the ordinary way — through Prio's own sidebar.
@@ -358,17 +313,14 @@ test.describe("Snip Tool — screenshot workflow on an issue", () => {
     await page.locator('.prio-sidebar a[href="/projects"]').click();
     await expect(page).toHaveURL(/\/projects$/);
     await expect(snip).toContainText(key);
-    await expect(snip.getByRole("radio", { name: /^This tab/ })).toBeChecked();
 
-    // Snip two, of that page, saved while the issue is not on screen.
-    editor = await newSnip(page);
-    await editor.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(editor).toBeHidden();
+    // Snip two, of that page, uploaded while the issue is not on screen.
+    await newSnip(page);
+    await snip.getByRole("button", { name: "Upload" }).click();
     await expect.poll(() => prisma.attachment.count({ where: { issueId } })).toBe(before + 2);
 
     // Two rows, two different files, both on that issue and no other.
-    const rows = snipRows(snip);
-    await expect(rows).toHaveCount(2);
+    await expect(snipRows(snip)).toHaveCount(2);
     const saved = await prisma.attachment.findMany({
       where: { issueId },
       orderBy: { createdAt: "desc" },
@@ -383,13 +335,70 @@ test.describe("Snip Tool — screenshot workflow on an issue", () => {
     await snip.getByRole("link", { name: `Open ${key}` }).click();
     await expect(page).toHaveURL(new RegExp(`/issues/${key.toLowerCase()}`));
     for (const row of saved) {
-      await expect(page.locator(".prio-attachment").filter({ hasText: row.filename })).toHaveCount(1);
+      await expect(
+        page.locator(".prio-attachment").filter({ hasText: row.filename }),
+      ).toHaveCount(1);
     }
 
     expect(consoleErrors).toEqual([]);
   });
 
-  test("Another tab or window asks the browser's picker without leading with this tab", async ({
+  test("Ctrl+Shift+A snips from wherever you are, and typing an A is still an A", async ({
+    page,
+  }) => {
+    const { consoleErrors } = watchForProblems(page);
+    const { issueId } = await openAnIssue(page);
+    const before = await prisma.attachment.count({ where: { issueId } });
+
+    await openScreenshot(page);
+    const snip = snipWindow(page);
+    await expect(snip).toBeVisible();
+
+    /*
+     * Not while typing.
+     *
+     * The shortcut is off inside a field, so the combination means whatever
+     * the browser makes of it in a comment box rather than silently taking a
+     * picture of the screen. Checked first, because a shortcut that fires
+     * here is worse than one that never fires at all.
+     */
+    await snip.getByRole("button", { name: "Close Snip Tool" }).click();
+    await expect(snip).toBeHidden();
+    const comment = page.getByRole("textbox", { name: /comment/i }).first();
+    await comment.click();
+    await comment.press("Control+Shift+A");
+    await expect(
+      page.getByRole("dialog", { name: "Select area to snip" }),
+    ).toHaveCount(0);
+
+    /*
+     * And from the page itself it takes one — bringing the window back with
+     * it. Closing leaves the target behind, which is what lets the shortcut
+     * know where the picture goes; the window has to return for the preview
+     * to be somewhere a person can see it.
+     */
+    await page.locator("h1").first().click();
+    await page.keyboard.press("Control+Shift+A");
+    await dragArea(page);
+
+    await expect(snip).toBeVisible();
+    await expect(snip.getByRole("button", { name: "Upload" })).toBeVisible();
+    await snip.getByRole("button", { name: "Upload" }).click();
+
+    await expect
+      .poll(() => prisma.attachment.count({ where: { issueId } }))
+      .toBe(before + 1);
+    const saved = await prisma.attachment.findFirstOrThrow({
+      where: { issueId },
+      orderBy: { createdAt: "desc" },
+      select: { filename: true },
+    });
+    createdAttachmentNames.push(saved.filename);
+
+    expect(consoleErrors).toEqual([]);
+  });
+
+  test("New Snip asks the browser once, and keeps that surface for the next one", async ({
     page,
   }) => {
     await openAnIssue(page);
@@ -409,43 +418,53 @@ test.describe("Snip Tool — screenshot workflow on an issue", () => {
           ).__displayMediaCalls,
       );
 
-    /* Choosing the source is what opens the picker — the share is arranged up
-       front, so the person can go and find what they want a picture of. */
-    await chooseSource(snip, "Another tab or window");
+    /*
+     * The picker is the browser's, and it is what makes another tab reachable
+     * at all: a page cannot enumerate your tabs and should not be able to.
+     * Prio asks for it when the first snip is taken rather than when the
+     * window opens, so opening the tool costs nothing.
+     */
+    await snip.getByRole("button", { name: "New Snip" }).click();
+    await dragArea(page);
+    await expect(snip.getByRole("button", { name: "Upload" })).toBeVisible();
 
-    const afterChoosing = await pickerCalls();
-    expect(afterChoosing).toHaveLength(1);
-    expect(afterChoosing.at(-1)?.preferCurrentTab).not.toBe(true);
-    expect(afterChoosing.at(-1)?.selfBrowserSurface).toBe("exclude");
-
-    // The window says what it is holding, and offers the way out of it.
-    await expect(snip.getByText(/^Capturing from/)).toBeVisible();
-
-    await snip.getByRole("button", { name: "New snip" }).click();
-    const selector = page.getByRole("dialog", { name: "Select area to snip" });
-    await expect(selector).toBeVisible();
+    const afterFirst = await pickerCalls();
+    expect(afterFirst).toHaveLength(1);
+    expect(afterFirst.at(-1)?.selfBrowserSurface).toBe("exclude");
 
     /*
-     * And the snip came from the surface already being shared: the picker was
-     * not asked a second time. That is the whole point of retaining it — being
-     * re-prompted per snip would both interrupt and undo the navigation the
-     * person just did to reach what they wanted.
+     * And back on the opening screen the window says what it is holding.
+     *
+     * Said there rather than over the preview, deliberately: it comes with
+     * Release source beside it, and an offer to let go of the surface is
+     * only useful where taking another snip is the next thing on offer. The
+     * preview is about the picture just taken.
      */
+    await snip.getByRole("button", { name: "Cancel" }).click();
+    await expect(snip.getByText(/^Capturing from/)).toBeVisible();
+
+    /*
+     * And the second snip comes from the surface already being shared: the
+     * picker is not asked again. That is the whole point of retaining it —
+     * being re-prompted per snip would both interrupt and undo the navigation
+     * the person just did to reach what they wanted.
+     */
+    await snip.getByRole("button", { name: "New Snip" }).click();
+    const selector = page.getByRole("dialog", { name: "Select area to snip" });
+    await expect(selector).toBeVisible();
     expect(await pickerCalls()).toHaveLength(1);
 
     // Escape cancels the snip without making one, and keeps the share.
     await page.keyboard.press("Escape");
     await expect(selector).toBeHidden();
     await expect(snip).toBeVisible();
-    await expect(snipRows(snip)).toHaveCount(0);
     await expect(snip.getByText(/^Capturing from/)).toBeVisible();
 
-    /* Releasing is the person's to do, and hands the source back to this tab.
-       Worded as capture rather than sharing: nothing leaves the machine, and
-       the browser's own "Stop sharing" bar is a separate control. */
+    /* Releasing is the person's to do. Worded as capture rather than sharing:
+       nothing leaves the machine, and the browser's own "Stop sharing" bar is
+       a separate control. */
     await snip.getByRole("button", { name: "Release source" }).click();
     await expect(snip.getByText(/^Capturing from/)).toHaveCount(0);
-    await expect(snip.getByRole("radio", { name: /^This tab/ })).toBeChecked();
   });
 });
 
@@ -473,7 +492,7 @@ test.describe("Snip Tool — on the Create form", () => {
     return dialog;
   }
 
-  test("snips stage as separate rows, and Save as copy stages the original and its copy", async ({
+  test("each snip stages as its own row, and the draft underneath is untouched", async ({
     page,
   }) => {
     const { consoleErrors } = watchForProblems(page);
@@ -486,35 +505,37 @@ test.describe("Snip Tool — on the Create form", () => {
 
     const rows = dialog.getByRole("button", { name: /Annotate|Edit markup/ });
 
-    let editor = await newSnip(page);
-    await editor.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(editor).toBeHidden();
+    await newSnip(page);
+    await snip.getByRole("button", { name: "Upload" }).click();
     await expect(rows).toHaveCount(1);
 
-    editor = await newSnip(page);
-    await editor.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(editor).toBeHidden();
+    await newSnip(page);
+    await snip.getByRole("button", { name: "Upload" }).click();
     await expect(rows).toHaveCount(2);
 
-    editor = await newSnip(page);
-    await editor.getByRole("button", { name: "Save as copy" }).click();
-    await expect(editor).toBeHidden();
-    await expect(rows).toHaveCount(4);
-
+    /* Two separate files, not one written over twice — the failure this path
+       exists to catch, and the reason the staged rows are checked here rather
+       than on an issue where they are uploaded out of sight. */
     const names = await dialog
       .getByRole("link", { name: /^Open .+ in a new tab$/ })
-      .evaluateAll((links) => links.map((link) => link.getAttribute("aria-label")));
-    expect(names).toHaveLength(4);
-    expect(new Set(names).size).toBe(4);
-    expect(names.filter((name) => /-annotated\.png/.test(name ?? ""))).toHaveLength(1);
+      .evaluateAll((links: Element[]) =>
+        links.map((link) => link.getAttribute("aria-label")),
+      );
+    expect(names).toHaveLength(2);
+    expect(new Set(names).size).toBe(2);
 
-    /* Saving a staged snip again writes over its row rather than adding one. */
-    const first = (await snipRows(snip).first().locator("[title]").first().getAttribute("title"))!;
-    await snip.getByRole("button", { name: `Edit ${first}` }).click();
-    editor = page.getByRole("dialog", { name: "Edit screenshot" });
-    await editor.getByRole("button", { name: "Save", exact: true }).click();
+    /*
+     * And the editor is still reachable from a staged row.
+     *
+     * Marking a screenshot up did not go away — it stopped being compulsory.
+     * Annotate on the row opens the same editor it always did.
+     */
+    await rows.first().click();
+    const editor = page.getByRole("dialog", { name: "Edit screenshot" });
+    await expect(editor).toBeVisible();
+    /* Exactly "Cancel": the editor's toolbar also has "Cancel crop". */
+    await editor.getByRole("button", { name: "Cancel", exact: true }).click();
     await expect(editor).toBeHidden();
-    await expect(rows).toHaveCount(4);
 
     // And the draft underneath is untouched by any of it.
     await expect(dialog.getByLabel("Summary")).not.toHaveValue("");
@@ -537,9 +558,8 @@ test.describe("Snip Tool — on the Create form", () => {
     await dialog.getByRole("button", { name: "Close dialog" }).click();
     await expect(dialog).toBeHidden();
 
-    const editor = await newSnip(page);
-    await editor.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(editor).toBeHidden();
+    await newSnip(page);
+    await snip.getByRole("button", { name: "Upload" }).click();
     await expect(snip.getByRole("alert")).toContainText("Open the form");
     const name = (await snip.locator("li [title]").first().getAttribute("title"))!;
     await expect(snip.getByRole("button", { name: `Save ${name}` })).toBeVisible();
@@ -607,7 +627,7 @@ test.describe("Snip Tool — on the Create form", () => {
     expect(consoleErrors).toEqual([]);
   });
 
-  test("Record runs a timer, stops to a preview, and attaches as a WebM", async ({
+  test("Record stands the window down, runs from a strip, and attaches as a WebM", async ({
     page,
   }) => {
     const { consoleErrors } = watchForProblems(page);
@@ -618,9 +638,31 @@ test.describe("Snip Tool — on the Create form", () => {
     await page.getByRole("menuitem", { name: "Record" }).click();
 
     const snip = snipWindow(page);
-    await expect(snip.getByRole("status")).toContainText("Recording");
-    await expect(snip.getByRole("button", { name: "Stop recording" })).toBeVisible();
-    await expect(snip.getByRole("button", { name: "Discard" })).toBeVisible();
+
+    /*
+     * The window goes away, and a strip takes over.
+     *
+     * Controls that sit over the thing being recorded end up in the file.
+     * The window is therefore stood down for the whole of the recording, and
+     * the one control that is genuinely needed while it runs — Stop — lives
+     * on a small strip instead. Asserting the window is gone is the point:
+     * it is the behaviour, not an incidental.
+     */
+    await expect(snip).toBeHidden();
+
+    /* Matched on either word it can say: filtering on "Recording" alone is
+       a locator that stops resolving the moment the thing it describes is
+       paused, which is exactly when the test needs it. */
+    const bar = page
+      .getByRole("status")
+      .filter({ hasText: /(Recording|Paused) \d/ });
+    await expect(bar).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Stop recording" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Discard recording" }),
+    ).toBeVisible();
 
     /*
      * This tab was left out of the picker.
@@ -638,50 +680,53 @@ test.describe("Snip Tool — on the Create form", () => {
             __displayMediaCalls: {
               preferCurrentTab?: boolean;
               selfBrowserSurface?: string;
+              audio?: unknown;
+              video?: { cursor?: string };
             }[];
           }
         ).__displayMediaCalls,
     );
-    expect(recordHints.at(-1)?.selfBrowserSurface).toBe("exclude");
-    expect(recordHints.at(-1)?.preferCurrentTab).not.toBe(true);
+    const asked = recordHints.at(-1);
+    expect(asked?.selfBrowserSurface).toBe("exclude");
+    expect(asked?.preferCurrentTab).not.toBe(true);
+    /* A recording asks for sound and for the pointer to be drawn in. Both are
+       offers the browser may refuse; asking is what Prio controls. */
+    expect(asked?.audio).toBeTruthy();
+    expect(asked?.video?.cursor).toBe("always");
 
     /* Pausing is offered only where the recorder actually implements it. */
-    const pause = snip.getByRole("button", { name: "Pause", exact: true });
+    const pause = page.getByRole("button", { name: "Pause recording" });
     if ((await pause.count()) > 0) {
       await pause.click();
-      await expect(snip.getByRole("status")).toContainText("Paused");
-      await snip.getByRole("button", { name: "Resume", exact: true }).click();
-      await expect(snip.getByRole("status")).toContainText("Recording");
+      await expect(bar).toContainText("Paused");
+      await page.getByRole("button", { name: "Resume recording" }).click();
+      await expect(bar).toContainText("Recording");
     }
-
-    /*
-     * Stopping survives collapsing the window.
-     *
-     * The body is not rendered while minimised, which used to take Stop with
-     * it — the one control somebody urgently needs was behind restoring the
-     * window first.
-     */
-    await snip.getByRole("button", { name: "Minimise Snip Tool" }).click();
-    await expect(
-      snip.getByRole("button", { name: "Stop recording" }),
-    ).toBeVisible();
-    await snip.getByRole("button", { name: "Restore Snip Tool" }).click();
 
     /* Long enough for the recorder's one-second timeslice to deliver a chunk;
        a stop before that produces an empty blob and a refusal instead. */
     await page.waitForTimeout(1_600);
-    await expect(snip.getByRole("status")).not.toContainText("Recording 0:00");
+    await expect(bar).not.toContainText("Recording 0:00");
 
-    await snip.getByRole("button", { name: "Stop recording" }).click();
+    await page.getByRole("button", { name: "Stop recording" }).click();
 
-    /* A recording previews as a video and offers no Annotate — the editor is
-       for stills. */
+    /*
+     * Stopping brings the window back, on the preview.
+     *
+     * A recording previews as a video and offers no Annotate — the editor is
+     * for stills — and the three things worth doing with it are here: keep
+     * it, take another, or drop it.
+     */
+    await expect(snip).toBeVisible();
     await expect(snip.locator("video")).toBeVisible();
     await expect(snip.getByRole("button", { name: "Annotate" })).toHaveCount(0);
-    await expect(snip.getByRole("button", { name: "Attach" })).toBeVisible();
+    await expect(
+      snip.getByRole("button", { name: "Record Again" }),
+    ).toBeVisible();
+    await expect(snip.getByRole("button", { name: "Cancel" })).toBeVisible();
 
-    await snip.getByRole("button", { name: "Attach" }).click();
-    await expect(snip.getByRole("button", { name: "Attach" })).toBeHidden();
+    await snip.getByRole("button", { name: "Upload" }).click();
+    await expect(snip.getByRole("button", { name: "Upload" })).toBeHidden();
 
     await expect(
       dialog.locator(".prio-field").getByTitle(/^recording-.*\.webm$/),

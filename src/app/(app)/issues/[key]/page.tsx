@@ -8,6 +8,7 @@ import { RelatedIssues } from "@/components/issues/RelatedIssues";
 import { IssueAttachments } from "@/components/issues/IssueAttachments";
 import {
   AssigneeControl,
+  EffortControl,
   PriorityControl,
   StatusControl,
 } from "@/components/issues/IssueFieldControls";
@@ -103,6 +104,8 @@ async function loadIssue(rawKey: string, user: CurrentUser) {
       createdAt: true,
       updatedAt: true,
       completedAt: true,
+      effortHours: true,
+      remainingHours: true,
       testResult: true,
       testedAt: true,
       testedBy: { select: { name: true } },
@@ -745,6 +748,14 @@ export default async function IssueDetailPage({
                 * How long this took: the gap between the two timestamps above
                 * it, and shown only when both of them exist.
                 *
+                * Labelled for what it measures. It used to say "Worked",
+                * which reads as time spent on the work and is not what this
+                * is — it is calendar time from the item being raised to it
+                * being closed, and an item nobody touched for a fortnight
+                * carries a fortnight here. "Worked" also sat one word away
+                * from Effort below it, which is an estimate; two different
+                * facts should not be two readings of the same word.
+                *
                 * Both are the database's own — `createdAt` is written when the
                 * row is, `completedAt` when the work was actually closed — so
                 * this is a fact about the work rather than about when somebody
@@ -754,7 +765,7 @@ export default async function IssueDetailPage({
                 * and be wrong the moment it was believed.
                 */}
               {worked !== null ? (
-                <MetaRow label="Worked">
+                <MetaRow label="Time to complete">
                   <span
                     title={`From ${formatDateTime(issue.createdAt)} to ${formatDateTime(issue.completedAt)}`}
                   >
@@ -762,6 +773,24 @@ export default async function IssueDetailPage({
                   </span>
                 </MetaRow>
               ) : null}
+
+              {/*
+                * What this was estimated to need, and what is thought to be
+                * left of it.
+                *
+                * Deliberately separate from "Time to complete" above, which is
+                * wall-clock between raising the item and closing it — a
+                * different fact, and not an estimate of anything. Effort is
+                * the number a sprint is planned with; Remaining is the one a
+                * burndown is drawn from.
+                */}
+              <MetaRow label="Effort">
+                <EffortControl
+                  issueId={issue.id}
+                  effortHours={issue.effortHours}
+                  remainingHours={issue.remainingHours}
+                />
+              </MetaRow>
             </CardBody>
           </Card>
         </div>

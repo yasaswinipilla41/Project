@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { BurndownChart } from "@/components/sprints/BurndownChart";
 import { BackLink } from "@/components/shell/BackLink";
 import { SprintDetailsView } from "@/components/sprints/SprintDetailsView";
+import { Card, CardBody } from "@/components/ui/primitives";
 import { canAccessProject } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
-import { loadSprints } from "@/server/queries/sprints";
+import { loadBurndown, loadSprints } from "@/server/queries/sprints";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Sprint" };
@@ -18,7 +20,9 @@ export const metadata: Metadata = { title: "Sprint" };
  *
  * The rendering itself is `SprintDetailsView`, shared with the project's own
  * `sprints/[sprintId]` page — the two differ only in where Back leads and
- * whether the project shell wraps them.
+ * whether the project shell wraps them. The burndown is on both for the same
+ * reason: which link somebody followed to reach a sprint should not decide
+ * whether they can see how it is going.
  */
 export default async function SprintDetailsPage({
   params,
@@ -50,6 +54,8 @@ export default async function SprintDetailsPage({
   const sprint = sprints.find((s) => s.id === sprintId);
   if (!sprint) notFound();
 
+  const chart = await loadBurndown(sprint.id);
+
   return (
     <>
       <BackLink
@@ -65,7 +71,16 @@ export default async function SprintDetailsPage({
       </p>
 
       <div style={{ marginTop: "var(--prio-space-3)" }}>
-        <SprintDetailsView sprint={sprint} />
+        <SprintDetailsView sprint={sprint}>
+          {chart ? (
+            <Card style={{ marginTop: "var(--prio-space-4)" }}>
+              <CardBody>
+                <h2 className="prio-issue__section-title">Burndown Chart</h2>
+                <BurndownChart data={chart} />
+              </CardBody>
+            </Card>
+          ) : null}
+        </SprintDetailsView>
       </div>
     </>
   );

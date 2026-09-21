@@ -9,6 +9,7 @@ import { parseIssueParams, type SearchParams } from "@/server/queries/params";
 import { OPEN_STATUSES } from "@/lib/domain";
 import { prisma } from "@/lib/prisma";
 import { issueScope, workRoleOf } from "@/lib/authz";
+import { formatDateRange } from "@/lib/format";
 import { requireUser } from "@/lib/session";
 
 export const metadata: Metadata = { title: "Bugs" };
@@ -111,7 +112,7 @@ export default async function BugsPage({
            /issues, for the same reason. */
         sprints={options.sprints.map((sprint) => ({
           id: sprint.id,
-          name: `${sprint.project.key} · ${sprint.name}`,
+          name: `${sprint.project.key} · ${sprint.name} (${formatDateRange(sprint.startDate, sprint.endDate)})`,
           completed: sprint.status === "COMPLETED",
         }))}
         showTypeFilter={false}

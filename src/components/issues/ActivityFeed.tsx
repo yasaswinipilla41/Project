@@ -1,6 +1,7 @@
 import { Avatar } from "@/components/ui/primitives";
 import { StatusPill } from "@/components/ui/Indicators";
 import type { IssueLinkType } from "@prisma/client";
+import { AUTOMATIC_ASSIGNMENT_ACTION } from "@/lib/activity";
 import { FIELD_LABEL, humanizeEnumValue, isIssueStatus } from "@/lib/domain";
 import { LINK_LABEL } from "@/lib/issue-links";
 import {
@@ -121,6 +122,21 @@ function describe(entry: ActivityEntry, names: NameLookup): React.ReactNode {
       return entry.oldValue
         ? `took this over from ${format(entry.oldValue)}`
         : "picked this up";
+    }
+    /*
+     * Prio's decision, said as Prio's.
+     *
+     * The actor on the row is real and is kept — somebody marking work Ready
+     * for QA is what caused the hand-over — but they did not *choose* who it
+     * went to, and a sentence that says they did is the misreading this
+     * whole distinction exists to prevent. Worded passively, so the name in
+     * front of it is the cause and not the chooser.
+     */
+    if (entry.action === AUTOMATIC_ASSIGNMENT_ACTION) {
+      if (!entry.newValue) return "handed this on, and Prio left it unassigned";
+      return entry.oldValue
+        ? `handed this on, and Prio passed it from ${format(entry.oldValue)} to ${format(entry.newValue)}`
+        : `handed this on, and Prio assigned it to ${format(entry.newValue)}`;
     }
     if (!entry.newValue) return "removed the assignee";
     if (!entry.oldValue) return `assigned this to ${format(entry.newValue)}`;

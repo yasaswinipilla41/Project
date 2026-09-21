@@ -4,6 +4,7 @@ import type {
   Priority,
   Role,
   Severity,
+  SprintStatus,
   TestResult,
 } from "@prisma/client";
 
@@ -472,6 +473,29 @@ export const ISSUE_TYPE_LABEL: Record<IssueType, string> = {
   STORY: "Story",
   TASK: "Task",
   BUG: "Bug",
+};
+
+/**
+ * What a sprint's own state is called on screen.
+ *
+ * The running one reads **Current Sprint** rather than a generic word: a team
+ * looking at a list of sprints is nearly always asking which one is *now*, and
+ * "Active" answers that only if you already know the vocabulary.
+ *
+ * `PLANNED` keeps its name, and deliberately so. It means a sprint that has
+ * not been started, which is a real and ordinary state — including for a
+ * sprint whose start date has already passed and which nobody has pressed
+ * Start on yet. Renaming every occurrence of it would have said something
+ * untrue about those.
+ *
+ * Here rather than spelled out at each surface: the card, the details page and
+ * the iterations row each carried their own copy of this map, and a fourth
+ * would have made four.
+ */
+export const SPRINT_STATUS_LABEL: Record<SprintStatus, string> = {
+  PLANNED: "Planned",
+  ACTIVE: "Current Sprint",
+  COMPLETED: "Completed",
 };
 
 /*

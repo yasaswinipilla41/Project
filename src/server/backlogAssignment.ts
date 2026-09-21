@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { assertAdmin, assertProjectAccess } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
+import { AUTOMATIC_ASSIGNMENT_ACTION } from "@/lib/activity";
 import { requireUser } from "@/lib/session";
 import { updateIssue, type ActionResult } from "@/server/issues";
 import {
@@ -140,7 +141,10 @@ export async function applyBacklogAllocation(
         issueId: allocation.issueId,
         assigneeId: allocation.assigneeId,
       });
-      if (result.ok) applied.push(allocation);
+      if (result.ok) {
+        applied.push(allocation);
+        await markAutomatic(allocation.issueId, allocation.assigneeId);
+      }
     }
 
     return {
@@ -157,4 +161,32 @@ export async function applyBacklogAllocation(
   } catch (error) {
     return failure(error);
   }
+}
+
+/**
+ * Says that the assignment just written was Prio's decision, not a person's.
+ *
+ * The write itself goes through `updateIssue` — the single assignment path,
+ * which is where the authorization, the notification and the trail all live —
+ * so this marks the row it produced rather than writing a second one. Marking
+ * afterwards is deliberate: `updateIssue` is a server action, and anything it
+ * accepted as an argument could be sent by a browser, so "this was automatic"
+ * must never be something a caller can claim.
+ *
+ * The newest matching row is the one this run just wrote. If it cannot be
+ * found — another write landed in between — the row simply stays Manual,
+ * which is a wrong label on one history entry rather than a failed assignment.
+ */
+async function markAutomatic(issueId: string, assigneeId: string): Promise<void> {
+  const row = await prisma.activityLogEntry.findFirst({
+    where: { issueId, field: "assigneeId", newValue: assigneeId },
+    orderBy: { createdAt: "desc" },
+    select: { id: true },
+  });
+  if (!row) return;
+
+  await prisma.activityLogEntry.update({
+    where: { id: row.id },
+    data: { action: AUTOMATIC_ASSIGNMENT_ACTION },
+  });
 }

@@ -6,6 +6,7 @@ import { useState } from "react";
 import { PrioLogo } from "@/components/brand/PrioLogo";
 import { useToast } from "@/components/ui/Toast";
 import {
+  IconActivity,
   IconAdmin,
   IconBell,
   IconBoard,
@@ -136,6 +137,20 @@ export function Sidebar({
       excludeSuffix: "/board",
     },
     { href: "/issues", label: "Issues", Icon: IconIssues, prefix: true },
+    /*
+     * Backlog History, across every project you can open.
+     *
+     * The project-scoped copy lives on the project's own tabs, beside
+     * Activity; this is the same view without the narrowing, and it needs a
+     * home in the sidebar because there is no project page to hang it off.
+     * Placed under Issues, which is what it is a history of.
+     */
+    {
+      href: "/backlog/history",
+      label: "Backlog History",
+      Icon: IconActivity,
+      prefix: true,
+    },
     /* My Work is a personal queue, and an administrator's sidebar is not the
        place for one — the same reasoning that took My assigned tasks off
        Admin Home. The route, the page and the data are untouched: an admin
