@@ -691,6 +691,49 @@ a.prio-timeline__label:focus-visible {
   }
 }
 
+/*
+ * A sprint's start and end date, at the two ends of its bar.
+ *
+ * Drawn on the track beside the bar rather than inside it: a sprint bar is
+ * about 100px wide at a desktop width and roughly half that once the timeline
+ * is at its 640px minimum, against ~70px for one date. Inside, both would be
+ * clipped at every size.
+ *
+ * `pointer-events: none` so the dates never take a hover or a click away from
+ * the bar they describe, and no colour of their own beyond the muted text
+ * every other axis label here uses — the bar keeps its colour, and this adds
+ * nothing to compete with it.
+ */
+.prio-timeline__sprintdate {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  white-space: nowrap;
+  font-size: var(--prio-text-2xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--prio-text-secondary);
+  pointer-events: none;
+}
+
+.prio-timeline__sprintdate[data-edge="start"] {
+  padding-right: var(--prio-space-2);
+}
+
+.prio-timeline__sprintdate[data-edge="end"] {
+  padding-left: var(--prio-space-2);
+}
+
+/* No room beside the bar — the sprint starts at the very beginning of the
+   timeline, or ends at its very end — so the date sits on the bar. The chip
+   keeps it readable over the bar's fill and over the track alike, which
+   matters because a short bar cannot contain the whole date. */
+.prio-timeline__sprintdate[data-inside] {
+  padding: 1px var(--prio-space-2);
+  border-radius: var(--prio-radius-sm);
+  background: var(--prio-bg-surface);
+  box-shadow: 0 0 0 1px var(--prio-border-subtle);
+}
+
 .prio-timeline__barlabel {
   font-size: var(--prio-text-2xs);
   font-variant-numeric: tabular-nums;

@@ -485,33 +485,6 @@
  * same status colour, so every status keeps the one colour its pill, donut
  * and old bar already use. Heights are set inline from the real counts.
  */
-/* The chart's heading row: the title on the left, the sprint's issue total on
-   the right. The title keeps its own bottom margin, so the row leaves the
-   chart's spacing exactly as it was. */
-.prio-isochart__head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--prio-space-4);
-  /* A narrow card puts the total under the title rather than squeezing
-     either of them. */
-  flex-wrap: wrap;
-}
-
-.prio-isochart__total {
-  margin: 0 0 var(--prio-space-4);
-  font-size: var(--prio-text-xs);
-  font-weight: var(--prio-weight-semibold);
-  color: var(--prio-text-secondary);
-  white-space: nowrap;
-}
-
-.prio-isochart__total strong {
-  font-weight: var(--prio-weight-bold);
-  font-variant-numeric: tabular-nums;
-  color: var(--prio-text-primary);
-}
-
 .prio-isochart__scroll {
   /* Nine columns need room; on a narrow screen they scroll sideways rather
      than squeezing their labels unreadable. */
@@ -753,4 +726,33 @@
 
 .prio-burndown__key[data-line="ideal"]::before {
   border-top: 1.5px dashed var(--prio-text-muted);
+}
+
+/*
+ * The Issues by status heading, with the sprint's total at its far end.
+ *
+ * The heading keeps its own margin-bottom, so the row aligns the two on their
+ * first line rather than on their boxes; the total sits at the top-right of
+ * the chart, which is where somebody checking "how many are in here?" looks.
+ * Wraps rather than squeezing on a narrow card.
+ */
+.prio-sprint__charthead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--prio-space-3);
+  flex-wrap: wrap;
+}
+
+.prio-sprint__total {
+  margin: 0 0 var(--prio-space-4);
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-secondary);
+  white-space: nowrap;
+}
+
+.prio-sprint__total strong {
+  font-weight: var(--prio-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--prio-text-primary);
 }

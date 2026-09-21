@@ -136,15 +136,19 @@ export function SprintDetailsView({
 
       <Card style={{ marginTop: "var(--prio-space-4)" }}>
         <CardBody>
-          {/* The chart's own heading row: its title, and at the far right
-              how many issues the bars add up to. The figure is
-              `sprint.stats.total`, counted from this sprint's membership on
-              every render — so an issue moved into or out of the sprint
-              changes it here and on the other sprint's page alike, without
-              anything being stored or kept in step by hand. */}
-          <div className="prio-isochart__head">
+          {/*
+            * The chart's heading, and how much work the chart is drawing.
+            *
+            * `stats.total` is every issue in the sprint whatever its status —
+            * the same figure the summary strip above counts, read from the
+            * same `loadSprints` query, so the two can never disagree and no
+            * second count is fetched. Moving an issue between sprints changes
+            * only `sprintId`, so both sprints' totals follow from the next
+            * read of this page, which `router.refresh()` already triggers.
+            */}
+          <div className="prio-sprint__charthead">
             <h2 className="prio-issue__section-title">Issues by status</h2>
-            <p className="prio-isochart__total">
+            <p className="prio-sprint__total">
               Total Issues: <strong>{total}</strong>
             </p>
           </div>

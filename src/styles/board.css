@@ -389,6 +389,30 @@
   gap: var(--prio-space-2);
 }
 
+/*
+ * Issue key, status and assignee, in that order, and never on top of one
+ * another.
+ *
+ * The three used to collide on the longest status — "Reject / Not an Issue".
+ * `min-width: 0` let the key's box be squeezed below its content, but the key
+ * itself is `white-space: nowrap` and nothing clipped it, so its text spilled
+ * out of its box and painted over the pill beside it. A flex row only keeps
+ * its items apart while each item is either allowed to shrink *and* clip, or
+ * not allowed to shrink at all.
+ *
+ * So each item is now told which it is:
+ *
+ *   key       never shrinks. It is what identifies the card, it is short and
+ *             a fixed length, and a truncated key is not a key.
+ *   status    shrinks, and its label truncates with an ellipsis. It is the
+ *             only part here whose length varies, so it is the part that
+ *             gives way.
+ *   assignee  never shrinks. An avatar is 24px and cannot be read smaller.
+ *
+ * `flex-wrap` is the last resort under all of that: on a genuinely narrow
+ * card the status drops to its own line rather than being squeezed to an
+ * ellipsis on its own.
+ */
 .prio-board__card-footer {
   display: flex;
   align-items: center;
@@ -483,6 +507,12 @@
 .prio-board__card-statustrigger .prio-status {
   min-width: 0;
   overflow: hidden;
+}
+
+/* The pill's own words are what shorten, so the coloured dot stays and the
+   status keeps reading as a status rather than as a clipped rectangle. */
+.prio-board__card-statustrigger .prio-status__label {
+  min-width: 0;
 }
 
 /* The chevron is the only part that says "this opens" — kept quiet until the

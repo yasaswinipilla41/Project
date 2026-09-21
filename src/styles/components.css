@@ -549,6 +549,17 @@
   flex-shrink: 0;
 }
 
+/* The pill's words. Only ever shortens where something above has constrained
+   the pill — a board card in a narrow column — and then it ends in an
+   ellipsis rather than being cut mid-letter. The dot beside it never
+   shrinks, so a truncated pill still carries its colour and its meaning. */
+.prio-status__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .prio-status[data-status="BACKLOG"] {
   background: var(--prio-status-backlog-bg);
   color: var(--prio-status-backlog-fg);

@@ -1088,6 +1088,7 @@ export function BoardCard({
   dragging,
   onDragStart,
   onDragEnd,
+  inSprint = false,
 }: {
   issue: BoardIssue;
   /** False whenever the column isn't a status — a group like "Assignee" has
@@ -1103,6 +1104,9 @@ export function BoardCard({
   dragging: boolean;
   onDragStart: (event: DragEvent<HTMLDivElement>) => void;
   onDragEnd: () => void;
+  /** Shown as part of a sprint, so the card's menu can offer Move to next
+   *  sprint. Off on the board, where a card may belong to no sprint. */
+  inSprint?: boolean;
 }) {
   const href = `/issues/${issue.key.toLowerCase()}`;
   const cancelled = issue.status === "CANCELLED";
@@ -1150,6 +1154,7 @@ export function BoardCard({
             reporterId={issue.reporterId}
             currentUserId={currentUserId}
             isAdmin={isAdmin}
+            inSprint={inSprint}
           />
         </div>
       </div>

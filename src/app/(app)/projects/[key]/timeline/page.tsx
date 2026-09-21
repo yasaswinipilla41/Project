@@ -7,7 +7,12 @@ import { IssueKey, IssueTypeIcon, StatusPill } from "@/components/ui/Indicators"
 import { IconEmptyBox } from "@/components/ui/Icon";
 import { projectScope } from "@/lib/authz";
 import { CLOSED_STATUSES, STATUS_LABEL } from "@/lib/domain";
-import { formatDate, formatDateCompact, formatDateRange } from "@/lib/format";
+import {
+  formatDate,
+  formatDateCompact,
+  formatDateRange,
+  formatDayMonthYear,
+} from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 
@@ -78,6 +83,54 @@ function place(start: number, end: number, from: number, span: number) {
        indistinguishable from work that is not there at all. */
     width: Math.max(1.2, Math.min(100 - left, right - left)),
   };
+}
+
+/**
+ * How much of the track one date needs beside a bar, as a percentage.
+ *
+ * A date reads about 70px at this size; the timeline never draws narrower
+ * than its own 640px minimum, which leaves a track of roughly 470px. 15% of
+ * that is ~70px, so below this there is genuinely nowhere to put the date
+ * except on the bar itself.
+ */
+const EDGE_ROOM = 15;
+
+/**
+ * One end of a sprint bar, dated.
+ *
+ * Sits just outside the bar by default — the start date to its left, the end
+ * date to its right — which is where there is room. A sprint that begins at
+ * the very start of the timeline, or ends at its very end, has no room on
+ * that side; that date moves onto the bar instead and takes a small
+ * background so it stays legible over either surface.
+ */
+function SprintEdgeDate({
+  edge,
+  at,
+  inside,
+  text,
+}: {
+  edge: "start" | "end";
+  /** Where this end of the bar sits, as a percentage of the track. */
+  at: number;
+  inside: boolean;
+  text: string;
+}) {
+  /* Anchored by the edge it belongs to, so the date tracks the bar rather
+     than being positioned from the opposite side and drifting with width. */
+  const anchorLeft = edge === "start" ? inside : !inside;
+
+  return (
+    <span
+      className="prio-timeline__sprintdate"
+      data-edge={edge}
+      data-inside={inside || undefined}
+      style={anchorLeft ? { left: `${at}%` } : { right: `${100 - at}%` }}
+      aria-hidden
+    >
+      {text}
+    </span>
+  );
 }
 
 export async function generateMetadata({
@@ -345,6 +398,39 @@ export default async function ProjectTimelinePage({
                               {formatDateRange(sprint.startDate, sprint.endDate)})
                             </span>
                           </span>
+
+                          {/*
+                            * When the sprint begins and ends, in words, at the
+                            * two ends of its bar.
+                            *
+                            * Beside the bar rather than inside it, because
+                            * inside there is no room: a fortnight's sprint on
+                            * a timeline spanning a few months is about 100px
+                            * wide at a desktop width and half that on a
+                            * phone, against roughly 70px for one date. Put
+                            * inside, both dates would be clipped at every
+                            * screen size — which is the behaviour the issue
+                            * bars' own label already documents for short
+                            * bars, and is not good enough for a date somebody
+                            * is meant to read.
+                            *
+                            * Siblings of the bar, so the bar's `overflow:
+                            * hidden` cannot clip them, and `aria-hidden`
+                            * because the bar above already says the whole
+                            * range in words.
+                            */}
+                          <SprintEdgeDate
+                            edge="start"
+                            at={bar.left}
+                            inside={bar.left < EDGE_ROOM}
+                            text={formatDayMonthYear(sprint.startDate)}
+                          />
+                          <SprintEdgeDate
+                            edge="end"
+                            at={bar.left + bar.width}
+                            inside={bar.left + bar.width > 100 - EDGE_ROOM}
+                            text={formatDayMonthYear(sprint.endDate)}
+                          />
                         </div>
                       </div>
                     );

@@ -7,6 +7,7 @@ import { Dialog } from "@/components/ui/Dialog";
 import { Alert, Button } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/Toast";
 import {
+  IconArrowRight,
   IconCopy,
   IconEdit,
   IconMore,
@@ -15,6 +16,7 @@ import {
 } from "@/components/ui/Icon";
 import { CloneIssueDialog } from "@/components/issues/CloneIssueDialog";
 import { deleteIssue } from "@/server/issues";
+import { moveIssueToSprint } from "@/server/sprints";
 import type { WorkRole } from "@/lib/domain";
 
 /**
@@ -32,6 +34,11 @@ import type { WorkRole } from "@/lib/domain";
  * server is just going to refuse. That check is read from data already on the
  * row (`reporterId`, the viewer's own id and role); the server re-derives and
  * re-checks all of it independently.
+ *
+ * "Move to next sprint" is offered only where the issue is actually being
+ * shown as part of a sprint, because that is the only place the phrase means
+ * anything — see `inSprint`. It is this menu rather than a second control
+ * beside it: an issue's actions belong in the menu an issue already has.
  */
 
 export interface IssueRowActionsProps {
@@ -42,6 +49,16 @@ export interface IssueRowActionsProps {
   isAdmin: boolean;
   /** Cloning files new work; the dialog offers the statuses that allows. */
   workRole: WorkRole;
+  /**
+   * Offer "Move to next sprint".
+   *
+   * Set where this row is a sprint's own issue. Everywhere else the menu is
+   * used — the issue list, the Flow Board — an issue may have no sprint at
+   * all, and an action whose name assumes one would be offering something
+   * that cannot happen. `moveIssueToSprint` re-checks access and refuses a
+   * move with nowhere to go, so this only decides whether to show it.
+   */
+  inSprint?: boolean;
 }
 
 export function IssueRowActions({
@@ -51,16 +68,52 @@ export function IssueRowActions({
   currentUserId,
   isAdmin,
   workRole,
+  inSprint = false,
 }: IssueRowActionsProps) {
   const router = useRouter();
   const { toast } = useToast();
   const [confirming, setConfirming] = useState(false);
   const [cloning, setCloning] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [moving, setMoving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const canDelete = isAdmin || reporterId === currentUserId;
   const href = `/issues/${issueKey.toLowerCase()}`;
+
+  /**
+   * Hands this issue to the next sprint, through the existing move.
+   *
+   * `moveIssueToSprint` is the one path a sprint change goes through — it
+   * checks project access and the same edit rule every other sprint write
+   * does, refuses a completed sprint, works out which sprint is next by start
+   * date, and records the change on the issue's trail. It writes `sprintId`
+   * and nothing else, which is what keeps the issue's status exactly where it
+   * was. Nothing about any of that is re-implemented here.
+   *
+   * The refresh afterwards is the page's own: both sprints' issue lists,
+   * their totals and the chart are read from the same query on the next
+   * render, so none of them needs telling separately.
+   */
+  async function moveToNextSprint() {
+    setMoving(true);
+    const result = await moveIssueToSprint({
+      issueId,
+      destination: { type: "NEXT_SPRINT" },
+    });
+    setMoving(false);
+
+    if (!result.ok) {
+      toast(result.error, "error");
+      return;
+    }
+    toast(
+      <>
+        Moved {issueKey} to {result.data.sprintName}
+      </>,
+    );
+    router.refresh();
+  }
 
   async function confirmDelete() {
     setDeleting(true);
@@ -104,6 +157,15 @@ export function IssueRowActions({
         <MenuItem icon={<IconCopy />} onSelect={() => setCloning(true)}>
           Clone
         </MenuItem>
+        {inSprint ? (
+          <MenuItem
+            icon={<IconArrowRight />}
+            disabled={moving}
+            onSelect={() => void moveToNextSprint()}
+          >
+            {moving ? "Moving…" : "Move to next sprint"}
+          </MenuItem>
+        ) : null}
         {canDelete ? (
           <>
             <MenuSeparator />
