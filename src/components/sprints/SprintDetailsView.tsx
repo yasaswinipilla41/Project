@@ -136,7 +136,18 @@ export function SprintDetailsView({
 
       <Card style={{ marginTop: "var(--prio-space-4)" }}>
         <CardBody>
-          <h2 className="prio-issue__section-title">Issues by status</h2>
+          {/* The chart's own heading row: its title, and at the far right
+              how many issues the bars add up to. The figure is
+              `sprint.stats.total`, counted from this sprint's membership on
+              every render — so an issue moved into or out of the sprint
+              changes it here and on the other sprint's page alike, without
+              anything being stored or kept in step by hand. */}
+          <div className="prio-isochart__head">
+            <h2 className="prio-issue__section-title">Issues by status</h2>
+            <p className="prio-isochart__total">
+              Total Issues: <strong>{total}</strong>
+            </p>
+          </div>
           {total === 0 ? (
             <p className="prio-text-muted">No issues in this sprint yet.</p>
           ) : (

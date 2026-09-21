@@ -672,6 +672,23 @@ a.prio-timeline__label:focus-visible {
 .prio-timeline__bar--sprint {
   background: var(--prio-accent-500);
   opacity: 0.85;
+  /* The sprint's own start and end, one at each end of its bar. The lane and
+     the bar are unchanged; only what is written inside it is new. */
+  justify-content: space-between;
+  gap: var(--prio-space-3);
+  /* Queried below, so the dates appear only on a bar wide enough to read
+     them rather than being clipped mid-word on a short sprint. */
+  container-type: inline-size;
+}
+
+/* Too narrow for two dates — the tooltip and the bar's hidden text still say
+   them. The threshold is the width two of these labels and the bar's own
+   padding need. */
+@container (max-width: 104px) {
+  .prio-timeline__barlabel--start,
+  .prio-timeline__barlabel--end {
+    display: none;
+  }
 }
 
 .prio-timeline__barlabel {

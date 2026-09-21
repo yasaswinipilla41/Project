@@ -858,6 +858,58 @@ describe("Moving an issue", () => {
     });
   });
 
+  /*
+   * The figure the sprint details page's chart shows — "Total Issues: n" — is
+   * `stats.total`, and nothing stores it. A move has to be visible in both
+   * sprints at once: one short, the other long, with the issue's status the
+   * same as it was. Counted through `loadSprints`, which is what that page
+   * reads, in a project of its own so the numbers are exact.
+   */
+  it("changes both sprints' issue totals, and neither issue's status", async () => {
+    await actAs(ADMIN);
+    const project = await makeIsolatedProject();
+    const from = await makeSprint(project.id, "Total source");
+    const to = await makeSprint(project.id, "Total destination");
+
+    const staying = await makeIssue(project.id, "Stays behind");
+    const moving = await makeIssue(project.id, "Moves across");
+    await addIssuesToSprint({
+      sprintId: from,
+      issueIds: [staying.id, moving.id],
+    });
+    const alreadyThere = await makeIssue(project.id, "Already in the other");
+    await addIssuesToSprint({ sprintId: to, issueIds: [alreadyThere.id] });
+    await updateIssue({ issueId: moving.id, status: "IN_PROGRESS" });
+
+    const totals = async () => {
+      const sprints = await loadSprints(project.id);
+      return {
+        from: sprints.find((s) => s.id === from)!.stats.total,
+        to: sprints.find((s) => s.id === to)!.stats.total,
+      };
+    };
+
+    expect(await totals()).toEqual({ from: 2, to: 1 });
+
+    const result = await moveIssueToSprint({
+      issueId: moving.id,
+      destination: { type: "SPRINT", sprintId: to },
+    });
+    expect(result.ok).toBe(true);
+
+    /* One out of the source, one into the destination — the two figures move
+       together because both are counted from the same membership. */
+    expect(await totals()).toEqual({ from: 1, to: 2 });
+
+    /* The move is a move. It is not a status change. */
+    expect(
+      await prisma.issue.findUniqueOrThrow({
+        where: { id: moving.id },
+        select: { status: true, sprintId: true },
+      }),
+    ).toMatchObject({ status: "IN_PROGRESS", sprintId: to });
+  });
+
   it("moves it to the backlog, clearing its sprint without touching anything else", async () => {
     await actAs(ADMIN);
     const project = await projectByKey("ENG");

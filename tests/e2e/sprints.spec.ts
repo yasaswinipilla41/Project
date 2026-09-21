@@ -551,6 +551,72 @@ test.describe("A sprint's own page", () => {
     ).toBeVisible();
   });
 
+  test("counts the sprint's issues above the chart, and follows one moved to another sprint", async ({
+    page,
+  }) => {
+    const { key, sprint, issues } = await seedSprintWith([
+      "TODO",
+      "IN_PROGRESS",
+      "DONE",
+    ]);
+    const project = await prisma.project.findUniqueOrThrow({
+      where: { key: key.toUpperCase() },
+      select: { id: true, createdById: true },
+    });
+    /* Somewhere for an issue to move to: another open sprint in the same
+       project. */
+    const other = await prisma.sprint.create({
+      data: {
+        name: sprintName("total-destination"),
+        startDate: new Date(Date.now() + 14 * 86_400_000),
+        endDate: new Date(Date.now() + 26 * 86_400_000),
+        projectId: project.id,
+        createdById: project.createdById,
+      },
+      select: { id: true },
+    });
+    created.push(other.id);
+
+    await page.goto(`/projects/${key}/sprints/${sprint.id}`);
+
+    const total = page.locator(".prio-isochart__total");
+    await expect(total).toHaveText("Total Issues: 3");
+
+    /* The figure and the bars are the same count read twice — the bars'
+       own numbers have to add up to it. */
+    const sum = async () =>
+      (await page.locator(".prio-isochart__value").allInnerTexts()).reduce(
+        (all, text) => all + Number(text.trim()),
+        0,
+      );
+    expect(await sum()).toBe(3);
+
+    // ------------------------------------- one issue moves to the other sprint
+    const moved = issues[0]!;
+    await prisma.issue.update({
+      where: { id: moved.id },
+      data: { sprintId: other.id },
+    });
+
+    /* Nothing stores either total, so re-reading each page is all it takes:
+       one sprint is a short, the other a long. */
+    await page.reload();
+    await expect(total).toHaveText("Total Issues: 2");
+    expect(await sum()).toBe(2);
+
+    await page.goto(`/projects/${key}/sprints/${other.id}`);
+    await expect(total).toHaveText("Total Issues: 1");
+
+    /* And the move was a move: the issue is in the other sprint with the
+       status it always had. */
+    expect(
+      await prisma.issue.findUniqueOrThrow({
+        where: { id: moved.id },
+        select: { status: true, sprintId: true },
+      }),
+    ).toMatchObject({ status: moved.status, sprintId: other.id });
+  });
+
   test("shows the completion percentage beside the progress bar", async ({
     page,
   }) => {
