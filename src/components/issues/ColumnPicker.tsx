@@ -3,15 +3,21 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/Menu";
-import { IconChevronDown, IconInfo, IconRefresh } from "@/components/ui/Icon";
+import { IconCheck, IconChevronDown, IconRefresh } from "@/components/ui/Icon";
 import {
   COLUMN_COOKIE,
   DEFAULT_COLUMNS,
   OPTIONAL_COLUMNS,
+  TABLE_COLUMNS,
   serializeColumnPreference,
   visibleColumnCount,
   type TableColumnId,
 } from "@/lib/tableColumns";
+
+/** Key and Summary — always drawn, never offered as a choice (see below). */
+const LOCKED_COLUMNS = TABLE_COLUMNS.filter(
+  (column) => column.required && column.label !== "",
+);
 
 /**
  * Choosing which columns the work item table draws.
@@ -140,18 +146,25 @@ export function ColumnPicker({
       <MenuLabel>Columns to show</MenuLabel>
 
       {/*
-        * Why Key and Summary are not on the list.
+        * Key and Summary, listed rather than merely footnoted.
         *
-        * They were always absent — they are the link into a work item, and a
-        * table with neither is a list nobody can open — but absence explains
-        * nothing. Somebody looking for Key and failing to find it cannot tell
-        * a deliberate rule from a missing row, so the rule is stated where
-        * the row would have been.
+        * They were once left off the list with a note explaining their
+        * absence — but a name that is not there reads as missing, not as
+        * "on purpose", until the note beside it is found and read. Showing
+        * the row itself, locked, with its own "Always visible" tag in place
+        * of a checkbox says the same thing where the eye already is.
         */}
-      <p className="prio-menu__note">
-        <IconInfo size={14} />
-        <span>Key and Summary are always visible and cannot be hidden.</span>
-      </p>
+      {LOCKED_COLUMNS.map((column) => (
+        <div className="prio-colpicker__locked" key={column.id}>
+          <span className="prio-colpicker__box" aria-hidden>
+            <IconCheck size={11} />
+          </span>
+          <span className="prio-colpicker__locked-label">{column.label}</span>
+          <span className="prio-colpicker__always">Always visible</span>
+        </div>
+      ))}
+
+      <MenuSeparator />
 
       {OPTIONAL_COLUMNS.map((column) => (
         <MenuItem
@@ -159,6 +172,11 @@ export function ColumnPicker({
           keepOpen
           selected={chosen.has(column.id)}
           onSelect={() => toggle(column.id)}
+          icon={
+            <span className="prio-colpicker__box" aria-hidden>
+              {chosen.has(column.id) ? <IconCheck size={11} /> : null}
+            </span>
+          }
         >
           {column.label}
         </MenuItem>
