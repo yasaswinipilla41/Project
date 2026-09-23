@@ -669,26 +669,12 @@ a.prio-timeline__label:focus-visible {
   outline-offset: 1px;
 }
 
+/* Nothing is written inside a bar any more — every date sits beside the bar
+   on the track (see `.prio-timeline__date`), so this is the sprint's colour
+   and nothing else. */
 .prio-timeline__bar--sprint {
   background: var(--prio-accent-500);
   opacity: 0.85;
-  /* The sprint's own start and end, one at each end of its bar. The lane and
-     the bar are unchanged; only what is written inside it is new. */
-  justify-content: space-between;
-  gap: var(--prio-space-3);
-  /* Queried below, so the dates appear only on a bar wide enough to read
-     them rather than being clipped mid-word on a short sprint. */
-  container-type: inline-size;
-}
-
-/* Too narrow for two dates — the tooltip and the bar's hidden text still say
-   them. The threshold is the width two of these labels and the bar's own
-   padding need. */
-@container (max-width: 104px) {
-  .prio-timeline__barlabel--start,
-  .prio-timeline__barlabel--end {
-    display: none;
-  }
 }
 
 /*
@@ -712,7 +698,15 @@ a.prio-timeline__label:focus-visible {
   color: var(--prio-text-secondary);
 }
 
-.prio-timeline__sprintdate {
+/*
+ * Every date on the timeline: a sprint's two ends, and an issue's due date.
+ *
+ * One rule for both, because they are the same thing in the same lane — a
+ * date beside the bar it belongs to. The colour is the muted text every other
+ * label here uses rather than anything of its own, so the bars keep the only
+ * colour in the row.
+ */
+.prio-timeline__date {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
@@ -720,35 +714,56 @@ a.prio-timeline__label:focus-visible {
   font-size: var(--prio-text-2xs);
   font-variant-numeric: tabular-nums;
   color: var(--prio-text-secondary);
+  /* Never takes a hover or a click from the bar it describes. */
   pointer-events: none;
 }
 
-.prio-timeline__sprintdate[data-edge="start"] {
+/* Off the end of the bar it sits beside, so the two never touch. */
+.prio-timeline__date[data-edge="start"] {
   padding-right: var(--prio-space-2);
 }
 
-.prio-timeline__sprintdate[data-edge="end"] {
+.prio-timeline__date[data-edge="end"] {
   padding-left: var(--prio-space-2);
 }
 
-/* No room beside the bar — the sprint starts at the very beginning of the
-   timeline, or ends at its very end — so the date sits on the bar. The chip
-   keeps it readable over the bar's fill and over the track alike, which
-   matters because a short bar cannot contain the whole date. */
-.prio-timeline__sprintdate[data-inside] {
+/*
+ * A date that opens its issue.
+ *
+ * The issue rows' due date is a link to the same issue its bar leads to, so
+ * it takes the pointer back — the rule above turns pointer events off, which
+ * is right for a date that only describes a bar. It is otherwise unchanged:
+ * the same muted text at the same size in the same place, saying what it
+ * always said, with the underline on hover and the focus ring this timeline's
+ * other links already use.
+ */
+.prio-timeline__date--link {
+  pointer-events: auto;
+  color: var(--prio-text-secondary);
+  text-decoration: none;
+  border-radius: var(--prio-radius-xs);
+}
+
+.prio-timeline__date--link:hover {
+  color: var(--prio-text-primary);
+  text-decoration: underline;
+}
+
+.prio-timeline__date--link:focus-visible {
+  outline: 2px solid var(--prio-border-focus);
+  outline-offset: 2px;
+  text-decoration: underline;
+}
+
+/* No room beside the bar — it begins at the very start of the timeline, or
+   runs to its very end — so the date sits over the bar. The chip keeps it
+   readable over the bar's fill and over the track alike, which matters
+   because a short bar cannot contain the whole date. */
+.prio-timeline__date[data-inside] {
   padding: 1px var(--prio-space-2);
   border-radius: var(--prio-radius-sm);
   background: var(--prio-bg-surface);
   box-shadow: 0 0 0 1px var(--prio-border-subtle);
-}
-
-.prio-timeline__barlabel {
-  font-size: var(--prio-text-2xs);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  /* A short bar has no room for its date; hiding the overflow rather than
-     letting it escape keeps the lane clean. */
-  overflow: hidden;
 }
 
 .prio-timeline__status {

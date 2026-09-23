@@ -11,16 +11,19 @@ import { actAs, joinTestingTeam, projectByKey } from "./helpers";
 /**
  * "Completed by me" is mine, whoever asks and whatever they ask for.
  *
- * Two halves, and both are asserted here. The figure on My Work counts finished
- * work the reader actually finished — read from the activity trail, never from
- * who holds the issue — and the list the figure opens is the same query, so the
- * two cannot describe different sets.
+ * The issue list's Completed by filter: finished work the reader actually
+ * finished, read from the activity trail and never from who holds the issue.
+ * Its count and its rows are one query with two projections, so the two
+ * cannot describe different sets.
  *
- * The part worth being careful about is identity. The tile links to
+ * The part worth being careful about is identity. The filter is reached as
  * `/issues?completedBy=<id>`, and a URL is something anybody can type; the
  * value is therefore ignored in favour of the session's. An administrator is
- * not an exception: their personal tile is their own work, not the
- * organisation's total.
+ * not an exception: they get their own work, not the organisation's total.
+ *
+ * Not My Work's Completed tile, which asks a different question — the work
+ * assigned to somebody that is done. `my-work-completed.test.ts` pins that
+ * one, and holds the two apart.
  */
 
 const ADMIN = "admin@symbiosystech.com";
@@ -46,7 +49,7 @@ async function userByEmail(email: string): Promise<CurrentUser> {
   });
 }
 
-/** What My Work's tile counts, for this reader. */
+/** What the filter counts, for this reader. */
 async function countedFor(user: CurrentUser): Promise<number> {
   return prisma.issue.count({
     where: { ...issueScope(user), ...completedByFilter([user.id]) },
@@ -54,8 +57,8 @@ async function countedFor(user: CurrentUser): Promise<number> {
 }
 
 /**
- * What the list behind the tile holds — optionally asked for on somebody
- * else's behalf, which is the manipulation this is here to refuse.
+ * What the filtered list holds — optionally asked for on somebody else's
+ * behalf, which is the manipulation this is here to refuse.
  */
 async function listedFor(
   user: CurrentUser,
@@ -108,7 +111,9 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (created.length > 0) {
-    await prisma.notification.deleteMany({ where: { issueId: { in: created } } });
+    await prisma.notification.deleteMany({
+      where: { issueId: { in: created } },
+    });
     await prisma.activityLogEntry.deleteMany({
       where: { issueId: { in: created } },
     });
@@ -136,7 +141,7 @@ describe("whose completed work it is", () => {
     expect(listB).not.toContain(finishedByA);
   });
 
-  it("counts exactly what the list it opens holds", async () => {
+  it("counts exactly what the list holds", async () => {
     await completedBy(USER_A, "A count agrees");
 
     for (const email of [USER_A, USER_B, ADMIN]) {
@@ -149,11 +154,14 @@ describe("whose completed work it is", () => {
     }
   });
 
-  it("gives an administrator their own work rather than the organisation's", async () => {
+  it("gives an administrator their own finished work, not the organisation's", async () => {
     const admin = await userByEmail(ADMIN);
 
     const theirs = await completedBy(ADMIN, "Admin finished this");
-    const somebodyElses = await completedBy(USER_A, "Admin did not finish this");
+    const somebodyElses = await completedBy(
+      USER_A,
+      "Admin did not finish this",
+    );
 
     const listed = await listedFor(admin);
     expect(listed).toContain(theirs);
@@ -164,7 +172,9 @@ describe("whose completed work it is", () => {
 
     /* And it is a long way short of every finished issue in Prio, which is the
        figure this used to be confused with. */
-    const everythingDone = await prisma.issue.count({ where: { status: "DONE" } });
+    const everythingDone = await prisma.issue.count({
+      where: { status: "DONE" },
+    });
     expect(listed.length).toBeLessThan(everythingDone);
   });
 });
@@ -236,7 +246,10 @@ describe("the identity is the server's", () => {
 
   it("does not let an administrator read somebody else's tile either", async () => {
     const admin = await userByEmail(ADMIN);
-    const finishedByA = await completedBy(USER_A, "A finished, admin asked for");
+    const finishedByA = await completedBy(
+      USER_A,
+      "A finished, admin asked for",
+    );
 
     const asAdmin = await listedFor(admin, (await userByEmail(USER_A)).id);
     expect(asAdmin).not.toContain(finishedByA);

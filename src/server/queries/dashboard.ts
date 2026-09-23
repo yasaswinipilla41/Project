@@ -7,6 +7,7 @@ import {
   dueTodayFilter,
   overdueFilter,
 } from "@/server/queries/due";
+import { completedAssignedFilter } from "@/server/queries/completedWork";
 import { CLOSED_STATUSES, OPEN_STATUSES } from "@/lib/domain";
 import { countsAsCompleted } from "@/lib/projectProgress";
 import type { CurrentUser } from "@/lib/session";
@@ -851,8 +852,14 @@ async function countBundle(
      *
      * Rejected is "not an issue" and cancelled is work abandoned. Neither was
      * finished, and neither belongs under a heading that says it was.
+     *
+     * Written as the shared fragment rather than as this clause, because My
+     * Work's Completed tile is the same figure and the two pages showing
+     * different numbers for one word is the fault that put it there.
      */
-    prisma.issue.count({ where: { ...mine, status: "DONE" } }),
+    prisma.issue.count({
+      where: { ...scope, ...completedAssignedFilter([user.id]) },
+    }),
     prisma.issue.count({
       where: { ...mine, ...overdueFilter(w.now) },
     }),

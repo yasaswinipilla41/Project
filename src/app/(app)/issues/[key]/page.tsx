@@ -423,6 +423,9 @@ export default async function IssueDetailPage({
           <DueDateField
             issueId={issue.id}
             dueDate={issue.dueDate}
+            /* The status decides whether it can be changed at all — closed
+               work keeps the date it has and takes no new one. */
+            status={issue.status}
             canEdit={canEditDueDate(workRole)}
           >
             <span

@@ -8,6 +8,8 @@ import { RichText } from "@/components/richtext/RichText";
 import { useToast } from "@/components/ui/Toast";
 import { IconEdit, IconParent } from "@/components/ui/Icon";
 import { toDateInputValue } from "@/lib/format";
+import type { IssueStatus } from "@prisma/client";
+import { STATUS_LABEL, canSetDueDateInStatus } from "@/lib/domain";
 import { updateIssue } from "@/server/issues";
 
 /**
@@ -137,11 +139,21 @@ export function EditableTitle({
 export function DueDateField({
   issueId,
   dueDate,
+  status,
   children,
   canEdit = true,
 }: {
   issueId: string;
   dueDate: Date | null;
+  /**
+   * The status the issue is in now.
+   *
+   * Closed work cannot be dated — see `canSetDueDateInStatus`, which is the
+   * same rule `updateIssue` applies — and the control is disabled rather than
+   * hidden, because the date it already carries is still worth reading and
+   * the reason it cannot be changed is worth saying.
+   */
+  status: IssueStatus;
   children: React.ReactNode;
   /** Whether this person may set when the work is due. See `EditableTitle`. */
   canEdit?: boolean;
@@ -158,6 +170,31 @@ export function DueDateField({
   }
 
   if (!canEdit) return <>{children}</>;
+
+  /*
+   * Closed work: the date reads as it always did, and the pencil refuses.
+   *
+   * Follows the status on every render, so moving the issue back to an active
+   * status enables it again with nothing stored and nothing to reset. The
+   * reason sits on the whole control rather than on the button, because a
+   * disabled button takes no pointer events and so can carry no tooltip.
+   */
+  if (!canSetDueDateInStatus(status)) {
+    const why = `Due date cannot be changed while this work is ${STATUS_LABEL[status]}. Move it back to an active status to set one.`;
+    return (
+      <span className="prio-editable prio-editable--inline" title={why}>
+        {children}
+        <button
+          type="button"
+          className="prio-btn prio-btn--ghost prio-btn--icon prio-btn--sm prio-editable__trigger"
+          aria-disabled="true"
+          aria-label={why}
+        >
+          <IconEdit size={13} />
+        </button>
+      </span>
+    );
+  }
 
   if (editing) {
     return (

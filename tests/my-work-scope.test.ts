@@ -4,7 +4,7 @@ import { issueScope } from "@/lib/authz";
 import { OPEN_STATUSES } from "@/lib/domain";
 import type { CurrentUser } from "@/lib/session";
 import { createIssue, updateIssue } from "@/server/issues";
-import { completedByFilter } from "@/server/queries/completedWork";
+import { completedAssignedFilter } from "@/server/queries/completedWork";
 import { dueThisWeekFilter, overdueFilter } from "@/server/queries/due";
 import { actAs, joinTestingTeam, projectByKey } from "./helpers";
 
@@ -89,7 +89,9 @@ beforeAll(async () => {
 afterAll(async () => {
   await leaveTestingTeam();
   if (created.length > 0) {
-    await prisma.notification.deleteMany({ where: { issueId: { in: created } } });
+    await prisma.notification.deleteMany({
+      where: { issueId: { in: created } },
+    });
     await prisma.activityLogEntry.deleteMany({
       where: { issueId: { in: created } },
     });
@@ -239,11 +241,12 @@ describe("every My Work figure is the same rule with a category on it", () => {
       prisma.issue.findMany({ where: base, select: { id: true, type: true } }),
       prisma.issue.count({ where: { ...base, ...overdueFilter() } }),
       prisma.issue.count({ where: { ...base, ...dueThisWeekFilter() } }),
-      /* Completed replaced Bugs, and Waiting for testing is gone: it was the
-         same state as Ready for QA, which keeps its own card. */
+      /* Completed replaced Bugs, and it is the same rule as the rest of the
+         page with Done as its category — which is why it belongs in this
+         file at all. */
       prisma.issue.findMany({
-        where: { ...issueScope(user), ...completedByFilter([user.id]) },
-        select: { id: true, status: true },
+        where: { ...issueScope(user), ...completedAssignedFilter([user.id]) },
+        select: { id: true, status: true, assigneeId: true },
       }),
     ]);
 
@@ -251,9 +254,10 @@ describe("every My Work figure is the same rule with a category on it", () => {
     expect(overdue).toBeLessThanOrEqual(assigned.length);
     expect(dueThisWeek).toBeLessThanOrEqual(assigned.length);
 
-    // Completed is finished work and nothing else.
+    // Completed is finished work, and this person's own.
     for (const row of completed) {
       expect(row.status).toBe("DONE");
+      expect(row.assigneeId).toBe(user.id);
     }
 
     // And every row of the assigned set really is theirs, in a project of theirs.

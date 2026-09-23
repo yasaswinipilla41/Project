@@ -182,16 +182,10 @@ test.describe("the Timeline's sprint bars", () => {
        and all of which share the lane the sprint dates were added to. */
     await expect(page.locator(".prio-timeline__bar").first()).toBeVisible();
     await expect(page.getByText("Not in an epic").first()).toBeVisible();
-    /* The issue bar's own due-date label — matched without the modifiers the
-       sprint bars now add, because those are deliberately hidden on a bar too
-       narrow to hold two dates and would make this assert the wrong thing. */
-    await expect(
-      page
-        .locator(
-          ".prio-timeline__barlabel:not(.prio-timeline__barlabel--start):not(.prio-timeline__barlabel--end)",
-        )
-        .first(),
-    ).toBeVisible();
+    /* The issue bar's own due date, which now reads beside the bar rather
+       than inside it — its own class, so this cannot accidentally match a
+       sprint's dates in the block above. */
+    await expect(page.locator(".prio-timeline__duedate").first()).toBeVisible();
   });
 });
 

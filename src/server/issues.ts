@@ -28,6 +28,7 @@ import {
   canEditIssueName,
   canEditPriority,
   canHoldAnotherIssue,
+  canSetDueDateInStatus,
   canSetStatus,
   filableStatusesFor,
   doesDeveloperWork,
@@ -661,13 +662,39 @@ export async function updateIssue(
       );
     }
 
-    if ("dueDate" in input && input.dueDate !== undefined && !canEditDueDate(role)) {
+    if ("dueDate" in input && input.dueDate !== undefined) {
       const before = existing.dueDate?.getTime() ?? null;
       const after = input.dueDate?.getTime() ?? null;
       if (before !== after) {
-        throw new AuthorizationError(
-          "Only an administrator can set when work is due.",
-        );
+        if (!canEditDueDate(role)) {
+          throw new AuthorizationError(
+            "Only an administrator can set when work is due.",
+          );
+        }
+        /*
+         * And only on work that is not closed.
+         *
+         * Refused when the issue is closed on both sides of the request —
+         * when it *stays* Done, Rejected or Cancelled — rather than whenever
+         * either end is closed, because both of the crossings are legitimate
+         * and each happens in one request: closing work and recording the
+         * date it was wanted by, and taking work back out of a closed status
+         * and dating it again. What is left is the case the rule is about: a
+         * date changed on work that was closed before the request and is
+         * still closed after it.
+         *
+         * A date already stored is never touched here. Closing an issue keeps
+         * whatever date it had — this governs editing and nothing else.
+         */
+        const next = (input.status ?? existing.status) as IssueStatus;
+        if (
+          !canSetDueDateInStatus(next) &&
+          !canSetDueDateInStatus(existing.status)
+        ) {
+          throw new AuthorizationError(
+            `Work that is ${STATUS_LABEL[next]} has no due date to set — move it back to an active status first.`,
+          );
+        }
       }
     }
 

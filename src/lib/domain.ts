@@ -278,6 +278,27 @@ export function canEditDueDate(role: WorkRole): boolean {
   return role === "ADMIN";
 }
 
+/**
+ * May work in this status still be given a due date?
+ *
+ * No, once it is closed. A due date is a statement about work that is still
+ * to be done — "this must be finished by" — and work that is done, rejected
+ * as not an issue, or cancelled has no finishing left to plan. Dating it says
+ * nothing true, and it would go on reading as a deadline everywhere a due
+ * date is read: the list's overdue mark, the timeline's bars, the dashboard's
+ * counts.
+ *
+ * A question about the status, not about the person, and separate from
+ * `canEditDueDate` for that reason: the two are asked together wherever a due
+ * date can be changed, and either can refuse on its own. It follows the
+ * status, so an issue reopened out of one of those three can be dated again
+ * with nothing to reset — and the date it already had is untouched
+ * throughout, because this governs editing and never the stored value.
+ */
+export function canSetDueDateInStatus(status: IssueStatus): boolean {
+  return !isClosedStatus(status);
+}
+
 /** May this person put this issue into that status? */
 export function canSetStatus(
   role: WorkRole,

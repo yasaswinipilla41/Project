@@ -50,6 +50,43 @@ export function completedByFilter(userIds: string[]): Prisma.IssueWhereInput {
 }
 
 /**
+ * "My completed work" — My Work's Completed tile, and the list it opens.
+ *
+ * The work a person *holds* that is finished: assigned to them, and DONE.
+ * That is the question My Work asks throughout — its other three figures are
+ * "assigned to me" with a category on them — and it is what Home's own
+ * personal Completed figure has always counted, so the two pages now read one
+ * definition instead of two.
+ *
+ * Deliberately not `completedByFilter` above, which answers a different
+ * question from the activity trail: *who finished it*. Both are real
+ * questions and Prio asks both, in different places:
+ *
+ *   - this one for "of the work that is mine, how much is done" — the figure
+ *     a developer reads beside Open, Overdue and Due this week, and which has
+ *     to agree with the work they can see assigned to them;
+ *   - `completedByFilter` for "what did I finish", which the issue list's
+ *     Completed by filter and its own column still use, and which credits the
+ *     person who moved the work rather than whoever holds it now.
+ *
+ * DONE and nothing else. Rejected is "not an issue" and cancelled is work
+ * abandoned; neither was finished, and neither belongs under a heading that
+ * says it was — the rule `completed-metric.test.ts` pins for every other
+ * completed figure in Prio.
+ *
+ * Nothing is stored: the figure is this clause counted per request, so an
+ * issue assigned away, reassigned, finished or reopened moves in or out of it
+ * the next time the page is drawn.
+ *
+ * Callers add the reader's `issueScope`; this narrows, it never widens.
+ */
+export function completedAssignedFilter(
+  userIds: string[],
+): Prisma.IssueWhereInput {
+  return { status: "DONE", assigneeId: { in: userIds } };
+}
+
+/**
  * Who completed the work — read from the activity trail, never from
  * `assigneeId`. `completersFor` is the shared lookup; `loadCompletedByPerson`
  * is the project summary's grouped view built on top of it.
