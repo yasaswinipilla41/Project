@@ -1,4 +1,8 @@
-import type { Burndown } from "@/lib/burndown";
+"use client";
+
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { Burndown, BurndownChange } from "@/lib/burndown";
+import { STATUS_LABEL } from "@/lib/domain";
 import { formatDayMonthYear } from "@/lib/format";
 
 /**
@@ -13,10 +17,22 @@ import { formatDayMonthYear } from "@/lib/format";
  * would be, from the whole estimate down to nothing across the sprint's own
  * dates — and is dashed and muted, because it is a reference rather than a
  * measurement. The **actual** is what the sprint's own work says is left, and
- * is solid. Where nothing has been recorded
- * yet the actual line simply stops: the days a sprint has not reached are left
- * blank rather than drawn flat or drawn to zero, either of which would be a
- * claim about work that has not happened.
+ * is solid. Where nothing has been recorded yet the actual line simply stops:
+ * the days a sprint has not reached are left blank rather than drawn flat or
+ * drawn to zero, either of which would be a claim about work that has not
+ * happened.
+ *
+ * A chart of one number per day answers "how much is left" and nothing else,
+ * so three things sit around it:
+ *
+ *  - the **figures above it**, which say what the whole sprint is made of;
+ *  - a **detail on hover**, which says which issues make up that day's
+ *    remainder and what changed to move it — an issue finished, reopened,
+ *    added, taken out, or re-estimated;
+ *  - a **marker for today** on the sprint being worked.
+ *
+ * Every one of those is read from the same `Burndown` the lines are drawn
+ * from, so nothing here can disagree with the picture.
  */
 
 /*
@@ -43,8 +59,294 @@ const HEIGHT = 300;
    step; too narrow and the first digit is cut off by the edge of the box. */
 const PAD = { top: 14, right: 24, bottom: 34, left: 58 };
 
+/** How many issues a day's detail lists before it stops. */
+const TIP_ISSUES = 8;
+
+const hours = (value: number) => `${Math.round(value * 10) / 10}h`;
+const signed = (value: number) =>
+  `${value > 0 ? "+" : value < 0 ? "−" : ""}${hours(Math.abs(value))}`;
+
+/*
+ * Placing the day's detail: the geometry it needs.
+ *
+ * The panel has to end up inside the chart's own card, clear of the marker,
+ * and off the line it is explaining. That last one is a question about a
+ * rectangle and a polyline, so it is answered here rather than guessed at in
+ * the placement.
+ */
+
+type Box = { left: number; top: number; right: number; bottom: number };
+
+type Segment = { ax: number; ay: number; bx: number; by: number };
+
+const overlaps = (one: Box, two: Box) =>
+  two.left < one.right &&
+  two.right > one.left &&
+  two.top < one.bottom &&
+  two.bottom > one.top;
+
+const grow = (box: Box, by: number): Box => ({
+  left: box.left - by,
+  top: box.top - by,
+  right: box.right + by,
+  bottom: box.bottom + by,
+});
+
+const clamp = (value: number, low: number, high: number) =>
+  Math.min(Math.max(value, low), high);
+
+/** Do two line segments cross? The standard orientation test. */
+const segmentsCross = (one: Segment, two: Segment) => {
+  const side = (
+    ax: number,
+    ay: number,
+    bx: number,
+    by: number,
+    cx: number,
+    cy: number,
+  ) => Math.sign((bx - ax) * (cy - ay) - (by - ay) * (cx - ax));
+  const a = side(one.ax, one.ay, one.bx, one.by, two.ax, two.ay);
+  const b = side(one.ax, one.ay, one.bx, one.by, two.bx, two.by);
+  const c = side(two.ax, two.ay, two.bx, two.by, one.ax, one.ay);
+  const d = side(two.ax, two.ay, two.bx, two.by, one.bx, one.by);
+  return a !== b && c !== d;
+};
+
+/**
+ * Does a box lie on any part of a drawn line?
+ *
+ * True if either end of a segment is inside the box, or if the segment
+ * crosses one of its sides — which together is every way a line and a
+ * rectangle can meet.
+ */
+const touchesLine = (box: Box, line: Segment[]) =>
+  line.some((segment) => {
+    const inside = (x: number, y: number) =>
+      x >= box.left && x <= box.right && y >= box.top && y <= box.bottom;
+    if (inside(segment.ax, segment.ay) || inside(segment.bx, segment.by)) {
+      return true;
+    }
+    const sides: Segment[] = [
+      { ax: box.left, ay: box.top, bx: box.right, by: box.top },
+      { ax: box.right, ay: box.top, bx: box.right, by: box.bottom },
+      { ax: box.right, ay: box.bottom, bx: box.left, by: box.bottom },
+      { ax: box.left, ay: box.bottom, bx: box.left, by: box.top },
+    ];
+    return sides.some((side) => segmentsCross(segment, side));
+  });
+
+/**
+ * A drawn polyline, in the page's own coordinates.
+ *
+ * The chart is drawn in its own 1200 x 300 box and scaled to the card, so the
+ * points have to come back through the SVG's screen matrix before they can be
+ * compared with a panel measured in pixels.
+ */
+const lineOf = (svg: SVGSVGElement, selector: string): Segment[] => {
+  const poly = svg.querySelector<SVGPolylineElement>(selector);
+  const matrix = svg.getScreenCTM();
+  if (!poly || !matrix) return [];
+  const points: { x: number; y: number }[] = [];
+  for (let index = 0; index < poly.points.numberOfItems; index += 1) {
+    points.push(poly.points.getItem(index).matrixTransform(matrix));
+  }
+  return points.slice(1).map((point, index) => ({
+    ax: points[index]!.x,
+    ay: points[index]!.y,
+    bx: point.x,
+    by: point.y,
+  }));
+};
+
+/** What a change is called, in the words the tooltip uses. */
+const REASON_LABEL: Record<BurndownChange["reason"], string> = {
+  completed: "finished",
+  reopened: "reopened",
+  added: "added to the sprint",
+  removed: "moved out of the sprint",
+  estimate: "re-estimated",
+  remainder: "remainder updated",
+};
+
 export function BurndownChart({ data }: { data: Burndown }) {
   const { points, totalEffort } = data;
+  const [active, setActive] = useState<number | null>(null);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const tipRef = useRef<HTMLDivElement | null>(null);
+
+  /*
+   * Where the day's detail goes.
+   *
+   * Inside the chart's own card, clear of the marker, and off the line it is
+   * explaining — measured rather than assumed, because the room there is
+   * depends on the card's width, on where the day sits, and on how much there
+   * is to say about that day.
+   *
+   * It is placed by trying positions and keeping the best, rather than by a
+   * fixed rule, because a rule cannot know where the line goes. The positions
+   * tried are the ones a reader expects — above the point, below it, to
+   * either side of it, and along the card's edges for a day near one — and
+   * the one chosen is the nearest to the point that leaves both the marker
+   * and the *Remaining* line showing. The dashed *Ideal* line is a reference
+   * rather than a measurement, so lying over it counts against a position
+   * without ruling it out.
+   *
+   * On a day with a great deal to say nothing fits: then the detail reads in
+   * the flow under the chart — still inside the card, and covering nothing at
+   * all.
+   *
+   * `position: fixed` rather than absolute: the panel is kept inside the card
+   * by arithmetic, and being out of the page's flow means no scroller or card
+   * edge can clip it. It runs before the browser paints, so the panel is
+   * never seen in the wrong place.
+   */
+  const placeTip = useCallback(() => {
+    const wrap = wrapRef.current;
+    const tip = tipRef.current;
+    if (!wrap || !tip) return;
+
+    tip.classList.remove("is-placed", "is-inflow");
+
+    /* Below the phone step the stylesheet keeps the panel in the flow, where
+       there is nothing to place it against. */
+    if (getComputedStyle(tip).position === "static") {
+      tip.style.removeProperty("left");
+      tip.style.removeProperty("top");
+      return;
+    }
+
+    const dot = wrap.querySelector("circle.prio-burndown__dot");
+    const svg = wrap.querySelector<SVGSVGElement>("svg.prio-burndown__svg");
+    /* The chart's own card is the boundary the panel stays inside. */
+    const card = wrap.closest(".prio-card") ?? wrap.closest(".prio-burndown");
+    if (!dot || !svg || !card) return;
+
+    const readInFlow = () => {
+      tip.style.removeProperty("left");
+      tip.style.removeProperty("top");
+      tip.classList.add("is-inflow");
+    };
+
+    const marker = dot.getBoundingClientRect();
+    const bounds = card.getBoundingClientRect();
+    const width = tip.offsetWidth;
+    const height = tip.offsetHeight;
+    /* The gap the panel keeps from the point, and from the card's edges. */
+    const gap = 14;
+    const inset = 8;
+
+    const minLeft = bounds.left + inset;
+    const maxLeft = bounds.right - inset - width;
+    const minTop = bounds.top + inset;
+    const maxTop = bounds.bottom - inset - height;
+    /* A card too small to hold the panel at all. */
+    if (maxLeft < minLeft || maxTop < minTop) {
+      readInFlow();
+      return;
+    }
+
+    const actual = lineOf(svg, "polyline.prio-burndown__actual");
+    const ideal = lineOf(svg, "polyline.prio-burndown__ideal");
+    const centreX = marker.left + marker.width / 2;
+    const centreY = marker.top + marker.height / 2;
+    /* Room to see the marker, not merely to miss it. */
+    const keepClear = grow(marker, gap / 2);
+
+    /* Across: centred on the day, then to either side of it — both hard
+       against the point and a gap clear of it — then along the card's edges
+       for a day near one. Down: above the point, below it, level with it,
+       then along the card's own top and bottom. */
+    const acrossOptions = [
+      centreX - width / 2,
+      centreX,
+      centreX - width,
+      marker.right + gap,
+      marker.left - gap - width,
+      minLeft,
+      maxLeft,
+    ];
+    const downOptions = [
+      marker.top - gap - height,
+      marker.bottom + gap,
+      centreY - height / 2,
+      minTop,
+      maxTop,
+    ];
+
+    let best: { left: number; top: number; cost: number } | null = null;
+    for (const across of acrossOptions) {
+      for (const down of downOptions) {
+        const left = clamp(across, minLeft, maxLeft);
+        const top = clamp(down, minTop, maxTop);
+        const box: Box = {
+          left,
+          top,
+          right: left + width,
+          bottom: top + height,
+        };
+
+        /* The point it describes has to stay visible. */
+        if (overlaps(keepClear, box)) continue;
+
+        /* How far from the point it ended up: a near position reads as
+           belonging to the day, a distant one as floating. */
+        const away = Math.hypot(
+          Math.max(box.left - centreX, centreX - box.right, 0),
+          Math.max(box.top - centreY, centreY - box.bottom, 0),
+        );
+        /* Above is what a reader expects, then beside, then below. */
+        const direction =
+          box.bottom <= marker.top
+            ? 0
+            : box.right <= marker.left || box.left >= marker.right
+              ? 15
+              : 30;
+        /*
+         * What makes a position good, in order.
+         *
+         * Covering the remaining line is disqualifying — it is the answer the
+         * reader came for. After that the panel should read as belonging to
+         * the day, so its distance from the point is what decides, and lying
+         * over the dashed ideal costs about sixty pixels of that distance:
+         * enough to prefer a nearby position that misses it, not enough to
+         * send the panel across the card to avoid a reference line.
+         */
+        const cost =
+          (touchesLine(box, actual) ? 4000 : 0) +
+          (touchesLine(box, ideal) ? 60 : 0) +
+          away +
+          direction;
+
+        if (!best || cost < best.cost) best = { left, top, cost };
+      }
+    }
+
+    /* Nothing that leaves the remaining line showing: reading under the chart
+       covers nothing at all, so that wins over covering the answer. */
+    if (!best || best.cost >= 4000) {
+      readInFlow();
+      return;
+    }
+
+    tip.style.left = `${Math.round(best.left)}px`;
+    tip.style.top = `${Math.round(best.top)}px`;
+    tip.classList.add("is-placed");
+  }, []);
+
+  /* Before the paint of the render that opened it, so it is never seen
+     unplaced. */
+  useLayoutEffect(placeTip);
+
+  /* The chart moves under a fixed panel when the page scrolls or the window
+     changes size, and the panel follows it. */
+  useEffect(() => {
+    window.addEventListener("scroll", placeTip, true);
+    window.addEventListener("resize", placeTip);
+    return () => {
+      window.removeEventListener("scroll", placeTip, true);
+      window.removeEventListener("resize", placeTip);
+    };
+  }, [placeTip]);
 
   if (points.length === 0 || totalEffort === 0) {
     return (
@@ -69,8 +371,8 @@ export function BurndownChart({ data }: { data: Burndown }) {
   const x = (index: number) =>
     PAD.left +
     (points.length === 1 ? 0 : (plotWidth * index) / (points.length - 1));
-  const y = (hours: number) =>
-    PAD.top + plotHeight - (plotHeight * hours) / (ceiling || 1);
+  const y = (value: number) =>
+    PAD.top + plotHeight - (plotHeight * value) / (ceiling || 1);
 
   const idealLine = points
     .map((point, index) => `${x(index)},${y(point.ideal)}`)
@@ -84,9 +386,6 @@ export function BurndownChart({ data }: { data: Burndown }) {
     )
     .join(" ");
 
-  /* The scale down the left, in the unit it is measured in: this axis is
-     remaining effort in hours, and a column of bare numbers does not say
-     so. */
   const gridlines = [0, 0.25, 0.5, 0.75, 1].map((share) => ({
     share,
     hours: Math.round(ceiling * (1 - share)),
@@ -125,60 +424,276 @@ export function BurndownChart({ data }: { data: Burndown }) {
     lastMonth = month;
   }
 
+  /* The days there is something to say about: a day the sprint has not
+     reached has no reading, so there is nothing to show for it. */
+  const reached = points.flatMap((point, index) =>
+    point.actual === null ? [] : [index],
+  );
+  const band =
+    points.length === 1 ? plotWidth : plotWidth / (points.length - 1);
+
+  const shown = active !== null ? points[active] : undefined;
+  const showToday =
+    data.active && data.todayIndex !== null && data.todayIndex < points.length;
+  const todayPoint =
+    data.todayIndex !== null ? points[data.todayIndex] : undefined;
+
+  /**
+   * Which way a day's detail opens, so it stays inside the chart.
+   *
+   * Read from where the day actually sits across the plot, not from its
+   * position in the sprint: the last day with a reading can be four fifths
+   * of the way along a sprint that still has days to run, and a panel
+   * centred there hangs over the edge.
+   */
+  const tipSide = (index: number) => {
+    const share = x(index) / WIDTH;
+    return share < 0.3 ? "start" : share > 0.7 ? "end" : "middle";
+  };
+
+
   return (
     <figure className="prio-burndown">
-      {/* The scroller matters only on a narrow screen, where the chart keeps
+      {/*
+       * What the sprint is made of, above the chart.
+       *
+       * Counted from the same data the lines are: the effort is the sprint's
+       * own estimates and what is left of them, and the issue counts are its
+       * own membership by the same open/closed rule. Nothing here is stored,
+       * so it follows the work.
+       */}
+      <dl className="prio-burndown__summary">
+        <div className="prio-burndown__figure">
+          <dt>Total Effort</dt>
+          <dd>{hours(data.totalEffort)}</dd>
+        </div>
+        <div className="prio-burndown__figure" data-tone="done">
+          <dt>Completed Effort</dt>
+          <dd>{hours(data.completedEffort)}</dd>
+        </div>
+        <div className="prio-burndown__figure">
+          <dt>Remaining Effort</dt>
+          <dd>{hours(data.remaining)}</dd>
+        </div>
+        <div className="prio-burndown__figure">
+          <dt>Total Issues</dt>
+          <dd>{data.totalIssues}</dd>
+        </div>
+        <div className="prio-burndown__figure" data-tone="done">
+          <dt>Completed Issues</dt>
+          <dd>{data.completedIssues}</dd>
+        </div>
+        <div className="prio-burndown__figure">
+          <dt>Remaining Issues</dt>
+          <dd>{data.remainingIssues}</dd>
+        </div>
+      </dl>
+
+      {/*
+       * The chart, and the day being read beside it.
+       *
+       * The detail is a sibling of the scroller rather than a child of it: a
+       * scroll container clips what escapes it, and on a short chart the
+       * detail is taller than the plot. Out here it can stand below the
+       * chart's own box without being cut off.
+       */}
+      <div className="prio-burndown__chartwrap" ref={wrapRef}>
+        {/* The scroller matters only on a narrow screen, where the chart keeps
           a floor width (see the stylesheet) instead of flattening to an
           unreadable strip. At any ordinary width there is nothing to
           scroll. */}
-      <div className="prio-burndown__scroll prio-scroll">
-      <svg
-        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-        className="prio-burndown__svg"
-        role="img"
-        aria-label={`Burndown: ${totalEffort} hours committed, ${data.remaining} remaining.`}
-        preserveAspectRatio="xMidYMid meet"
-      >
-        {gridlines.map((line) => (
-          <g key={line.share}>
-            <line
-              x1={PAD.left}
-              x2={WIDTH - PAD.right}
-              y1={line.y}
-              y2={line.y}
-              className="prio-burndown__grid"
-            />
-            <text
-              x={PAD.left - 8}
-              y={line.y + 4}
-              textAnchor="end"
-              className="prio-burndown__axis"
+        <div className="prio-burndown__scroll prio-scroll">
+          <div
+            className="prio-burndown__plot"
+            onMouseLeave={() => setActive(null)}
+          >
+            <svg
+              viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+              className="prio-burndown__svg"
+              role="img"
+              aria-label={`Burndown: ${totalEffort} hours committed, ${data.remaining} remaining.`}
+              preserveAspectRatio="xMidYMid meet"
             >
-              {line.hours}h
-            </text>
-          </g>
-        ))}
+              {gridlines.map((line) => (
+                <g key={line.share}>
+                  <line
+                    x1={PAD.left}
+                    x2={WIDTH - PAD.right}
+                    y1={line.y}
+                    y2={line.y}
+                    className="prio-burndown__grid"
+                  />
+                  <text
+                    x={PAD.left - 8}
+                    y={line.y + 4}
+                    textAnchor="end"
+                    className="prio-burndown__axis"
+                  >
+                    {line.hours}h
+                  </text>
+                </g>
+              ))}
 
-        {points.map((point, index) => {
-          const label = dateLabels.get(index);
-          return label ? (
-            <text
-              key={point.date.toISOString()}
-              x={x(index)}
-              y={HEIGHT - 10}
-              textAnchor="middle"
-              className="prio-burndown__axis"
-            >
-              {label}
-            </text>
-          ) : null;
-        })}
+              {points.map((point, index) => {
+                const label = dateLabels.get(index);
+                return label ? (
+                  <text
+                    key={point.date.toISOString()}
+                    x={x(index)}
+                    y={HEIGHT - 10}
+                    textAnchor="middle"
+                    className="prio-burndown__axis"
+                  >
+                    {label}
+                  </text>
+                ) : null;
+              })}
 
-        <polyline points={idealLine} className="prio-burndown__ideal" />
-        {actualLine ? (
-          <polyline points={actualLine} className="prio-burndown__actual" />
+              {/* Today, on the sprint being worked: a quiet rule down the plot,
+                so "where are we now" is answered without reading the axis. */}
+              {showToday ? (
+                <line
+                  x1={x(data.todayIndex!)}
+                  x2={x(data.todayIndex!)}
+                  y1={PAD.top}
+                  y2={HEIGHT - PAD.bottom}
+                  className="prio-burndown__today"
+                />
+              ) : null}
+
+              <polyline points={idealLine} className="prio-burndown__ideal" />
+              {actualLine ? (
+                <polyline
+                  points={actualLine}
+                  className="prio-burndown__actual"
+                />
+              ) : null}
+
+              {/* The day being read: a rule down the plot and a dot on the
+                line, so the detail beside it is anchored to something. */}
+              {shown && shown.actual !== null ? (
+                <>
+                  <line
+                    x1={x(active!)}
+                    x2={x(active!)}
+                    y1={PAD.top}
+                    y2={HEIGHT - PAD.bottom}
+                    className="prio-burndown__crosshair"
+                  />
+                  <circle
+                    cx={x(active!)}
+                    cy={y(shown.actual)}
+                    r={5}
+                    className="prio-burndown__dot"
+                  />
+                </>
+              ) : null}
+
+              {/* One target per day the sprint has reached, a whole band wide
+                so it can be hit without aiming at the line itself. */}
+              {reached.map((index) => (
+                <rect
+                  key={index}
+                  x={x(index) - band / 2}
+                  y={PAD.top}
+                  width={band}
+                  height={plotHeight}
+                  className="prio-burndown__hit"
+                  onMouseEnter={() => setActive(index)}
+                  aria-hidden
+                />
+              ))}
+            </svg>
+
+            {/* Today's own figures, beside its rule. */}
+            {showToday && todayPoint ? (
+              <p
+                className="prio-burndown__todaytag"
+                style={{ left: `${(x(data.todayIndex!) / WIDTH) * 100}%` }}
+                data-side={tipSide(data.todayIndex!)}
+              >
+                <strong>Today</strong> · {hours(data.remaining)} left ·{" "}
+                {data.remainingIssues}{" "}
+                {data.remainingIssues === 1 ? "issue" : "issues"} ·{" "}
+                {totalEffort === 0
+                  ? 0
+                  : Math.round((data.completedEffort / totalEffort) * 100)}
+                % burned
+              </p>
+            ) : null}
+          </div>
+        </div>
+        {/* The day being read, in words: what was left, what made it up,
+            and what moved it. */}
+        {shown && shown.actual !== null ? (
+          <div
+            /* Placed by `placeTip` above: outside the chart, so the day's
+               point, the crosshair and both lines stay visible while it is
+               being read. */
+            ref={tipRef}
+            className="prio-burndown__tip"
+            role="status"
+          >
+            <p className="prio-burndown__tipdate">
+              {formatDayMonthYear(shown.date)}
+            </p>
+            <p className="prio-burndown__tipfigures">
+              Remaining: <strong>{hours(shown.actual)}</strong> · Completed:{" "}
+              {hours(shown.completedEffort)} · Total:{" "}
+              {hours(shown.committedEffort)}
+              <br />
+              Remaining issues: <strong>{shown.remainingCount}</strong> ·
+              Completed issues: {shown.completedCount}
+            </p>
+
+            {shown.changes.length > 0 ? (
+              <ul className="prio-burndown__tipchanges">
+                {shown.changes.map((change, position) => (
+                  <li key={`${change.issueId}-${change.reason}-${position}`}>
+                    <span
+                      className="prio-burndown__tipdelta"
+                      data-up={change.delta > 0 || undefined}
+                    >
+                      {signed(change.delta)}
+                    </span>
+                    <span className="prio-key">{change.key}</span>{" "}
+                    {REASON_LABEL[change.reason]}
+                    {change.reason === "estimate" ||
+                    change.reason === "remainder"
+                      ? ` (${change.from === null || change.from === undefined ? "none" : hours(change.from)} → ${
+                          change.to === null || change.to === undefined
+                            ? "none"
+                            : hours(change.to)
+                        })`
+                      : ""}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+
+            {shown.remainingIssues.length > 0 ? (
+              <ul className="prio-burndown__tipissues">
+                {shown.remainingIssues.slice(0, TIP_ISSUES).map((issue) => (
+                  <li key={issue.issueId}>
+                    <span className="prio-key">{issue.key}</span> —{" "}
+                    <span className="prio-burndown__tiptitle">
+                      {issue.title}
+                    </span>{" "}
+                    — {issue.status ? STATUS_LABEL[issue.status] : "—"} —{" "}
+                    {hours(issue.effortHours)}
+                  </li>
+                ))}
+                {shown.remainingIssues.length > TIP_ISSUES ? (
+                  <li className="prio-text-muted">
+                    and {shown.remainingIssues.length - TIP_ISSUES} more
+                  </li>
+                ) : null}
+              </ul>
+            ) : (
+              <p className="prio-text-muted">Nothing left on this day.</p>
+            )}
+          </div>
         ) : null}
-      </svg>
       </div>
 
       <figcaption className="prio-burndown__legend">
@@ -200,6 +715,36 @@ export function BurndownChart({ data }: { data: Burndown }) {
             : ""}
         </span>
       </figcaption>
+
+      {/*
+       * The same day-by-day reading, in text.
+       *
+       * A detail that appears under a pointer is no use to somebody who is
+       * not using one, so every day the sprint has reached is also written
+       * out here for a screen reader — the same figures, from the same
+       * points.
+       */}
+      <ul className="prio-visually-hidden">
+        {reached.map((index) => {
+          const point = points[index]!;
+          return (
+            <li key={index}>
+              {formatDayMonthYear(point.date)}: {hours(point.actual ?? 0)}{" "}
+              remaining across {point.remainingCount}{" "}
+              {point.remainingCount === 1 ? "issue" : "issues"};{" "}
+              {hours(point.completedEffort)} completed across{" "}
+              {point.completedCount}{" "}
+              {point.completedCount === 1 ? "issue" : "issues"}.
+              {point.changes
+                .map(
+                  (change) =>
+                    ` ${change.key} ${REASON_LABEL[change.reason]}, ${signed(change.delta)}.`,
+                )
+                .join("")}
+            </li>
+          );
+        })}
+      </ul>
     </figure>
   );
 }

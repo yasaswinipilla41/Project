@@ -810,6 +810,239 @@
   margin: 0;
 }
 
+/* ------------------------------------------- what the sprint is made of */
+/*
+ * The six figures above the chart: effort committed, finished and left, and
+ * the issue counts behind them. Laid out as a row that wraps, so a narrow
+ * card stacks them instead of squeezing them.
+ */
+.prio-burndown__summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--prio-space-3) var(--prio-space-6);
+  margin: 0 0 var(--prio-space-4);
+  padding: 0 0 var(--prio-space-4);
+  border-bottom: 1px solid var(--prio-border-subtle);
+}
+
+.prio-burndown__figure {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.prio-burndown__figure dt {
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-medium);
+  letter-spacing: var(--prio-tracking-caps);
+  text-transform: uppercase;
+  color: var(--prio-text-muted);
+}
+
+.prio-burndown__figure dd {
+  margin: 0;
+  font-size: var(--prio-text-md);
+  font-weight: var(--prio-weight-bold);
+  font-variant-numeric: tabular-nums;
+  color: var(--prio-text-primary);
+  line-height: 1.1;
+}
+
+.prio-burndown__figure[data-tone="done"] dd {
+  color: var(--prio-status-done-dot);
+}
+
+/* --------------------------------------------------- reading a single day */
+
+/* The chart and the day's detail together. The detail is a sibling of the
+   scroller rather than a child of it, so that when it reads in the flow (see
+   `.is-inflow` below) it sits under the chart rather than inside something
+   that scrolls sideways. */
+.prio-burndown__chartwrap {
+  position: relative;
+}
+
+/* The plot is the containing block for the today tag, which has to sit on
+   the rule it belongs to. */
+.prio-burndown__plot {
+  position: relative;
+}
+
+/* A whole day's width is the target, so the pointer does not have to find the
+   line itself. */
+.prio-burndown__hit {
+  fill: transparent;
+  cursor: crosshair;
+}
+
+.prio-burndown__crosshair {
+  stroke: var(--prio-primary-600);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  opacity: 0.5;
+}
+
+.prio-burndown__dot {
+  fill: var(--prio-bg-surface);
+  stroke: var(--prio-primary-600);
+  stroke-width: 2.5;
+}
+
+/* Today: quieter than either line, because it is a place on the axis rather
+   than a measurement. */
+.prio-burndown__today {
+  stroke: var(--prio-text-muted);
+  stroke-width: 1.5;
+  stroke-dasharray: 2 5;
+  opacity: 0.7;
+}
+
+.prio-burndown__todaytag {
+  position: absolute;
+  top: 2px;
+  margin: 0;
+  padding: 2px var(--prio-space-2);
+  border: 1px solid var(--prio-border-subtle);
+  border-radius: var(--prio-radius-pill);
+  background: var(--prio-bg-surface);
+  font-size: var(--prio-text-2xs);
+  color: var(--prio-text-secondary);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/*
+ * The day's detail, inside the chart and off its lines.
+ *
+ * It used to float at a fixed height inside the plot, which put it over the
+ * marker whenever the remainder was high, and over the line around it. It is
+ * placed by the component now: inside the chart's card, a gap clear of the
+ * marker, and away from the *Remaining* line — above the point where there
+ * is room, below it or beside it where there is not.
+ *
+ * `fixed` rather than `absolute`, though it is placed inside the card: the
+ * card's own scroller would otherwise clip a panel that reaches past the
+ * chart, and the placement is arithmetic on the card's box either way.
+ *
+ * Hidden until the component has measured it — which happens before the
+ * browser paints, so it is never seen at the wrong place or the wrong size.
+ */
+.prio-burndown__tip {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: var(--prio-z-popover);
+  visibility: hidden;
+  width: max-content;
+  max-width: min(420px, calc(100vw - 2 * var(--prio-space-4)));
+  padding: var(--prio-space-3) var(--prio-space-4);
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-md);
+  background: var(--prio-bg-surface);
+  box-shadow: var(--prio-shadow-md);
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-secondary);
+  pointer-events: none;
+}
+
+.prio-burndown__tip.is-placed {
+  visibility: visible;
+}
+
+.prio-burndown__todaytag[data-side="middle"] {
+  transform: translateX(-50%);
+}
+
+.prio-burndown__todaytag[data-side="end"] {
+  transform: translateX(-100%);
+}
+
+.prio-burndown__tipdate {
+  margin: 0 0 2px;
+  font-size: var(--prio-text-sm);
+  font-weight: var(--prio-weight-semibold);
+  color: var(--prio-text-primary);
+}
+
+.prio-burndown__tipfigures {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.prio-burndown__tipfigures strong {
+  color: var(--prio-text-primary);
+}
+
+.prio-burndown__tipchanges,
+.prio-burndown__tipissues {
+  list-style: none;
+  margin: var(--prio-space-3) 0 0;
+  padding: var(--prio-space-3) 0 0;
+  border-top: 1px solid var(--prio-border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.prio-burndown__tipchanges li,
+.prio-burndown__tipissues li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--prio-space-2);
+  flex-wrap: wrap;
+}
+
+/* A step down burns work off the sprint and a step up puts it back, so the
+   two read differently. */
+.prio-burndown__tipdelta {
+  flex: none;
+  min-width: 4ch;
+  font-weight: var(--prio-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--prio-status-done-dot);
+}
+
+.prio-burndown__tipdelta[data-up] {
+  color: var(--prio-status-reopened-dot);
+}
+
+.prio-burndown__tiptitle {
+  color: var(--prio-text-primary);
+}
+
+/*
+ * Reading under the chart instead of over the page.
+ *
+ * On a phone the chart scrolls sideways and is about 155px tall, so a
+ * floating panel would be anchored to a day that can scroll out of sight;
+ * and in a window too short to hold the panel clear of the chart at either
+ * end, the component asks for this too. In the flow it is under the chart:
+ * full width, nothing clipped, and the point and the lines untouched,
+ * because nothing floats over them at all.
+ */
+.prio-burndown__tip.is-inflow {
+  position: static;
+  visibility: visible;
+  /* In the flow it takes the width it is given and wraps inside it.
+     `max-content`, which sizes the floating panel to its longest line, would
+     here make the card — and the page with it — as wide as an issue title. */
+  width: auto;
+  max-width: 100%;
+  margin-top: var(--prio-space-3);
+}
+
+@media (max-width: 767.98px) {
+  .prio-burndown__tip {
+    position: static;
+    visibility: visible;
+    width: auto;
+    max-width: 100%;
+    margin-top: var(--prio-space-3);
+    font-size: var(--prio-text-2xs);
+  }
+}
+
 .prio-burndown__scroll {
   /* Nothing to scroll until the chart's floor width bites, below. */
   overflow-x: auto;

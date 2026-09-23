@@ -1,16 +1,26 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { BackLink } from "@/components/shell/BackLink";
+import { SprintDetailsActions } from "@/components/sprints/SprintDetailsActions";
 import { SprintDetailsView } from "@/components/sprints/SprintDetailsView";
 import { SprintIssueBoard } from "@/components/sprints/SprintIssueBoard";
 import { BurndownChart } from "@/components/sprints/BurndownChart";
 import { Card, CardBody } from "@/components/ui/primitives";
 import { projectScope, workRoleOf } from "@/lib/authz";
 import { canMoveToNextSprint } from "@/lib/sprintMove";
-import { canEditSprintIssues } from "@/lib/domain";
+import {
+  canDeleteSprint,
+  canEditSprintDetails,
+  canEditSprintIssues,
+  canStartSprint,
+} from "@/lib/domain";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
-import { loadBurndown, loadSprints } from "@/server/queries/sprints";
+import {
+  loadBurndown,
+  loadSprintBacklog,
+  loadSprints,
+} from "@/server/queries/sprints";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Sprint" };
@@ -49,9 +59,12 @@ export default async function ProjectSprintDetailsPage({
   });
   if (!project) notFound();
 
-  const [sprints, workRole] = await Promise.all([
+  const [sprints, workRole, backlog] = await Promise.all([
     loadSprints(project.id),
     workRoleOf(user),
+    /* This project's unsprinted open work — what Add issues offers, and the
+       same query the Sprints page reads it with. */
+    loadSprintBacklog(project.id),
   ]);
   const sprint = sprints.find((s) => s.id === sprintId);
   if (!sprint) notFound();
@@ -115,7 +128,33 @@ export default async function ProjectSprintDetailsPage({
       <BackLink href={back.href} label={back.label} tone="sprint" />
 
       <div style={{ marginTop: "var(--prio-space-3)" }}>
-        <SprintDetailsView sprint={sprint}>
+        <SprintDetailsView
+          sprint={sprint}
+          /*
+           * Who may do what comes from the one capability table `domain.ts`
+           * owns and `sprints.ts` enforces again on the server, so this only
+           * decides what is worth drawing:
+           *   - adding issues to a sprint or taking them out is every working
+           *     role's — Admin, Developer, Tester and Full Stack alike;
+           *   - renaming it or moving its dates is theirs too;
+           *   - starting a planned sprint is an administrator's, and a Full
+           *     Stack Developer's;
+           *   - deleting one is an administrator's.
+           */
+          actions={
+            <SprintDetailsActions
+              sprint={sprint}
+              projectId={project.id}
+              projectKey={project.key}
+              backlog={backlog}
+              canEditIssues={canEditSprintIssues(workRole)}
+              canEdit={canEditSprintDetails(workRole)}
+              canStart={canStartSprint(workRole)}
+              canDelete={canDeleteSprint(workRole)}
+              backHref={back.href}
+            />
+          }
+        >
           {/* Beside the sprint's own figures rather than on a page of its
               own: a burndown answers a question somebody is already asking
               while looking at this screen, and sending them elsewhere to see

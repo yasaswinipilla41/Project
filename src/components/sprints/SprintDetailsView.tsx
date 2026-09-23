@@ -31,9 +31,18 @@ import type { SprintView } from "@/server/queries/sprints";
  */
 export function SprintDetailsView({
   sprint,
+  actions,
   children,
 }: {
   sprint: SprintView;
+  /**
+   * What can be done to this sprint, drawn at the top right of its own
+   * block — Add issues, Edit, and for an administrator Start sprint and
+   * Delete. The project's sprint page passes them; the cross-project page,
+   * which has no project in context to add work from, passes none and the
+   * header is exactly as it was.
+   */
+  actions?: ReactNode;
   /** Drawn between the sprint's own card and its chart — the project's
    *  details page puts the sprint's issues here, grouped by status. */
   children?: ReactNode;
@@ -85,6 +94,13 @@ export function SprintDetailsView({
                 ) : null}
               </p>
             </div>
+
+            {/* The actions sit beside the sprint's identity rather than over
+                it: the header is a flex row that wraps, and the identity
+                column keeps `flex: 1; min-width: 0`, so on a narrow screen
+                they drop to their own line instead of crowding the name, the
+                dates or the figures below. */}
+            {actions}
           </header>
 
           {/* The five figures, and the work behind whichever one is
