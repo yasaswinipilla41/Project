@@ -117,14 +117,20 @@ test.describe("the Columns menu", () => {
     return page.getByRole("menu", { name: "Columns" });
   };
 
-  test("says why Key and Summary are not on the list", async ({ page }) => {
+  test("says why Key and Summary cannot be turned off", async ({ page }) => {
     const menu = await openMenu(page);
 
-    await expect(menu.locator(".prio-menu__note")).toContainText(
-      "Key and Summary are always visible and cannot be hidden.",
-    );
+    /* They are listed rather than footnoted: a name that is simply absent
+       reads as missing, so each appears as a locked row carrying the reason
+       in place of a checkbox. */
+    const locked = menu.locator(".prio-colpicker__locked");
+    await expect(locked).toHaveCount(2);
+    await expect(locked.nth(0)).toContainText("Key");
+    await expect(locked.nth(0)).toContainText("Always visible");
+    await expect(locked.nth(1)).toContainText("Summary");
+    await expect(locked.nth(1)).toContainText("Always visible");
 
-    /* And they are genuinely not offered — the note describes the menu rather
+    /* And they are genuinely not offered — the rows describe the menu rather
        than apologising for it. */
     await expect(menu.getByRole("menuitemradio", { name: "Key" })).toHaveCount(0);
     await expect(
@@ -318,6 +324,220 @@ test.describe("the import template", () => {
     await expect(dialog).toContainText(project.key);
     await expect(
       dialog.getByRole("button", { name: "Download Template" }),
+    ).toBeVisible();
+  });
+});
+
+/**
+ * The drop zone the import asks for a file through.
+ *
+ * The browser's own "Choose File / No file chosen" chrome cannot be styled and
+ * said nothing about what the import wants, so it is hidden behind a zone that
+ * takes a click, a drop or a paste. The input itself is still the thing
+ * holding the file, and these cases exist to prove the presentation changed
+ * without a second upload path being introduced beside it.
+ */
+test.describe("the import drop zone", () => {
+  const XLSX_TYPE =
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+  /** Hands the zone a file the way a drop or a paste does. */
+  async function sendFile(
+    page: import("@playwright/test").Page,
+    event: "drop" | "paste",
+    name: string,
+  ) {
+    await page.evaluate(
+      ({ event, name, type }) => {
+        const data = new DataTransfer();
+        data.items.add(new File(["fixture"], name, { type }));
+
+        if (event === "drop") {
+          document.querySelector(".prio-importdrop")!.dispatchEvent(
+            new DragEvent("drop", {
+              bubbles: true,
+              cancelable: true,
+              dataTransfer: data,
+            }),
+          );
+        } else {
+          document.dispatchEvent(
+            new ClipboardEvent("paste", {
+              bubbles: true,
+              cancelable: true,
+              clipboardData: data,
+            }),
+          );
+        }
+      },
+      { event, name, type: XLSX_TYPE },
+    );
+  }
+
+  const openDialog = async (page: import("@playwright/test").Page) => {
+    await page.goto("/issues");
+    await page.getByRole("button", { name: "Import" }).click();
+    const dialog = page.getByRole("dialog", { name: "Import work items" });
+    await expect(dialog).toBeVisible();
+    return dialog;
+  };
+
+  test("asks for the file in its own words, not the browser's", async ({ page }) => {
+    const dialog = await openDialog(page);
+
+    await expect(dialog.locator(".prio-importdrop__text")).toHaveText(
+      "Drag & drop or paste Excel template file here",
+    );
+
+    /* The old presentation is gone: no "Spreadsheet" field label, and the
+       input is out of sight rather than removed. */
+    await expect(dialog.getByText("Spreadsheet", { exact: true })).toHaveCount(0);
+    const input = dialog.locator("#import-file");
+    await expect(input).toHaveCount(1);
+    const box = await input.boundingBox();
+    expect(box === null || box.width <= 1, "the file input is hidden").toBe(true);
+
+    /* It still only offers to take the format the parser reads. */
+    await expect(input).toHaveAttribute("accept", /\.xlsx/);
+  });
+
+  test("keeps the sentence that names the columns, and its emphasis", async ({
+    page,
+  }) => {
+    const dialog = await openDialog(page);
+    const hint = dialog.locator(".prio-hint");
+
+    await expect(hint).toContainText(
+      "Needs a Title column and a Project key column. Type, Status, Priority, " +
+        "Assignee, Labels, Due date and Description are used when present.",
+    );
+    await expect(hint.locator("strong")).toHaveText(["Title", "Project key"]);
+  });
+
+  test("opens the real file picker when the zone is clicked", async ({ page }) => {
+    const dialog = await openDialog(page);
+
+    const [chooser] = await Promise.all([
+      page.waitForEvent("filechooser"),
+      dialog.locator(".prio-importdrop").click(),
+    ]);
+    /* The picker belongs to the input that was there all along. */
+    expect(chooser.isMultiple()).toBe(false);
+  });
+
+  test("takes a dropped file, and says which one it is holding", async ({ page }) => {
+    const dialog = await openDialog(page);
+    const importButton = dialog.getByRole("button", { name: "Import", exact: true });
+
+    /* Nothing to import until there is something to import. */
+    await expect(importButton).toBeDisabled();
+
+    await sendFile(page, "drop", "dropped-work-items.xlsx");
+
+    await expect(dialog.locator(".prio-importdrop__file")).toHaveText(
+      "dropped-work-items.xlsx",
+    );
+    await expect(dialog.locator(".prio-importdrop")).toHaveAttribute(
+      "data-chosen",
+      "true",
+    );
+    await expect(importButton).toBeEnabled();
+  });
+
+  test("takes a pasted file too", async ({ page }) => {
+    const dialog = await openDialog(page);
+
+    await sendFile(page, "paste", "pasted-work-items.xlsx");
+
+    await expect(dialog.locator(".prio-importdrop__file")).toHaveText(
+      "pasted-work-items.xlsx",
+    );
+    await expect(
+      dialog.getByRole("button", { name: "Import", exact: true }),
+    ).toBeEnabled();
+  });
+
+  /*
+   * Dropping the wrong thing is answered at once rather than after a round
+   * trip. The rule is the server's own — the extension it refuses — so the
+   * two cannot come to disagree about what is importable.
+   */
+  test("refuses a file that is not a spreadsheet, and stays refusable", async ({
+    page,
+  }) => {
+    const dialog = await openDialog(page);
+
+    await sendFile(page, "drop", "notes.txt");
+
+    await expect(dialog.locator(".prio-alert")).toContainText(
+      "Import expects an .xlsx spreadsheet",
+    );
+    await expect(dialog.locator(".prio-importdrop__file")).toHaveCount(0);
+    await expect(
+      dialog.getByRole("button", { name: "Import", exact: true }),
+    ).toBeDisabled();
+
+    /* And the zone still works afterwards: a refusal is not a dead end. */
+    await sendFile(page, "drop", "second-try.xlsx");
+    await expect(dialog.locator(".prio-importdrop__file")).toHaveText(
+      "second-try.xlsx",
+    );
+    await expect(
+      dialog.getByRole("button", { name: "Import", exact: true }),
+    ).toBeEnabled();
+  });
+
+  test("marks itself while a file is dragged over it", async ({ page }) => {
+    const dialog = await openDialog(page);
+    const zone = dialog.locator(".prio-importdrop");
+
+    await expect(zone).not.toHaveAttribute("data-dragging", "true");
+
+    await page.evaluate(() => {
+      document.querySelector(".prio-importdrop")!.dispatchEvent(
+        new DragEvent("dragover", {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: new DataTransfer(),
+        }),
+      );
+    });
+
+    await expect(zone).toHaveAttribute("data-dragging", "true");
+  });
+
+  test("keeps Cancel, and the promise printed beside it", async ({ page }) => {
+    const dialog = await openDialog(page);
+
+    await expect(dialog.locator(".prio-dialog__footer-note")).toHaveText(
+      "Nothing is created until every row is valid.",
+    );
+
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(dialog).toHaveCount(0);
+  });
+
+  test("fits a phone without spilling sideways", async ({ page }) => {
+    const dialog = await openDialog(page);
+
+    await page.setViewportSize({ width: 390, height: 780 });
+    await page.waitForTimeout(250);
+
+    const zone = (await dialog.locator(".prio-importdrop").boundingBox())!;
+    const panel = (await dialog.boundingBox())!;
+    expect(zone.width).toBeLessThanOrEqual(panel.width);
+
+    const overflow = await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth -
+        document.documentElement.clientWidth,
+    );
+    expect(overflow).toBeLessThanOrEqual(1);
+
+    /* Both actions stay reachable rather than wrapping out of the panel. */
+    await expect(dialog.getByRole("button", { name: "Cancel" })).toBeVisible();
+    await expect(
+      dialog.getByRole("button", { name: "Import", exact: true }),
     ).toBeVisible();
   });
 });

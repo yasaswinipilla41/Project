@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { MemberDetailButton } from "@/components/dashboard/MemberDetailDialog";
 import { ProjectProgressBar } from "@/components/projects/ProjectProgressBar";
+import { ProjectDistributionBar } from "@/components/projects/ProjectDistributionBar";
 import { projectProgress } from "@/lib/projectProgress";
 import { Avatar, Card, CardBody } from "@/components/ui/primitives";
 import {
@@ -404,6 +405,10 @@ export function ProjectRow({ project }: { project: DashboardProject }) {
       {/* Decorative here: the link's own accessible name above already says
           the percentage, and announcing it twice helps nobody. */}
       <ProjectProgressBar progress={progress} as="span" decorative />
+
+      {/* What the rest of the work is doing, beside how much of it is done.
+          Counts come from the same grouped pass as the figures below. */}
+      <ProjectDistributionBar distribution={project.distribution} as="span" />
 
       <span className="prio-projrow__stats">
         <span>{progress.percentage}% complete</span>

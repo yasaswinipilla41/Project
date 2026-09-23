@@ -9,6 +9,11 @@ import {
 } from "@/server/queries/due";
 import { CLOSED_STATUSES, OPEN_STATUSES } from "@/lib/domain";
 import { countsAsCompleted } from "@/lib/projectProgress";
+import {
+  distributionCategoryFor,
+  emptyDistribution,
+  type StatusDistribution,
+} from "@/lib/statusDistribution";
 import type { CurrentUser } from "@/lib/session";
 
 /**
@@ -79,6 +84,14 @@ export interface DashboardProject {
   assignedToMe: number;
   /** Derived from open bugs and overdue work, never stored. */
   health: "healthy" | "attention" | "at-risk";
+  /**
+   * The project's work split four ways, from the same grouped pass the counts
+   * above come from — so the breakdown and the totals beside it are readings
+   * of one query rather than two that can disagree. See
+   * `lib/statusDistribution` for what each group means and why Completed here
+   * is narrower than `completed` above.
+   */
+  distribution: StatusDistribution;
 }
 
 export interface DashboardActivity {
@@ -520,6 +533,7 @@ export async function loadDashboard(user: CurrentUser): Promise<DashboardData> {
       completed: number;
       bugs: number;
       openBugs: number;
+      distribution: StatusDistribution;
     }
   >();
 
@@ -531,6 +545,7 @@ export async function loadDashboard(user: CurrentUser): Promise<DashboardData> {
       completed: 0,
       bugs: 0,
       openBugs: 0,
+      distribution: emptyDistribution(),
     };
     const n = row._count._all;
     const isOpen = (OPEN_STATUSES as readonly string[]).includes(row.status);
@@ -542,6 +557,11 @@ export async function loadDashboard(user: CurrentUser): Promise<DashboardData> {
        one definition, in `lib/projectProgress`, so Home cannot disagree with
        the directory about how far through a project is. */
     if (countsAsCompleted(row.status)) entry.completed += n;
+    /* The breakdown is cut from the same rows as `total`, one group per row,
+       so the four groups add up to `total` for every project. The grouping is
+       by project, status *and* type, so a status appears in several rows and
+       each is added rather than replacing the last. */
+    entry.distribution[distributionCategoryFor(row.status)] += n;
     if (row.type === "BUG") {
       entry.bugs += n;
       if (isOpen) entry.openBugs += n;
@@ -577,6 +597,7 @@ export async function loadDashboard(user: CurrentUser): Promise<DashboardData> {
       completed: 0,
       bugs: 0,
       openBugs: 0,
+      distribution: emptyDistribution(),
     };
     const overdue = overdueMap.get(project.id) ?? 0;
 

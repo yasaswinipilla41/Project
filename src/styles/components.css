@@ -187,6 +187,89 @@
   margin-top: var(--prio-space-3);
 }
 
+/*
+ * The import drop zone.
+ *
+ * The whole rectangle is the control: it opens the file picker, takes a drop,
+ * and stands for the paste the text offers. The native file input behind it is
+ * hidden rather than replaced — "Choose File / No file chosen" is the browser's
+ * own chrome, which cannot be styled and said nothing Prio wanted to say.
+ *
+ * Sized in `em`-free tokens and percentages so it keeps its shape in a narrow
+ * dialog: it is the width of the body, and its height comes from padding
+ * rather than a fixed figure that would crop on a short screen.
+ */
+.prio-importdrop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--prio-space-3);
+  width: 100%;
+  padding: var(--prio-space-8) var(--prio-space-5);
+  border: 1.5px dashed var(--prio-border-strong);
+  border-radius: var(--prio-radius-lg);
+  background: var(--prio-bg-surface);
+  text-align: center;
+  cursor: pointer;
+  transition:
+    border-color var(--prio-duration-fast) var(--prio-ease),
+    background var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-importdrop:hover {
+  border-color: var(--prio-primary-400);
+  background: var(--prio-bg-subtle);
+}
+
+.prio-importdrop:focus-visible {
+  outline: none;
+  border-color: var(--prio-primary-500);
+  box-shadow: var(--prio-shadow-focus);
+}
+
+/* Dragging over it, and holding something it will take. */
+.prio-importdrop[data-dragging] {
+  border-color: var(--prio-primary-500);
+  background: var(--prio-primary-50);
+}
+
+/* A file is chosen: the zone stops asking and starts confirming. */
+.prio-importdrop[data-chosen] {
+  border-style: solid;
+  border-color: var(--prio-primary-400);
+  background: var(--prio-primary-50);
+}
+
+.prio-importdrop__icon {
+  color: var(--prio-text-muted);
+}
+
+.prio-importdrop[data-dragging] .prio-importdrop__icon,
+.prio-importdrop[data-chosen] .prio-importdrop__icon {
+  color: var(--prio-primary-600);
+}
+
+.prio-importdrop__text {
+  font-size: var(--prio-text-sm);
+  font-weight: var(--prio-weight-medium);
+  color: var(--prio-text-secondary);
+  /* One line at the dialog's own width, wrapping rather than overflowing once
+     the screen is too narrow to hold it. */
+  max-width: 46ch;
+  line-height: 1.45;
+}
+
+.prio-importdrop__file {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--prio-text-xs);
+  font-weight: var(--prio-weight-medium);
+  color: var(--prio-primary-700);
+}
+
 .prio-error {
   display: flex;
   align-items: center;
