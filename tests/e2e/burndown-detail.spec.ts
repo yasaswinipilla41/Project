@@ -361,6 +361,7 @@ test.describe("The burndown's detail", () => {
            last days are its left and right boundaries, and this sprint's
            line runs from the top of the scale to the bottom of it, so its
            points sit against the top and bottom boundaries too. */
+        const gaps: number[] = [];
         for (let day = 0; day < days; day += 1) {
           await hits.nth(day).hover();
           await expect(chart.locator(".prio-burndown__tip")).toBeVisible();
@@ -375,9 +376,35 @@ test.describe("The burndown's detail", () => {
           ).toBe(false);
           expect(seen.pointerEvents).toBe("none");
           if (!seen.inflow) {
-            expect(seen.gap, `${where}: no gap from the point`).toBeGreaterThanOrEqual(6);
+            /*
+             * Close to the point, on the side it opened.
+             *
+             * The lower bound is the spacing itself: the marker and its
+             * crosshair have to be visible, not merely uncovered. The upper
+             * one is the bug this replaced — the panel used to be sent to the
+             * far edge of the card, two to six hundred pixels from the day it
+             * was describing, whenever the line blocked the obvious
+             * positions. It searches finely now, and narrows itself rather
+             * than desert the point, so a day of this sprint is never more
+             * than a panel's width away from its own detail.
+             */
+            expect(
+              seen.gap,
+              `${where}: no gap from the point`,
+            ).toBeGreaterThanOrEqual(6);
+            expect(seen.gap, `${where}: stranded from the point`).toBeLessThan(
+              100,
+            );
+            gaps.push(seen.gap!);
           }
         }
+
+        /* And most days hug it: the spacing is small and the same wherever
+           the line leaves room for it. */
+        expect(
+          gaps.filter((gap) => gap <= 14).length,
+          `${theme}, ${width}px: too few days sit at the spacing`,
+        ).toBeGreaterThanOrEqual(Math.ceil(days / 2));
       }
     }
   });

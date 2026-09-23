@@ -212,6 +212,7 @@ export function BurndownChart({ data }: { data: Burndown }) {
     if (getComputedStyle(tip).position === "static") {
       tip.style.removeProperty("left");
       tip.style.removeProperty("top");
+      tip.style.removeProperty("max-width");
       return;
     }
 
@@ -224,110 +225,198 @@ export function BurndownChart({ data }: { data: Burndown }) {
     const readInFlow = () => {
       tip.style.removeProperty("left");
       tip.style.removeProperty("top");
+      /* In the flow it takes the card's width, not a width the search tried
+         out for a floating position. */
+      tip.style.removeProperty("max-width");
       tip.classList.add("is-inflow");
     };
 
     const marker = dot.getBoundingClientRect();
     const bounds = card.getBoundingClientRect();
-    const width = tip.offsetWidth;
-    const height = tip.offsetHeight;
-    /* The gap the panel keeps from the point, and from the card's edges. */
-    const gap = 14;
+    /* The gap the panel keeps from the point, and from the card's edges.
+       Small enough to read as attached to the day, wide enough to leave the
+       marker and its crosshair showing. */
+    const gap = 10;
     const inset = 8;
-
-    const minLeft = bounds.left + inset;
-    const maxLeft = bounds.right - inset - width;
-    const minTop = bounds.top + inset;
-    const maxTop = bounds.bottom - inset - height;
-    /* A card too small to hold the panel at all. */
-    if (maxLeft < minLeft || maxTop < minTop) {
-      readInFlow();
-      return;
-    }
 
     const actual = lineOf(svg, "polyline.prio-burndown__actual");
     const ideal = lineOf(svg, "polyline.prio-burndown__ideal");
     const centreX = marker.left + marker.width / 2;
     const centreY = marker.top + marker.height / 2;
     /* Room to see the marker, not merely to miss it. */
-    const keepClear = grow(marker, gap / 2);
+    const keepClear = grow(marker, gap);
 
-    /* Across: centred on the day, then to either side of it — both hard
-       against the point and a gap clear of it — then along the card's edges
-       for a day near one. Down: above the point, below it, level with it,
-       then along the card's own top and bottom. */
-    const acrossOptions = [
-      centreX - width / 2,
-      centreX,
-      centreX - width,
-      marker.right + gap,
-      marker.left - gap - width,
-      minLeft,
-      maxLeft,
-    ];
-    const downOptions = [
-      marker.top - gap - height,
-      marker.bottom + gap,
-      centreY - height / 2,
-      minTop,
-      maxTop,
-    ];
+    /** How far a box ends up from the point, in pixels of clear space. */
+    const awayFrom = (box: Box) =>
+      Math.hypot(
+        Math.max(box.left - centreX, centreX - box.right, 0),
+        Math.max(box.top - centreY, centreY - box.bottom, 0),
+      );
 
-    let best: { left: number; top: number; cost: number } | null = null;
-    for (const across of acrossOptions) {
-      for (const down of downOptions) {
-        const left = clamp(across, minLeft, maxLeft);
-        const top = clamp(down, minTop, maxTop);
-        const box: Box = {
-          left,
-          top,
-          right: left + width,
-          bottom: top + height,
-        };
+    /*
+     * What reading in the flow would cost.
+     *
+     * Measured, not assumed, and measured the same way as a floating
+     * position: the panel is put in the flow for the length of one
+     * measurement and its distance from the point read off. It covers nothing
+     * at all, so it competes on that distance alone — and only if it would be
+     * on screen, because under the chart is below the fold when the card runs
+     * to the bottom of the window, and a panel the reader has to scroll to
+     * find is worse than one across the chart from the point.
+     */
+    tip.style.removeProperty("max-width");
+    tip.classList.add("is-inflow");
+    const flowed = tip.getBoundingClientRect();
+    tip.classList.remove("is-inflow");
+    const flowCost =
+      flowed.top >= 0 && flowed.bottom <= window.innerHeight
+        ? awayFrom({
+            left: flowed.left,
+            top: flowed.top,
+            right: flowed.right,
+            bottom: flowed.bottom,
+          })
+        : Number.POSITIVE_INFINITY;
 
-        /* The point it describes has to stay visible. */
-        if (overlaps(keepClear, box)) continue;
+    /*
+     * The widths to try.
+     *
+     * The panel's own width is part of where it can go: the gap between a
+     * flat line and the edge of the plot is often a little narrower than the
+     * panel's longest line, and then the nearest position that leaves the
+     * line alone is right across the chart. Allowed to wrap into a narrower
+     * column, the same words fit beside the point instead — so the search
+     * runs over a few widths and keeps whatever lands nearest.
+     *
+     * Narrowing is not free: the panel grows taller and reads in more lines,
+     * so a narrower one has to earn its place by being closer. `null` is the
+     * stylesheet's own width, tried first, and the loop stops as soon as a
+     * position is close enough that no narrowing could improve on it.
+     */
+    const natural = tip.offsetWidth;
+    let best: {
+      left: number;
+      top: number;
+      cap: number | null;
+      cost: number;
+    } | null = null;
 
-        /* How far from the point it ended up: a near position reads as
-           belonging to the day, a distant one as floating. */
-        const away = Math.hypot(
-          Math.max(box.left - centreX, centreX - box.right, 0),
-          Math.max(box.top - centreY, centreY - box.bottom, 0),
-        );
-        /* Above is what a reader expects, then beside, then below. */
-        const direction =
-          box.bottom <= marker.top
-            ? 0
-            : box.right <= marker.left || box.left >= marker.right
-              ? 15
-              : 30;
-        /*
-         * What makes a position good, in order.
-         *
-         * Covering the remaining line is disqualifying — it is the answer the
-         * reader came for. After that the panel should read as belonging to
-         * the day, so its distance from the point is what decides, and lying
-         * over the dashed ideal costs about sixty pixels of that distance:
-         * enough to prefer a nearby position that misses it, not enough to
-         * send the panel across the card to avoid a reference line.
-         */
-        const cost =
-          (touchesLine(box, actual) ? 4000 : 0) +
-          (touchesLine(box, ideal) ? 60 : 0) +
-          away +
-          direction;
+    for (const cap of [null, 360, 320, 280, 240] as const) {
+      if (cap === null) tip.style.removeProperty("max-width");
+      else tip.style.maxWidth = `${cap}px`;
 
-        if (!best || cost < best.cost) best = { left, top, cost };
+      const width = tip.offsetWidth;
+      const height = tip.offsetHeight;
+      const minLeft = bounds.left + inset;
+      const maxLeft = bounds.right - inset - width;
+      const minTop = bounds.top + inset;
+      const maxTop = bounds.bottom - inset - height;
+      /* This width cannot be held inside the card at all. */
+      if (maxLeft < minLeft || maxTop < minTop) continue;
+
+      /* What the wrapping costs, against the closeness it buys. */
+      const narrowing = 0.4 * Math.max(0, natural - width);
+
+      /*
+       * Where to look.
+       *
+       * The positions a reader expects first — above the point, below it, to
+       * either side, centred on it or aligned with it — and then a sweep of
+       * the card in small steps.
+       *
+       * The sweep is what keeps the panel near the day. A handful of anchors
+       * cannot see that the line ends a little way past the point, or that it
+       * clears the panel's height a little way above it, so when every anchor
+       * lay over the line the panel had to fall back on the card's far edge —
+       * a tooltip a third of a chart away from the point it belongs to.
+       * Stepped finely, the search finds the nearest spot that leaves the
+       * line alone, whatever shape the line is.
+       */
+      const sweep = (low: number, high: number, step: number) => {
+        const stops: number[] = [];
+        for (let at = low; at < high; at += step) stops.push(at);
+        stops.push(high);
+        return stops;
+      };
+      const acrossOptions = [
+        centreX - width / 2,
+        centreX,
+        centreX - width,
+        marker.right + gap,
+        marker.left - gap - width,
+        ...sweep(minLeft, maxLeft, Math.max(8, (maxLeft - minLeft) / 30)),
+      ];
+      const downOptions = [
+        marker.top - gap - height,
+        marker.bottom + gap,
+        centreY - height / 2,
+        ...sweep(minTop, maxTop, Math.max(8, (maxTop - minTop) / 16)),
+      ];
+
+      for (const across of acrossOptions) {
+        for (const down of downOptions) {
+          const left = clamp(across, minLeft, maxLeft);
+          const top = clamp(down, minTop, maxTop);
+          const box: Box = {
+            left,
+            top,
+            right: left + width,
+            bottom: top + height,
+          };
+
+          /* The point it describes has to stay visible. */
+          if (overlaps(keepClear, box)) continue;
+
+          /* How far from the point it ended up: a near position reads as
+             belonging to the day, a distant one as floating. */
+          const away = awayFrom(box);
+          /* Above is what a reader expects, then beside, then below — a
+             tie-breaker between positions of much the same distance, not a
+             reason to sit further off the point. */
+          const direction =
+            box.bottom <= marker.top
+              ? 0
+              : box.right <= marker.left || box.left >= marker.right
+                ? 6
+                : 12;
+          /*
+           * What makes a position good, in order.
+           *
+           * Covering the remaining line is disqualifying — it is the answer
+           * the reader came for. After that the panel should read as
+           * belonging to the day being read, so its distance from the point
+           * decides, and lying over the dashed ideal costs about twenty
+           * pixels of that distance: enough to step aside for a position
+           * just as close, not enough to move the panel away from the point
+           * over a reference line.
+           */
+          const cost =
+            (touchesLine(box, actual) ? 4000 : 0) +
+            (touchesLine(box, ideal) ? 20 : 0) +
+            away +
+            direction +
+            narrowing;
+
+          if (!best || cost < best.cost) best = { left, top, cap, cost };
+        }
       }
+
+      /* Already beside the point: nothing narrower can beat that. */
+      if (best && best.cost <= gap + 12) break;
     }
 
-    /* Nothing that leaves the remaining line showing: reading under the chart
-       covers nothing at all, so that wins over covering the answer. */
-    if (!best || best.cost >= 4000) {
+    /*
+     * Nothing that leaves the remaining line showing, or nothing as near the
+     * point as the flow is: under the chart it goes, where it covers nothing
+     * at all.
+     */
+    if (!best || best.cost >= 4000 || best.cost > flowCost) {
       readInFlow();
       return;
     }
 
+    if (best.cap === null) tip.style.removeProperty("max-width");
+    else tip.style.maxWidth = `${best.cap}px`;
     tip.style.left = `${Math.round(best.left)}px`;
     tip.style.top = `${Math.round(best.top)}px`;
     tip.classList.add("is-placed");
@@ -337,14 +426,27 @@ export function BurndownChart({ data }: { data: Burndown }) {
      unplaced. */
   useLayoutEffect(placeTip);
 
-  /* The chart moves under a fixed panel when the page scrolls or the window
-     changes size, and the panel follows it. */
+  /*
+   * The chart moves under a fixed panel when the page scrolls or the window
+   * changes size, and the panel follows it — at most once a frame, because
+   * choosing a position is a few milliseconds of measuring and a scroll
+   * fires far more often than it paints.
+   */
   useEffect(() => {
-    window.addEventListener("scroll", placeTip, true);
-    window.addEventListener("resize", placeTip);
+    let frame = 0;
+    const follow = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        placeTip();
+      });
+    };
+    window.addEventListener("scroll", follow, true);
+    window.addEventListener("resize", follow);
     return () => {
-      window.removeEventListener("scroll", placeTip, true);
-      window.removeEventListener("resize", placeTip);
+      if (frame) cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", follow, true);
+      window.removeEventListener("resize", follow);
     };
   }, [placeTip]);
 
