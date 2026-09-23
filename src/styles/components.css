@@ -929,6 +929,64 @@ a.prio-key:hover {
   color: var(--prio-primary-600);
 }
 
+/*
+ * The Columns menu's own checkbox square, distinct from `.prio-menu__item`'s
+ * plain tint-when-selected look: a set of columns to turn on and off reads
+ * more clearly as checkboxes than as a list of rows that merely change color.
+ * Confined to this one menu so every other dropdown's selected look is
+ * untouched.
+ */
+.prio-colpicker__box {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--prio-border-strong);
+  border-radius: var(--prio-radius-xs);
+  color: transparent;
+  background: var(--prio-bg-surface);
+  transition: background var(--prio-duration-fast) var(--prio-ease),
+    border-color var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-menu__item[aria-checked="true"] .prio-colpicker__box {
+  background: var(--prio-primary-600);
+  border-color: var(--prio-primary-600);
+  color: #fff;
+}
+
+/* Key and Summary: the same row shape, a locked box instead of a checkbox. */
+.prio-colpicker__locked {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-3);
+  width: 100%;
+  padding: var(--prio-space-2) var(--prio-space-3);
+  font-size: var(--prio-text-sm);
+  color: var(--prio-text-secondary);
+}
+
+.prio-colpicker__locked .prio-colpicker__box {
+  background: var(--prio-bg-hover);
+  border-color: var(--prio-border-strong);
+  color: var(--prio-text-muted);
+}
+
+.prio-colpicker__locked-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.prio-colpicker__always {
+  flex-shrink: 0;
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-medium);
+  letter-spacing: var(--prio-tracking-caps);
+  text-transform: uppercase;
+  color: var(--prio-text-muted);
+}
+
 .prio-menu__separator {
   height: 1px;
   margin: var(--prio-space-2) calc(var(--prio-space-2) * -1);

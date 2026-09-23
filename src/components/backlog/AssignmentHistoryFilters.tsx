@@ -79,8 +79,8 @@ export function AssignmentHistoryFilters({
   return (
     <div className="prio-filters" data-pending={pending || undefined}>
       <form className="prio-filters__search" onSubmit={search} role="search">
-        <div className="prio-inputgroup">
-          <span className="prio-inputgroup__icon" aria-hidden>
+        <div className="prio-search">
+          <span className="prio-search__icon" aria-hidden>
             <IconSearch size={15} />
           </span>
           <input

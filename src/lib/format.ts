@@ -11,8 +11,17 @@
  * the activity trail and every card read the same way. Changing the shape of a
  * date is a change to these three formatters and to nothing else.
  *
- * The timezone is untouched: no `timeZone` is set, so every date is rendered
- * in the reader's own, exactly as before.
+ * The timezone is untouched for day-only dates: no `timeZone` is set, so a
+ * due date or a sprint boundary is rendered in the reader's own, exactly as
+ * before — those are calendar days, not instants, and already read correctly
+ * off the server's own local clock (see the `TZ` note in docker-compose.yml).
+ *
+ * A date *with a time* — `formatDateTime` — names a single moment (an issue
+ * was created at 10:15 AM, not "on" 10:15 AM), and Prio has one audience: the
+ * organisation runs on IST. So `DATETIME_FMT` pins `timeZone: "Asia/Kolkata"`
+ * explicitly rather than leaning on the runtime's local zone. The conversion
+ * from the stored UTC instant to IST then happens exactly once, here — nowhere
+ * else re-applies an offset.
  */
 const DATE_FMT = new Intl.DateTimeFormat("en-US", {
   month: "short",
@@ -32,6 +41,7 @@ const DATETIME_FMT = new Intl.DateTimeFormat("en-US", {
   hour: "numeric",
   minute: "2-digit",
   hour12: true,
+  timeZone: "Asia/Kolkata",
 });
 
 export function formatDate(value: Date | string | null | undefined): string {
