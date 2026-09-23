@@ -218,11 +218,18 @@ export async function loadBurndown(
   const sprint = await prisma.sprint.findUnique({
     where: { id: sprintId },
     select: {
+      name: true,
+      projectId: true,
+      status: true,
       startDate: true,
       endDate: true,
       issues: {
         select: {
           id: true,
+          /* Named, so a day's detail can say which issues make up what is
+             left rather than only how much of it there is. */
+          key: true,
+          title: true,
           effortHours: true,
           remainingHours: true,
           /* Read because closed work has nothing left to burn whatever its
@@ -236,19 +243,64 @@ export async function loadBurndown(
   });
   if (!sprint) return null;
 
-  const issueIds = sprint.issues.map((issue) => issue.id);
+  /*
+   * Work this sprint used to hold.
+   *
+   * An issue moved out still belongs in the history: the sprint carried its
+   * weight until the day it left, and "why did the line drop?" is answered by
+   * saying so. Found through the trail rather than by guessing — an issue's
+   * `sprintId` change records the sprint it left by name — and scoped to this
+   * sprint's own project, so another project's identically named sprint
+   * cannot pull its work in here.
+   */
+  const departures =
+    sprint.name.length === 0
+      ? []
+      : await prisma.activityLogEntry.findMany({
+          where: {
+            field: "sprintId",
+            oldValue: sprint.name,
+            issue: { projectId: sprint.projectId },
+          },
+          select: { issueId: true },
+        });
 
-  /* The readings and the status changes, in one pass over this sprint's own
-     work. `newValue` is text in the trail — it is one column shared by every
-     kind of field — so both are parsed back here and anything unparseable is
-     dropped rather than guessed at. */
+  const current = new Set(sprint.issues.map((issue) => issue.id));
+  const departedIds = [
+    ...new Set(departures.map((entry) => entry.issueId)),
+  ].filter((id) => !current.has(id));
+
+  const departed =
+    departedIds.length === 0
+      ? []
+      : await prisma.issue.findMany({
+          where: { id: { in: departedIds }, projectId: sprint.projectId },
+          select: {
+            id: true,
+            key: true,
+            title: true,
+            effortHours: true,
+            remainingHours: true,
+            status: true,
+          },
+        });
+
+  const issueIds = [...current, ...departed.map((issue) => issue.id)];
+
+  /* The readings, the status changes, the estimates and the moves in and out,
+     in one pass over the work this sprint has held. `newValue` is text in the
+     trail — it is one column shared by every kind of field — so each is
+     parsed back here and anything unparseable is dropped rather than guessed
+     at. */
   const entries =
     issueIds.length === 0
       ? []
       : await prisma.activityLogEntry.findMany({
           where: {
             issueId: { in: issueIds },
-            field: { in: ["remainingHours", "status"] },
+            field: {
+              in: ["remainingHours", "status", "effortHours", "sprintId"],
+            },
           },
           select: {
             issueId: true,
@@ -260,11 +312,17 @@ export async function loadBurndown(
           orderBy: { createdAt: "asc" },
         });
 
+  const hours = (value: string | null): number | null => {
+    if (value === null || value.trim() === "") return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
   const history = entries.flatMap((entry) => {
-    if (entry.field !== "remainingHours" || entry.newValue === null) return [];
-    const hours = Number(entry.newValue);
-    if (!Number.isFinite(hours)) return [];
-    return [{ at: entry.createdAt, issueId: entry.issueId, remainingHours: hours }];
+    if (entry.field !== "remainingHours") return [];
+    const remainingHours = hours(entry.newValue);
+    if (remainingHours === null) return [];
+    return [{ at: entry.createdAt, issueId: entry.issueId, remainingHours }];
   });
 
   /* When each item was in which status, so the actual line falls on the day
@@ -283,17 +341,66 @@ export async function loadBurndown(
     ];
   });
 
+  /* Estimates as they stood, so a day's commitment is what the sprint had
+     actually been told it was taking on, and a re-estimate can be explained
+     with the figure it moved from. */
+  const estimateHistory = entries.flatMap((entry) => {
+    if (entry.field !== "effortHours") return [];
+    return [
+      {
+        at: entry.createdAt,
+        issueId: entry.issueId,
+        from: hours(entry.oldValue),
+        to: hours(entry.newValue),
+      },
+    ];
+  });
+
+  /* In and out of this sprint. An issue's `sprintId` change names the sprints
+     on either side of the move, so an entry naming this one on the right is a
+     joining and on the left a leaving; a move between two other sprints says
+     nothing here and is skipped. */
+  const membershipHistory = entries.flatMap((entry) => {
+    if (entry.field !== "sprintId") return [];
+    if (entry.newValue === sprint.name) {
+      return [{ at: entry.createdAt, issueId: entry.issueId, joined: true }];
+    }
+    if (entry.oldValue === sprint.name) {
+      return [{ at: entry.createdAt, issueId: entry.issueId, joined: false }];
+    }
+    return [];
+  });
+
   return burndown({
     startDate: sprint.startDate,
     endDate: sprint.endDate,
-    items: sprint.issues.map((issue) => ({
-      issueId: issue.id,
-      effortHours: issue.effortHours,
-      remainingHours: issue.remainingHours,
-      status: issue.status,
-    })),
+    items: [
+      ...sprint.issues.map((issue) => ({
+        issueId: issue.id,
+        key: issue.key,
+        title: issue.title,
+        effortHours: issue.effortHours,
+        remainingHours: issue.remainingHours,
+        status: issue.status,
+        member: true,
+      })),
+      ...departed.map((issue) => ({
+        issueId: issue.id,
+        key: issue.key,
+        title: issue.title,
+        effortHours: issue.effortHours,
+        remainingHours: issue.remainingHours,
+        status: issue.status,
+        member: false,
+      })),
+    ],
     history,
     statusHistory,
+    estimateHistory,
+    membershipHistory,
+    /* A marker for today is worth drawing on the sprint being worked, and
+       only there. */
+    active: sprint.status === "ACTIVE",
     now,
   });
 }

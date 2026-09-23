@@ -2,25 +2,35 @@ import type { IssueStatus } from "@prisma/client";
 import { isClosedStatus } from "@/lib/domain";
 
 /**
- * A sprint's burndown: what was committed, and what is left.
+ * A sprint's burndown: what was committed, what is left, and why it moved.
  *
  * Deliberately a pure function over plain data — no database, no clock of its
  * own, no chart library. Two reasons, and both matter:
  *
  *  - **It can be checked.** A burndown is an argument about whether a team is
  *    going to finish, and an argument nobody can examine is decoration. Given
- *    the same sprint and the same recorded history this returns the same two
- *    lines every time, and a test can state exactly where they run.
+ *    the same sprint and the same recorded history this returns the same lines
+ *    every time, and a test can state exactly where they run.
  *  - **Nothing is invented.** The ideal line is arithmetic: total effort down
  *    to zero across the sprint's own dates. The actual line is read from what
  *    was recorded, and stops at the last day there is a reading for. Where
  *    there is no history there is no line, rather than a plausible-looking one.
+ *
+ * Each day also carries what made it up — the open issues and what each still
+ * owes — and what changed that day, with the reason: an issue finished,
+ * reopened, added, taken out, re-estimated, or a remainder written down. Every
+ * one of those figures is derived from the same per-item rule as the line, so
+ * a day's detail and the point it belongs to cannot disagree.
  */
 
 /** One work item's contribution, as the sprint currently holds it. */
 export interface BurndownItem {
   /** Which item this is, so its recorded history can be matched to it. */
   issueId: string;
+  /** Its key, for naming it in a day's detail. Falls back to the id. */
+  key?: string;
+  /** Its title, for the same reason. */
+  title?: string;
   /** What it was estimated to need. Null when nobody estimated it. */
   effortHours: number | null;
   /** What is thought to be left. Null when nobody has said. */
@@ -37,6 +47,23 @@ export interface BurndownItem {
    * open — the behaviour before statuses were read at all.
    */
   status?: IssueStatus;
+  /**
+   * Whether the item is in the sprint *now*. Defaults to true.
+   *
+   * False for one that has been moved out: it still belongs in the history,
+   * because the sprint carried its weight up to the day it left.
+   */
+  member?: boolean;
+}
+
+/** A recorded change to one item's remaining hours. */
+export interface RemainingChange {
+  /** When the change was recorded. */
+  at: Date;
+  /** The item it belongs to, so the latest reading per item can be found. */
+  issueId: string;
+  /** Hours remaining after the change. */
+  remainingHours: number;
 }
 
 /**
@@ -56,14 +83,55 @@ export interface StatusChange {
   to: IssueStatus;
 }
 
-/** A recorded change to one item's remaining hours. */
-export interface RemainingChange {
-  /** When the change was recorded. */
+/** A recorded change to one item's estimate. */
+export interface EstimateChange {
   at: Date;
-  /** The item it belongs to, so the latest reading per item can be found. */
   issueId: string;
-  /** Hours remaining after the change. */
-  remainingHours: number;
+  /** The estimate before, where the trail says; null when there was none. */
+  from: number | null;
+  /** The estimate after; null when it was cleared. */
+  to: number | null;
+}
+
+/** An item joining or leaving the sprint. */
+export interface MembershipChange {
+  at: Date;
+  issueId: string;
+  /** True when it came in, false when it went out. */
+  joined: boolean;
+}
+
+/** One issue still owing work, as a day's detail lists it. */
+export interface BurndownIssue {
+  issueId: string;
+  key: string;
+  title: string;
+  /** The status it was in that day, where the record says. */
+  status: IssueStatus | null;
+  /** What it still owed that day. */
+  effortHours: number;
+}
+
+/** Why a day's remaining effort moved. */
+export type BurndownReason =
+  | "completed"
+  | "reopened"
+  | "added"
+  | "removed"
+  | "estimate"
+  | "remainder";
+
+export interface BurndownChange {
+  at: Date;
+  issueId: string;
+  key: string;
+  title: string;
+  reason: BurndownReason;
+  /** The hours this moved the remaining effort by: negative burns down. */
+  delta: number;
+  /** For an estimate or a remainder: what it was, and what it became. */
+  from?: number | null;
+  to?: number | null;
 }
 
 export interface BurndownPoint {
@@ -76,6 +144,19 @@ export interface BurndownPoint {
    * sprint has not reached yet. Null is drawn as a gap, never as zero.
    */
   actual: number | null;
+  /** The open issues that made up `actual`, and what each still owed. */
+  remainingIssues: BurndownIssue[];
+  /** How many of the sprint's issues were still open at the end of the day. */
+  remainingCount: number;
+  /** How many were finished with. */
+  completedCount: number;
+  /** The estimate the sprint held that day — what `completedEffort` and
+   *  `actual` add up to. */
+  committedEffort: number;
+  /** Effort finished by the end of the day: committed, less what was left. */
+  completedEffort: number;
+  /** What changed that day, and why. Empty on a quiet day. */
+  changes: BurndownChange[];
 }
 
 export interface Burndown {
@@ -83,8 +164,22 @@ export interface Burndown {
   totalEffort: number;
   /** What is left across the sprint right now. */
   remaining: number;
+  /** What has been finished: the commitment, less what is left. */
+  completedEffort: number;
   /** How many of the sprint's items carry no estimate at all. */
   unestimated: number;
+  /** How many issues the sprint holds now. */
+  totalIssues: number;
+  /** How many of them are finished with. */
+  completedIssues: number;
+  /** How many are still open. */
+  remainingIssues: number;
+  /** Where today falls in `points`, or null when the sprint does not cover
+   *  today. */
+  todayIndex: number | null;
+  /** Whether the sprint is the one being worked, which is what makes a marker
+   *  for today worth drawing. */
+  active: boolean;
   points: BurndownPoint[];
 }
 
@@ -112,13 +207,26 @@ function daysBetween(start: Date, end: Date): Date[] {
   return days;
 }
 
+function byTime<T extends { at: Date; issueId: string }>(
+  events: T[],
+): Map<string, T[]> {
+  const grouped = new Map<string, T[]>();
+  for (const event of [...events].sort(
+    (a, b) => a.at.getTime() - b.at.getTime(),
+  )) {
+    const list = grouped.get(event.issueId);
+    if (list) list.push(event);
+    else grouped.set(event.issueId, [event]);
+  }
+  return grouped;
+}
+
 /**
- * The two lines, for one sprint.
+ * The two lines, and what each day is made of, for one sprint.
  *
- * `history` is every recorded change to any of the sprint's items' remaining
- * hours — the trail, not a second table. `now` is passed in rather than read,
- * so a test can stand anywhere in the sprint and the answer does not depend on
- * when it was run.
+ * Every `history` argument is the issues' own trail — not a second table.
+ * `now` is passed in rather than read, so a test can stand anywhere in the
+ * sprint and the answer does not depend on when it was run.
  */
 export function burndown(params: {
   startDate: Date;
@@ -132,16 +240,25 @@ export function burndown(params: {
    * line falls on the day the work was actually finished.
    */
   statusHistory?: StatusChange[];
+  /** Recorded estimate changes, so a day's commitment is the estimate the
+   *  sprint actually held then rather than the one it holds now. */
+  estimateHistory?: EstimateChange[];
+  /** Issues joining and leaving the sprint, so a day counts the work the
+   *  sprint was carrying on that day. */
+  membershipHistory?: MembershipChange[];
+  /** Whether this sprint is the one being worked. */
+  active?: boolean;
   now: Date;
 }): Burndown {
   const { startDate, endDate, items, history, now } = params;
   const statusHistory = params.statusHistory ?? [];
+  const estimateHistory = params.estimateHistory ?? [];
+  const membershipHistory = params.membershipHistory ?? [];
 
-  const totalEffort = items.reduce(
-    (sum, item) => sum + (item.effortHours ?? 0),
-    0,
-  );
-  const unestimated = items.filter((item) => item.effortHours === null).length;
+  const statusFor = byTime(statusHistory);
+  const readingsFor = byTime(history);
+  const estimatesFor = byTime(estimateHistory);
+  const membershipFor = byTime(membershipHistory);
 
   /*
    * ---------------------------------------------------------------- the rule
@@ -157,33 +274,17 @@ export function burndown(params: {
    *      became open*. A figure recorded while an item was finished says
    *      nothing about it once it has been reopened, so a reopened item does
    *      not keep the nought it was closed on.
-   *   3. Otherwise its whole estimate: it is in the sprint, it is open, and
-   *      nothing says any of it is done.
+   *   3. Otherwise its whole estimate, as the estimate stood then.
    *
    * An item with no estimate and no remainder contributes nothing, because
    * there is nothing to contribute - it is counted in `unestimated` instead.
+   * And an item the sprint was not holding that day contributes nothing to
+   * that day, whatever state it was in.
    */
-  const changesFor = new Map<string, StatusChange[]>();
-  for (const change of [...statusHistory].sort(
-    (a, b) => a.at.getTime() - b.at.getTime(),
-  )) {
-    const list = changesFor.get(change.issueId);
-    if (list) list.push(change);
-    else changesFor.set(change.issueId, [change]);
-  }
-
-  const readingsFor = new Map<string, RemainingChange[]>();
-  for (const reading of [...history].sort(
-    (a, b) => a.at.getTime() - b.at.getTime(),
-  )) {
-    const list = readingsFor.get(reading.issueId);
-    if (list) list.push(reading);
-    else readingsFor.set(reading.issueId, [reading]);
-  }
 
   /** The status an item was in at `cutoff`, as far as the record says. */
   function statusAt(item: BurndownItem, cutoff: number): IssueStatus | null {
-    const changes = changesFor.get(item.issueId) ?? [];
+    const changes = statusFor.get(item.issueId) ?? [];
     let latest: IssueStatus | null = null;
     let seen = false;
 
@@ -200,13 +301,47 @@ export function burndown(params: {
     return changes[0]?.from ?? item.status ?? null;
   }
 
+  /** The estimate an item carried at `cutoff`. */
+  function estimateAt(item: BurndownItem, cutoff: number): number {
+    const changes = estimatesFor.get(item.issueId) ?? [];
+    let latest: number | null | undefined;
+
+    for (const change of changes) {
+      if (change.at.getTime() >= cutoff) break;
+      latest = change.to;
+    }
+    if (latest !== undefined) return latest ?? 0;
+
+    /* Before the first recorded change it carried whatever that change says
+       it left; with no trail, the estimate it carries now. */
+    if (changes.length > 0) return changes[0]!.from ?? 0;
+    return item.effortHours ?? 0;
+  }
+
+  /** Whether the sprint was holding the item at `cutoff`. */
+  function memberAt(item: BurndownItem, cutoff: number): boolean {
+    const changes = membershipFor.get(item.issueId) ?? [];
+    let latest: boolean | undefined;
+
+    for (const change of changes) {
+      if (change.at.getTime() >= cutoff) break;
+      latest = change.joined;
+    }
+    if (latest !== undefined) return latest;
+
+    /* Before the first recorded move it was the opposite of what that move
+       made it; with no trail, whatever it is now. */
+    if (changes.length > 0) return !changes[0]!.joined;
+    return item.member ?? true;
+  }
+
   /**
    * When the item last became open, as of `cutoff` - `-Infinity` when it has
    * been open all along, which is the ordinary case.
    */
   function openedAt(item: BurndownItem, cutoff: number): number {
     let opened = -Infinity;
-    for (const change of changesFor.get(item.issueId) ?? []) {
+    for (const change of statusFor.get(item.issueId) ?? []) {
       if (change.at.getTime() >= cutoff) break;
       const wasClosed = change.from !== null && isClosedStatus(change.from);
       if (wasClosed && !isClosedStatus(change.to)) opened = change.at.getTime();
@@ -241,24 +376,90 @@ export function burndown(params: {
       return item.remainingHours;
     }
 
-    return item.effortHours ?? 0;
+    return estimateAt(item, cutoff);
   }
 
-  /* What is left right now, by that rule. */
-  const remaining = items.reduce(
-    (sum, item) => sum + remainderAt(item, now.getTime() + 1, true),
+  /** What the item owed the sprint at `cutoff`: nothing, if it was not in it. */
+  function owedAt(item: BurndownItem, cutoff: number, live: boolean): number {
+    if (!memberAt(item, cutoff)) return 0;
+    return remainderAt(item, cutoff, live);
+  }
+
+  const nameOf = (item: BurndownItem) => ({
+    key: item.key ?? item.issueId,
+    title: item.title ?? "",
+  });
+
+  /* ------------------------------------------------------------- right now */
+
+  const nowCutoff = now.getTime() + 1;
+  const held = items.filter((item) => memberAt(item, nowCutoff));
+
+  const totalEffort = held.reduce(
+    (sum, item) => sum + estimateAt(item, nowCutoff),
     0,
   );
+  const unestimated = held.filter(
+    (item) => estimateAt(item, nowCutoff) === 0 && item.effortHours === null,
+  ).length;
+  const remaining = held.reduce(
+    (sum, item) => sum + owedAt(item, nowCutoff, true),
+    0,
+  );
+  const completedIssues = held.filter((item) => {
+    const status = statusAt(item, nowCutoff);
+    return status !== null && isClosedStatus(status);
+  }).length;
+
+  /* ------------------------------------------------------------- the days */
 
   const days = daysBetween(startDate, endDate);
   const lastIdeal = days.length - 1;
   const today = startOfDay(now).getTime();
 
+  /** Every recorded event, as one list, so a day's changes are one pass. */
+  const events: { at: Date; item: BurndownItem; reason: BurndownReason; from?: number | null; to?: number | null }[] =
+    [];
+  for (const item of items) {
+    for (const change of statusFor.get(item.issueId) ?? []) {
+      const closing = isClosedStatus(change.to);
+      const wasClosed = change.from !== null && isClosedStatus(change.from);
+      if (closing && !wasClosed) {
+        events.push({ at: change.at, item, reason: "completed" });
+      } else if (!closing && wasClosed) {
+        events.push({ at: change.at, item, reason: "reopened" });
+      }
+    }
+    for (const change of membershipFor.get(item.issueId) ?? []) {
+      events.push({
+        at: change.at,
+        item,
+        reason: change.joined ? "added" : "removed",
+      });
+    }
+    for (const change of estimatesFor.get(item.issueId) ?? []) {
+      events.push({
+        at: change.at,
+        item,
+        reason: "estimate",
+        from: change.from,
+        to: change.to,
+      });
+    }
+    for (const change of readingsFor.get(item.issueId) ?? []) {
+      events.push({
+        at: change.at,
+        item,
+        reason: "remainder",
+        to: change.remainingHours,
+      });
+    }
+  }
+  events.sort((a, b) => a.at.getTime() - b.at.getTime());
+
   const points: BurndownPoint[] = days.map((date, index) => {
     const ideal =
-      lastIdeal <= 0
-        ? 0
-        : totalEffort - (totalEffort * index) / lastIdeal;
+      lastIdeal <= 0 ? 0 : totalEffort - (totalEffort * index) / lastIdeal;
 
     /*
      * A day the sprint has not reached has no actual value — not zero, and
@@ -266,18 +467,100 @@ export function burndown(params: {
      * the future.
      */
     if (date.getTime() > today) {
-      return { date, ideal, actual: null };
+      return {
+        date,
+        ideal,
+        actual: null,
+        remainingIssues: [],
+        remainingCount: 0,
+        completedCount: 0,
+        committedEffort: 0,
+        completedEffort: 0,
+        changes: [],
+      };
     }
 
-    /* What was outstanding at the end of this day, by the same rule that
-       decides what is outstanding now. */
-    const actual = items.reduce(
-      (sum, item) => sum + remainderAt(item, date.getTime() + DAY, false),
-      0,
+    /* What the sprint was holding at the end of this day, by the same rule
+       that decides what it is holding now. */
+    const endOfDay = date.getTime() + DAY;
+    const holding = items.filter((item) => memberAt(item, endOfDay));
+
+    const remainingIssues: BurndownIssue[] = [];
+    let actual = 0;
+    let committedEffort = 0;
+    let completedCount = 0;
+
+    for (const item of holding) {
+      const owed = remainderAt(item, endOfDay, false);
+      const status = statusAt(item, endOfDay);
+      committedEffort += estimateAt(item, endOfDay);
+      actual += owed;
+
+      if (status !== null && isClosedStatus(status)) {
+        completedCount += 1;
+        continue;
+      }
+      remainingIssues.push({
+        issueId: item.issueId,
+        ...nameOf(item),
+        status,
+        effortHours: owed,
+      });
+    }
+
+    /* The heaviest first: what a reader wants from this list is what is
+       holding the sprint up. */
+    remainingIssues.sort(
+      (a, b) => b.effortHours - a.effortHours || a.key.localeCompare(b.key),
     );
 
-    return { date, ideal: Math.max(0, ideal), actual };
+    /* Why the line moved today. The difference each event made is read the
+       same way the line is — what the item owed a moment before, against what
+       it owed a moment after — so the reasons listed for a day always add up
+       to the step the line took. */
+    const changes: BurndownChange[] = [];
+    for (const event of events) {
+      const at = event.at.getTime();
+      if (at < date.getTime() || at >= endOfDay) continue;
+      const delta =
+        owedAt(event.item, at + 1, false) - owedAt(event.item, at, false);
+      if (delta === 0 && event.reason !== "estimate") continue;
+      changes.push({
+        at: event.at,
+        issueId: event.item.issueId,
+        ...nameOf(event.item),
+        reason: event.reason,
+        delta,
+        ...(event.from === undefined ? {} : { from: event.from }),
+        ...(event.to === undefined ? {} : { to: event.to }),
+      });
+    }
+
+    return {
+      date,
+      ideal: Math.max(0, ideal),
+      actual,
+      remainingIssues,
+      remainingCount: remainingIssues.length,
+      completedCount,
+      committedEffort,
+      completedEffort: Math.max(0, committedEffort - actual),
+      changes,
+    };
   });
 
-  return { totalEffort, remaining, unestimated, points };
+  const todayIndex = days.findIndex((date) => date.getTime() === today);
+
+  return {
+    totalEffort,
+    remaining,
+    completedEffort: Math.max(0, totalEffort - remaining),
+    unestimated,
+    totalIssues: held.length,
+    completedIssues,
+    remainingIssues: held.length - completedIssues,
+    todayIndex: todayIndex === -1 ? null : todayIndex,
+    active: params.active ?? false,
+    points,
+  };
 }

@@ -362,3 +362,234 @@ describe("what a status means for what is left", () => {
     expect(chart.points.map((point) => point.actual)).toEqual([10, 6, 6, 6, 6]);
   });
 });
+
+/**
+ * What a day is made of, and why it moved.
+ *
+ * The line answers "how much is left" and nothing else. These are the
+ * answers a reader actually wants next — which issues that remainder is, how
+ * many there are, and what changed to move it — and they are read from the
+ * same per-item rule as the line, so a day's detail and its point cannot
+ * disagree. That last property is the one worth protecting: the reasons
+ * listed for a day are each measured as what an item owed a moment before
+ * against a moment after, so they add up to the step the line took.
+ */
+describe("what a day is made of", () => {
+  const ITEM = {
+    issueId: "a",
+    key: "ENG-1",
+    title: "Sixteen hours of it",
+    effortHours: 16,
+    remainingHours: 16,
+  };
+
+  it("counts the sprint's effort and issues, finished and left", () => {
+    const chart = burndown({
+      startDate: START,
+      endDate: END,
+      items: [
+        { ...ITEM, status: "DONE" },
+        { issueId: "b", key: "ENG-2", title: "Open", effortHours: 8, remainingHours: 8, status: "IN_PROGRESS" },
+        { issueId: "c", key: "ENG-3", title: "Rejected", effortHours: 4, remainingHours: 4, status: "REJECTED" },
+      ],
+      history: [],
+      now: at(16),
+    });
+
+    /* 28 committed, 12 of it finished with (16 done + 4 rejected), 8 left —
+       and the issue counts by the same division. */
+    expect(chart).toMatchObject({
+      totalEffort: 28,
+      completedEffort: 20,
+      remaining: 8,
+      totalIssues: 3,
+      completedIssues: 2,
+      remainingIssues: 1,
+    });
+  });
+
+  it("says which issues make up a day's remainder, heaviest first", () => {
+    const chart = burndown({
+      startDate: START,
+      endDate: END,
+      items: [
+        { issueId: "a", key: "ENG-1", title: "Small", effortHours: 4, remainingHours: 4, status: "TODO" },
+        { issueId: "b", key: "ENG-2", title: "Large", effortHours: 12, remainingHours: 12, status: "REOPENED" },
+      ],
+      history: [],
+      now: at(16),
+    });
+
+    const day = chart.points[0]!;
+    expect(day.remainingIssues).toEqual([
+      { issueId: "b", key: "ENG-2", title: "Large", status: "REOPENED", effortHours: 12 },
+      { issueId: "a", key: "ENG-1", title: "Small", status: "TODO", effortHours: 4 },
+    ]);
+    expect(day.remainingCount).toBe(2);
+    expect(day.completedCount).toBe(0);
+  });
+
+  it("explains the day work was finished", () => {
+    const chart = burndown({
+      startDate: START,
+      endDate: END,
+      items: [{ ...ITEM, status: "DONE" }],
+      history: [],
+      statusHistory: [
+        { at: at(14, 9), issueId: "a", from: "IN_PROGRESS", to: "DONE" },
+      ],
+      now: at(16),
+    });
+
+    expect(chart.points[1]!.changes).toEqual([]);
+    expect(chart.points[2]!.changes).toMatchObject([
+      { key: "ENG-1", reason: "completed", delta: -16 },
+    ]);
+    /* And the figure it explains: the same step the line took that day. */
+    expect(chart.points[1]!.actual).toBe(16);
+    expect(chart.points[2]!.actual).toBe(0);
+  });
+
+  it("explains a reopening as work coming back", () => {
+    const chart = burndown({
+      startDate: START,
+      endDate: END,
+      items: [{ ...ITEM, status: "REOPENED" }],
+      history: [],
+      statusHistory: [
+        { at: at(13, 9), issueId: "a", from: "IN_PROGRESS", to: "DONE" },
+        { at: at(15, 9), issueId: "a", from: "DONE", to: "REOPENED" },
+      ],
+      now: at(16),
+    });
+
+    expect(chart.points[1]!.changes).toMatchObject([
+      { reason: "completed", delta: -16 },
+    ]);
+    expect(chart.points[3]!.changes).toMatchObject([
+      { reason: "reopened", delta: 16 },
+    ]);
+  });
+
+  it("explains work added to the sprint, and does not count it before", () => {
+    const chart = burndown({
+      startDate: START,
+      endDate: END,
+      items: [{ ...ITEM, status: "TODO", member: true }],
+      history: [],
+      membershipHistory: [{ at: at(14, 9), issueId: "a", joined: true }],
+      now: at(16),
+    });
+
+    /* Before it was put in, the sprint was not carrying it. */
+    expect(chart.points[0]!.actual).toBe(0);
+    expect(chart.points[0]!.remainingIssues).toEqual([]);
+    expect(chart.points[2]!.actual).toBe(16);
+    expect(chart.points[2]!.changes).toMatchObject([
+      { reason: "added", delta: 16 },
+    ]);
+  });
+
+  it("explains work moved out, and stops counting it after", () => {
+    const chart = burndown({
+      startDate: START,
+      endDate: END,
+      /* No longer a member: it left mid-sprint, and the history is what says
+         when. */
+      items: [{ ...ITEM, status: "TODO", member: false }],
+      history: [],
+      membershipHistory: [{ at: at(15, 9), issueId: "a", joined: false }],
+      now: at(16),
+    });
+
+    expect(chart.points[0]!.actual).toBe(16);
+    expect(chart.points[3]!.changes).toMatchObject([
+      { reason: "removed", delta: -16 },
+    ]);
+    expect(chart.points[4]!.actual).toBe(0);
+    /* And it is not one of the sprint's issues now. */
+    expect(chart.totalIssues).toBe(0);
+  });
+
+  it("explains a re-estimate with what it moved from", () => {
+    const chart = burndown({
+      startDate: START,
+      endDate: END,
+      items: [{ ...ITEM, effortHours: 20, remainingHours: null, status: "TODO" }],
+      history: [],
+      estimateHistory: [
+        { at: at(15, 9), issueId: "a", from: 16, to: 20 },
+      ],
+      now: at(16),
+    });
+
+    /* The sprint was told 16 hours, then 20: each day carries the figure it
+       was actually holding, and the change says both. */
+    expect(chart.points[0]!.actual).toBe(16);
+    expect(chart.points[4]!.actual).toBe(20);
+    expect(chart.points[3]!.changes).toMatchObject([
+      { reason: "estimate", delta: 4, from: 16, to: 20 },
+    ]);
+  });
+
+  it("lists reasons that add up to the step the line took", () => {
+    /* Two things happened on one day, in opposite directions. */
+    const chart = burndown({
+      startDate: START,
+      endDate: END,
+      items: [
+        { issueId: "a", key: "ENG-1", title: "Finished", effortHours: 10, remainingHours: 10, status: "DONE" },
+        { issueId: "b", key: "ENG-2", title: "Reopened", effortHours: 6, remainingHours: 6, status: "REOPENED" },
+      ],
+      history: [],
+      statusHistory: [
+        { at: at(13, 9), issueId: "b", from: "IN_PROGRESS", to: "DONE" },
+        { at: at(15, 9), issueId: "a", from: "IN_PROGRESS", to: "DONE" },
+        { at: at(15, 11), issueId: "b", from: "DONE", to: "REOPENED" },
+      ],
+      now: at(16),
+    });
+
+    const before = chart.points[2]!.actual!;
+    const day = chart.points[3]!;
+    const moved = day.changes.reduce((sum, change) => sum + change.delta, 0);
+    expect(day.changes).toHaveLength(2);
+    expect(day.actual).toBe(before + moved);
+  });
+
+  it("marks today only when the sprint covers it", () => {
+    const inside = burndown({
+      startDate: START,
+      endDate: END,
+      items: [ITEM],
+      history: [],
+      active: true,
+      now: at(14, 18),
+    });
+    expect(inside).toMatchObject({ todayIndex: 2, active: true });
+
+    const outside = burndown({
+      startDate: START,
+      endDate: END,
+      items: [ITEM],
+      history: [],
+      now: new Date(2026, 10, 3),
+    });
+    expect(outside).toMatchObject({ todayIndex: null, active: false });
+  });
+
+  it("says nothing about a day the sprint has not reached", () => {
+    const chart = burndown({
+      startDate: START,
+      endDate: END,
+      items: [ITEM],
+      history: [],
+      now: at(13),
+    });
+
+    const future = chart.points[4]!;
+    expect(future.actual).toBeNull();
+    expect(future.remainingIssues).toEqual([]);
+    expect(future.changes).toEqual([]);
+  });
+});
