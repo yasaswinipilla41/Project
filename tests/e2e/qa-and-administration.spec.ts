@@ -358,8 +358,106 @@ test.describe("Severity", () => {
 
 /* -------------------------------------------------------- administration */
 
+/**
+ * Assignments this file moves, and what they were before it did.
+ *
+ * The roster editor's work picker offers a project's issues *minus* the ones
+ * the person already holds (`SearchSelect` filters `selected` out), so a test
+ * that assigns one and walks away shrinks the pool it draws from by one every
+ * time it runs. Left alone it eventually empties: the person holds everything
+ * in their projects, the picker has nothing to offer, and the test fails for
+ * good against that database — which is what happened here, with all nine of
+ * Website's issues on one person.
+ *
+ * `tester-assignment.spec.ts` had the same disease and its comment names it:
+ * "every run took one more issue out of the pool it picks from, until nothing
+ * was left that the tester did not already hold." This is the same remedy,
+ * written once so both halves of it — the issue freed to guarantee a choice,
+ * and the issue the choice landed on — are put back by the same code.
+ *
+ * The first value recorded for an issue wins, so freeing one and then
+ * assigning it restores the assignee it had before any of this, not the null
+ * it was given in between.
+ */
+const assigneesToRestore = new Map<string, string | null>();
+
+/** Notes an issue's current assignee, once, before anything moves it. */
+async function rememberAssignee(issueId: string): Promise<void> {
+  if (assigneesToRestore.has(issueId)) return;
+  const issue = await prisma.issue.findUniqueOrThrow({
+    where: { id: issueId },
+    select: { assigneeId: true },
+  });
+  assigneesToRestore.set(issueId, issue.assigneeId);
+}
+
+/** Puts every assignment this file moved back where it found it. */
+async function restoreAssignees(): Promise<void> {
+  for (const [id, assigneeId] of assigneesToRestore) {
+    await prisma.issue.update({ where: { id }, data: { assigneeId } });
+  }
+  assigneesToRestore.clear();
+}
+
+/**
+ * Makes sure the work picker will have something to offer this person.
+ *
+ * It offers what they do not already hold, so a person holding everything in
+ * their projects is offered nothing — a real state, reached by this test's own
+ * previous runs. One issue is released to guarantee a choice, and recorded so
+ * it goes back.
+ *
+ * Nothing is released when the picker already has options, so the ordinary
+ * run touches no data it did not have to.
+ */
+async function freeOneIssueFor(personId: string): Promise<void> {
+  const inTheirProjects = {
+    project: {
+      isArchived: false,
+      members: { some: { userId: personId } },
+    },
+  } as const;
+
+  /*
+   * Everything in their projects that is not already theirs.
+   *
+   * Spelled as an OR rather than `NOT: { assigneeId: personId }`, which is
+   * the same trap `tester-assignment.spec.ts` documents: a comparison against
+   * a value never matches NULL, so that form quietly excludes every
+   * unassigned issue — exactly the ones the picker would have offered. With
+   * it, this helper believed there was nothing to offer whenever the only
+   * candidates were unassigned, and released one more issue every run.
+   */
+  const offerable = await prisma.issue.count({
+    where: {
+      ...inTheirProjects,
+      OR: [{ assigneeId: null }, { assigneeId: { not: personId } }],
+    },
+  });
+  if (offerable > 0) return;
+
+  const held = await prisma.issue.findFirst({
+    where: { ...inTheirProjects, assigneeId: personId },
+    orderBy: { key: "asc" },
+    select: { id: true },
+  });
+  if (!held) return;
+
+  await rememberAssignee(held.id);
+  await prisma.issue.update({
+    where: { id: held.id },
+    data: { assigneeId: null },
+  });
+}
+
 test.describe("Administration", () => {
   test.use({ storageState: ADMIN_STATE });
+
+  /* Whatever the roster editor moved goes back, whether the test that moved
+     it passed or not — a run that fails half way through has still taken an
+     issue out of the pool, and leaving it out is what made this spec
+     un-runnable against a database it had already been run on. */
+  test.afterAll(restoreAssignees);
 
   test("puts Development, Testing and Full Stack side by side", async ({
     page,
@@ -584,6 +682,7 @@ test.describe("Administration", () => {
         projectMemberships: { some: { project: { isArchived: false } } },
       },
       select: {
+        id: true,
         name: true,
         projectMemberships: {
           where: { project: { isArchived: false } },
@@ -592,6 +691,10 @@ test.describe("Administration", () => {
       },
     });
     const theirProjects = person.projectMemberships.map((m) => m.project.name);
+
+    /* The picker offers what they do not already hold, so this makes sure
+       there is something left to offer. See `freeOneIssueFor`. */
+    await freeOneIssueFor(person.id);
 
     await page.goto("/admin");
     await page
@@ -624,6 +727,16 @@ test.describe("Administration", () => {
     await expect(issueOption).toBeVisible();
     const label = await issueOption.innerText();
     const chosen = label.split("—")[0]!.trim();
+
+    /* Noted before Save moves it, so it can be put back afterwards. Without
+       this the test keeps one more issue every run and eventually leaves the
+       picker with nothing to offer. */
+    const target = await prisma.issue.findFirstOrThrow({
+      where: { key: chosen },
+      select: { id: true },
+    });
+    await rememberAssignee(target.id);
+
     await issueOption.click();
 
     /* The picker stays open after a choice, ready for the next search, and
