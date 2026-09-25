@@ -226,11 +226,12 @@ export function AttachmentField({
    * one row however many times the form is reopened.
    *
    * Two things a delivery can ask for beyond that. `replaces` is a snip saved
-   * again after another edit: its row is written over, as Save does everywhere
-   * else, rather than a second row appearing. And several files may come in
-   * one delivery — Save as copy on a snip not yet saved sends the original and
-   * its "-annotated" copy together — so they are staged in one change and
-   * neither can overwrite the other.
+   * again after another edit, or renamed in the window: its row is written
+   * over — bytes and name both — as Save does everywhere else, rather than a
+   * second row appearing. And several files may come in one delivery — Save as
+   * copy on a snip not yet saved sends the original and its "-annotated" copy
+   * together — so they are staged in one change and neither can overwrite the
+   * other.
    *
    * The staged ids go back to the window so a later Save can name its row.
    */
@@ -253,7 +254,16 @@ export function AttachmentField({
         if (replaces && next.some((item) => item.id === replaces)) {
           next = next.map((item) =>
             item.id === replaces
-              ? { ...item, blob: file, render: renderKindFor(file.type) }
+              ? {
+                  ...item,
+                  blob: file,
+                  /* The delivered name, so a capture renamed in the window is
+                     renamed on the row it is staged in — and the row is what
+                     the upload goes by. An edit saved again carries the name
+                     it already had, so that path is unchanged. */
+                  name: safeFilename(file.name),
+                  render: renderKindFor(file.type),
+                }
               : item,
           );
           ids.push(replaces);

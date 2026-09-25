@@ -273,66 +273,15 @@ async function frameFrom(video: HTMLVideoElement): Promise<Blob> {
   return blob;
 }
 
-/**
- * A capture source chosen once and kept, so several snips can come from it.
- *
- * `captureScreenshot` opens the browser's picker, takes one frame and stops —
- * right for "this tab", and wrong for anything else: choosing another tab or
- * window would ask the picker again for every snip, and the person would have
- * to re-find their window each time. Worse, the thing they wanted to capture is
- * usually something they have to *navigate to first*, which the one-shot
- * version gives them no opportunity to do.
- *
- * So the stream is kept alive and sampled on demand. The picker appears once,
- * when the source is chosen; after that the person goes wherever they need to
- * and presses New snip, and `grab` copies whatever that surface is showing at
- * that moment.
- *
- * Nothing here reaches into the chosen surface. It is a `MediaStream` the
- * browser handed over because somebody picked it in the browser's own dialog —
- * there is no DOM access, no script injection and no way to capture anything
- * that was not chosen. `onEnded` is how the browser's "Stop sharing" bar gets
- * to end it, which it can do at any time.
+/*
+ * A capture source was once chosen here and *kept*, so several snips could be
+ * taken from one pick without the picker reappearing. It is gone deliberately:
+ * a screenshot is a still picture, and holding a live stream between snips
+ * meant an ongoing capture — and a browser sharing indicator — long after the
+ * picture had been taken. `captureScreenshot` above is the whole of it now,
+ * one frame and stopped. Keeping a stream alive belongs to recording, below,
+ * where somebody asked for it and can see it running.
  */
-export interface RetainedSource {
-  /** What the browser calls the shared surface, for saying so on screen. */
-  label: string;
-  /** One frame of it, as it looks now. */
-  grab: () => Promise<Blob>;
-  /** Ends the share, and with it the browser's sharing indicator. */
-  stop: () => void;
-  /** Called if the browser or the person ends the share first. */
-  onEnded: (handler: () => void) => void;
-}
-
-export async function retainCaptureSource(
-  options: CaptureOptions = {},
-): Promise<RetainedSource> {
-  const stream = await requestDisplayStream(options);
-
-  let video: HTMLVideoElement;
-  try {
-    video = await playing(stream);
-  } catch (error) {
-    /* Nothing keeps sharing on account of a failure to start reading it. */
-    stopStream(stream);
-    throw error instanceof CaptureError ? error : asCaptureError(error);
-  }
-
-  const track = stream.getVideoTracks()[0] ?? null;
-
-  return {
-    label: track?.label || "the chosen tab or window",
-    grab: () => frameFrom(video),
-    stop: () => {
-      video.srcObject = null;
-      stopStream(stream);
-    },
-    onEnded: (handler) => {
-      track?.addEventListener("ended", handler, { once: true });
-    },
-  };
-}
 
 export interface ScreenRecording {
   blob: Blob;

@@ -7,12 +7,12 @@ import { watchForProblems } from "./support";
  *
  * What is worth proving here is not that a screenshot can be taken — the unit
  * tests cover the capture library — but the workflow around it: that opening
- * the tool captures nothing; that New Snip is a fresh capture every time and
- * goes straight from the area dragged out to Upload, with no editing step in
- * between; that what is uploaded lands on the work item the window was opened
- * for, and on no other, even after walking off to another page; and that the
- * window is a window — minimised, maximised and restored without losing
- * anything.
+ * the tool captures nothing; that Select is a fresh capture every time and
+ * goes from the area dragged out straight into the editor, where saving is
+ * the whole of keeping it; that what is saved lands on the work item the
+ * window was opened for, and on no other, even after walking off to another
+ * page; and that the window is a window — minimised, maximised and restored
+ * without losing anything.
  *
  * The browser's screen picker cannot be driven from a test, so the capture API
  * is replaced before the page loads with one that shares a canvas. That is a
@@ -20,7 +20,9 @@ import { watchForProblems } from "./support";
  * the frame grab, the PNG encode, the crop, the recorder — is the real code
  * path. Only the choice of what to share is faked, which is the one part a
  * person makes. The hints Prio asks the picker for are recorded, so the choice
- * of source can be checked too.
+ * of source can be checked too, and so are the streams themselves: a
+ * screenshot has to stop capturing the moment it has its frame, and a stopped
+ * track is the only honest evidence of that.
  */
 async function stubDisplayCapture(page: Page) {
   await page.addInitScript(() => {
@@ -45,17 +47,33 @@ async function stubDisplayCapture(page: Page) {
     (window as unknown as { __displayMediaCalls: unknown[] }).__displayMediaCalls =
       calls;
 
+    /*
+     * Every stream handed over, so a test can ask what became of its tracks.
+     *
+     * A screenshot must stop capturing the instant it has its frame, and
+     * "stopped" is a fact about the track rather than about the interface —
+     * `readyState` is the only place it can be read.
+     */
+    const streams: MediaStream[] = [];
+    (window as unknown as { __captureTracks: () => string[] }).__captureTracks =
+      () =>
+        streams.flatMap((stream) =>
+          stream.getTracks().map((track) => track.readyState),
+        );
+
     Object.defineProperty(navigator, "mediaDevices", {
       configurable: true,
       value: {
         ...navigator.mediaDevices,
         getDisplayMedia: async (options: unknown) => {
           calls.push(options ?? null);
-          return (
+          const stream = (
             canvas as HTMLCanvasElement & {
               captureStream: (fps?: number) => MediaStream;
             }
           ).captureStream(30);
+          streams.push(stream);
+          return stream;
         },
       },
     });
@@ -95,31 +113,39 @@ async function dragArea(
   await expect(selector).toBeHidden();
 }
 
-/** The capture being reviewed, as opposed to the thumbnails of ones already sent. */
-function previewImage(snip: Locator) {
-  return snip.getByRole("img", { name: /^Snip: / });
+/** The annotation editor a capture lands in. */
+function editorFor(page: Page): Locator {
+  return page.getByRole("dialog", { name: "Edit screenshot" });
 }
 
 /**
- * New Snip → drag an area → the preview of what was caught.
+ * Select → drag an area → the editor, open on what was caught.
  *
- * There is no editor in this path any more. A capture used to be pushed
- * through the annotation editor before it could become an attachment, so the
- * ordinary case — take a picture of the thing, put it on the work item — cost
- * a crop tool, a Save and a choice about copies. The editor is still reachable
- * from the attachment itself for the times somebody wants to draw on a
- * screenshot; it is no longer the toll on the times they do not.
+ * A screenshot is nearly always taken in order to point at something, so the
+ * editor is where a capture lands rather than somewhere to go afterwards.
+ * Saving there is the whole of keeping it: no upload step behind it, and no
+ * choice about copies in front of it.
+ *
+ * Returns the editor, because that is where the next thing happens.
  */
-async function newSnip(page: Page): Promise<Locator> {
-  await snipWindow(page).getByRole("button", { name: "New Snip" }).click();
+async function captureIntoEditor(page: Page): Promise<Locator> {
+  await snipWindow(page).getByRole("button", { name: "Select" }).click();
   await dragArea(page);
-  const snip = snipWindow(page);
-  await expect(snip.getByRole("button", { name: "Upload" })).toBeVisible();
-  /* By its alt text, not `locator("img")`: every snip already sent shows a
-     thumbnail in the list below, so the bare locator matches more and more
-     images as a session goes on. Only the preview is captioned. */
-  await expect(previewImage(snip)).toBeVisible();
-  return snip;
+  const editor = editorFor(page);
+  await expect(editor).toBeVisible();
+  /* Drawing before the image has decoded is a silent no-op, and the canvas is
+     hidden until it really is ready — so this is the signal that the capture
+     arrived, not merely that a dialog did. */
+  await expect(editor.locator("canvas").first()).toBeVisible();
+  return editor;
+}
+
+/** Keeps the capture: the editor's Save is what puts it where it is going. */
+async function saveFromEditor(page: Page): Promise<void> {
+  await editorFor(page)
+    .getByRole("button", { name: "Save", exact: true })
+    .click();
+  await expect(editorFor(page)).toBeHidden();
 }
 
 /** An issue page, opened from the list, and its attachment count. */
@@ -165,7 +191,7 @@ test.describe("Snip Tool — screenshot workflow on an issue", () => {
     await stubDisplayCapture(page);
   });
 
-  test("opens on New Snip and Recorder, and captures nothing by itself", async ({
+  test("opens on Select and Recorder, and captures nothing by itself", async ({
     page,
   }) => {
     const { consoleErrors } = watchForProblems(page);
@@ -191,19 +217,19 @@ test.describe("Snip Tool — screenshot workflow on an issue", () => {
      * The window used to open on a choice of capture source — "This tab" or
      * "Another tab or window" — which asked a question the browser is about to
      * ask anyway, and asked it before the person had said what they wanted to
-     * do. There is no source control at all now: New Snip goes to the
+     * do. There is no source control at all now: Select goes to the
      * browser's own picker, which is the only thing that can offer another
      * tab.
      */
-    await expect(snip.getByRole("button", { name: "New Snip" })).toBeEnabled();
+    await expect(snip.getByRole("button", { name: "Select" })).toBeEnabled();
     await expect(snip.getByRole("button", { name: "Recorder" })).toBeEnabled();
     await expect(snip.getByRole("radio")).toHaveCount(0);
 
     // Minimise, restore, maximise, restore — the window survives all of it.
     await snip.getByRole("button", { name: "Minimise Snip Tool" }).click();
-    await expect(snip.getByRole("button", { name: "New Snip" })).toBeHidden();
+    await expect(snip.getByRole("button", { name: "Select" })).toBeHidden();
     await snip.getByRole("button", { name: "Restore Snip Tool" }).click();
-    await expect(snip.getByRole("button", { name: "New Snip" })).toBeVisible();
+    await expect(snip.getByRole("button", { name: "Select" })).toBeVisible();
 
     const floating = (await snip.boundingBox())!;
     await snip.getByRole("button", { name: "Maximise Snip Tool" }).click();
@@ -221,7 +247,7 @@ test.describe("Snip Tool — screenshot workflow on an issue", () => {
     expect(consoleErrors).toEqual([]);
   });
 
-  test("New Snip → area → preview → Upload lands on the same issue", async ({
+  test("Select → area → editor → Save lands on the same issue", async ({
     page,
   }) => {
     const { consoleErrors } = watchForProblems(page);
@@ -229,35 +255,35 @@ test.describe("Snip Tool — screenshot workflow on an issue", () => {
     const before = await prisma.attachment.count({ where: { issueId } });
 
     await openScreenshot(page);
-    const snip = await newSnip(page);
+    const editor = await captureIntoEditor(page);
 
     /*
      * The area dragged out is the picture, not the whole 640×400 frame: 50%
-     * by 40% of it. Read off the preview image itself, which is what the
-     * person is looking at when they decide whether to upload.
+     * by 40% of it. Read off the editor's own base canvas, which is what the
+     * person is now looking at and drawing on.
      */
-    const size = await previewImage(snip).evaluate((img: HTMLImageElement) => [
-      img.naturalWidth,
-      img.naturalHeight,
-    ]);
+    const size = await editor
+      .locator("canvas")
+      .first()
+      .evaluate((canvas: HTMLCanvasElement) => [canvas.width, canvas.height]);
     expect(size[0]).toBeGreaterThan(280);
     expect(size[0]).toBeLessThan(360);
     expect(size[1]).toBeGreaterThan(130);
     expect(size[1]).toBeLessThan(190);
 
     /*
-     * Two actions and no more. There is no Save, no Save as copy and no
-     * editing step between the capture and the attachment — marking a
-     * screenshot up is still possible from the attachment itself, and is no
-     * longer the toll on the ordinary case.
+     * One step, and it is the editor. The capture arrives here on its own —
+     * there is no preview to approve first and no upload to run afterwards,
+     * so Save is the whole of keeping it.
      */
-    await expect(snip.getByRole("button", { name: "Upload" })).toBeVisible();
-    await expect(snip.getByRole("button", { name: "Cancel" })).toBeVisible();
-    await expect(snip.getByRole("button", { name: "Save", exact: true })).toHaveCount(0);
-    await expect(snip.getByRole("button", { name: "Save as copy" })).toHaveCount(0);
-    await expect(page.getByRole("dialog", { name: "Edit screenshot" })).toHaveCount(0);
+    await expect(
+      editor.getByRole("button", { name: "Save", exact: true }),
+    ).toBeVisible();
+    await expect(
+      snipWindow(page).getByRole("button", { name: "Upload" }),
+    ).toHaveCount(0);
 
-    await snip.getByRole("button", { name: "Upload" }).click();
+    await saveFromEditor(page);
 
     await expect.poll(() => prisma.attachment.count({ where: { issueId } })).toBe(before + 1);
 
@@ -277,22 +303,29 @@ test.describe("Snip Tool — screenshot workflow on an issue", () => {
     expect(consoleErrors).toEqual([]);
   });
 
-  test("Cancel keeps the capture off the work item", async ({ page }) => {
+  test("backing out of the editor keeps the capture off the work item", async ({
+    page,
+  }) => {
     const { issueId } = await openAnIssue(page);
     const before = await prisma.attachment.count({ where: { issueId } });
 
     await openScreenshot(page);
-    const snip = await newSnip(page);
+    const editor = await captureIntoEditor(page);
 
-    await snip.getByRole("button", { name: "Cancel" }).click();
+    /* Exactly "Cancel": the editor's toolbar also carries "Cancel crop". */
+    await editor.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(editor).toBeHidden();
 
-    /* Back to where a fresh capture starts, and nothing was attached. */
-    await expect(snip.getByRole("button", { name: "New Snip" })).toBeVisible();
-    await expect(snip.getByRole("button", { name: "Upload" })).toHaveCount(0);
+    const snip = snipWindow(page);
+    /* Back where a capture starts, nothing attached — and no staged row left
+       behind either. A picture backed out of was never wanted, so it is not
+       kept anywhere for somebody to tidy up later. */
+    await expect(snip.getByRole("button", { name: "Select" })).toBeVisible();
+    await expect(snipRows(snip)).toHaveCount(0);
     expect(await prisma.attachment.count({ where: { issueId } })).toBe(before);
   });
 
-  test("each New Snip is separate, and the issue stays the one it was opened for across navigation", async ({
+  test("each Select is separate, and the issue stays the one it was opened for across navigation", async ({
     page,
   }) => {
     const { consoleErrors } = watchForProblems(page);
@@ -303,8 +336,8 @@ test.describe("Snip Tool — screenshot workflow on an issue", () => {
     const snip = snipWindow(page);
 
     // Snip one.
-    await newSnip(page);
-    await snip.getByRole("button", { name: "Upload" }).click();
+    await captureIntoEditor(page);
+    await saveFromEditor(page);
     await expect.poll(() => prisma.attachment.count({ where: { issueId } })).toBe(before + 1);
 
     /* Walk off to another page, the ordinary way — through Prio's own sidebar.
@@ -314,9 +347,9 @@ test.describe("Snip Tool — screenshot workflow on an issue", () => {
     await expect(page).toHaveURL(/\/projects$/);
     await expect(snip).toContainText(key);
 
-    // Snip two, of that page, uploaded while the issue is not on screen.
-    await newSnip(page);
-    await snip.getByRole("button", { name: "Upload" }).click();
+    // Snip two, of that page, saved while the issue is not on screen.
+    await captureIntoEditor(page);
+    await saveFromEditor(page);
     await expect.poll(() => prisma.attachment.count({ where: { issueId } })).toBe(before + 2);
 
     // Two rows, two different files, both on that issue and no other.
@@ -374,16 +407,18 @@ test.describe("Snip Tool — screenshot workflow on an issue", () => {
     /*
      * And from the page itself it takes one — bringing the window back with
      * it. Closing leaves the target behind, which is what lets the shortcut
-     * know where the picture goes; the window has to return for the preview
-     * to be somewhere a person can see it.
+     * know where the picture goes; the window has to return for the capture
+     * to have somewhere to belong once the editor is done with it.
      */
     await page.locator("h1").first().click();
     await page.keyboard.press("Control+Shift+A");
     await dragArea(page);
 
+    /* Straight into the editor, exactly as Select does — the shortcut is that
+       same path reached from the keyboard. */
+    await expect(editorFor(page)).toBeVisible();
+    await saveFromEditor(page);
     await expect(snip).toBeVisible();
-    await expect(snip.getByRole("button", { name: "Upload" })).toBeVisible();
-    await snip.getByRole("button", { name: "Upload" }).click();
 
     await expect
       .poll(() => prisma.attachment.count({ where: { issueId } }))
@@ -398,9 +433,87 @@ test.describe("Snip Tool — screenshot workflow on an issue", () => {
     expect(consoleErrors).toEqual([]);
   });
 
-  test("New Snip asks the browser once, and keeps that surface for the next one", async ({
+  test("a saved capture can be renamed, and edited again, without duplicating", async ({
     page,
   }) => {
+    const { consoleErrors } = watchForProblems(page);
+    const { issueId } = await openAnIssue(page);
+    const before = await prisma.attachment.count({ where: { issueId } });
+
+    await openScreenshot(page);
+    await captureIntoEditor(page);
+    await saveFromEditor(page);
+
+    const snip = snipWindow(page);
+    await expect(snipRows(snip)).toHaveCount(1);
+    await expect
+      .poll(() => prisma.attachment.count({ where: { issueId } }))
+      .toBe(before + 1);
+
+    const original = await prisma.attachment.findFirstOrThrow({
+      where: { issueId },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, filename: true },
+    });
+    createdAttachmentNames.push(original.filename);
+
+    /* ------------------------------------------------------------ rename */
+    const chosen = `renamed-${Date.now()}.png`;
+    await snip
+      .getByRole("button", { name: `Rename ${original.filename}` })
+      .click();
+    const field = snip.getByRole("textbox", {
+      name: `Name for ${original.filename}`,
+    });
+    await field.fill(chosen);
+    await field.press("Enter");
+
+    createdAttachmentNames.push(chosen);
+
+    /* The same row and the same attachment, under a new name — not a second
+       of either. Read from the database, because the list would look the
+       same whether the name had been stored or only typed. */
+    await expect
+      .poll(async () =>
+        (
+          await prisma.attachment.findUniqueOrThrow({
+            where: { id: original.id },
+            select: { filename: true },
+          })
+        ).filename,
+      )
+      .toBe(chosen);
+    expect(await prisma.attachment.count({ where: { issueId } })).toBe(
+      before + 1,
+    );
+    await expect(snipRows(snip)).toHaveCount(1);
+
+    /* ------------------------------------------------------- edit again */
+    await snip.getByRole("button", { name: `Edit ${chosen}` }).click();
+    const editor = editorFor(page);
+    await expect(editor).toBeVisible();
+    await expect(editor.locator("canvas").first()).toBeVisible();
+    await saveFromEditor(page);
+
+    /* Still one attachment, still the same one, still under the name it was
+       given — editing a kept capture updates it rather than adding another. */
+    await expect
+      .poll(() => prisma.attachment.count({ where: { issueId } }))
+      .toBe(before + 1);
+    const after = await prisma.attachment.findUniqueOrThrow({
+      where: { id: original.id },
+      select: { filename: true },
+    });
+    expect(after.filename).toBe(chosen);
+    await expect(snipRows(snip)).toHaveCount(1);
+
+    expect(consoleErrors).toEqual([]);
+  });
+
+  test("every Select takes one still frame and leaves nothing capturing", async ({
+    page,
+  }) => {
+    const { consoleErrors } = watchForProblems(page);
     await openAnIssue(page);
     await openScreenshot(page);
     const snip = snipWindow(page);
@@ -418,53 +531,85 @@ test.describe("Snip Tool — screenshot workflow on an issue", () => {
           ).__displayMediaCalls,
       );
 
+    /** What became of every track the browser handed over. */
+    const trackStates = () =>
+      page.evaluate(() =>
+        (
+          window as unknown as { __captureTracks: () => string[] }
+        ).__captureTracks(),
+      );
+
     /*
      * The picker is the browser's, and it is what makes another tab reachable
      * at all: a page cannot enumerate your tabs and should not be able to.
-     * Prio asks for it when the first snip is taken rather than when the
-     * window opens, so opening the tool costs nothing.
+     * Prio asks for it when a snip is taken rather than when the window opens,
+     * so opening the tool costs nothing.
      */
-    await snip.getByRole("button", { name: "New Snip" }).click();
+    await snip.getByRole("button", { name: "Select" }).click();
     await dragArea(page);
-    await expect(snip.getByRole("button", { name: "Upload" })).toBeVisible();
+    await expect(editorFor(page)).toBeVisible();
 
     const afterFirst = await pickerCalls();
     expect(afterFirst).toHaveLength(1);
+    /* This tab left out of the list, because it has the window in it. Any of
+       a tab, a window or a whole screen can still be picked — which of them
+       cannot be driven from a test, and does not change the path below: what
+       comes back is a MediaStream either way. */
     expect(afterFirst.at(-1)?.selfBrowserSurface).toBe("exclude");
 
     /*
-     * And back on the opening screen the window says what it is holding.
+     * One frame, and then nothing.
      *
-     * Said there rather than over the preview, deliberately: it comes with
-     * Release source beside it, and an offer to let go of the surface is
-     * only useful where taking another snip is the next thing on offer. The
-     * preview is about the picture just taken.
+     * The picture is taken and every track handed over is stopped in the same
+     * breath, so no capture outlives the snap and the browser's sharing
+     * indicator goes with it. Read from the tracks themselves: an interface
+     * that merely stopped *saying* it was capturing would look identical.
      */
-    await snip.getByRole("button", { name: "Cancel" }).click();
-    await expect(snip.getByText(/^Capturing from/)).toBeVisible();
+    const afterCapture = await trackStates();
+    expect(afterCapture).toHaveLength(1);
+    expect(afterCapture).toEqual(["ended"]);
+
+    /* And a screenshot is not a recording: nothing is running, so none of the
+       controls that exist for a thing that runs are here. */
+    await expect(
+      page.getByRole("button", { name: "Stop recording" }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("status").filter({ hasText: /(Recording|Paused) \d/ }),
+    ).toHaveCount(0);
+
+    await editorFor(page)
+      .getByRole("button", { name: "Cancel", exact: true })
+      .click();
 
     /*
-     * And the second snip comes from the surface already being shared: the
-     * picker is not asked again. That is the whole point of retaining it —
-     * being re-prompted per snip would both interrupt and undo the navigation
-     * the person just did to reach what they wanted.
+     * The second Select asks the browser again.
+     *
+     * The surface used to be kept between snips, which meant one pick and a
+     * live stream held until somebody released it. Holding nothing is the
+     * point now, and asking again is what it costs: pick the surface that is
+     * already showing what you want.
      */
-    await snip.getByRole("button", { name: "New Snip" }).click();
+    await snip.getByRole("button", { name: "Select" }).click();
     const selector = page.getByRole("dialog", { name: "Select area to snip" });
     await expect(selector).toBeVisible();
-    expect(await pickerCalls()).toHaveLength(1);
+    expect(await pickerCalls()).toHaveLength(2);
+    expect(await trackStates()).toEqual(["ended", "ended"]);
 
-    // Escape cancels the snip without making one, and keeps the share.
+    // Escape cancels the snip without making one, and still leaves nothing on.
     await page.keyboard.press("Escape");
     await expect(selector).toBeHidden();
     await expect(snip).toBeVisible();
-    await expect(snip.getByText(/^Capturing from/)).toBeVisible();
+    await expect(snipRows(snip)).toHaveCount(0);
+    expect(await trackStates()).toEqual(["ended", "ended"]);
 
-    /* Releasing is the person's to do. Worded as capture rather than sharing:
-       nothing leaves the machine, and the browser's own "Stop sharing" bar is
-       a separate control. */
-    await snip.getByRole("button", { name: "Release source" }).click();
-    await expect(snip.getByText(/^Capturing from/)).toHaveCount(0);
+    /* Closing the window has nothing left to clean up, and says so by leaving
+       the tracks exactly as they were. */
+    await snip.getByRole("button", { name: "Close Snip Tool" }).click();
+    await expect(snip).toBeHidden();
+    expect(await trackStates()).toEqual(["ended", "ended"]);
+
+    expect(consoleErrors).toEqual([]);
   });
 });
 
@@ -505,12 +650,12 @@ test.describe("Snip Tool — on the Create form", () => {
 
     const rows = dialog.getByRole("button", { name: /Annotate|Edit markup/ });
 
-    await newSnip(page);
-    await snip.getByRole("button", { name: "Upload" }).click();
+    await captureIntoEditor(page);
+    await saveFromEditor(page);
     await expect(rows).toHaveCount(1);
 
-    await newSnip(page);
-    await snip.getByRole("button", { name: "Upload" }).click();
+    await captureIntoEditor(page);
+    await saveFromEditor(page);
     await expect(rows).toHaveCount(2);
 
     /* Two separate files, not one written over twice — the failure this path
@@ -543,6 +688,51 @@ test.describe("Snip Tool — on the Create form", () => {
     expect(consoleErrors).toEqual([]);
   });
 
+  test("renaming a snip renames the row it is staged in", async ({ page }) => {
+    const { consoleErrors } = watchForProblems(page);
+    const dialog = await openCreateWithDraft(page, `Rename staged ${Date.now()}`);
+
+    await dialog.getByRole("button", { name: "Add files" }).click();
+    await page.getByRole("menuitem", { name: "Screenshot" }).click();
+    const snip = snipWindow(page);
+    await captureIntoEditor(page);
+    await saveFromEditor(page);
+
+    const rows = dialog.getByRole("link", { name: /^Open .+ in a new tab$/ });
+    await expect(rows).toHaveCount(1);
+
+    /* Read, not assumed: the capture names itself, and the row is checked
+       against that name rather than against one written into the test. */
+    const given = (
+      await snip.getByRole("button", { name: /^Rename / }).getAttribute("aria-label")
+    )!.replace(/^Rename /, "");
+    await expect(rows).toHaveAttribute("aria-label", `Open ${given} in a new tab`);
+
+    const chosen = `staged-rename-${Date.now()}.png`;
+    await snip.getByRole("button", { name: `Rename ${given}` }).click();
+    const field = snip.getByRole("textbox", { name: `Name for ${given}` });
+    await field.fill(chosen);
+    await field.press("Enter");
+
+    /*
+     * The staged row is what gets uploaded when the form is submitted, and it
+     * carries its own name — so a rename that only reached the window would be
+     * thrown away on Create. One row still, under the new name.
+     */
+    await expect(rows).toHaveCount(1);
+    await expect(rows).toHaveAttribute(
+      "aria-label",
+      `Open ${chosen} in a new tab`,
+    );
+    await expect(
+      dialog.getByRole("button", { name: `Rename ${given}`, exact: true }),
+    ).toHaveCount(0);
+
+    /* And the draft underneath is untouched, as with every other save. */
+    await expect(dialog.getByLabel("Summary")).not.toHaveValue("");
+    expect(consoleErrors).toEqual([]);
+  });
+
   test("a snip saved while the form is closed waits, and saves to the form when it is back", async ({
     page,
   }) => {
@@ -558,10 +748,16 @@ test.describe("Snip Tool — on the Create form", () => {
     await dialog.getByRole("button", { name: "Close dialog" }).click();
     await expect(dialog).toBeHidden();
 
-    await newSnip(page);
-    await snip.getByRole("button", { name: "Upload" }).click();
+    await captureIntoEditor(page);
+    await saveFromEditor(page);
     await expect(snip.getByRole("alert")).toContainText("Open the form");
-    const name = (await snip.locator("li [title]").first().getAttribute("title"))!;
+    /* The row names itself on its rename control, which is the one place the
+       capture's name is written down in the list. */
+    const label = (await snip
+      .getByRole("button", { name: /^Rename / })
+      .first()
+      .getAttribute("aria-label"))!;
+    const name = label.replace(/^Rename /, "");
     await expect(snip.getByRole("button", { name: `Save ${name}` })).toBeVisible();
 
     // Walk off to another page; the snip is still held.

@@ -260,35 +260,6 @@
   color: var(--prio-text-muted);
 }
 
-/* --------------------------------------------------------- shared source */
-
-/*
- * What the browser is currently sharing, stated inside Prio next to the choice
- * that started it. The browser shows its own indicator too; this one is here so
- * the window can also offer the way out of it.
- */
-.sharing {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
-  margin: 0;
-  padding: 6px 8px;
-  border: 1px solid var(--prio-border-subtle);
-  border-radius: var(--prio-radius-md);
-  background: var(--prio-bg-subtle);
-  font-size: var(--prio-text-xs);
-  color: var(--prio-text-secondary);
-}
-
-.sharingName {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* ---------------------------------------------------------------- snips */
 
 .snipList {
@@ -341,6 +312,14 @@
   min-width: 0;
 }
 
+/*
+ * The capture's name, which is also how it is renamed.
+ *
+ * A button rather than a span, because clicking it does something — but
+ * stripped back to the text it was, so the row reads exactly as it did and
+ * the affordance is the pointer and the underline on hover rather than a
+ * control competing with the two beside it.
+ */
 .snipName {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -348,6 +327,30 @@
   font-size: var(--prio-text-xs);
   font-weight: 600;
   color: var(--prio-text-primary);
+  /* Button reset: everything a <button> brings that a name should not have. */
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.snipName:hover:not(:disabled) {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.snipName:disabled {
+  cursor: default;
+}
+
+.snipName:focus-visible {
+  outline: 2px solid var(--prio-border-focus);
+  outline-offset: 2px;
+  border-radius: var(--prio-radius-sm);
 }
 
 .snipStatus {

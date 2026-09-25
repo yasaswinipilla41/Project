@@ -102,6 +102,48 @@ test.describe("Issue attachments", () => {
     expect(names).not.toContain(`nope-${stamp}.exe`);
   });
 
+  test("renames a file in place, and the new name survives a reload", async ({
+    page,
+  }) => {
+    await page.goto("/issues");
+    await page.waitForLoadState("networkidle");
+    await page.locator("tbody tr a[href^='/issues/']").first().click();
+    await expect(page.getByRole("heading", { name: "Attachments" })).toBeVisible();
+
+    const grid = page.locator(".prio-attachment");
+    const before = await grid.count();
+
+    const stamp = Date.now();
+    const given = `to-rename-${stamp}.png`;
+    await page
+      .locator('input[aria-label="Attach files to this issue"]')
+      .setInputFiles([{ name: given, mimeType: "image/png", buffer: PNG_1PX }]);
+    await expect(grid).toHaveCount(before + 1, { timeout: 30_000 });
+
+    const chosen = `renamed-${stamp}.png`;
+    await page.getByRole("button", { name: `Rename ${given}` }).click();
+    const field = page.getByRole("textbox", { name: `Rename ${given}` });
+    await field.fill(chosen);
+    await field.press("Enter");
+
+    /* The label changed and nothing else did: the same number of attachments,
+       the old name gone rather than sitting beside the new one. */
+    await expect(page.locator(".prio-attachment__name").filter({ hasText: chosen })).toHaveCount(1);
+    await expect(grid).toHaveCount(before + 1);
+    await expect(
+      page.locator(".prio-attachment__name").filter({ hasText: given }),
+    ).toHaveCount(0);
+
+    /* Reloaded, because a name that was only changed on screen would look
+       exactly the same as one that was stored. */
+    await page.reload();
+    await page.waitForLoadState("networkidle");
+    await expect(
+      page.locator(".prio-attachment__name").filter({ hasText: chosen }),
+    ).toHaveCount(1);
+    await expect(grid).toHaveCount(before + 1);
+  });
+
   test("zooms the image and nothing else", async ({ page }) => {
     await page.goto("/issues");
     await page.waitForLoadState("networkidle");
