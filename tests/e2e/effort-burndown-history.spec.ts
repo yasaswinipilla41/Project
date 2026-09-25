@@ -284,8 +284,15 @@ test.describe("The burndown on a sprint", () => {
 
     await expect(page.locator("polyline.prio-burndown__ideal")).toHaveCount(1);
     await expect(page.locator("polyline.prio-burndown__actual")).toHaveCount(1);
-    await expect(legend.getByText("Remaining", { exact: true })).toBeVisible();
-    await expect(legend.getByText("Ideal", { exact: true })).toBeVisible();
+    /* Both lines are named, and each says what it is: which of the two is a
+       measurement and which is a reference is the thing a reader cannot get
+       from the drawing alone. */
+    const remainingKey = legend.locator('[data-line="actual"]');
+    const idealKey = legend.locator('[data-line="ideal"]');
+    await expect(remainingKey).toContainText("Remaining");
+    await expect(remainingKey).toContainText("effort still to do");
+    await expect(idealKey).toContainText("Ideal");
+    await expect(idealKey).toContainText("even burn");
 
     /*
      * The ideal line runs from the commitment down to zero across the sprint,

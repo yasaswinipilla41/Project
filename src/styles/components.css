@@ -1839,7 +1839,19 @@ a.prio-stat[data-selected="true"]:hover {
   overflow: hidden;
 }
 
+/*
+ * The fill, which has to be a block whatever tag it is drawn with.
+ *
+ * `ProjectProgressBar` renders `span`s where a caller needs the bar inside a
+ * link, and an inline box ignores both the width the component sets and the
+ * `height: 100%` below — so the fill collapsed to nothing and the bar read as
+ * empty. It was invisible on Home's project rows and, later, on the
+ * burndown's Sprint Progress figure; the `div` form was fine, which is why it
+ * went unnoticed. Said here rather than at each call site, because every
+ * caller wants the same thing of it.
+ */
 .prio-progress__bar {
+  display: block;
   height: 100%;
   border-radius: var(--prio-radius-pill);
   background: var(--prio-gradient-brand);
