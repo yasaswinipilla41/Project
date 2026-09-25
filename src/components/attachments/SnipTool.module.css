@@ -660,3 +660,20 @@
     }
   }
 }
+
+/*
+ * The same strip, in the floating window that stays above other tabs.
+ *
+ * There it is the whole document rather than something over a page, so it
+ * fills the window instead of pinning itself to a corner of it, and drops the
+ * pill and shadow that only made sense floating over content.
+ */
+.recordingBar[data-floating] {
+  position: static;
+  box-sizing: border-box;
+  min-height: 100vh;
+  justify-content: center;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}

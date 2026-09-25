@@ -20,6 +20,7 @@ import {
   IconClock,
   IconClose,
   IconEdit,
+  IconExternal,
   IconImage,
   IconMaximize,
   IconMinimize,
@@ -52,6 +53,7 @@ import {
   startScreenRecording,
   type ActiveRecording,
 } from "@/lib/screenCapture";
+import { canFloatWindow, openFloatingWindow } from "@/lib/documentPip";
 
 /**
  * The Snip Tool: a window of its own, not a menu.
@@ -293,6 +295,21 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
   const pausedAtRef = useRef<number | null>(null);
 
   /*
+   * The floating window the recording strip moves into, while one is open.
+   *
+   * The strip on the page is only visible from the Prio tab, and the thing
+   * being recorded is usually another tab. A Document Picture-in-Picture
+   * window stays above every tab, so the same strip — same buttons, same
+   * handlers, same recorder — is rendered there instead. Null means the strip
+   * is on the page, as it always was: no support, refused, or closed by the
+   * person, in which case the recording carries on regardless.
+   */
+  const [pipWindow, setPipWindow] = useState<Window | null>(null);
+  /* The same window, for the unmount cleanup, which sees only first-render
+     state. */
+  const pipRef = useRef<Window | null>(null);
+
+  /*
    * Where the person has dragged the window to.
    *
    * Null until they move it, which is what keeps the default corner a
@@ -429,10 +446,19 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
     return () => document.removeEventListener("keydown", onKeyDown);
   });
 
-  // Ticks while recording, and not while it is paused.
+  /*
+   * Ticks while recording, and not while it is paused.
+   *
+   * Scheduled on the floating window when there is one. The Prio tab is in
+   * the background while another tab is recorded, and the browser slows a
+   * background tab's timers down; the floating window is on screen, so its
+   * clock keeps pace. It is the same clock either way — only where it is
+   * scheduled moves.
+   */
   useEffect(() => {
     if (!recording || paused) return;
-    const timer = setInterval(
+    const host = pipWindow ?? window;
+    const timer = host.setInterval(
       () =>
         setElapsedMs(
           Math.max(
@@ -442,8 +468,31 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
         ),
       250,
     );
-    return () => clearInterval(timer);
-  }, [recording, paused]);
+    return () => host.clearInterval(timer);
+  }, [recording, paused, pipWindow]);
+
+  /* The floating window lives exactly as long as the recording: stopped,
+     discarded, or ended from the browser's own sharing bar, it closes and the
+     Snip Tool window comes back with the result as it always has. Closing
+     it fires `pagehide`, which is what lets go of it below. */
+  useEffect(() => {
+    if (!recording) pipWindow?.close();
+  }, [recording, pipWindow]);
+
+  useEffect(() => {
+    pipRef.current = pipWindow;
+  }, [pipWindow]);
+
+  /* Closed by the person, or by the browser: the strip returns to the page
+     and the recording carries on. Closing the controls is not stopping. */
+  useEffect(() => {
+    if (!pipWindow) return;
+    const floating = pipWindow;
+    const onGone = () =>
+      setPipWindow((current) => (current === floating ? null : current));
+    floating.addEventListener("pagehide", onGone);
+    return () => floating.removeEventListener("pagehide", onGone);
+  }, [pipWindow]);
 
   /* Nothing keeps capturing after the window is gone. A screenshot's stream
      is stopped by `captureScreenshot` itself, the instant it has its frame, so
@@ -827,6 +876,11 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
          offered a button that would do nothing. */
       setCanPause(recordingRef.current.canPause);
       setRecording(true);
+      /* Straight out to a floating window, so the controls follow the person
+         to the tab they are about to record. Refused — no support, or the
+         click that started this has gone stale while the picker was open —
+         and the strip stays on the page, with its own button to try again. */
+      void floatControls();
     } catch (failure) {
       setError(
         failure instanceof CaptureError
@@ -868,6 +922,24 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
       pausedAtRef.current = null;
       setBusy(null);
     }
+  }
+
+  /**
+   * Moves the recording strip into a floating window, if the browser allows.
+   *
+   * Nothing about the recording changes: the window is only somewhere else to
+   * render the same strip, and every button in it calls the handlers below.
+   */
+  async function floatControls() {
+    if (pipWindow && !pipWindow.closed) return;
+    const floating = await openFloatingWindow({ width: 300, height: 56 });
+    if (!floating) return;
+    /* Stopped while the window was opening: nothing left to control. */
+    if (!recordingRef.current) {
+      floating.close();
+      return;
+    }
+    setPipWindow(floating);
   }
 
   function discardRecording() {
@@ -988,6 +1060,81 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
   const issuePath =
     target?.kind === "issue" ? `/issues/${target.label.toLowerCase()}` : null;
 
+  const floatSupported = canFloatWindow();
+  const stopping = recording && busy === "record";
+
+  /* The strip, for wherever it is shown: on the page, or in the floating
+     window. One piece of markup and one set of handlers, so the two can never
+     disagree about what a button does. */
+  function recordingBar(floating: boolean) {
+    return (
+      <div
+        className={styles.recordingBar}
+        data-floating={floating || undefined}
+        role="status"
+        aria-live="polite"
+      >
+        <span
+          className={styles.dot}
+          data-paused={paused || undefined}
+          aria-hidden
+        />
+        <span className={styles.elapsed}>
+          {stopping ? "Stopping…" : paused ? "Paused" : "Recording"}{" "}
+          {formatDuration(elapsedMs)}
+        </span>
+        {canPause ? (
+          <button
+            type="button"
+            className={styles.barAction}
+            onClick={togglePause}
+            disabled={busy === "record"}
+            aria-label={paused ? "Resume recording" : "Pause recording"}
+            title={paused ? "Resume recording" : "Pause recording"}
+          >
+            {paused ? <IconPlay size={13} /> : <IconPause size={13} />}
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className={styles.barAction}
+          data-stop
+          onClick={() => void finishRecording()}
+          disabled={busy === "record"}
+          aria-label="Stop recording"
+          title="Stop recording"
+        >
+          <IconStopSquare size={13} />
+        </button>
+        <button
+          type="button"
+          className={styles.barAction}
+          onClick={discardRecording}
+          disabled={busy === "record"}
+          aria-label="Discard recording"
+          title="Discard recording"
+        >
+          <IconTrash size={13} />
+        </button>
+        {/* The way back out to a floating window: when opening it with the
+            recording was refused, or after it was closed. Only where the
+            browser has one to open. */}
+        {!floating && floatSupported ? (
+          <button
+            type="button"
+            className={styles.barAction}
+            onClick={() => void floatControls()}
+            disabled={busy === "record"}
+            aria-label="Float recording controls over other tabs"
+            title="Float recording controls over other tabs"
+          >
+            <IconExternal size={13} />
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <SnipToolContext.Provider value={value}>
       {children}
@@ -1011,51 +1158,11 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
        * entirely. That limit is the browser's, and is stated rather than
        * papered over.
        */}
-      {open && recording ? (
-        <div className={styles.recordingBar} role="status" aria-live="polite">
-          <span
-            className={styles.dot}
-            data-paused={paused || undefined}
-            aria-hidden
-          />
-          <span className={styles.elapsed}>
-            {paused ? "Paused" : "Recording"} {formatDuration(elapsedMs)}
-          </span>
-          {canPause ? (
-            <button
-              type="button"
-              className={styles.barAction}
-              onClick={togglePause}
-              disabled={busy === "record"}
-              aria-label={paused ? "Resume recording" : "Pause recording"}
-              title={paused ? "Resume recording" : "Pause recording"}
-            >
-              {paused ? <IconPlay size={13} /> : <IconPause size={13} />}
-            </button>
-          ) : null}
-          <button
-            type="button"
-            className={styles.barAction}
-            data-stop
-            onClick={() => void finishRecording()}
-            disabled={busy === "record"}
-            aria-label="Stop recording"
-            title="Stop recording"
-          >
-            <IconStopSquare size={13} />
-          </button>
-          <button
-            type="button"
-            className={styles.barAction}
-            onClick={discardRecording}
-            disabled={busy === "record"}
-            aria-label="Discard recording"
-            title="Discard recording"
-          >
-            <IconTrash size={13} />
-          </button>
-        </div>
-      ) : null}
+      {open && recording
+        ? pipWindow
+          ? createPortal(recordingBar(true), pipWindow.document.body)
+          : recordingBar(false)
+        : null}
 
       {/* Stood down while the capture is being taken, while its area is being
           chosen, while the editor is up, and while a recording is running —
