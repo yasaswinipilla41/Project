@@ -64,6 +64,38 @@ export async function replaceAttachment(
 }
 
 /**
+ * Giving an attachment a different name.
+ *
+ * `PATCH /api/attachments/<id>`, which changes the label and nothing else —
+ * the row keeps its id, its bytes, its verified type and its issue, so every
+ * link to it still resolves. Deliberately not `replaceAttachment`: that route
+ * writes new bytes and keeps the existing name, which is the opposite of what
+ * is wanted here.
+ *
+ * The server holds the extension steady with `renamedFilename`, so a rename
+ * cannot turn one kind of file into another, and answers with the name it
+ * actually stored.
+ */
+export async function renameAttachment(
+  attachmentId: string,
+  filename: string,
+): Promise<string> {
+  const response = await fetch(`/api/attachments/${attachmentId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ filename }),
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new Error(body?.error ?? "That file could not be renamed.");
+  }
+
+  const body = (await response.json()) as { filename?: string };
+  return body.filename ?? filename;
+}
+
+/**
  * Everything a Create form staged, uploaded once its target exists.
  *
  * Each file stands or falls on its own: one refused does not take the rest

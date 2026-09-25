@@ -20,6 +20,7 @@ import {
   shortTypeLabel,
 } from "@/lib/attachments";
 import { formatRelative } from "@/lib/format";
+import { renameAttachment } from "@/lib/uploadAttachment";
 
 /**
  * Attachments on an issue or a comment.
@@ -259,26 +260,30 @@ export function AttachmentGrid({
    * Renaming is the label and nothing else — the same file, the same row, the
    * same link. The extension is held steady on the server, so a rename cannot
    * change what the file claims to be; see `renamedFilename`.
+   *
+   * Through the same `renameAttachment` the Snip Tool renames with, so there
+   * is one client-side rename rather than one per surface that offers it.
    */
   const rename = useCallback(
     async (attachment: AttachmentView, next: string) => {
       setRenaming(null);
       if (next.trim() === "" || next === attachment.filename) return;
 
-      const response = await fetch(`/api/attachments/${attachment.id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ filename: next }),
-      });
-
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        toast(<>{payload.error ?? "That file could not be renamed."}</>);
+      let saved: string;
+      try {
+        saved = await renameAttachment(attachment.id, next);
+      } catch (failure) {
+        toast(
+          <>
+            {failure instanceof Error
+              ? failure.message
+              : "That file could not be renamed."}
+          </>,
+        );
         return;
       }
 
-      const saved = await response.json().catch(() => null);
-      toast(<>Renamed to {saved?.filename ?? next}</>);
+      toast(<>Renamed to {saved}</>);
       router.refresh();
     },
     [router, toast],

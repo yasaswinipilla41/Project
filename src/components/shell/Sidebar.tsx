@@ -136,7 +136,7 @@ export function Sidebar({
       prefix: true,
       excludeSuffix: "/board",
     },
-    { href: "/issues", label: "Issues", Icon: IconIssues, prefix: true },
+    { href: "/issues", label: "Work Items", Icon: IconIssues, prefix: true },
     /*
      * Backlog History, across every project you can open.
      *

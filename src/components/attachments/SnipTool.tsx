@@ -20,6 +20,7 @@ import {
   IconClock,
   IconClose,
   IconEdit,
+  IconExternal,
   IconImage,
   IconMaximize,
   IconMinimize,
@@ -31,8 +32,13 @@ import {
   IconTrash,
 } from "@/components/ui/Icon";
 import { ScreenshotEditor } from "@/components/attachments/ScreenshotEditor";
-import { annotatedFilename, formatBytes } from "@/lib/attachments";
 import {
+  annotatedFilename,
+  formatBytes,
+  renamedFilename,
+} from "@/lib/attachments";
+import {
+  renameAttachment,
   replaceAttachment,
   uploadStagedAttachment,
 } from "@/lib/uploadAttachment";
@@ -42,12 +48,12 @@ import {
   canCaptureScreen,
   canRecordScreen,
   CaptureError,
+  captureScreenshot,
   formatDuration,
-  retainCaptureSource,
   startScreenRecording,
   type ActiveRecording,
-  type RetainedSource,
 } from "@/lib/screenCapture";
+import { canFloatWindow, openFloatingWindow } from "@/lib/documentPip";
 
 /**
  * The Snip Tool: a window of its own, not a menu.
@@ -130,6 +136,15 @@ interface Snip {
   savedAs: string | null;
   /** Holds changes that are not saved — never saved, or a save that failed. */
   dirty: boolean;
+  /**
+   * Straight off the screen and not yet kept.
+   *
+   * The editor opens on a capture the moment it is taken, so backing out of
+   * it means "I did not want that picture" rather than "I did not want those
+   * pen strokes". Cleared the first time it is saved, after which cancelling
+   * the editor leaves the saved snip alone.
+   */
+  fresh?: boolean;
 }
 
 /** What the window should do the moment it opens, if anything. */
@@ -229,15 +244,6 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
   const [minimized, setMinimized] = useState(false);
   const [maximized, setMaximized] = useState(false);
 
-  /**
-   * The tab or window chosen in the browser's picker, kept between snips.
-   *
-   * A ref rather than state: the stream has to survive every re-render
-   * untouched, and what the window actually draws is `sharing` below.
-   */
-  const retained = useRef<RetainedSource | null>(null);
-  /** What the browser calls the retained surface, or null when there is none. */
-  const [sharing, setSharing] = useState<string | null>(null);
   const [snips, setSnips] = useState<Snip[]>([]);
   /** The snip the editor is open on. */
   const [editing, setEditing] = useState<string | null>(null);
@@ -287,6 +293,21 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
    */
   const pausedTotalRef = useRef(0);
   const pausedAtRef = useRef<number | null>(null);
+
+  /*
+   * The floating window the recording strip moves into, while one is open.
+   *
+   * The strip on the page is only visible from the Prio tab, and the thing
+   * being recorded is usually another tab. A Document Picture-in-Picture
+   * window stays above every tab, so the same strip — same buttons, same
+   * handlers, same recorder — is rendered there instead. Null means the strip
+   * is on the page, as it always was: no support, refused, or closed by the
+   * person, in which case the recording carries on regardless.
+   */
+  const [pipWindow, setPipWindow] = useState<Window | null>(null);
+  /* The same window, for the unmount cleanup, which sees only first-render
+     state. */
+  const pipRef = useRef<Window | null>(null);
 
   /*
    * Where the person has dragged the window to.
@@ -348,11 +369,6 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
     recordingRef.current?.cancel();
     recordingRef.current = null;
     setRecording(false);
-    /* Closing lets go of the shared tab or window as well: the browser's
-       sharing indicator should not outlive the window that asked for it. */
-    retained.current?.stop();
-    retained.current = null;
-    setSharing(null);
     setOpen(false);
     setMinimized(false);
     setMaximized(false);
@@ -384,7 +400,7 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
    * The one thing somebody wants a shortcut for here is starting a capture
    * without first finding the window — usually while already looking at the
    * thing they want a picture of. It opens the tool for whatever surface is
-   * registered and goes straight into a snip, which is the same path New Snip
+   * registered and goes straight into a snip, which is the same path Select
    * takes.
    *
    * Three deliberate restraints, all borrowed from the search shortcut:
@@ -430,10 +446,19 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
     return () => document.removeEventListener("keydown", onKeyDown);
   });
 
-  // Ticks while recording, and not while it is paused.
+  /*
+   * Ticks while recording, and not while it is paused.
+   *
+   * Scheduled on the floating window when there is one. The Prio tab is in
+   * the background while another tab is recorded, and the browser slows a
+   * background tab's timers down; the floating window is on screen, so its
+   * clock keeps pace. It is the same clock either way — only where it is
+   * scheduled moves.
+   */
   useEffect(() => {
     if (!recording || paused) return;
-    const timer = setInterval(
+    const host = pipWindow ?? window;
+    const timer = host.setInterval(
       () =>
         setElapsedMs(
           Math.max(
@@ -443,16 +468,39 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
         ),
       250,
     );
-    return () => clearInterval(timer);
-  }, [recording, paused]);
+    return () => host.clearInterval(timer);
+  }, [recording, paused, pipWindow]);
 
-  // Nothing keeps sharing the screen after the window is gone.
+  /* The floating window lives exactly as long as the recording: stopped,
+     discarded, or ended from the browser's own sharing bar, it closes and the
+     Snip Tool window comes back with the result as it always has. Closing
+     it fires `pagehide`, which is what lets go of it below. */
+  useEffect(() => {
+    if (!recording) pipWindow?.close();
+  }, [recording, pipWindow]);
+
+  useEffect(() => {
+    pipRef.current = pipWindow;
+  }, [pipWindow]);
+
+  /* Closed by the person, or by the browser: the strip returns to the page
+     and the recording carries on. Closing the controls is not stopping. */
+  useEffect(() => {
+    if (!pipWindow) return;
+    const floating = pipWindow;
+    const onGone = () =>
+      setPipWindow((current) => (current === floating ? null : current));
+    floating.addEventListener("pagehide", onGone);
+    return () => floating.removeEventListener("pagehide", onGone);
+  }, [pipWindow]);
+
+  /* Nothing keeps capturing after the window is gone. A screenshot's stream
+     is stopped by `captureScreenshot` itself, the instant it has its frame, so
+     the only thing that can still be running here is a recording. */
   useEffect(() => {
     return () => {
       recordingRef.current?.cancel();
       recordingRef.current = null;
-      retained.current?.stop();
-      retained.current = null;
     };
   }, []);
 
@@ -541,74 +589,34 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
       ? `${target.label} (${target.projectName})`
       : (target?.label ?? "");
 
-  /** Lets go of the shared tab or window, if one is being held. */
-  function releaseSource() {
-    retained.current?.stop();
-    retained.current = null;
-    setSharing(null);
-  }
-
   /**
-   * Choosing where to capture from.
+   * Select: one still picture of a surface, then the area to keep.
    *
-   * "This tab" shares nothing until a snip is actually taken, which is why it
-   * is the one that costs nothing to leave selected.
+   * `captureScreenshot` is the whole of it: the browser's own picker opens, the
+   * person chooses a screen, window or tab, exactly one frame is drawn from
+   * what comes back, and every track is stopped in the same breath — so a
+   * screenshot leaves no capture running and no sharing indicator behind it.
+   * A screenshot is a still picture, and nothing here holds a live stream for
+   * one.
    *
-   * "Another tab or window" opens the browser's own picker *now* and keeps what
-   * comes back. That is the whole point: the surface somebody wants a picture
-   * of is usually one they have to go and find first, and asking for it at snip
-   * time would both prompt again and give them no chance to get there. So the
-   * share is arranged once, the person navigates wherever they need to — in
-   * that tab, in this one, however they like — and New snip copies whatever the
-   * chosen surface is showing by then.
+   * This is deliberately *not* the recorder's path, which keeps a stream by
+   * definition and ends it when somebody presses Stop.
    *
-   * Nothing here navigates anything. The picker is the browser's, the choice in
-   * it is the person's, and Prio never sees a surface they did not pick.
+   * The picker therefore appears for every Select rather than once per
+   * session. That is the cost of holding nothing: the surface has to be
+   * showing what you want at the moment you pick it, because there is no live
+   * stream left to sample later.
+   *
+   * A cancelled or refused picker throws before there is any stream to stop;
+   * a frame that fails after one is open still stops it, in `finally`.
    */
-  /**
-   * Gets hold of a surface to capture, asking the browser once.
-   *
-   * The surface somebody wants a picture of is usually one they have to go and
-   * find first, so the share is arranged once and then kept: the person
-   * navigates wherever they need to — in that tab, in this one, however they
-   * like — and each New Snip copies whatever the chosen surface is showing by
-   * then. Asking again per snip would both re-prompt and give them no chance
-   * to get there.
-   *
-   * Nothing here navigates anything. The picker is the browser's, the choice
-   * in it is the person's, and Prio never sees a surface they did not pick.
-   */
-  async function acquireSource(): Promise<RetainedSource> {
-    if (retained.current) return retained.current;
-
-    const picked = await retainCaptureSource({ source: "any" });
-    retained.current = picked;
-    setSharing(picked.label);
-
-    /* The browser's own "Stop sharing" bar can end it at any moment. When it
-       does, the window says so and asks again at the next snip rather than
-       failing. */
-    picked.onEnded(() => {
-      retained.current = null;
-      setSharing(null);
-    });
-
-    return picked;
-  }
-
-  /** New Snip: a fresh capture of the shared surface, then the area to keep. */
   async function newSnip() {
     if (busy !== null) return;
     setError(null);
     setNotice(null);
     setBusy("screenshot");
     try {
-      /* The surface already being shared, sampled as it looks right now —
-         wherever the person has got to. The first snip of a session asks the
-         browser which surface that is, which is also the only way another tab
-         can ever be reached. */
-      const source = await acquireSource();
-      setSelecting(await source.grab());
+      setSelecting(await captureScreenshot({ source: "any" }));
     } catch (failure) {
       setError(
         failure instanceof CaptureError
@@ -630,17 +638,29 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
     try {
       const picture = await cropImage(frame, area);
       const name = nameFor(".png");
+
       /*
-       * Straight to the preview, not into the editor.
+       * Straight into the editor, on the picture just taken.
        *
-       * The editor used to sit between every capture and its attachment, so
-       * the ordinary case — take a picture of the thing, put it on the work
-       * item — cost a crop tool, a Save and a choice about copies. It is
-       * still one click away from the attachment itself for the times
-       * somebody genuinely wants to draw on a screenshot; it is no longer the
-       * toll on the times they do not.
+       * A screenshot is nearly always taken *in order to* point at something
+       * — this is the bit that is wrong — so the editor is where the capture
+       * lands rather than somewhere to go afterwards. Saving there is the
+       * whole of keeping it: there is no separate upload step behind it, and
+       * no choice about copies in front of it.
+       *
+       * Marked `fresh`, so backing out of the editor drops the picture
+       * instead of leaving a staged row nobody asked for.
        */
-      setCapture({ file: new File([picture], name, { type: "image/png" }) });
+      const snip: Snip = {
+        id: snipId(),
+        name,
+        file: new File([picture], name, { type: "image/png" }),
+        savedAs: null,
+        dirty: true,
+        fresh: true,
+      };
+      setSnips((list) => [...list, snip]);
+      setEditing(snip.id);
     } catch {
       setError("That area could not be captured. Please try again.");
     }
@@ -731,7 +751,12 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
       const [id] = await deliver([
         { file, replaces: snip.savedAs ?? undefined },
       ]);
-      updateSnip(snip.id, { file, savedAs: id ?? snip.savedAs, dirty: false });
+      updateSnip(snip.id, {
+        file,
+        savedAs: id ?? snip.savedAs,
+        dirty: false,
+        fresh: false,
+      });
       return snip.savedAs
         ? `Updated ${snip.name} on ${destination}`
         : `Saved ${snip.name} to ${destination}`;
@@ -783,6 +808,54 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
     });
   }
 
+  /**
+   * Gives a capture a name somebody chose.
+   *
+   * `renamedFilename` is the same helper the attachment list renames with, so
+   * a capture cannot be given a name an attachment could not have — the
+   * extension is held steady and a name with nothing in it is refused.
+   *
+   * A capture already saved is renamed where it lives too, through
+   * `renameAttachment` — the route that changes the label and nothing else.
+   * Deliberately not the replace path a saved snip's *bytes* travel: that one
+   * keeps the existing name by design, so it would have written the picture
+   * again and left the name exactly as it was.
+   *
+   * Nothing new is created either way: `savedAs` is unchanged, so the
+   * attachment keeps its identity and the list keeps one row.
+   *
+   * A snip staged on a form has no attachment behind it yet, so its new name
+   * goes to the staged row instead — the same delivery a saved edit makes,
+   * which writes over that row rather than adding one.
+   */
+  async function renameSnip(snip: Snip, raw: string) {
+    const next = renamedFilename(raw, snip.name);
+    if (!next || next === snip.name) return;
+
+    const file = new File([snip.file], next, { type: snip.file.type });
+    updateSnip(snip.id, { name: next, file });
+
+    if (!snip.savedAs) return;
+
+    const saved = snip.savedAs;
+    await persist(async () => {
+      if (target?.kind === "issue") {
+        const stored = await renameAttachment(saved, next);
+        /* The name the server settled on, which is the one the attachment
+           list will show. */
+        updateSnip(snip.id, {
+          name: stored,
+          file: new File([file], stored, { type: file.type }),
+        });
+        return `Renamed to ${stored}`;
+      }
+      /* A form's row is not an attachment yet, so the rename goes to the row:
+         the same delivery a saved edit makes, carrying the new name. */
+      await deliver([{ file, replaces: saved }]);
+      return `Renamed to ${next}`;
+    });
+  }
+
   function discardSnip(id: string) {
     setSnips((list) => list.filter((snip) => snip.id !== id));
   }
@@ -803,6 +876,11 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
          offered a button that would do nothing. */
       setCanPause(recordingRef.current.canPause);
       setRecording(true);
+      /* Straight out to a floating window, so the controls follow the person
+         to the tab they are about to record. Refused — no support, or the
+         click that started this has gone stale while the picker was open —
+         and the strip stays on the page, with its own button to try again. */
+      void floatControls();
     } catch (failure) {
       setError(
         failure instanceof CaptureError
@@ -844,6 +922,24 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
       pausedAtRef.current = null;
       setBusy(null);
     }
+  }
+
+  /**
+   * Moves the recording strip into a floating window, if the browser allows.
+   *
+   * Nothing about the recording changes: the window is only somewhere else to
+   * render the same strip, and every button in it calls the handlers below.
+   */
+  async function floatControls() {
+    if (pipWindow && !pipWindow.closed) return;
+    const floating = await openFloatingWindow({ width: 300, height: 56 });
+    if (!floating) return;
+    /* Stopped while the window was opening: nothing left to control. */
+    if (!recordingRef.current) {
+      floating.close();
+      return;
+    }
+    setPipWindow(floating);
   }
 
   function discardRecording() {
@@ -964,6 +1060,81 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
   const issuePath =
     target?.kind === "issue" ? `/issues/${target.label.toLowerCase()}` : null;
 
+  const floatSupported = canFloatWindow();
+  const stopping = recording && busy === "record";
+
+  /* The strip, for wherever it is shown: on the page, or in the floating
+     window. One piece of markup and one set of handlers, so the two can never
+     disagree about what a button does. */
+  function recordingBar(floating: boolean) {
+    return (
+      <div
+        className={styles.recordingBar}
+        data-floating={floating || undefined}
+        role="status"
+        aria-live="polite"
+      >
+        <span
+          className={styles.dot}
+          data-paused={paused || undefined}
+          aria-hidden
+        />
+        <span className={styles.elapsed}>
+          {stopping ? "Stopping…" : paused ? "Paused" : "Recording"}{" "}
+          {formatDuration(elapsedMs)}
+        </span>
+        {canPause ? (
+          <button
+            type="button"
+            className={styles.barAction}
+            onClick={togglePause}
+            disabled={busy === "record"}
+            aria-label={paused ? "Resume recording" : "Pause recording"}
+            title={paused ? "Resume recording" : "Pause recording"}
+          >
+            {paused ? <IconPlay size={13} /> : <IconPause size={13} />}
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className={styles.barAction}
+          data-stop
+          onClick={() => void finishRecording()}
+          disabled={busy === "record"}
+          aria-label="Stop recording"
+          title="Stop recording"
+        >
+          <IconStopSquare size={13} />
+        </button>
+        <button
+          type="button"
+          className={styles.barAction}
+          onClick={discardRecording}
+          disabled={busy === "record"}
+          aria-label="Discard recording"
+          title="Discard recording"
+        >
+          <IconTrash size={13} />
+        </button>
+        {/* The way back out to a floating window: when opening it with the
+            recording was refused, or after it was closed. Only where the
+            browser has one to open. */}
+        {!floating && floatSupported ? (
+          <button
+            type="button"
+            className={styles.barAction}
+            onClick={() => void floatControls()}
+            disabled={busy === "record"}
+            aria-label="Float recording controls over other tabs"
+            title="Float recording controls over other tabs"
+          >
+            <IconExternal size={13} />
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <SnipToolContext.Provider value={value}>
       {children}
@@ -987,51 +1158,11 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
        * entirely. That limit is the browser's, and is stated rather than
        * papered over.
        */}
-      {open && recording ? (
-        <div className={styles.recordingBar} role="status" aria-live="polite">
-          <span
-            className={styles.dot}
-            data-paused={paused || undefined}
-            aria-hidden
-          />
-          <span className={styles.elapsed}>
-            {paused ? "Paused" : "Recording"} {formatDuration(elapsedMs)}
-          </span>
-          {canPause ? (
-            <button
-              type="button"
-              className={styles.barAction}
-              onClick={togglePause}
-              disabled={busy === "record"}
-              aria-label={paused ? "Resume recording" : "Pause recording"}
-              title={paused ? "Resume recording" : "Pause recording"}
-            >
-              {paused ? <IconPlay size={13} /> : <IconPause size={13} />}
-            </button>
-          ) : null}
-          <button
-            type="button"
-            className={styles.barAction}
-            data-stop
-            onClick={() => void finishRecording()}
-            disabled={busy === "record"}
-            aria-label="Stop recording"
-            title="Stop recording"
-          >
-            <IconStopSquare size={13} />
-          </button>
-          <button
-            type="button"
-            className={styles.barAction}
-            onClick={discardRecording}
-            disabled={busy === "record"}
-            aria-label="Discard recording"
-            title="Discard recording"
-          >
-            <IconTrash size={13} />
-          </button>
-        </div>
-      ) : null}
+      {open && recording
+        ? pipWindow
+          ? createPortal(recordingBar(true), pipWindow.document.body)
+          : recordingBar(false)
+        : null}
 
       {/* Stood down while the capture is being taken, while its area is being
           chosen, while the editor is up, and while a recording is running —
@@ -1162,7 +1293,7 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
                    * This used to open on a choice of capture source — "This
                    * tab" or "Another tab or window" — which asked a question
                    * the browser is about to ask anyway, and asked it before
-                   * the person had said what they wanted to do. New Snip now
+                   * the person had said what they wanted to do. Select now
                    * goes straight to the browser's own picker, which is the
                    * only thing that can offer another tab, so any surface is
                    * reachable without Prio holding an opinion about it.
@@ -1176,7 +1307,7 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
                       onClick={() => void newSnip()}
                     >
                       <IconPlus size={13} />
-                      New Snip
+                      Select
                     </Button>
                     <Button
                       type="button"
@@ -1190,39 +1321,14 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
                     </Button>
                   </div>
 
-                  {/*
-                   * What Prio is capturing from, and the way out of it.
-                   *
-                   * Worded as capture rather than sharing. Nothing is being
-                   * sent anywhere: the browser hands Prio frames of a surface
-                   * the person picked, to put on a work item. "Sharing your
-                   * screen" describes a call, and reading it here invites the
-                   * reasonable worry that somebody is watching.
-                   *
-                   * Shown only once a surface is actually being held, so it
-                   * reports a fact rather than offering a setting.
-                   */}
-                  {sharing ? (
-                    <p className={styles.sharing}>
-                      <span className={styles.sharingName} title={sharing}>
-                        Capturing from {sharing}
-                      </span>
-                      <button
-                        type="button"
-                        className="prio-btn prio-btn--ghost prio-btn--sm"
-                        onClick={releaseSource}
-                      >
-                        Release source
-                      </button>
-                    </p>
-                  ) : null}
-
                   <p className={styles.hint}>
-                    New Snip hides this window and asks which surface to
-                    capture. Go to the page you want, drag over the part that
-                    matters, then Upload — it goes to{" "}
-                    {destination || "where you opened this"}. Each New Snip is
-                    a separate capture.
+                    Select hides this window and asks which screen, window or
+                    tab to capture. Pick the one already showing what you
+                    want: a still picture of it is taken there and then, you
+                    drag over the part that matters, and it opens in the
+                    editor — saving there puts it on{" "}
+                    {destination || "where you opened this"}. Each Select is a
+                    separate capture, and nothing keeps capturing afterwards.
                   </p>
                   {/* The genuine limit, said plainly rather than worked
                       around. A page cannot enumerate your tabs and should not
@@ -1261,6 +1367,7 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
                         busy={busy !== null}
                         onEdit={() => setEditing(snip.id)}
                         onSave={() => void saveSnip(snip, snip.file)}
+                        onRename={(next) => void renameSnip(snip, next)}
                         onDiscard={() => discardSnip(snip.id)}
                       />
                     ))}
@@ -1302,7 +1409,14 @@ export function SnipToolProvider({ children }: { children: ReactNode }) {
            * further. Every other tool is one click away as usual.
            */
           initialTool="crop"
-          onCancel={() => setEditing(null)}
+          /* A capture backed out of was never kept, so nothing is left
+             behind for somebody to tidy up. An edit abandoned on a snip that
+             is already saved leaves that snip exactly as it was. */
+          onCancel={() => {
+            const abandoned = editingSnip;
+            setEditing(null);
+            if (abandoned.fresh && !abandoned.savedAs) discardSnip(abandoned.id);
+          }}
           onSave={(blob) => void saveSnip(editingSnip, blob)}
           onSaveAs={(blob) => void saveSnipAsCopy(editingSnip, blob)}
         />
@@ -1318,6 +1432,7 @@ function SnipRow({
   busy,
   onEdit,
   onSave,
+  onRename,
   onDiscard,
 }: {
   snip: Snip;
@@ -1325,9 +1440,11 @@ function SnipRow({
   busy: boolean;
   onEdit: () => void;
   onSave: () => void;
+  onRename: (name: string) => void;
   onDiscard: () => void;
 }) {
   const url = useObjectUrl(snip.file);
+  const [renaming, setRenaming] = useState(false);
 
   const status = snip.savedAs
     ? snip.dirty
@@ -1347,9 +1464,27 @@ function SnipRow({
         ) : null}
       </span>
       <span className={styles.snipMeta}>
-        <span className={styles.snipName} title={snip.name}>
-          {snip.name}
-        </span>
+        {renaming ? (
+          <SnipNameField
+            snip={snip}
+            onCommit={(next) => {
+              setRenaming(false);
+              onRename(next);
+            }}
+            onCancel={() => setRenaming(false)}
+          />
+        ) : (
+          <button
+            type="button"
+            className={styles.snipName}
+            title={`Rename ${snip.name}`}
+            aria-label={`Rename ${snip.name}`}
+            onClick={() => setRenaming(true)}
+            disabled={busy}
+          >
+            {snip.name}
+          </button>
+        )}
         <span className={styles.snipStatus}>
           {status} · {formatBytes(snip.file.size)}
         </span>
@@ -1421,7 +1556,7 @@ function CapturePreview({
   busy: boolean;
   onDiscard: () => void;
   onAttach: () => void;
-  /** Offered for a recording only; a snip's equivalent is New Snip. */
+  /** Offered for a recording only; a snip's equivalent is Select. */
   onRecordAgain?: () => void;
 }) {
   const url = useObjectUrl(capture.file);
@@ -1487,6 +1622,56 @@ function CapturePreview({
         </Button>
       </div>
     </>
+  );
+}
+
+/**
+ * Renaming a capture, in place.
+ *
+ * Deliberately not a `<form>`, for the reason the attachment list's own
+ * rename gives: this window can be open over the Create dialog, and a form
+ * nested in a form is not something HTML has — Enter would submit the issue
+ * instead of the name. Enter is handled here, and `data-local-escape` keeps
+ * Escape from closing the dialog behind this one.
+ */
+function SnipNameField({
+  snip,
+  onCommit,
+  onCancel,
+}: {
+  snip: Snip;
+  onCommit: (name: string) => void;
+  onCancel: () => void;
+}) {
+  const hadFocus = useRef(false);
+
+  return (
+    <input
+      name="name"
+      className="prio-input prio-input--sm"
+      defaultValue={snip.name}
+      aria-label={`Name for ${snip.name}`}
+      autoFocus
+      data-local-escape="true"
+      onFocus={() => {
+        hadFocus.current = true;
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          onCommit(event.currentTarget.value);
+          return;
+        }
+        if (event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          onCancel();
+        }
+      }}
+      onBlur={(event) => {
+        if (hadFocus.current) onCommit(event.target.value);
+      }}
+    />
   );
 }
 
