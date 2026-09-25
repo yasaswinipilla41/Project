@@ -212,7 +212,6 @@ export function BurndownChart({ data }: { data: Burndown }) {
     if (getComputedStyle(tip).position === "static") {
       tip.style.removeProperty("left");
       tip.style.removeProperty("top");
-      tip.style.removeProperty("max-width");
       return;
     }
 
@@ -222,12 +221,11 @@ export function BurndownChart({ data }: { data: Burndown }) {
     const card = wrap.closest(".prio-card") ?? wrap.closest(".prio-burndown");
     if (!dot || !svg || !card) return;
 
+    /* Reading under the chart instead of beside the point. Its width is the
+       same content width it has anywhere else — see the stylesheet. */
     const readInFlow = () => {
       tip.style.removeProperty("left");
       tip.style.removeProperty("top");
-      /* In the flow it takes the card's width, not a width the search tried
-         out for a floating position. */
-      tip.style.removeProperty("max-width");
       tip.classList.add("is-inflow");
     };
 
@@ -264,7 +262,6 @@ export function BurndownChart({ data }: { data: Burndown }) {
      * to the bottom of the window, and a panel the reader has to scroll to
      * find is worse than one across the chart from the point.
      */
-    tip.style.removeProperty("max-width");
     tip.classList.add("is-inflow");
     const flowed = tip.getBoundingClientRect();
     tip.classList.remove("is-inflow");
@@ -279,44 +276,33 @@ export function BurndownChart({ data }: { data: Burndown }) {
         : Number.POSITIVE_INFINITY;
 
     /*
-     * The widths to try.
+     * The panel's own size, measured once.
      *
-     * The panel's own width is part of where it can go: the gap between a
-     * flat line and the edge of the plot is often a little narrower than the
-     * panel's longest line, and then the nearest position that leaves the
-     * line alone is right across the chart. Allowed to wrap into a narrower
-     * column, the same words fit beside the point instead — so the search
-     * runs over a few widths and keeps whatever lands nearest.
+     * Its width is its content's width — capped by the stylesheet and by
+     * nothing else. It used to be part of the search: a few narrower widths
+     * were tried, so that a panel which would not fit beside the point could
+     * wrap into a column that did. That made the width a function of where the
+     * panel happened to fit, which is exactly what a reader notices — the same
+     * day's detail one width here and another there, and on a deployed build,
+     * where the card is a little taller or the window a little shorter, a low
+     * point falling through to the widest option of all.
      *
-     * Narrowing is not free: the panel grows taller and reads in more lines,
-     * so a narrower one has to earn its place by being closer. `null` is the
-     * stylesheet's own width, tried first, and the loop stops as soon as a
-     * position is close enough that no narrowing could improve on it.
+     * A tooltip's width should say something about what is in it and nothing
+     * about the chart's geometry. So it is read here, once, and the search
+     * moves a box of that one size around.
      */
-    const natural = tip.offsetWidth;
-    let best: {
-      left: number;
-      top: number;
-      cap: number | null;
-      cost: number;
-    } | null = null;
+    const width = tip.offsetWidth;
+    const height = tip.offsetHeight;
+    const minLeft = bounds.left + inset;
+    const maxLeft = bounds.right - inset - width;
+    const minTop = bounds.top + inset;
+    const maxTop = bounds.bottom - inset - height;
 
-    for (const cap of [null, 360, 320, 280, 240] as const) {
-      if (cap === null) tip.style.removeProperty("max-width");
-      else tip.style.maxWidth = `${cap}px`;
+    let best: { left: number; top: number; cost: number } | null = null;
 
-      const width = tip.offsetWidth;
-      const height = tip.offsetHeight;
-      const minLeft = bounds.left + inset;
-      const maxLeft = bounds.right - inset - width;
-      const minTop = bounds.top + inset;
-      const maxTop = bounds.bottom - inset - height;
-      /* This width cannot be held inside the card at all. */
-      if (maxLeft < minLeft || maxTop < minTop) continue;
-
-      /* What the wrapping costs, against the closeness it buys. */
-      const narrowing = 0.4 * Math.max(0, natural - width);
-
+    /* Unless the card cannot hold the panel at all, in which case the flow
+       below is the only place for it. */
+    if (maxLeft >= minLeft && maxTop >= minTop) {
       /*
        * Where to look.
        *
@@ -394,15 +380,11 @@ export function BurndownChart({ data }: { data: Burndown }) {
             (touchesLine(box, actual) ? 4000 : 0) +
             (touchesLine(box, ideal) ? 20 : 0) +
             away +
-            direction +
-            narrowing;
+            direction;
 
-          if (!best || cost < best.cost) best = { left, top, cap, cost };
+          if (!best || cost < best.cost) best = { left, top, cost };
         }
       }
-
-      /* Already beside the point: nothing narrower can beat that. */
-      if (best && best.cost <= gap + 12) break;
     }
 
     /*
@@ -415,8 +397,6 @@ export function BurndownChart({ data }: { data: Burndown }) {
       return;
     }
 
-    if (best.cap === null) tip.style.removeProperty("max-width");
-    else tip.style.maxWidth = `${best.cap}px`;
     tip.style.left = `${Math.round(best.left)}px`;
     tip.style.top = `${Math.round(best.top)}px`;
     tip.classList.add("is-placed");

@@ -107,7 +107,12 @@ async function seedRunningSprint() {
     select: { id: true, key: true },
   });
 
-  return { key: project.key.toLowerCase(), sprintId: sprint.id, finished, open };
+  return {
+    key: project.key.toLowerCase(),
+    sprintId: sprint.id,
+    finished,
+    open,
+  };
 }
 
 test.describe("The burndown's detail", () => {
@@ -270,8 +275,14 @@ test.describe("The burndown's detail", () => {
         const onLine = (box: DOMRect, line: Segment[]) =>
           line.some((segment) => {
             const inside = (x: number, y: number) =>
-              x >= box.left && x <= box.right && y >= box.top && y <= box.bottom;
-            if (inside(segment.ax, segment.ay) || inside(segment.bx, segment.by)) {
+              x >= box.left &&
+              x <= box.right &&
+              y >= box.top &&
+              y <= box.bottom;
+            if (
+              inside(segment.ax, segment.ay) ||
+              inside(segment.bx, segment.by)
+            ) {
               return true;
             }
             return (
@@ -384,9 +395,9 @@ test.describe("The burndown's detail", () => {
              * one is the bug this replaced — the panel used to be sent to the
              * far edge of the card, two to six hundred pixels from the day it
              * was describing, whenever the line blocked the obvious
-             * positions. It searches finely now, and narrows itself rather
-             * than desert the point, so a day of this sprint is never more
-             * than a panel's width away from its own detail.
+             * positions. It searches finely now, and reads under the chart
+             * rather than desert the point, so a day of this sprint is never
+             * more than a panel's width away from its own detail.
              */
             expect(
               seen.gap,
@@ -407,6 +418,215 @@ test.describe("The burndown's detail", () => {
         ).toBeGreaterThanOrEqual(Math.ceil(days / 2));
       }
     }
+  });
+
+  test("is the size of its own contents, at every point and every width", async ({
+    page,
+  }) => {
+    /*
+     * The box's width is its content's, and nothing else's.
+     *
+     * It briefly was not: the placement tried the panel at a few narrower
+     * widths so that one which would not fit beside a point could wrap into a
+     * column that did, which made the width a function of where it fitted.
+     * The same day's detail then read one width on one screen and another on
+     * the next — and a build whose card is a little taller, as a deployed one
+     * is, could fall through to the widest of them on the lower points. On
+     * top of that the panel reading under the chart was `width: auto`, which
+     * in the flow means the card's width: a tooltip stretched across the
+     * whole chart.
+     *
+     * So what has to hold, whatever the point and whatever the width of the
+     * window: the box is no wider than the reading measure, it is not a
+     * stripe across the chart, and the room left over inside it is small —
+     * which is what "sized to its contents" means once the text has wrapped.
+     */
+    const { key, sprintId } = await seedRunningSprint();
+
+    /** The box, and how much of it the words inside it actually use. */
+    const box = () =>
+      page.evaluate(() => {
+        const tip = document.querySelector(
+          ".prio-burndown__tip",
+        ) as HTMLElement;
+        const chart = document.querySelector(".prio-burndown__svg")!;
+        const style = getComputedStyle(tip);
+        const t = tip.getBoundingClientRect();
+        const inner =
+          t.width -
+          parseFloat(style.paddingLeft) -
+          parseFloat(style.paddingRight) -
+          parseFloat(style.borderLeftWidth) -
+          parseFloat(style.borderRightWidth);
+        const left =
+          t.left +
+          parseFloat(style.paddingLeft) +
+          parseFloat(style.borderLeftWidth);
+
+        /*
+         * The rightmost ink in the box: each row's own line boxes and each
+         * element within it, because a row is a flex line whose ink ends at
+         * its last item rather than at its widest one.
+         */
+        const range = document.createRange();
+        let ink = 0;
+        for (const row of Array.from(tip.querySelectorAll("p, li"))) {
+          range.selectNodeContents(row);
+          for (const rect of Array.from(range.getClientRects())) {
+            ink = Math.max(ink, rect.right - left);
+          }
+          for (const child of Array.from(row.querySelectorAll("*"))) {
+            ink = Math.max(ink, child.getBoundingClientRect().right - left);
+          }
+        }
+
+        /*
+         * And the width it would have in the other mode.
+         *
+         * The panel is either placed beside the point or read in the flow
+         * under the chart, and which one it gets depends on the room around
+         * the point — so a fixture that only ever floats would never see the
+         * flow's own width. That is where the reported fault lived: in the
+         * flow the box was `width: auto`, which means the card's width, so
+         * the same detail became a stripe across the chart as soon as the
+         * placement fell through to it. Both are measured here, and the claim
+         * is that they are the same box.
+         */
+        const floating = !tip.classList.contains("is-inflow");
+        tip.classList.toggle("is-inflow");
+        const other = Math.round(tip.getBoundingClientRect().width);
+        tip.classList.toggle("is-inflow");
+
+        return {
+          width: Math.round(t.width),
+          /* Empty room at the right-hand edge. */
+          slack: Math.round(inner - ink),
+          shareOfChart: t.width / chart.getBoundingClientRect().width,
+          /* Nothing may size the panel from JavaScript: the stylesheet is the
+             only thing that decides how wide it is. */
+          inlineWidth: `${tip.style.width}|${tip.style.maxWidth}`,
+          mode: floating ? "float" : "flow",
+          otherModeWidth: other,
+        };
+      });
+
+    for (const [width, height] of [
+      [1550, 900],
+      [1280, 800],
+      [1024, 768],
+      [900, 700],
+    ] as const) {
+      await page.setViewportSize({ width, height });
+      await page.goto(`/projects/${key}/sprints/${sprintId}`);
+      const chart = page.locator(".prio-burndown");
+      await chart.waitFor({ timeout: 45_000 });
+
+      const hits = chart.locator(".prio-burndown__hit");
+      const days = await hits.count();
+      const widths: number[] = [];
+
+      for (let day = 0; day < days; day += 1) {
+        await hits.nth(day).hover();
+        await expect(chart.locator(".prio-burndown__tip")).toBeVisible();
+
+        const where = `${width}px, day ${day}`;
+        const seen = await box();
+        /* The reading measure the stylesheet sets, and never more. */
+        expect(
+          seen.width,
+          `${where}: wider than the measure`,
+        ).toBeLessThanOrEqual(420);
+        /* Not a stripe across the chart. */
+        expect(
+          seen.shareOfChart,
+          `${where}: stretched across the chart`,
+        ).toBeLessThan(0.75);
+        /* Sized to the words in it: what is left over is a ragged edge, not a
+           field of empty box. */
+        expect(
+          seen.slack,
+          `${where}: box far wider than its text`,
+        ).toBeLessThan(90);
+        expect(seen.inlineWidth, `${where}: sized from script`).toBe("|");
+        /* The same box whichever way it is drawn — floating beside the point
+           or reading in the flow under the chart. */
+        expect(
+          Math.abs(seen.otherModeWidth - seen.width),
+          `${where}: ${seen.mode === "float" ? "the flow" : "the floating"} width differs`,
+        ).toBeLessThan(6);
+        expect(
+          seen.otherModeWidth,
+          `${where}: wider than the measure in the other mode`,
+        ).toBeLessThanOrEqual(420);
+        widths.push(seen.width);
+      }
+
+      /* And one width for the sprint, near enough: these days differ by a row
+         or two of text, not by where they sit on the chart. */
+      expect(
+        Math.max(...widths) - Math.min(...widths),
+        `${width}px: the width moves with the point`,
+      ).toBeLessThan(40);
+    }
+  });
+
+  test("follows the pointer from point to point, and goes away after it", async ({
+    page,
+  }) => {
+    /*
+     * What hovering has to do: answer for the day under the pointer, keep
+     * answering for the right one as the pointer moves along the line, and
+     * stop when the pointer leaves. A panel left behind — or left showing the
+     * day before — is worse than no panel, because it reads as a fact about
+     * the day being pointed at.
+     */
+    const { key, sprintId } = await seedRunningSprint();
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`/projects/${key}/sprints/${sprintId}`);
+    const chart = page.locator(".prio-burndown");
+    await chart.waitFor({ timeout: 45_000 });
+
+    const hits = chart.locator(".prio-burndown__hit");
+    const tip = chart.locator(".prio-burndown__tip");
+    const days = await hits.count();
+
+    /* The dates the chart itself says each day is, read from the text it
+       writes for a screen reader — so the expectation is the page's own and
+       not a format typed in here. */
+    const spoken = await chart
+      .locator(".prio-visually-hidden li")
+      .allTextContents();
+    expect(spoken.length).toBe(days);
+
+    for (let day = 0; day < days; day += 1) {
+      await hits.nth(day).hover();
+      await expect(tip).toBeVisible();
+
+      /* The date in the panel is this day's, so nothing stale survives the
+         move from the day before. */
+      const date = spoken[day]!.split(":")[0]!.trim();
+      await expect(
+        tip.locator(".prio-burndown__tipdate"),
+        `day ${day} shows another day's date`,
+      ).toHaveText(date);
+
+      /* One panel at a time, and the marker it describes is on the day under
+         the pointer. */
+      await expect(tip).toHaveCount(1);
+      await expect(chart.locator("circle.prio-burndown__dot")).toHaveCount(1);
+    }
+
+    /* Off the chart and it is gone — not hidden, not stale, not there. */
+    await page.locator(".prio-burndown__summary").hover();
+    await expect(tip).toHaveCount(0);
+
+    /* Back on, and it answers again. */
+    await hits.nth(1).hover();
+    await expect(tip).toBeVisible();
+    await expect(tip.locator(".prio-burndown__tipdate")).toHaveText(
+      spoken[1]!.split(":")[0]!.trim(),
+    );
   });
 
   test("keeps the empty-state message when nothing is estimated", async ({
