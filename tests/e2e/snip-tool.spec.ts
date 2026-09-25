@@ -630,6 +630,13 @@ test.describe("Snip Tool — on the Create form", () => {
   test("Record stands the window down, runs from a strip, and attaches as a WebM", async ({
     page,
   }) => {
+    /* The strip on the page, which is where it stays in a browser without
+       Document Picture-in-Picture. Where the browser has it, the strip moves
+       into a floating window instead — covered by the test below. */
+    await page.addInitScript(() => {
+      delete (window as { documentPictureInPicture?: unknown })
+        .documentPictureInPicture;
+    });
     const { consoleErrors } = watchForProblems(page);
 
     const dialog = await openCreateWithDraft(page, `Recorded ${Date.now()}`);
@@ -735,6 +742,116 @@ test.describe("Snip Tool — on the Create form", () => {
     await expect(
       dialog.locator(".prio-field").getByRole("button", { name: "Rename" }),
     ).toHaveCount(1);
+
+    expect(consoleErrors).toEqual([]);
+  });
+
+  test("a recording's strip floats above other tabs, and runs the same recorder from there", async ({
+    page,
+  }) => {
+    const { consoleErrors } = watchForProblems(page);
+
+    /* The recorder is watched from outside, so "paused" below means the
+       MediaRecorder paused rather than that a label changed. */
+    await page.addInitScript(() => {
+      const watched = window as unknown as {
+        __recorders: MediaRecorder[];
+        MediaRecorder: typeof MediaRecorder;
+      };
+      watched.__recorders = [];
+      const Original = watched.MediaRecorder;
+      watched.MediaRecorder = class extends Original {
+        constructor(...args: ConstructorParameters<typeof MediaRecorder>) {
+          super(...args);
+          watched.__recorders.push(this);
+        }
+      };
+    });
+
+    const dialog = await openCreateWithDraft(page, `Floated ${Date.now()}`);
+    const floatable = await page.evaluate(
+      () => "documentPictureInPicture" in window,
+    );
+    test.skip(!floatable, "This browser has no Document Picture-in-Picture.");
+    await dialog.getByRole("button", { name: "Add files" }).click();
+    await page.getByRole("menuitem", { name: "Record" }).click();
+
+    /* What the floating window shows, and what the recorder is doing. */
+    const read = () =>
+      page.evaluate(() => {
+        const floating = (
+          window as unknown as {
+            documentPictureInPicture: { window: Window | null };
+          }
+        ).documentPictureInPicture.window;
+        const recorders = (
+          window as unknown as { __recorders: MediaRecorder[] }
+        ).__recorders;
+        return {
+          floating: Boolean(floating),
+          text:
+            floating?.document.querySelector("[role=status]")?.textContent ??
+            null,
+          recorders: recorders.length,
+          state: recorders.at(-1)?.state ?? null,
+        };
+      });
+    const press = (label: string) =>
+      page.evaluate((name) => {
+        const floating = (
+          window as unknown as {
+            documentPictureInPicture: { window: Window | null };
+          }
+        ).documentPictureInPicture.window;
+        floating?.document
+          .querySelector<HTMLButtonElement>(`button[aria-label='${name}']`)
+          ?.click();
+      }, label);
+
+    await expect.poll(async () => (await read()).floating).toBe(true);
+    const onPage = page
+      .getByRole("status")
+      .filter({ hasText: /(Recording|Paused) \d/ });
+    /* Moved, not copied: one strip, in the floating window. */
+    await expect(onPage).toHaveCount(0);
+    await expect.poll(async () => (await read()).text).toMatch(/Recording \d/);
+
+    await press("Pause recording");
+    await expect.poll(async () => (await read()).state).toBe("paused");
+    expect((await read()).text).toMatch(/Paused \d/);
+
+    await press("Resume recording");
+    await expect.poll(async () => (await read()).state).toBe("recording");
+
+    /* Closing the floating window is not stopping: the recording runs on and
+       the strip comes back to the page, with the way to float it again. */
+    await page.evaluate(() =>
+      (
+        window as unknown as {
+          documentPictureInPicture: { window: Window | null };
+        }
+      ).documentPictureInPicture.window?.close(),
+    );
+    await expect(onPage).toBeVisible();
+    expect((await read()).state).toBe("recording");
+    await page
+      .getByRole("button", { name: "Float recording controls over other tabs" })
+      .click();
+    await expect.poll(async () => (await read()).floating).toBe(true);
+    await expect(onPage).toHaveCount(0);
+
+    await page.waitForTimeout(1_600);
+    await press("Stop recording");
+
+    /* Stopped from the floating window: it closes, and the Snip Tool comes
+       back on the preview exactly as a stop from the page does. */
+    await expect.poll(async () => (await read()).floating).toBe(false);
+    const after = await read();
+    expect(after.state).toBe("inactive");
+    expect(after.recorders).toBe(1);
+    const snip = snipWindow(page);
+    await expect(snip).toBeVisible();
+    await expect(snip.locator("video")).toBeVisible();
 
     expect(consoleErrors).toEqual([]);
   });
