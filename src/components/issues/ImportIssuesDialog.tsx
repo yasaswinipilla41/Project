@@ -1,11 +1,15 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Dialog } from "@/components/ui/Dialog";
 import { Alert, Button } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/Toast";
-import { IconDownload, IconWarning } from "@/components/ui/Icon";
+import {
+  IconDownload,
+  IconSpreadsheetDown,
+  IconWarning,
+} from "@/components/ui/Icon";
 import {
   TEMPLATE_FILENAME,
   templateColumns,
@@ -54,6 +58,72 @@ export function ImportIssuesDialog({
   const [building, setBuilding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [problems, setProblems] = useState<ImportProblem[]>([]);
+  const [dragging, setDragging] = useState(false);
+
+  /**
+   * Takes a file from whichever way it arrived — picker, drop or paste.
+   *
+   * One path for all three, so a dropped file is the same file the picker
+   * would have produced and the server sees no difference between them.
+   *
+   * The extension is checked here only so that dropping a PDF says so at once
+   * rather than after a round trip; the same rule is enforced on the server,
+   * which is where it counts. `.xlsx` is what the parser reads, and the
+   * wording is the server's own so the two cannot contradict each other.
+   */
+  const accept = useCallback((chosen: File | null | undefined) => {
+    if (!chosen) return;
+
+    setProblems([]);
+
+    if (!/\.xlsx$/i.test(chosen.name)) {
+      setFile(null);
+      setError(
+        "Import expects an .xlsx spreadsheet — the format Export produces.",
+      );
+      return;
+    }
+
+    setError(null);
+    setFile(chosen);
+  }, []);
+
+  /*
+   * Pasting a file, where the browser offers one.
+   *
+   * The drop zone advertises paste, so it has to work from the moment the
+   * dialog opens rather than only once something has been focused — hence the
+   * listener on the document, exactly as the attachment field does it. A paste
+   * carrying no file at all is somebody copying text, and is left alone.
+   */
+  useEffect(() => {
+    function onPaste(event: ClipboardEvent) {
+      const pasted = event.clipboardData?.files?.[0];
+      if (!pasted) return;
+      event.preventDefault();
+      accept(pasted);
+    }
+
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  }, [accept]);
+
+  /*
+   * A file dropped next to the zone rather than on it does nothing.
+   *
+   * Without this the browser navigates away to the dropped file, taking the
+   * half-finished import with it — the same guard the issue attachments drop
+   * zone already installs, and for the same reason.
+   */
+  useEffect(() => {
+    const swallow = (event: DragEvent) => event.preventDefault();
+    window.addEventListener("dragover", swallow);
+    window.addEventListener("drop", swallow);
+    return () => {
+      window.removeEventListener("dragover", swallow);
+      window.removeEventListener("drop", swallow);
+    };
+  }, []);
 
   /**
    * Writes the empty template and hands it to the browser.
@@ -155,21 +225,68 @@ export function ImportIssuesDialog({
       ) : null}
 
       <div className="prio-field">
-        <label className="prio-label" htmlFor="import-file">
-          Spreadsheet
-        </label>
+        {/*
+          * The file input itself, kept and hidden.
+          *
+          * It is still the thing that opens the picker and still the thing
+          * that holds the chosen file — the zone below only clicks it. A
+          * custom control that reimplemented any of that would be a second
+          * way in for the same file, and the one the browser gives us already
+          * handles the parts nobody should rewrite.
+          */}
         <input
           id="import-file"
           ref={inputRef}
           type="file"
-          className="prio-input"
+          className="prio-visually-hidden"
           accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           onChange={(e) => {
-            setFile(e.target.files?.[0] ?? null);
-            setError(null);
-            setProblems([]);
+            accept(e.target.files?.[0] ?? null);
+            /* Cleared so choosing the same file twice in a row still fires a
+               change — after a failed import that is the common case. */
+            e.target.value = "";
           }}
         />
+
+        {/*
+          * One target for all three ways in: click, drop and paste.
+          *
+          * A button rather than a bare div, because it does what a button
+          * does, and a reader who cannot see the dashed rectangle still gets
+          * told it can be pressed.
+          */}
+        <button
+          type="button"
+          className="prio-importdrop"
+          data-dragging={dragging || undefined}
+          data-chosen={file ? true : undefined}
+          onClick={() => inputRef.current?.click()}
+          onDragOver={(event) => {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "copy";
+            setDragging(true);
+          }}
+          onDragLeave={(event) => {
+            /* Moving onto a child is not leaving. */
+            if (event.currentTarget.contains(event.relatedTarget as Node | null))
+              return;
+            setDragging(false);
+          }}
+          onDrop={(event) => {
+            event.preventDefault();
+            setDragging(false);
+            accept(event.dataTransfer.files?.[0]);
+          }}
+        >
+          <IconSpreadsheetDown size={36} className="prio-importdrop__icon" />
+          <span className="prio-importdrop__text">
+            Drag &amp; drop or paste Excel template file here
+          </span>
+          {file ? (
+            <span className="prio-importdrop__file">{file.name}</span>
+          ) : null}
+        </button>
+
         <span className="prio-hint">
           Needs a <strong>Title</strong> column
           {project ? (
