@@ -22,7 +22,7 @@ import {
 } from "@/lib/domain";
 import { formatDateCompact, isOverdue } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
-import { completedByFilter } from "@/server/queries/completedWork";
+import { completedAssignedFilter } from "@/server/queries/completedWork";
 import { dueThisWeekFilter, overdueFilter } from "@/server/queries/due";
 import { requireUser } from "@/lib/session";
 import type { IssueStatus, IssueType, Prisma, Priority } from "@prisma/client";
@@ -185,9 +185,9 @@ export default async function MyWorkPage({
    */
   const WHERE: Record<Tab, Prisma.IssueWhereInput> = {
     open: assignedWhere,
-    /* Not `assigneeId`: finished work is whoever finished it, which the
-       activity trail knows and the current holder does not. */
-    completed: { ...scope, ...completedByFilter([user.id]) },
+    /* The same "assigned to me" this page is built on, with Done as the
+       category — see `completedAssignedFilter`. */
+    completed: { ...scope, ...completedAssignedFilter([user.id]) },
     overdue: {
       ...scope,
       assigneeId: user.id,
@@ -242,10 +242,20 @@ export default async function MyWorkPage({
        * Completed, for this person.
        *
        * The same fragment the list beneath the tile selects on, so the number
-       * and the rows cannot disagree. See `completedByFilter` for what makes
-       * finished work somebody's own — it is the trail, not the current
-       * holder, because work reassigned after it was finished was still
-       * finished by whoever finished it.
+       * and the rows cannot disagree.
+       *
+       * It counts the work *assigned to this person* that is Done, which is
+       * the question the rest of the page asks — Open, Overdue and Due this
+       * week are all "assigned to me" with a category on them — and the
+       * question Home's personal Completed figure has always answered. It
+       * used to read the activity trail instead and count what this person
+       * had *moved* to Done, so a developer holding three finished issues saw
+       * a figure that had nothing to do with them: work somebody else closed
+       * was missing from it, and work they had handed on and no longer held
+       * was in it. Two definitions of one word on two pages; this is the one
+       * both now use. `completedByFilter` still answers "what did I finish"
+       * where that is the question — the issue list's Completed by filter and
+       * its column.
        */
       prisma.issue.count({ where: WHERE.completed }),
 
@@ -303,7 +313,10 @@ export default async function MyWorkPage({
 
   const TAB_TITLE: Record<Tab, string> = {
     open: "Open",
-    completed: "Completed by me",
+    /* What it lists: the work that is theirs and finished. It said "Completed
+       by me", which was the old trail-based question and is now somebody
+       else's page. */
+    completed: "Completed",
     overdue: "Overdue",
     dueWeek: "Due this week",
   };
@@ -318,7 +331,7 @@ export default async function MyWorkPage({
   const EMPTY_BODY: Record<Tab, string> = {
     open: "When someone assigns you an issue or a bug it will appear here.",
     completed:
-      "Work you move to Done — or hand to testing and testing passes — is counted here, even if somebody else holds it now.",
+      "Work assigned to you is counted here once it reaches Done. Work you hand on to somebody else counts on their page, not yours.",
     overdue: "Nothing assigned to you is past its due date.",
     dueWeek: "Nothing assigned to you falls due before the week is out.",
   };
@@ -374,14 +387,15 @@ export default async function MyWorkPage({
         </div>
         <div className="col-6 col-xl-3">
           {/* Where Bugs used to be. Completed work is the other half of the
-              answer to "what is mine", and it is this person's alone — the
-              list is filtered on who the session says they are. */}
+              answer to "what is mine", and it is this person's alone — both
+              the figure and the list are cut on who the session says they
+              are. */}
           <Stat
             label="Completed"
             value={counts.completed}
             icon={<IconCheck size={13} />}
             tone={counts.completed > 0 ? "success" : "default"}
-            hint="Completed by me"
+            hint="Assigned to me and done"
             href={tabHref("completed")}
             selected={tab === "completed"}
             pendingIndicator

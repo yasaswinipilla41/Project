@@ -4,7 +4,7 @@ import { issueScope } from "@/lib/authz";
 import { OPEN_STATUSES } from "@/lib/domain";
 import { dueWindow } from "@/lib/format";
 import type { CurrentUser } from "@/lib/session";
-import { completedByFilter } from "@/server/queries/completedWork";
+import { completedAssignedFilter } from "@/server/queries/completedWork";
 import { dueThisWeekFilter, overdueFilter } from "@/server/queries/due";
 import { joinProject, projectByKey } from "./helpers";
 
@@ -81,7 +81,10 @@ async function makeIssue(opts: {
 }
 
 /** The page's own where-clause for one tile, asked as a set of ids. */
-async function idsIn(tile: "open" | "completed" | "overdue" | "dueWeek", now: Date) {
+async function idsIn(
+  tile: "open" | "completed" | "overdue" | "dueWeek",
+  now: Date,
+) {
   const scope = issueScope(ownerUser);
   const assigned = {
     ...scope,
@@ -93,7 +96,7 @@ async function idsIn(tile: "open" | "completed" | "overdue" | "dueWeek", now: Da
     tile === "open"
       ? assigned
       : tile === "completed"
-        ? { ...scope, ...completedByFilter([ownerId]) }
+        ? { ...scope, ...completedAssignedFilter([ownerId]) }
         : {
             ...scope,
             assigneeId: ownerId,
@@ -120,7 +123,9 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (created.length > 0) {
-    await prisma.notification.deleteMany({ where: { issueId: { in: created } } });
+    await prisma.notification.deleteMany({
+      where: { issueId: { in: created } },
+    });
     await prisma.activityLogEntry.deleteMany({
       where: { issueId: { in: created } },
     });
@@ -134,7 +139,10 @@ describe("work that was finished and then reopened", () => {
   it("leaves Completed and rejoins Open, on its current status alone", async () => {
     const now = new Date();
 
-    /* Finished, and credited through the trail the Completed tile reads. */
+    /* Finished, and theirs — which is what the Completed tile reads. The
+       trail entry is written too, because the reopened case is exactly where
+       a history-based rule would keep the issue in Completed for ever and
+       this has to prove the page does not read one. */
     const id = await makeIssue({
       title: `Reopened ${Date.now()}`,
       assigneeId: ownerId,
@@ -295,6 +303,8 @@ describe("a date category is still one person's work", () => {
 
     const dueWeek = await idsIn("dueWeek", now);
     expect(dueWeek, "the last moment of the week is in").toContain(lastMoment);
-    expect(dueWeek, "the first moment of the next is out").not.toContain(nextWeek);
+    expect(dueWeek, "the first moment of the next is out").not.toContain(
+      nextWeek,
+    );
   });
 });

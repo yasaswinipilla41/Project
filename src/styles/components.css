@@ -986,6 +986,36 @@ a.prio-key:hover {
   transition: background var(--prio-duration-fast) var(--prio-ease);
 }
 
+/*
+ * The row's own name.
+ *
+ * It takes whatever the icon and the end note leave, and stops inside it:
+ * `overflow: hidden` is what makes the ellipsis, and without it a long name
+ * paints over the note beside it — which is what a project with a long name
+ * did to its key. Truncating the name rather than the key is deliberate: the
+ * key is at most ten characters and is what identifies the project, so it
+ * keeps its width and the name yields.
+ */
+.prio-menu__itemlabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* The row sets this too; said again here because clipping to one line is
+     what this element is for. */
+  white-space: nowrap;
+}
+
+/* The note at the end of a row: never squeezed, never overlapped, and never
+   pulled off the row's own padding. */
+.prio-menu__itemtrail {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  margin-left: auto;
+}
+
 .prio-menu__item:hover,
 .prio-menu__item[data-highlighted="true"] {
   background: var(--prio-bg-hover);

@@ -315,11 +315,23 @@ export function MenuItem({
     .filter(Boolean)
     .join(" ");
 
+  /*
+   * A row is an icon, a name, and sometimes a note at the end of it — a
+   * project's key, a count.
+   *
+   * The name used to be sized with `flex: 1; min-width: 0` and nothing else,
+   * which gives the box the right width but lets the text paint straight out
+   * of it: a long project name ran across the key beside it and past the
+   * menu's own edge. The stylesheet clips it to its box with an ellipsis now,
+   * and keeps the note at its own width, so the two can never meet.
+   */
   const content = (
     <>
       {icon}
-      <span style={{ flex: 1, minWidth: 0 }}>{children}</span>
-      {trailing}
+      <span className="prio-menu__itemlabel">{children}</span>
+      {trailing ? (
+        <span className="prio-menu__itemtrail">{trailing}</span>
+      ) : null}
     </>
   );
 

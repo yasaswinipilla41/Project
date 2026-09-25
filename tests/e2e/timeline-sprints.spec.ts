@@ -1,15 +1,21 @@
 import { expect, test } from "@playwright/test";
 import { prisma } from "@/lib/prisma";
-import { formatDateCompact } from "@/lib/format";
+import { formatDate, formatDayMonthYear } from "@/lib/format";
 
 /**
  * A sprint bar on the project timeline says when the sprint runs.
  *
  * The bar's position already carried that, but position is only readable
- * against the axis: two sprints a week apart look alike. The dates are now
- * written on the bar itself — the start at its start, the end at its end —
- * and this drives the real page to check they are the sprint's own dates
- * rather than anything fixed.
+ * against the axis: two sprints a week apart look alike. So each end of the
+ * bar is dated — the start at its start, the end at its end — and this drives
+ * the real page to check they are the sprint's own dates rather than anything
+ * fixed.
+ *
+ * The dates are drawn *beside* the bar, not inside it. A bar is a filled
+ * shape roughly one date wide at these sizes, so a date written inside it was
+ * white-on-colour and clipped; outside, it reads against the page whatever
+ * the bar's width. That is the property asserted here, by measuring where
+ * each date landed against the bar's own box.
  */
 
 const createdProjects: string[] = [];
@@ -63,7 +69,7 @@ async function seedProjectWithSprint() {
       reporterId: admin.id,
       dueDate: new Date(Date.now() + 20 * 86_400_000),
     },
-    select: { id: true },
+    select: { id: true, key: true, title: true },
   });
   createdIssues.push(issue.id);
 
@@ -83,11 +89,11 @@ async function seedProjectWithSprint() {
   });
   createdSprints.push(sprint.id);
 
-  return { key: project.key.toLowerCase(), sprint, startDate, endDate };
+  return { key: project.key.toLowerCase(), sprint, startDate, endDate, issue };
 }
 
 test.describe("Sprint bars on the project timeline", () => {
-  test("write the sprint's own start and end dates on the bar", async ({
+  test("date each end of the bar, beside it rather than on it", async ({
     page,
   }) => {
     const { key, sprint, startDate, endDate } = await seedProjectWithSprint();
@@ -103,27 +109,43 @@ test.describe("Sprint bars on the project timeline", () => {
     /* The dates the page shows are the sprint's, formatted the way every
        other sprint date in Prio is — so the expectation is computed from the
        rows this test wrote, never typed out. */
-    await expect(bar.locator(".prio-timeline__barlabel--start")).toHaveText(
-      formatDateCompact(startDate),
-    );
-    await expect(bar.locator(".prio-timeline__barlabel--end")).toHaveText(
-      formatDateCompact(endDate),
-    );
+    const start = row.locator('.prio-timeline__date[data-edge="start"]');
+    const end = row.locator('.prio-timeline__date[data-edge="end"]');
+    await expect(start).toHaveText(formatDayMonthYear(startDate));
+    await expect(end).toHaveText(formatDayMonthYear(endDate));
 
-    /* Start at the start, end at the end. */
-    const startBox = await bar
-      .locator(".prio-timeline__barlabel--start")
-      .boundingBox();
-    const endBox = await bar
-      .locator(".prio-timeline__barlabel--end")
-      .boundingBox();
-    expect(startBox!.x).toBeLessThan(endBox!.x);
+    /* Nothing is drawn inside the bar any more: the fill carries the sprint's
+       colour and nothing else. What is left in it is the text no one sees —
+       the whole range, for a screen reader — so the check is that the bar has
+       no visible content rather than no content at all. */
+    await expect(bar.locator(".prio-timeline__date")).toHaveCount(0);
+    await expect(
+      bar.locator(":scope > *:not(.prio-visually-hidden)"),
+    ).toHaveCount(0);
 
-    /* Both stay inside the bar rather than running over the lane. */
-    const barBox = await bar.boundingBox();
-    expect(startBox!.x).toBeGreaterThanOrEqual(barBox!.x - 1);
-    expect(endBox!.x + endBox!.width).toBeLessThanOrEqual(
-      barBox!.x + barBox!.width + 1,
+    /* Start before the bar, end after it — outside its box on the side it
+       belongs to, which is the whole point of moving them out. */
+    const barBox = (await bar.boundingBox())!;
+    const startBox = (await start.boundingBox())!;
+    const endBox = (await end.boundingBox())!;
+    expect(
+      startBox.x + startBox.width,
+      "the start date is not clear of the bar",
+    ).toBeLessThanOrEqual(barBox.x + 1);
+    expect(
+      endBox.x,
+      "the end date is not clear of the bar",
+    ).toBeGreaterThanOrEqual(barBox.x + barBox.width - 1);
+    expect(startBox.x).toBeLessThan(endBox.x);
+
+    /* And they stay in the lane, so neither runs into the name column or the
+       status column either side of it. */
+    const trackBox = (await row
+      .locator(".prio-timeline__track")
+      .boundingBox())!;
+    expect(startBox.x).toBeGreaterThanOrEqual(trackBox.x - 1);
+    expect(endBox.x + endBox.width).toBeLessThanOrEqual(
+      trackBox.x + trackBox.width + 1,
     );
 
     /* Whatever the bar's width, the dates are also said in words — the row
@@ -131,9 +153,15 @@ test.describe("Sprint bars on the project timeline", () => {
     await expect(bar).toHaveAttribute("title", /\d/);
   });
 
-  test("leave the issue rows' own labels alone", async ({ page }) => {
-    /* The sprint block is the only thing this change touched: an issue row
-       still carries exactly one date label, its due date. */
+  test("date an issue row beside its bar too", async ({ page }) => {
+    /*
+     * The same treatment for the work under "Not in an epic".
+     *
+     * Its due date used to be written inside the coloured bar, where a status
+     * colour and a small bar between them made it unreadable. The date itself
+     * is unchanged — same value, same format, from the same `dueDate` — and
+     * only its position has moved.
+     */
     const { key } = await seedProjectWithSprint();
 
     await page.goto(`/projects/${key}/timeline`);
@@ -143,9 +171,107 @@ test.describe("Sprint bars on the project timeline", () => {
       .filter({ hasText: "Not in an epic" })
       .locator(".prio-timeline__row")
       .first();
-    await expect(issueRow.locator(".prio-timeline__barlabel")).toHaveCount(1);
+
+    const bar = issueRow.locator(".prio-timeline__bar");
+    const date = issueRow.locator(".prio-timeline__duedate");
+    await expect(date).toHaveCount(1);
+    /* The issue this spec seeded is due in twenty days, and that is the date
+       the row shows — computed here from the same clock, not typed out. */
+    await expect(date).toHaveText(
+      formatDate(new Date(Date.now() + 20 * 86_400_000)),
+    );
+
+    /* Nothing inside the bar, and the date clear of it on the track. */
+    await expect(bar).toHaveText("");
+    const barBox = (await bar.boundingBox())!;
+    const dateBox = (await date.boundingBox())!;
+    const clear =
+      dateBox.x >= barBox.x + barBox.width - 1 ||
+      dateBox.x + dateBox.width <= barBox.x + 1;
+    expect(clear, "the due date is not clear of the bar").toBe(true);
+
+    /* Inside the lane, so it cannot reach the status pill beside it. */
+    const trackBox = (await issueRow
+      .locator(".prio-timeline__track")
+      .boundingBox())!;
+    expect(dateBox.x).toBeGreaterThanOrEqual(trackBox.x - 1);
+    expect(dateBox.x + dateBox.width).toBeLessThanOrEqual(
+      trackBox.x + trackBox.width + 1,
+    );
+  });
+
+  test("opens the issue from its due date as well as from its bar", async ({
+    page,
+  }) => {
+    /*
+     * Under "Not in an epic" the date is a way in.
+     *
+     * A reader who has just read when something is due is pointing at the
+     * thing they want to open, and the date sits beside a bar that has always
+     * been a link — so it leads to the same issue, by the same key. Both are
+     * driven here, because "the bar still works" is half of what was asked
+     * for.
+     */
+    const { key, issue } = await seedProjectWithSprint();
+    const href = `/issues/${issue.key.toLowerCase()}`;
+
+    await page.goto(`/projects/${key}/timeline`);
+
+    const issueRow = page
+      .locator(".prio-timeline__group")
+      .filter({ hasText: "Not in an epic" })
+      .locator(".prio-timeline__row")
+      .first();
+    const date = issueRow.locator(".prio-timeline__duedate");
+    const bar = issueRow.locator(".prio-timeline__bar");
+
+    /* Both point at the same issue, and the date says which issue it opens
+       for a reader who cannot see the row it is in. */
+    await expect(date).toHaveAttribute("href", href);
+    await expect(bar).toHaveAttribute("href", href);
+    await expect(date).toHaveAttribute("aria-label", new RegExp(issue.key));
+
+    /* And it answers a pointer: the rule that keeps a plain date out of the
+       bar's way is off for this one, and hovering it says it is a link. */
+    const hover = await date.evaluate((el) => {
+      const before = getComputedStyle(el);
+      return {
+        pointerEvents: before.pointerEvents,
+        cursor: before.cursor,
+      };
+    });
+    expect(hover.pointerEvents).toBe("auto");
+    await date.hover();
+    await expect(date).toHaveCSS("text-decoration-line", "underline");
+
+    /* Clicking the date lands on that issue. */
+    await date.click();
+    await expect(page).toHaveURL(new RegExp(`${issue.key.toLowerCase()}$`));
     await expect(
-      issueRow.locator(".prio-timeline__barlabel--start"),
+      page.getByRole("heading", { name: issue.title }),
+    ).toBeVisible();
+
+    /* And the bar still does what it always did — the same issue, from the
+       same row. */
+    await page.goto(`/projects/${key}/timeline`);
+    await bar.click();
+    await expect(page).toHaveURL(new RegExp(`${issue.key.toLowerCase()}$`));
+    await expect(
+      page.getByRole("heading", { name: issue.title }),
+    ).toBeVisible();
+  });
+
+  test("leaves the sprint dates as plain text", async ({ page }) => {
+    /* Only the issue rows' dates lead anywhere: a sprint bar is not a link,
+       so neither are the dates beside it. */
+    const { key } = await seedProjectWithSprint();
+
+    await page.goto(`/projects/${key}/timeline`);
+
+    await expect(page.locator(".prio-timeline__sprintdate")).not.toHaveCount(0);
+    await expect(page.locator("a.prio-timeline__sprintdate")).toHaveCount(0);
+    await expect(
+      page.locator(".prio-timeline__sprintdate.prio-timeline__date--link"),
     ).toHaveCount(0);
   });
 });

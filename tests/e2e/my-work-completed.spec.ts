@@ -1,16 +1,26 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { IssueStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { completedByFilter } from "@/server/queries/completedWork";
-import { ADMIN_EMAIL, MEMBER_EMAIL, MEMBER_STATE, watchForProblems } from "./support";
+import { completedAssignedFilter } from "@/server/queries/completedWork";
+import {
+  ADMIN_EMAIL,
+  MEMBER_EMAIL,
+  MEMBER_STATE,
+  watchForProblems,
+} from "./support";
 
 /**
  * My Work, after Bugs became Completed and Waiting for testing went.
  *
- * Completed is the reader's own finished work and opens exactly that list.
- * Waiting for testing is gone because it was the same state as Ready for QA —
- * and Ready for QA stays, with the same issue in it. Home's own Completed tile
- * is a different question ("done, and assigned to me") and is untouched.
+ * Completed is the work assigned to the reader that is done, and it opens
+ * exactly that list: the same rule as Open, Overdue and Due this week beside
+ * it, with Done as the category. Waiting for testing is gone because it was
+ * the same state as Ready for QA — and Ready for QA stays, with the same
+ * issue in it.
+ *
+ * Home's personal Completed tile has always asked this same question, and the
+ * two now read one fragment, so the last test here checks the two pages show
+ * one number rather than two.
  */
 
 const created: string[] = [];
@@ -29,7 +39,11 @@ test.afterAll(async () => {
 function statTile(page: Page, label: string) {
   return page
     .locator("a.prio-stat")
-    .filter({ has: page.locator(".prio-stat__label", { hasText: new RegExp(`^${label}$`) }) });
+    .filter({
+      has: page.locator(".prio-stat__label", {
+        hasText: new RegExp(`^${label}$`),
+      }),
+    });
 }
 
 async function makeIssue(data: {
@@ -96,7 +110,10 @@ test("Completed replaces Bugs, Waiting for testing is gone, and Ready for QA sta
     select: { id: true },
   });
   const other = await prisma.user.findFirstOrThrow({
-    where: { email: { not: ADMIN_EMAIL }, projectMemberships: { some: { project: { key: "ENG" } } } },
+    where: {
+      email: { not: ADMIN_EMAIL },
+      projectMemberships: { some: { project: { key: "ENG" } } },
+    },
     select: { id: true },
   });
 
@@ -108,14 +125,30 @@ test("Completed replaces Bugs, Waiting for testing is gone, and Ready for QA sta
     assigneeId: admin.id,
     reporterId: admin.id,
   });
-  /* Finished by the admin — the trail says so, which is what makes it theirs.
-     Raised by and irrelevant to somebody else. */
+  /* Assigned to the admin and done, which is what makes it theirs. Raised by
+     and irrelevant to somebody else. */
   const mine = await makeIssue({
     title: `My Work done mine ${stamp}`,
     status: "DONE",
     assigneeId: admin.id,
     reporterId: other.id,
     completedById: admin.id,
+  });
+  /*
+   * Theirs to show, finished by somebody else.
+   *
+   * The case that tells the two rules apart: the admin holds it and it is
+   * done, but a colleague moved it. It used to be missing from this figure —
+   * which is what a developer saw when a colleague or an administrator closed
+   * work assigned to them — and it belongs in it, because the question is
+   * what of my work is finished and not who finished it.
+   */
+  const heldNotFinished = await makeIssue({
+    title: `My Work done by another ${stamp}`,
+    status: "DONE",
+    assigneeId: admin.id,
+    reporterId: admin.id,
+    completedById: other.id,
   });
   /* Done, raised by the admin, finished by and assigned to somebody else:
      not the admin's completed work. Raising it is not finishing it. */
@@ -137,41 +170,57 @@ test("Completed replaces Bugs, Waiting for testing is gone, and Ready for QA sta
     "Due this week",
   ]);
 
-  await expect(page.getByRole("heading", { name: /waiting for testing/i })).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: /waiting for testing/i }),
+  ).toHaveCount(0);
 
   // Ready for QA is still there, with the handed-over issue in it.
   const readyCard = page
     .locator(".prio-card")
-    .filter({ has: page.locator(".prio-issue__section-title", { hasText: "Ready for QA" }) });
+    .filter({
+      has: page.locator(".prio-issue__section-title", {
+        hasText: "Ready for QA",
+      }),
+    });
   await expect(readyCard).toHaveCount(1);
   await expect(readyCard).toContainText(ready.key);
 
-  // Completed counts this person's finished work, from the shared fragment.
-  const expected = await prisma.issue.count({ where: completedByFilter([admin.id]) });
+  /* Completed counts the work assigned to this person that is done, from the
+     shared fragment the page itself reads. */
+  const expected = await prisma.issue.count({
+    where: completedAssignedFilter([admin.id]),
+  });
   const tile = statTile(page, "Completed");
   await expect(tile.locator(".prio-stat__value")).toHaveText(String(expected));
 
   /*
    * And opens exactly that list, for the signed-in user — on this page now
-   * rather than on the global issue list. The rows are what matters and they
-   * are unchanged: this person's finished work, not the work they currently
-   * hold and not somebody else's.
+   * rather than on the global issue list. The rows are the figure's own set:
+   * the finished work this person holds, whoever moved it, and nobody
+   * else's.
    */
   await tile.click();
   await expect(page).toHaveURL(/\/my-work\?show=completed$/);
   const list = page.locator(".prio-card").filter({
     has: page.locator(".prio-issue__section-title", {
-      hasText: "Completed by me",
+      hasText: "Completed",
     }),
   });
   await expect(list).toContainText(mine.key);
-  await expect(list).not.toContainText(theirs.key);
-  await expect(list).not.toContainText(ready.key);
+  await expect(list, "theirs to show, a colleague finished it").toContainText(
+    heldNotFinished.key,
+  );
+  await expect(list, "assigned to somebody else").not.toContainText(theirs.key);
+  await expect(list, "not finished").not.toContainText(ready.key);
 
   // The underlying state is untouched: Ready for QA is still a status.
   expect(
-    (await prisma.issue.findUniqueOrThrow({ where: { id: ready.id }, select: { status: true } }))
-      .status,
+    (
+      await prisma.issue.findUniqueOrThrow({
+        where: { id: ready.id },
+        select: { status: true },
+      })
+    ).status,
   ).toBe("IN_REVIEW");
 
   expect(consoleErrors).toEqual([]);
@@ -184,13 +233,16 @@ test("Home's Completed figures keep their own links and their own definition", a
   /* An administrator's Home answers "how is the organisation doing": its card
      is every Done issue in scope, and opens that list. */
   await page.goto("/");
-  const card = page.locator("a").filter({ hasText: "Completed issues" }).first();
+  const card = page
+    .locator("a")
+    .filter({ hasText: "Completed issues" })
+    .first();
   await expect(card).toBeVisible();
   await expect(card).toHaveAttribute("href", "/issues?status=DONE");
 
   /* A member's Home has the personal work grid, whose Completed tile is Done
-     work assigned to them — unchanged, and a different question from My
-     Work's Completed. */
+     work assigned to them — unchanged, and the question My Work's Completed
+     now asks too. Both are checked below, against one another. */
   const member = await prisma.user.findUniqueOrThrow({
     where: { email: MEMBER_EMAIL },
     select: { id: true },
@@ -201,9 +253,16 @@ test("Home's Completed figures keep their own links and their own definition", a
 
   const homeTile = memberPage
     .locator("a.prio-worktile")
-    .filter({ has: memberPage.locator(".prio-worktile__label", { hasText: /^Completed$/ }) });
+    .filter({
+      has: memberPage.locator(".prio-worktile__label", {
+        hasText: /^Completed$/,
+      }),
+    });
   await expect(homeTile).toHaveCount(1);
-  await expect(homeTile).toHaveAttribute("href", `/issues?assignee=${member.id}&status=DONE`);
+  await expect(homeTile).toHaveAttribute(
+    "href",
+    `/issues?assignee=${member.id}&status=DONE`,
+  );
 
   const homeFigure = await prisma.issue.count({
     where: {
@@ -212,7 +271,23 @@ test("Home's Completed figures keep their own links and their own definition", a
       status: "DONE",
     },
   });
-  await expect(homeTile.locator(".prio-worktile__value")).toHaveText(String(homeFigure));
+  await expect(homeTile.locator(".prio-worktile__value")).toHaveText(
+    String(homeFigure),
+  );
+
+  /*
+   * And My Work says the same number.
+   *
+   * The two pages used to answer "Completed" differently for the same person
+   * — Home counting the work they hold that is done, My Work counting what
+   * they had moved to Done — so a member reading both saw two figures for one
+   * word. They read one fragment now, and this is the check that they cannot
+   * drift apart again.
+   */
+  await memberPage.goto("/my-work");
+  await expect(
+    statTile(memberPage, "Completed").locator(".prio-stat__value"),
+  ).toHaveText(String(homeFigure));
   await context.close();
 });
 
@@ -223,10 +298,14 @@ test("a member's My Work has Completed instead of Bugs, and no Waiting for testi
   const page = await context.newPage();
   await page.goto("/my-work");
 
-  const labels = (await page.locator(".prio-stat__label").allTextContents()).map((l) => l.trim());
+  const labels = (
+    await page.locator(".prio-stat__label").allTextContents()
+  ).map((l) => l.trim());
   expect(labels).toContain("Completed");
   expect(labels).not.toContain("Bugs");
-  await expect(page.getByRole("heading", { name: /waiting for testing/i })).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: /waiting for testing/i }),
+  ).toHaveCount(0);
 
   /*
    * The tile used to link to the global issue list, which meant leaving My

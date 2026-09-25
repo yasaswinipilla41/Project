@@ -17,13 +17,11 @@ import { MEMBER_STATE } from "./support";
 test.use({ storageState: MEMBER_STATE });
 
 function tile(page: Page, label: string) {
-  return page
-    .locator("a.prio-stat")
-    .filter({
-      has: page.locator(".prio-stat__label", {
-        hasText: new RegExp(`^${label}$`),
-      }),
-    });
+  return page.locator("a.prio-stat").filter({
+    has: page.locator(".prio-stat__label", {
+      hasText: new RegExp(`^${label}$`),
+    }),
+  });
 }
 
 test.describe("the four figures choose the list", () => {
@@ -42,9 +40,9 @@ test.describe("the four figures choose the list", () => {
 
     /* Open is the status-grouped queue, so none of the single-list headings
        is on the page. */
-    await expect(
-      page.getByRole("heading", { name: "Completed by me" }),
-    ).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Completed" })).toHaveCount(
+      0,
+    );
   });
 
   test("stays on My Work when a tile is pressed", async ({ page }) => {
@@ -53,9 +51,7 @@ test.describe("the four figures choose the list", () => {
 
     /* The whole point: still here, not on the global issue list. */
     await expect(page).toHaveURL(/\/my-work\?show=completed$/);
-    await expect(
-      page.getByRole("heading", { name: "My Work" }),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: "My Work" })).toBeVisible();
     await expect(tile(page, "Completed")).toHaveAttribute(
       "data-selected",
       "true",
@@ -66,9 +62,9 @@ test.describe("the four figures choose the list", () => {
     await page.goto("/my-work?show=overdue");
 
     await expect(page.getByRole("heading", { name: "Overdue" })).toBeVisible();
-    await expect(
-      page.getByRole("heading", { name: "Completed by me" }),
-    ).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Completed" })).toHaveCount(
+      0,
+    );
 
     await tile(page, "Due this week").click();
     await expect(
@@ -112,9 +108,11 @@ test.describe("the figure and its list are the same question", () => {
     await page.goto("/my-work?show=completed");
 
     const figure = Number(
-      (await tile(page, "Completed").locator(".prio-stat__value").innerText()).trim(),
+      (
+        await tile(page, "Completed").locator(".prio-stat__value").innerText()
+      ).trim(),
     );
-    const heading = page.getByRole("heading", { name: "Completed by me" });
+    const heading = page.getByRole("heading", { name: "Completed" });
     await expect(heading).toBeVisible();
 
     /* The heading repeats the figure, and the rows below are capped. Where the
@@ -124,7 +122,9 @@ test.describe("the figure and its list are the same question", () => {
 
     const rows = await page.locator(".prio-worklink").count();
     if (rows < figure) {
-      await expect(page.getByText(/Showing the first \d+ of \d+/)).toBeVisible();
+      await expect(
+        page.getByText(/Showing the first \d+ of \d+/),
+      ).toBeVisible();
     }
   });
 });
@@ -166,7 +166,7 @@ test.describe("choosing a tile says so while it is being answered", () => {
     /* And it is gone once the list is there — a spinner that outlives its
        answer is worse than none. */
     await expect(
-      page.getByRole("heading", { name: "Completed by me" }),
+      page.getByRole("heading", { name: "Completed" }),
     ).toBeVisible();
     await expect(page.locator(".prio-stat__pending")).toHaveCount(0);
   });
@@ -185,11 +185,19 @@ test.describe("choosing a tile says so while it is being answered", () => {
     for (const label of ["Open", "Completed", "Overdue", "Due this week"]) {
       await expect(tile(page, label)).toHaveCount(1);
     }
-    await expect(tile(page, "Overdue")).toHaveAttribute("data-selected", "true");
-    await expect(tile(page, "Open")).not.toHaveAttribute("data-selected", "true");
+    await expect(tile(page, "Overdue")).toHaveAttribute(
+      "data-selected",
+      "true",
+    );
+    await expect(tile(page, "Open")).not.toHaveAttribute(
+      "data-selected",
+      "true",
+    );
   });
 
-  test("stands the whole page in while it is first opened", async ({ page }) => {
+  test("stands the whole page in while it is first opened", async ({
+    page,
+  }) => {
     /* Arriving at My Work from elsewhere is a segment change, which is the one
        Next shows route loading UI for. Verified from the response rather than
        the screen, since it is replaced the moment the page itself arrives. */

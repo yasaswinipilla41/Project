@@ -7,12 +7,7 @@ import { IssueKey, IssueTypeIcon, StatusPill } from "@/components/ui/Indicators"
 import { IconEmptyBox } from "@/components/ui/Icon";
 import { projectScope } from "@/lib/authz";
 import { CLOSED_STATUSES, STATUS_LABEL } from "@/lib/domain";
-import {
-  formatDate,
-  formatDateCompact,
-  formatDateRange,
-  formatDayMonthYear,
-} from "@/lib/format";
+import { formatDate, formatDateRange, formatDayMonthYear } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 
@@ -111,36 +106,84 @@ const DATE_LABEL_PX = 70;
 const EDGE_ROOM = (DATE_LABEL_PX / (MIN_TIMELINE_PX - LABEL_COLUMN_PX)) * 100;
 
 /**
- * One end of a sprint bar, dated.
+ * A date beside a bar, on the track rather than on the bar.
  *
- * Sits just outside the bar by default — the start date to its left, the end
- * date to its right — which is where there is room. A sprint that begins at
- * the very start of the timeline, or ends at its very end, has no room on
- * that side; that date moves onto the bar instead and takes a small
- * background so it stays legible over either surface.
+ * Every date this page shows — a sprint's two ends and an issue's due date —
+ * is drawn here, outside the coloured bar it belongs to: a bar is a filled
+ * shape a few characters wide at the sizes this timeline uses, so a date
+ * written inside it is white-on-colour and clipped, and on a short bar there
+ * is no room for it at all. Outside it reads against the page, at the edge of
+ * the bar it describes, whatever the bar's width.
+ *
+ * `edge` says which end of the bar the date belongs to, and `inside` is the
+ * last resort for a bar with no track left on that side — it begins at the
+ * very start of the timeline, or runs to its very end. Then the date sits
+ * over the bar and takes a small background so it stays legible over either
+ * surface.
  */
-function SprintEdgeDate({
+function TimelineDate({
   edge,
   at,
   inside,
   text,
+  kind,
+  href,
+  label,
 }: {
   edge: "start" | "end";
   /** Where this end of the bar sits, as a percentage of the track. */
   at: number;
   inside: boolean;
   text: string;
+  /** Which sort of date it is, for the tests and for anything that wants to
+      style the two differently later. The placement is identical. */
+  kind: "sprint" | "due";
+  /**
+   * Where clicking the date goes, when it goes anywhere.
+   *
+   * An issue's due date leads to that issue — the same place its bar leads,
+   * because the date is a fact about that one issue and a reader who has just
+   * read it is pointing at the thing they want to open. A sprint's dates have
+   * no `href`: they describe a bar that is not a link either.
+   */
+  href?: string;
+  /** What the link is called, for a reader who cannot see which row it is
+      in. */
+  label?: string;
 }) {
   /* Anchored by the edge it belongs to, so the date tracks the bar rather
      than being positioned from the opposite side and drifting with width. */
   const anchorLeft = edge === "start" ? inside : !inside;
 
+  const className = `prio-timeline__date prio-timeline__${
+    kind === "sprint" ? "sprintdate" : "duedate"
+  }${href ? " prio-timeline__date--link" : ""}`;
+  const placement = anchorLeft ? { left: `${at}%` } : { right: `${100 - at}%` };
+
+  /* A link says what it opens; a plain date is decoration beside a bar whose
+     own label already reads the date out, so it stays hidden from a reader
+     rather than repeating it. */
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className={className}
+        data-edge={edge}
+        data-inside={inside || undefined}
+        style={placement}
+        aria-label={label}
+      >
+        {text}
+      </Link>
+    );
+  }
+
   return (
     <span
-      className="prio-timeline__sprintdate"
+      className={className}
       data-edge={edge}
       data-inside={inside || undefined}
-      style={anchorLeft ? { left: `${at}%` } : { right: `${100 - at}%` }}
+      style={placement}
       aria-hidden
     >
       {text}
@@ -369,18 +412,18 @@ export default async function ProjectTimelinePage({
                     return (
                       <div key={sprint.id} className="prio-timeline__row">
                         {/*
-                          * The name here, the period on the bar beside it.
-                          *
-                          * Every surface that *lists* sprints prints the
-                          * bracketed range next to the name; this one does
-                          * not, and deliberately. The label column is 220px,
-                          * and "(01 Sep 2026 - 07 Sep 2026)" is most of that
-                          * on its own — printing it here would truncate away
-                          * the one thing that tells two rows apart, to say
-                          * something the bar's position and width already
-                          * say. It is on the title and in the row's
-                          * accessible text instead, in the same format.
-                          */}
+                         * The name here, the period on the bar beside it.
+                         *
+                         * Every surface that *lists* sprints prints the
+                         * bracketed range next to the name; this one does
+                         * not, and deliberately. The label column is 220px,
+                         * and "(01 Sep 2026 - 07 Sep 2026)" is most of that
+                         * on its own — printing it here would truncate away
+                         * the one thing that tells two rows apart, to say
+                         * something the bar's position and width already
+                         * say. It is on the title and in the row's
+                         * accessible text instead, in the same format.
+                         */}
                         <span
                           className="prio-timeline__label prio-truncate"
                           title={`${sprint.name} (${formatDateRange(sprint.startDate, sprint.endDate)})`}
@@ -395,63 +438,53 @@ export default async function ProjectTimelinePage({
                               left: `${bar.left}%`,
                               width: `${bar.width}%`,
                             }}
-                            /* Both dates are drawn on the bar, but a short
-                               sprint on a long window leaves no room for
-                               them; the tooltip says them whatever the bar's
+                            /* The dates are beside the bar, not on it; the
+                               tooltip says them too, whatever the bar's
                                width, as the hidden text below does for a
                                screen reader. */
                             title={`${sprint.name}: ${formatDate(
                               sprint.startDate,
                             )} to ${formatDate(sprint.endDate)}`}
                           >
-                            {/* Start at the bar's start, end at its end —
-                                the sprint's own dates, formatted the way
-                                every other sprint date in Prio is. */}
-                            <span
-                              className="prio-timeline__barlabel prio-timeline__barlabel--start"
-                              aria-hidden
-                            >
-                              {formatDateCompact(sprint.startDate)}
-                            </span>
-                            <span
-                              className="prio-timeline__barlabel prio-timeline__barlabel--end"
-                              aria-hidden
-                            >
-                              {formatDateCompact(sprint.endDate)}
-                            </span>
                             <span className="prio-visually-hidden">
                               {sprint.name} (
-                              {formatDateRange(sprint.startDate, sprint.endDate)})
+                              {formatDateRange(
+                                sprint.startDate,
+                                sprint.endDate,
+                              )}
+                              )
                             </span>
                           </span>
 
                           {/*
-                            * When the sprint begins and ends, in words, at the
-                            * two ends of its bar.
-                            *
-                            * Beside the bar rather than inside it, because
-                            * inside there is no room: a fortnight's sprint on
-                            * a timeline spanning a few months is about 100px
-                            * wide at a desktop width and half that on a
-                            * phone, against roughly 70px for one date. Put
-                            * inside, both dates would be clipped at every
-                            * screen size — which is the behaviour the issue
-                            * bars' own label already documents for short
-                            * bars, and is not good enough for a date somebody
-                            * is meant to read.
-                            *
-                            * Siblings of the bar, so the bar's `overflow:
-                            * hidden` cannot clip them, and `aria-hidden`
-                            * because the bar above already says the whole
-                            * range in words.
-                            */}
-                          <SprintEdgeDate
+                           * When the sprint begins and ends, in words, at the
+                           * two ends of its bar.
+                           *
+                           * Beside the bar rather than inside it, because
+                           * inside there is no room: a fortnight's sprint on
+                           * a timeline spanning a few months is about 100px
+                           * wide at a desktop width and half that on a
+                           * phone, against roughly 70px for one date. Put
+                           * inside, both dates would be clipped at every
+                           * screen size — which is the behaviour the issue
+                           * bars' own label already documents for short
+                           * bars, and is not good enough for a date somebody
+                           * is meant to read.
+                           *
+                           * Siblings of the bar, so the bar's `overflow:
+                           * hidden` cannot clip them, and `aria-hidden`
+                           * because the bar above already says the whole
+                           * range in words.
+                           */}
+                          <TimelineDate
+                            kind="sprint"
                             edge="start"
                             at={bar.left}
                             inside={bar.left < EDGE_ROOM}
                             text={formatDayMonthYear(sprint.startDate)}
                           />
-                          <SprintEdgeDate
+                          <TimelineDate
+                            kind="sprint"
                             edge="end"
                             at={bar.left + bar.width}
                             inside={bar.left + bar.width > 100 - EDGE_ROOM}
@@ -465,14 +498,14 @@ export default async function ProjectTimelinePage({
               ) : null}
 
               {/*
-                * Why there are no issue rows, said where they would be.
-                *
-                * Only ever reached with sprints on screen above it — with
-                * neither, the page stood down entirely further up. So this is
-                * not "nothing is scheduled": it is the sprints being
-                * scheduled and the work in them not being, which is a
-                * different thing and a fixable one.
-                */}
+               * Why there are no issue rows, said where they would be.
+               *
+               * Only ever reached with sprints on screen above it — with
+               * neither, the page stood down entirely further up. So this is
+               * not "nothing is scheduled": it is the sprints being
+               * scheduled and the work in them not being, which is a
+               * different thing and a fixable one.
+               */}
               {scheduled.length === 0 ? (
                 <p className="prio-timeline__empty">
                   No work item has a due date yet, so the sprints above have no
@@ -504,6 +537,11 @@ export default async function ProjectTimelinePage({
                       from={from.getTime()}
                       span={span}
                       now={now.getTime()}
+                      /* Under "Not in an epic" the date opens its issue.
+                         There is no epic heading above these rows to click
+                         through, and `issueKey` being null is what says so —
+                         the same test that named the group. */
+                      linkDate={group.issueKey === null}
                     />
                   ))}
                 </section>
@@ -515,20 +553,24 @@ export default async function ProjectTimelinePage({
               coloured by, so colour is never the only thing saying what a bar
               is. */}
           <ul className="prio-timeline__legend">
-            {(["TODO", "IN_PROGRESS", "IN_REVIEW", "DONE"] as IssueStatus[]).map(
-              (status) => (
-                <li key={status} className="prio-timeline__legenditem">
-                  <span
-                    className="prio-timeline__swatch"
-                    data-status={status}
-                    aria-hidden
-                  />
-                  {STATUS_LABEL[status]}
-                </li>
-              ),
-            )}
+            {(
+              ["TODO", "IN_PROGRESS", "IN_REVIEW", "DONE"] as IssueStatus[]
+            ).map((status) => (
+              <li key={status} className="prio-timeline__legenditem">
+                <span
+                  className="prio-timeline__swatch"
+                  data-status={status}
+                  aria-hidden
+                />
+                {STATUS_LABEL[status]}
+              </li>
+            ))}
             <li className="prio-timeline__legenditem">
-              <span className="prio-timeline__swatch" data-overdue aria-hidden />
+              <span
+                className="prio-timeline__swatch"
+                data-overdue
+                aria-hidden
+              />
               Overdue
             </li>
           </ul>
@@ -555,6 +597,7 @@ function TimelineRow({
   from,
   span,
   now,
+  linkDate = false,
 }: {
   issue: {
     key: string;
@@ -573,6 +616,16 @@ function TimelineRow({
      mark agree about when now is, and the render stays a pure function of its
      arguments. */
   now: number;
+  /**
+   * Whether the due date opens the issue as well as the bar does.
+   *
+   * Asked of the caller rather than decided here, because it is the grouping
+   * that wanted it: the rows under "Not in an epic" are where a reader meets
+   * a date with no epic heading above it to click through instead. Rows under
+   * an epic are the same component and one argument away from the same
+   * behaviour.
+   */
+  linkDate?: boolean;
 }) {
   const due = issue.dueDate!;
   /* Finished work ends when it was finished, not when it was due — a bar that
@@ -612,11 +665,45 @@ function TimelineRow({
                 ? ", overdue"
                 : ""
           }${issue.assignee ? `, assigned to ${issue.assignee.name}` : ""}`}
-        >
-          <span className="prio-timeline__barlabel">
-            {formatDate(due)}
-          </span>
-        </Link>
+        />
+
+        {/*
+         * When the work is due, beside its bar.
+         *
+         * The same date as before, from the same `dueDate` — only its
+         * position has changed. It used to be written inside the bar, which
+         * put a date in white on a status colour and clipped it on any bar
+         * shorter than the date: a "Ready for QA" bar and an overdue red one
+         * both swallowed it. Out here it reads against the page at the edge
+         * of the bar, and cannot be clipped by the bar's own `overflow`.
+         *
+         * After the bar's end where the track allows it, before its start
+         * where it does not — the same flip the sprint dates make — and only
+         * over the bar itself when the bar runs the whole width of the
+         * window and there is nowhere outside it to stand.
+         */}
+        {(() => {
+          const ends = bar.left + bar.width;
+          const roomAfter = ends <= 100 - EDGE_ROOM;
+          const roomBefore = bar.left >= EDGE_ROOM;
+          return (
+            <TimelineDate
+              kind="due"
+              edge={roomAfter || !roomBefore ? "end" : "start"}
+              at={roomAfter || !roomBefore ? ends : bar.left}
+              inside={!roomAfter && !roomBefore}
+              text={formatDate(due)}
+              /* The date opens the issue it is the due date of — the same
+                 place the bar goes, by the same key and the same route. */
+              href={linkDate ? `/issues/${issue.key.toLowerCase()}` : undefined}
+              label={
+                linkDate
+                  ? `${issue.key} ${issue.title}: due ${formatDate(due)}`
+                  : undefined
+              }
+            />
+          );
+        })()}
       </div>
 
       <span className="prio-timeline__status">
