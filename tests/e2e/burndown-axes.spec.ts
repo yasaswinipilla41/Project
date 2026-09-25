@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { prisma } from "@/lib/prisma";
+import { openBurndown } from "./support";
 
 /**
  * What the burndown's two axes say.
@@ -119,6 +120,7 @@ test.describe("The burndown's axes", () => {
     const { key, sprintId, start } = await seedEstimatedSprint();
 
     await page.goto(`/projects/${key}/sprints/${sprintId}`);
+    await openBurndown(page);
     const chart = page.getByRole("img", { name: /^Burndown:/ });
     await chart.waitFor({ timeout: 45_000 });
 

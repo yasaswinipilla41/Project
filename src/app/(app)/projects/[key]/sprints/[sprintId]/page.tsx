@@ -4,7 +4,11 @@ import { BackLink } from "@/components/shell/BackLink";
 import { SprintDetailsActions } from "@/components/sprints/SprintDetailsActions";
 import { SprintDetailsView } from "@/components/sprints/SprintDetailsView";
 import { SprintIssueBoard } from "@/components/sprints/SprintIssueBoard";
-import { BurndownChart } from "@/components/sprints/BurndownChart";
+import {
+  BurndownDisclosure,
+  BurndownPanel,
+  BurndownToggle,
+} from "@/components/sprints/BurndownDisclosure";
 import { Card, CardBody } from "@/components/ui/primitives";
 import { projectScope, workRoleOf } from "@/lib/authz";
 import { canMoveToNextSprint } from "@/lib/sprintMove";
@@ -127,80 +131,87 @@ export default async function ProjectSprintDetailsPage({
     <>
       <BackLink href={back.href} label={back.label} tone="sprint" />
 
+      {/* The burndown's open/closed state, shared by the button in the header
+          and the panel below it — see `BurndownDisclosure`. It wraps the view
+          rather than living inside it because those two are drawn in different
+          places, and nothing else here is client state. */}
       <div style={{ marginTop: "var(--prio-space-3)" }}>
-        <SprintDetailsView
-          sprint={sprint}
-          /*
-           * Who may do what comes from the one capability table `domain.ts`
-           * owns and `sprints.ts` enforces again on the server, so this only
-           * decides what is worth drawing:
-           *   - adding issues to a sprint or taking them out is every working
-           *     role's — Admin, Developer, Tester and Full Stack alike;
-           *   - renaming it or moving its dates is theirs too;
-           *   - starting a planned sprint is an administrator's, and a Full
-           *     Stack Developer's;
-           *   - deleting one is an administrator's.
-           */
-          actions={
-            <SprintDetailsActions
-              sprint={sprint}
-              projectId={project.id}
-              projectKey={project.key}
-              backlog={backlog}
-              canEditIssues={canEditSprintIssues(workRole)}
-              canEdit={canEditSprintDetails(workRole)}
-              canStart={canStartSprint(workRole)}
-              canDelete={canDeleteSprint(workRole)}
-              backHref={back.href}
-            />
-          }
-        >
-          {/* Beside the sprint's own figures rather than on a page of its
-              own: a burndown answers a question somebody is already asking
-              while looking at this screen, and sending them elsewhere to see
-              it is how it stops being looked at. */}
-          {chart ? (
+        <BurndownDisclosure>
+          <SprintDetailsView
+            sprint={sprint}
+            /*
+             * Who may do what comes from the one capability table `domain.ts`
+             * owns and `sprints.ts` enforces again on the server, so this only
+             * decides what is worth drawing:
+             *   - adding issues to a sprint or taking them out is every working
+             *     role's — Admin, Developer, Tester and Full Stack alike;
+             *   - renaming it or moving its dates is theirs too;
+             *   - starting a planned sprint is an administrator's, and a Full
+             *     Stack Developer's;
+             *   - deleting one is an administrator's.
+             */
+            actions={
+              <SprintDetailsActions
+                sprint={sprint}
+                /* First in the row, before Add issues and Edit: reading the
+                   sprint comes before changing it. Offered only where there is
+                   a chart to open. */
+                leading={chart ? <BurndownToggle /> : null}
+                projectId={project.id}
+                projectKey={project.key}
+                backlog={backlog}
+                canEditIssues={canEditSprintIssues(workRole)}
+                canEdit={canEditSprintDetails(workRole)}
+                canStart={canStartSprint(workRole)}
+                canDelete={canDeleteSprint(workRole)}
+                backHref={back.href}
+              />
+            }
+          >
+            {/*
+              * On this page rather than on one of its own: a burndown answers a
+              * question somebody is already asking while looking at this screen,
+              * and sending them elsewhere to see it is how it stops being looked
+              * at. Behind its header button rather than always open, because it
+              * is the tallest thing here and the sprint's own work should not
+              * start a screen down.
+              */}
+            {chart ? <BurndownPanel data={chart} /> : null}
+
             <Card style={{ marginTop: "var(--prio-space-4)" }}>
               <CardBody>
-                <h2 className="prio-issue__section-title">Burndown Chart</h2>
-                <BurndownChart data={chart} />
+                <h2 className="prio-issue__section-title">Issues in this sprint</h2>
+                <SprintIssueBoard
+                  issues={issues}
+                  workRole={workRole}
+                  currentUserId={user.id}
+                  isAdmin={user.role === "ADMIN"}
+                  /* Where a card's Move to can send its work: this project's
+                     other sprints that are still open, from the same
+                     `loadSprints` read the rest of this page is drawn from. */
+                  previousSprints={previousSprints}
+                  otherOpenSprints={sprints
+                    .filter(
+                      (other) =>
+                        other.id !== sprint.id && other.status !== "COMPLETED",
+                    )
+                    .map((other) => ({ id: other.id, name: other.name }))}
+                  /* Filling a sprint, emptying it or moving its work is every
+                     working role's, and the server says so again. A completed
+                     sprint is a closed record, so nothing moves out of one. */
+                  canMoveIssues={
+                    canEditSprintIssues(workRole) && sprint.status !== "COMPLETED"
+                  }
+                  /* Offered only where there is one to reach — otherwise the
+                     entry is there and the move comes back "No future Sprint is
+                     available." Read from the same `loadSprints` above, so it
+                     costs nothing to ask. */
+                  hasNextSprint={canMoveToNextSprint(sprints, sprint)}
+                />
               </CardBody>
             </Card>
-          ) : null}
-
-          <Card style={{ marginTop: "var(--prio-space-4)" }}>
-            <CardBody>
-              <h2 className="prio-issue__section-title">Issues in this sprint</h2>
-              <SprintIssueBoard
-                issues={issues}
-                workRole={workRole}
-                currentUserId={user.id}
-                isAdmin={user.role === "ADMIN"}
-                /* Where a card's Move to can send its work: this project's
-                   other sprints that are still open, from the same
-                   `loadSprints` read the rest of this page is drawn from. */
-                previousSprints={previousSprints}
-                otherOpenSprints={sprints
-                  .filter(
-                    (other) =>
-                      other.id !== sprint.id && other.status !== "COMPLETED",
-                  )
-                  .map((other) => ({ id: other.id, name: other.name }))}
-                /* Filling a sprint, emptying it or moving its work is every
-                   working role's, and the server says so again. A completed
-                   sprint is a closed record, so nothing moves out of one. */
-                canMoveIssues={
-                  canEditSprintIssues(workRole) && sprint.status !== "COMPLETED"
-                }
-                /* Offered only where there is one to reach — otherwise the
-                   entry is there and the move comes back "No future Sprint is
-                   available." Read from the same `loadSprints` above, so it
-                   costs nothing to ask. */
-                hasNextSprint={canMoveToNextSprint(sprints, sprint)}
-              />
-            </CardBody>
-          </Card>
-        </SprintDetailsView>
+          </SprintDetailsView>
+        </BurndownDisclosure>
       </div>
     </>
   );

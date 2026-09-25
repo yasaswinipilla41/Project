@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { prisma } from "@/lib/prisma";
-import { ADMIN_STATE, watchForProblems } from "./support";
+import { ADMIN_STATE, openBurndown, watchForProblems } from "./support";
 
 /**
  * The three surfaces that estimates made possible: Effort on a work item, the
@@ -245,6 +245,7 @@ test.describe("The burndown on a sprint", () => {
       sprintId: sprint.id,
     });
     await page.goto(detail);
+    await openBurndown(page);
     await expect(
       page.getByRole("heading", { name: "Burndown Chart" }),
     ).toBeVisible();
@@ -264,6 +265,7 @@ test.describe("The burndown on a sprint", () => {
     });
 
     await page.goto(detail);
+    await openBurndown(page);
     const chart = page.getByRole("img", { name: /^Burndown:/ });
     await expect(chart).toBeVisible();
     await expect(chart).toHaveAttribute(
@@ -315,6 +317,7 @@ test.describe("The burndown on a sprint", () => {
       )
       .toBe(2);
     await page.goto(detail);
+    await openBurndown(page);
     await expect(page.getByRole("img", { name: /^Burndown:/ })).toHaveAttribute(
       "aria-label",
       /12 hours committed, 9 remaining/,

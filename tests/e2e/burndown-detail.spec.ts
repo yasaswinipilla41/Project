@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { prisma } from "@/lib/prisma";
+import { openBurndown } from "./support";
 
 /**
  * What the burndown says beyond the two lines.
@@ -122,6 +123,7 @@ test.describe("The burndown's detail", () => {
     const { key, sprintId, finished, open } = await seedRunningSprint();
 
     await page.goto(`/projects/${key}/sprints/${sprintId}`);
+    await openBurndown(page);
     const chart = page.locator(".prio-burndown");
     await chart.waitFor({ timeout: 45_000 });
 
@@ -353,6 +355,7 @@ test.describe("The burndown's detail", () => {
       ] as const) {
         await page.setViewportSize({ width, height });
         await page.goto(`/projects/${key}/sprints/${sprintId}`);
+        await openBurndown(page);
         /* The theme is an attribute on <html>, set from storage on load —
            so it is set here after the load, the way the app's own switcher
            sets it. */
@@ -518,6 +521,7 @@ test.describe("The burndown's detail", () => {
     ] as const) {
       await page.setViewportSize({ width, height });
       await page.goto(`/projects/${key}/sprints/${sprintId}`);
+      await openBurndown(page);
       const chart = page.locator(".prio-burndown");
       await chart.waitFor({ timeout: 45_000 });
 
@@ -584,6 +588,7 @@ test.describe("The burndown's detail", () => {
 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`/projects/${key}/sprints/${sprintId}`);
+    await openBurndown(page);
     const chart = page.locator(".prio-burndown");
     await chart.waitFor({ timeout: 45_000 });
 
@@ -645,6 +650,7 @@ test.describe("The burndown's detail", () => {
     });
 
     await page.goto(`/projects/${key}/sprints/${sprintId}`);
+    await openBurndown(page);
     await expect(
       page.getByRole("heading", { name: "Burndown Chart" }),
     ).toBeVisible({ timeout: 45_000 });
