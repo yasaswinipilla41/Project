@@ -115,306 +115,6 @@ async function seedRunningSprint() {
   };
 }
 
-/**
- * A running sprint whose scope moved.
- *
- * Twenty hours on its first day; ten more arrive on the fourth, recorded the
- * way `updateIssue` records a move between sprints — an activity entry naming
- * the sprint the issue joined — and an issue is handed to testing on the
- * sixth. Both are read back through the real query, so what the chart draws
- * is what the trail says.
- */
-async function seedSprintWithScopeChange() {
-  const admin = await prisma.user.findFirstOrThrow({
-    where: { role: "ADMIN" },
-    select: { id: true, name: true },
-  });
-  const key = `SC${Date.now().toString(36).toUpperCase()}`.slice(0, 10);
-  const project = await prisma.project.create({
-    data: {
-      key,
-      name: `Burndown scope fixture ${key}`,
-      createdById: admin.id,
-      members: { create: { userId: admin.id } },
-      issueSequence: 3,
-    },
-    select: { id: true, key: true },
-  });
-  createdProjects.push(project.id);
-
-  const start = ago(7);
-  const sprint = await prisma.sprint.create({
-    data: {
-      name: `E2E burndown scope ${Date.now()}`,
-      startDate: start,
-      endDate: new Date(Date.now() + 6 * DAY),
-      projectId: project.id,
-      createdById: admin.id,
-      status: "ACTIVE",
-      startedAt: start,
-    },
-    select: { id: true, name: true },
-  });
-
-  const issue = async (
-    number: number,
-    title: string,
-    effortHours: number,
-    status: "TODO" | "IN_QA",
-  ) =>
-    prisma.issue.create({
-      data: {
-        projectId: project.id,
-        key: `${project.key}-${number}`,
-        number,
-        title,
-        type: "TASK",
-        status,
-        reporterId: admin.id,
-        assigneeId: admin.id,
-        sprintId: sprint.id,
-        effortHours,
-        remainingHours: effortHours,
-      },
-      select: { id: true, key: true },
-    });
-
-  /* Committed from the first day. */
-  await issue(1, "Twenty hours, planned", 20, "TODO");
-
-  /* Arrived on the fourth day: the sprint's name on the right of the move is
-     what makes it a joining, exactly as `loadBurndown` reads it. */
-  const added = await issue(2, "Ten hours, added later", 10, "TODO");
-  await prisma.activityLogEntry.create({
-    data: {
-      issueId: added.id,
-      actorId: admin.id,
-      action: "issue.updated",
-      field: "sprintId",
-      oldValue: null,
-      newValue: sprint.name,
-      createdAt: ago(4),
-    },
-  });
-
-  /* And handed to testing on the sixth, which burns nothing at all. */
-  const toQa = await issue(3, "Handed to testing", 0, "IN_QA");
-  await prisma.activityLogEntry.create({
-    data: {
-      issueId: toQa.id,
-      actorId: admin.id,
-      action: "issue.updated",
-      field: "status",
-      oldValue: "IN_REVIEW",
-      newValue: "IN_QA",
-      createdAt: ago(2),
-    },
-  });
-
-  return {
-    key: project.key.toLowerCase(),
-    sprintId: sprint.id,
-    added,
-    toQa,
-  };
-}
-
-/**
- * A running sprint with one very busy day.
- *
- * Five issues re-estimated and their remainders rewritten on the same day —
- * ten changes for one point on the line, which is more than a panel can list
- * beside a point on any screen. Long titles, because a row that wraps onto two
- * lines is what makes such a panel taller than the room it has.
- */
-async function seedBusyDay() {
-  const admin = await prisma.user.findFirstOrThrow({
-    where: { role: "ADMIN" },
-    select: { id: true },
-  });
-  const key = `BZ${Date.now().toString(36).toUpperCase()}`.slice(0, 10);
-  const project = await prisma.project.create({
-    data: {
-      key,
-      name: `Burndown busy fixture ${key}`,
-      createdById: admin.id,
-      members: { create: { userId: admin.id } },
-      issueSequence: 5,
-    },
-    select: { id: true, key: true },
-  });
-  createdProjects.push(project.id);
-
-  const start = ago(7);
-  const sprint = await prisma.sprint.create({
-    data: {
-      name: `E2E burndown busy ${Date.now()}`,
-      startDate: start,
-      endDate: new Date(Date.now() + 6 * DAY),
-      projectId: project.id,
-      createdById: admin.id,
-      status: "ACTIVE",
-      startedAt: start,
-    },
-    select: { id: true },
-  });
-
-  const titles = [
-    "Session expiry signs the user out of every open tab at once",
-    "Board columns lose their order after a drag that fails to save",
-    "Sprint report counts an issue twice when it moves mid-sprint",
-    "Notification digest sends yesterday's items again each morning",
-    "Search ignores the project filter for keys typed in lower case",
-  ];
-
-  for (const [index, title] of titles.entries()) {
-    const issue = await prisma.issue.create({
-      data: {
-        projectId: project.id,
-        key: `${project.key}-${index + 1}`,
-        number: index + 1,
-        title,
-        type: "TASK",
-        status: "IN_PROGRESS",
-        reporterId: admin.id,
-        assigneeId: admin.id,
-        sprintId: sprint.id,
-        effortHours: 4,
-        remainingHours: 4,
-      },
-      select: { id: true },
-    });
-    /* Both halves of a re-estimate, on the third day: the estimate, then the
-       remainder that follows it. Two rows per issue, ten in all. */
-    for (const field of ["effortHours", "remainingHours"] as const) {
-      await prisma.activityLogEntry.create({
-        data: {
-          issueId: issue.id,
-          actorId: admin.id,
-          action: "issue.updated",
-          field,
-          oldValue: "2",
-          newValue: "4",
-          createdAt: ago(3),
-        },
-      });
-    }
-  }
-
-  return { key: project.key.toLowerCase(), sprintId: sprint.id };
-}
-
-/**
- * A sprint already burned to nothing, days ago.
- *
- * Eight hours, finished on the third day, so every day since sits on the floor
- * of the plot — the row of points along the very bottom that a real sprint's
- * quiet week is full of. That is the shape the placement is most tempted to
- * answer badly for: the panel reading in the flow *under* the chart is only a
- * few pixels from a point that low, so it used to measure as the closest
- * position going and win, whenever the page happened to be scrolled far enough
- * for it to be on screen.
- */
-async function seedBurnedToZero() {
-  const admin = await prisma.user.findFirstOrThrow({
-    where: { role: "ADMIN" },
-    select: { id: true },
-  });
-  const key = `BF${Date.now().toString(36).toUpperCase()}`.slice(0, 10);
-  const project = await prisma.project.create({
-    data: {
-      key,
-      name: `Burndown floor fixture ${key}`,
-      createdById: admin.id,
-      members: { create: { userId: admin.id } },
-      issueSequence: 1,
-    },
-    select: { id: true, key: true },
-  });
-  createdProjects.push(project.id);
-
-  const start = ago(7);
-  const sprint = await prisma.sprint.create({
-    data: {
-      name: `E2E burndown floor ${Date.now()}`,
-      startDate: start,
-      endDate: new Date(Date.now() + 6 * DAY),
-      projectId: project.id,
-      createdById: admin.id,
-      status: "ACTIVE",
-      startedAt: start,
-    },
-    select: { id: true },
-  });
-
-  const done = await prisma.issue.create({
-    data: {
-      projectId: project.id,
-      key: `${project.key}-1`,
-      number: 1,
-      title: "Eight hours, finished on the third day",
-      type: "TASK",
-      status: "DONE",
-      reporterId: admin.id,
-      assigneeId: admin.id,
-      sprintId: sprint.id,
-      effortHours: 8,
-      remainingHours: 8,
-    },
-    select: { id: true },
-  });
-  await prisma.activityLogEntry.create({
-    data: {
-      issueId: done.id,
-      actorId: admin.id,
-      action: "issue.updated",
-      field: "status",
-      oldValue: "IN_PROGRESS",
-      newValue: "DONE",
-      createdAt: ago(5),
-    },
-  });
-
-  /*
-   * And then twenty hours arrive two days ago, which lifts the line off the
-   * floor behind those days.
-   *
-   * That rise is the other half of the shape. A panel above or beside a point
-   * on the floor lies across the climb, which counts against it — and while
-   * covering the line counted for more than being beside the point, that was
-   * enough to send the panel under the chart.
-   */
-  const late = await prisma.issue.create({
-    data: {
-      projectId: project.id,
-      key: `${project.key}-2`,
-      number: 2,
-      title: "Twenty hours, added two days ago",
-      type: "TASK",
-      status: "IN_PROGRESS",
-      reporterId: admin.id,
-      assigneeId: admin.id,
-      sprintId: sprint.id,
-      effortHours: 20,
-      remainingHours: 20,
-    },
-    select: { id: true },
-  });
-  await prisma.activityLogEntry.create({
-    data: {
-      issueId: late.id,
-      actorId: admin.id,
-      action: "issue.updated",
-      field: "effortHours",
-      oldValue: null,
-      newValue: "20",
-      createdAt: ago(2),
-    },
-  });
-
-  return { key: project.key.toLowerCase(), sprintId: sprint.id };
-}
-
 test.describe("The burndown's detail", () => {
   test("shows what the sprint is made of, and what each day is made of", async ({
     page,
@@ -901,13 +601,14 @@ test.describe("The burndown's detail", () => {
              * Beside the point, at the spacing — not merely somewhere inside
              * the card.
              *
-             * The panel is placed above, below or to one side of the marker,
-             * a fixed six pixels clear of it, and flips to whichever of those
-             * fits inside the boundary. So the gap is that spacing every
-             * time: a few pixels of slack for the diagonal a "beside"
-             * placement measures, and nothing like the two to six hundred
-             * pixels the panel used to be sent when it treated covering the
-             * remaining line as disqualifying.
+             * The lower bound is the spacing itself: the marker and its
+             * crosshair have to be visible, not merely uncovered. The upper
+             * one is the bug this replaced — the panel used to be sent to the
+             * far edge of the card, two to six hundred pixels from the day it
+             * was describing, whenever the line blocked the obvious
+             * positions. It searches finely now, and reads under the chart
+             * rather than desert the point, so a day of this sprint is never
+             * more than a panel's width away from its own detail.
              */
             expect(
               seen.gap,
@@ -1550,6 +1251,215 @@ test.describe("The burndown's detail", () => {
     );
     await expect(tip.locator(".prio-burndown__tipchange")).toContainText(
       "To QA: 1",
+    );
+  });
+
+  test("is the size of its own contents, at every point and every width", async ({
+    page,
+  }) => {
+    /*
+     * The box's width is its content's, and nothing else's.
+     *
+     * It briefly was not: the placement tried the panel at a few narrower
+     * widths so that one which would not fit beside a point could wrap into a
+     * column that did, which made the width a function of where it fitted.
+     * The same day's detail then read one width on one screen and another on
+     * the next — and a build whose card is a little taller, as a deployed one
+     * is, could fall through to the widest of them on the lower points. On
+     * top of that the panel reading under the chart was `width: auto`, which
+     * in the flow means the card's width: a tooltip stretched across the
+     * whole chart.
+     *
+     * So what has to hold, whatever the point and whatever the width of the
+     * window: the box is no wider than the reading measure, it is not a
+     * stripe across the chart, and the room left over inside it is small —
+     * which is what "sized to its contents" means once the text has wrapped.
+     */
+    const { key, sprintId } = await seedRunningSprint();
+
+    /** The box, and how much of it the words inside it actually use. */
+    const box = () =>
+      page.evaluate(() => {
+        const tip = document.querySelector(
+          ".prio-burndown__tip",
+        ) as HTMLElement;
+        const chart = document.querySelector(".prio-burndown__svg")!;
+        const style = getComputedStyle(tip);
+        const t = tip.getBoundingClientRect();
+        const inner =
+          t.width -
+          parseFloat(style.paddingLeft) -
+          parseFloat(style.paddingRight) -
+          parseFloat(style.borderLeftWidth) -
+          parseFloat(style.borderRightWidth);
+        const left =
+          t.left +
+          parseFloat(style.paddingLeft) +
+          parseFloat(style.borderLeftWidth);
+
+        /*
+         * The rightmost ink in the box: each row's own line boxes and each
+         * element within it, because a row is a flex line whose ink ends at
+         * its last item rather than at its widest one.
+         */
+        const range = document.createRange();
+        let ink = 0;
+        for (const row of Array.from(tip.querySelectorAll("p, li"))) {
+          range.selectNodeContents(row);
+          for (const rect of Array.from(range.getClientRects())) {
+            ink = Math.max(ink, rect.right - left);
+          }
+          for (const child of Array.from(row.querySelectorAll("*"))) {
+            ink = Math.max(ink, child.getBoundingClientRect().right - left);
+          }
+        }
+
+        /*
+         * And the width it would have in the other mode.
+         *
+         * The panel is either placed beside the point or read in the flow
+         * under the chart, and which one it gets depends on the room around
+         * the point — so a fixture that only ever floats would never see the
+         * flow's own width. That is where the reported fault lived: in the
+         * flow the box was `width: auto`, which means the card's width, so
+         * the same detail became a stripe across the chart as soon as the
+         * placement fell through to it. Both are measured here, and the claim
+         * is that they are the same box.
+         */
+        const floating = !tip.classList.contains("is-inflow");
+        tip.classList.toggle("is-inflow");
+        const other = Math.round(tip.getBoundingClientRect().width);
+        tip.classList.toggle("is-inflow");
+
+        return {
+          width: Math.round(t.width),
+          /* Empty room at the right-hand edge. */
+          slack: Math.round(inner - ink),
+          shareOfChart: t.width / chart.getBoundingClientRect().width,
+          /* Nothing may size the panel from JavaScript: the stylesheet is the
+             only thing that decides how wide it is. */
+          inlineWidth: `${tip.style.width}|${tip.style.maxWidth}`,
+          mode: floating ? "float" : "flow",
+          otherModeWidth: other,
+        };
+      });
+
+    for (const [width, height] of [
+      [1550, 900],
+      [1280, 800],
+      [1024, 768],
+      [900, 700],
+    ] as const) {
+      await page.setViewportSize({ width, height });
+      await page.goto(`/projects/${key}/sprints/${sprintId}`);
+      const chart = page.locator(".prio-burndown");
+      await chart.waitFor({ timeout: 45_000 });
+
+      const hits = chart.locator(".prio-burndown__hit");
+      const days = await hits.count();
+      const widths: number[] = [];
+
+      for (let day = 0; day < days; day += 1) {
+        await hits.nth(day).hover();
+        await expect(chart.locator(".prio-burndown__tip")).toBeVisible();
+
+        const where = `${width}px, day ${day}`;
+        const seen = await box();
+        /* The reading measure the stylesheet sets, and never more. */
+        expect(
+          seen.width,
+          `${where}: wider than the measure`,
+        ).toBeLessThanOrEqual(420);
+        /* Not a stripe across the chart. */
+        expect(
+          seen.shareOfChart,
+          `${where}: stretched across the chart`,
+        ).toBeLessThan(0.75);
+        /* Sized to the words in it: what is left over is a ragged edge, not a
+           field of empty box. */
+        expect(
+          seen.slack,
+          `${where}: box far wider than its text`,
+        ).toBeLessThan(90);
+        expect(seen.inlineWidth, `${where}: sized from script`).toBe("|");
+        /* The same box whichever way it is drawn — floating beside the point
+           or reading in the flow under the chart. */
+        expect(
+          Math.abs(seen.otherModeWidth - seen.width),
+          `${where}: ${seen.mode === "float" ? "the flow" : "the floating"} width differs`,
+        ).toBeLessThan(6);
+        expect(
+          seen.otherModeWidth,
+          `${where}: wider than the measure in the other mode`,
+        ).toBeLessThanOrEqual(420);
+        widths.push(seen.width);
+      }
+
+      /* And one width for the sprint, near enough: these days differ by a row
+         or two of text, not by where they sit on the chart. */
+      expect(
+        Math.max(...widths) - Math.min(...widths),
+        `${width}px: the width moves with the point`,
+      ).toBeLessThan(40);
+    }
+  });
+
+  test("follows the pointer from point to point, and goes away after it", async ({
+    page,
+  }) => {
+    /*
+     * What hovering has to do: answer for the day under the pointer, keep
+     * answering for the right one as the pointer moves along the line, and
+     * stop when the pointer leaves. A panel left behind — or left showing the
+     * day before — is worse than no panel, because it reads as a fact about
+     * the day being pointed at.
+     */
+    const { key, sprintId } = await seedRunningSprint();
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`/projects/${key}/sprints/${sprintId}`);
+    const chart = page.locator(".prio-burndown");
+    await chart.waitFor({ timeout: 45_000 });
+
+    const hits = chart.locator(".prio-burndown__hit");
+    const tip = chart.locator(".prio-burndown__tip");
+    const days = await hits.count();
+
+    /* The dates the chart itself says each day is, read from the text it
+       writes for a screen reader — so the expectation is the page's own and
+       not a format typed in here. */
+    const spoken = await chart
+      .locator(".prio-visually-hidden li")
+      .allTextContents();
+    expect(spoken.length).toBe(days);
+
+    for (let day = 0; day < days; day += 1) {
+      await hits.nth(day).hover();
+      await expect(tip).toBeVisible();
+
+      /* The date in the panel is this day's, so nothing stale survives the
+         move from the day before. */
+      const date = spoken[day]!.split(":")[0]!.trim();
+      await expect(
+        tip.locator(".prio-burndown__tipdate"),
+        `day ${day} shows another day's date`,
+      ).toHaveText(date);
+
+      /* One panel at a time, and the marker it describes is on the day under
+         the pointer. */
+      await expect(tip).toHaveCount(1);
+      await expect(chart.locator("circle.prio-burndown__dot")).toHaveCount(1);
+    }
+
+    /* Off the chart and it is gone — not hidden, not stale, not there. */
+    await page.locator(".prio-burndown__summary").hover();
+    await expect(tip).toHaveCount(0);
+
+    /* Back on, and it answers again. */
+    await hits.nth(1).hover();
+    await expect(tip).toBeVisible();
+    await expect(tip.locator(".prio-burndown__tipdate")).toHaveText(
+      spoken[1]!.split(":")[0]!.trim(),
     );
   });
 
