@@ -401,6 +401,110 @@
   background: var(--prio-status-rejected-dot);
 }
 
+/*
+ * The four-way split: one bar carrying every segment, rather than the list of
+ * one-bar-per-status above.
+ *
+ * Same `__track` and `__bar` names on purpose — it is the same idea drawn in a
+ * different arrangement, and the colours are the ones the status pills already
+ * use, so a green segment here means what green means everywhere else. Every
+ * rule is scoped under `__split`, so the bar list keeps the styling it had.
+ */
+.prio-distribution__split {
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-2);
+  min-width: 0;
+}
+
+.prio-distribution__split .prio-distribution__track {
+  display: flex;
+  flex: none;
+  width: 100%;
+  height: 6px;
+  /* No gap between segments: the widths are exact ratios that add to 100%, and
+     any gutter would take its space out of the last one. The track's own
+     radius and `overflow: hidden` round the two outer ends. */
+}
+
+/* Nothing in the project at all: an empty track, not a full one. */
+.prio-distribution__split .prio-distribution__track[data-empty] {
+  background: var(--prio-neutral-100);
+}
+
+.prio-distribution__split .prio-distribution__bar {
+  border-radius: 0;
+  /* Widths are exact ratios and must stay that way: no minimum width, or a
+     one-item segment would claim more of the bar than it holds. */
+  min-width: 0;
+  flex: none;
+}
+
+.prio-distribution__bar[data-bucket="completed"],
+.prio-distribution__swatch[data-bucket="completed"] {
+  background: var(--prio-status-done-dot);
+}
+
+.prio-distribution__bar[data-bucket="inProgress"],
+.prio-distribution__swatch[data-bucket="inProgress"] {
+  background: var(--prio-status-progress-dot);
+}
+
+.prio-distribution__bar[data-bucket="notStarted"],
+.prio-distribution__swatch[data-bucket="notStarted"] {
+  background: var(--prio-status-backlog-dot);
+}
+
+/* Other is deliberately the quiet one: it is the group that means "none of the
+   above", and a loud colour would read as a status of its own. */
+.prio-distribution__bar[data-bucket="other"],
+.prio-distribution__swatch[data-bucket="other"] {
+  background: var(--prio-neutral-400);
+}
+
+.prio-distribution__legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--prio-space-1) var(--prio-space-4);
+  font-size: var(--prio-text-2xs);
+  color: var(--prio-text-muted);
+}
+
+.prio-distribution__legenditem {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Names the measurement, so the legend cannot be mistaken for a second
+ * reading of the progress bar above it. Set apart from the entries it
+ * introduces — it is a heading for them, not one of them.
+ */
+.prio-distribution__caption {
+  flex-basis: 100%;
+  font-weight: var(--prio-weight-semibold);
+  letter-spacing: var(--prio-tracking-caps);
+  text-transform: uppercase;
+  color: var(--prio-text-disabled);
+}
+
+.prio-distribution__legenditem--total {
+  font-weight: var(--prio-weight-medium);
+  color: var(--prio-text-secondary);
+}
+
+.prio-distribution__swatch {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--prio-radius-pill);
+}
+
 /* ------------------------------------------------------------ status ring */
 /*
  * The Summary's status donut. One colour table, shared with the bars above and

@@ -329,6 +329,21 @@ export const IconUpload = (p: IconProps) => (
   </Svg>
 );
 
+/**
+ * A sheet with its header row and columns, and a file arriving into it.
+ *
+ * The import drop zone's own glyph: the rectangle says spreadsheet rather than
+ * document because of the ruled row and column, and the arrow below says which
+ * way the file is travelling. Drawn large, so the grid lines carry it.
+ */
+export const IconSpreadsheetDown = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="2.7" y="1.5" width="10.6" height="7.6" rx="1.3" />
+    <path d="M2.7 4.3h10.6M7.2 4.3v4.8" />
+    <path d="M8 10.5v4M6.1 12.6 8 14.5l1.9-1.9" />
+  </Svg>
+);
+
 export const IconImage = (p: IconProps) => (
   <Svg {...p}>
     <rect x="2.4" y="2.9" width="11.2" height="10.2" rx="1.4" />
