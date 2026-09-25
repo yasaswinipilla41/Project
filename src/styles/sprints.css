@@ -927,6 +927,13 @@
  *
  * Hidden until the component has measured it — which happens before the
  * browser paints, so it is never seen at the wrong place or the wrong size.
+ *
+ * Its width is its content's and nothing else's: `max-content` is the longest
+ * line it holds, `max-width` is the reading measure that stops a long issue
+ * title from making a panel as wide as the chart, and `overflow-wrap` is what
+ * lets a title with no spaces in it wrap rather than push the panel out to fit
+ * on one line. Every mode below keeps these three, so the same day's detail is
+ * the same width wherever it is placed and whichever build it is running in.
  */
 .prio-burndown__tip {
   position: fixed;
@@ -936,6 +943,7 @@
   visibility: hidden;
   width: max-content;
   max-width: min(420px, calc(100vw - 2 * var(--prio-space-4)));
+  overflow-wrap: anywhere;
   padding: var(--prio-space-3) var(--prio-space-4);
   border: 1px solid var(--prio-border);
   border-radius: var(--prio-radius-md);
@@ -1012,23 +1020,28 @@
 }
 
 /*
- * Reading under the chart instead of over the page.
+ * Reading under the chart instead of beside the point.
  *
  * On a phone the chart scrolls sideways and is about 155px tall, so a
  * floating panel would be anchored to a day that can scroll out of sight;
  * and in a window too short to hold the panel clear of the chart at either
- * end, the component asks for this too. In the flow it is under the chart:
- * full width, nothing clipped, and the point and the lines untouched,
- * because nothing floats over them at all.
+ * end, the component asks for this too. Under the chart nothing is clipped,
+ * and the point and the lines are untouched because nothing floats over them
+ * at all.
+ *
+ * Its width is still its content's. It used to be `width: auto`, which in the
+ * flow means the card's width — so the same detail that read as a tooltip
+ * beside a point stretched right across the chart as soon as the placement
+ * fell through to here, which is what a deployed build does more often than a
+ * local one. `max-content` capped at the card is the same measure the
+ * floating panel has, so the box does not change size with the mode it is
+ * drawn in.
  */
 .prio-burndown__tip.is-inflow {
   position: static;
   visibility: visible;
-  /* In the flow it takes the width it is given and wraps inside it.
-     `max-content`, which sizes the floating panel to its longest line, would
-     here make the card — and the page with it — as wide as an issue title. */
-  width: auto;
-  max-width: 100%;
+  width: max-content;
+  max-width: min(420px, 100%);
   margin-top: var(--prio-space-3);
 }
 
@@ -1036,8 +1049,10 @@
   .prio-burndown__tip {
     position: static;
     visibility: visible;
-    width: auto;
-    max-width: 100%;
+    width: max-content;
+    /* The card's width is the limit here, not the window's: `100%` of a card
+       that has already been given the page's gutters. */
+    max-width: min(420px, 100%);
     margin-top: var(--prio-space-3);
     font-size: var(--prio-text-2xs);
   }
