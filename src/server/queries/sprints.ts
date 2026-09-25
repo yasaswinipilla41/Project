@@ -237,6 +237,9 @@ export async function loadBurndown(
              hours, so a chart drawn from remainders alone ran flat across a
              sprint that was being finished. */
           status: true,
+          /* Named beside the work in a day's detail: "what is left" is a
+             question about people as well as hours. */
+          assignee: { select: { name: true } },
         },
       },
     },
@@ -282,6 +285,7 @@ export async function loadBurndown(
             effortHours: true,
             remainingHours: true,
             status: true,
+            assignee: { select: { name: true } },
           },
         });
 
@@ -382,6 +386,7 @@ export async function loadBurndown(
         effortHours: issue.effortHours,
         remainingHours: issue.remainingHours,
         status: issue.status,
+        assignee: issue.assignee?.name ?? null,
         member: true,
       })),
       ...departed.map((issue) => ({
@@ -391,6 +396,7 @@ export async function loadBurndown(
         effortHours: issue.effortHours,
         remainingHours: issue.remainingHours,
         status: issue.status,
+        assignee: issue.assignee?.name ?? null,
         member: false,
       })),
     ],

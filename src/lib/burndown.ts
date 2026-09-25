@@ -54,6 +54,8 @@ export interface BurndownItem {
    * because the sprint carried its weight up to the day it left.
    */
   member?: boolean;
+  /** Who holds it, for naming them beside the work in a day's detail. */
+  assignee?: string | null;
 }
 
 /** A recorded change to one item's remaining hours. */
@@ -108,8 +110,17 @@ export interface BurndownIssue {
   title: string;
   /** The status it was in that day, where the record says. */
   status: IssueStatus | null;
+  /** Who holds it, or null when nobody does. */
+  assignee: string | null;
   /** What it still owed that day. */
   effortHours: number;
+}
+
+/** An issue named in a day's detail without a figure of its own. */
+export interface BurndownIssueRef {
+  issueId: string;
+  key: string;
+  title: string;
 }
 
 /** Why a day's remaining effort moved. */
@@ -132,6 +143,17 @@ export interface BurndownChange {
   /** For an estimate or a remainder: what it was, and what it became. */
   from?: number | null;
   to?: number | null;
+  /**
+   * Where the issue stood at the end of that day: the status it was in, and
+   * what it still owed.
+   *
+   * The delta says what the change did to the sprint; these say what the
+   * issue itself looked like once it had happened, which is what a reader
+   * asks next — an issue reopened with two hours left reads very differently
+   * from one reopened with twelve.
+   */
+  status: IssueStatus | null;
+  effortHours: number;
 }
 
 export interface BurndownPoint {
@@ -157,11 +179,72 @@ export interface BurndownPoint {
   completedEffort: number;
   /** What changed that day, and why. Empty on a quiet day. */
   changes: BurndownChange[];
+  /*
+   * ------------------------------------------------- what today did to the line
+   *
+   * Three differences against the day before, and they decompose the step the
+   * line took: `change` is what the reader sees the line do, and it is exactly
+   * `scope − completed`. A day where work was finished and work was added can
+   * therefore say so, rather than showing a flat line that hides both.
+   *
+   * Differences of figures this already computes — no second way of counting
+   * effort, and nothing stored. Null on the first day of the sprint and on any
+   * day the sprint has not reached, where there is no day before to compare
+   * with.
+   */
+  /** What the remaining effort did since the day before: negative burns down. */
+  change: number | null;
+  /** Effort finished during this day. */
+  completedToday: number;
+  /** Hours the sprint's commitment moved during this day: work added, taken
+   *  out, or re-estimated. */
+  scopeToday: number;
+  /** How many issues each kind of event touched during this day. */
+  tally: {
+    completed: number;
+    reopened: number;
+    added: number;
+    removed: number;
+    /** Handed to testing: no effort moves, and it is still what happened. */
+    toQa: number;
+  };
+  /** The issues handed to testing during this day. */
+  movedToQa: BurndownIssueRef[];
 }
 
 export interface Burndown {
   /** The sum of every estimate committed to the sprint. */
   totalEffort: number;
+  /**
+   * What the sprint committed to on its first day.
+   *
+   * The same figure as `totalEffort` on a sprint whose scope never moved, and
+   * the thing to read it against on one whose did: the difference between them
+   * is the work that arrived or left after the sprint began. Taken from the
+   * first day the sprint has actually reached — before that there is no day to
+   * read, and the commitment it holds now is the only answer there is.
+   */
+  initialEffort: number;
+  /** Hours added to the sprint after its first day, and hours taken out of
+   *  it: the two halves of `initialEffort` becoming `totalEffort`. */
+  scopeAdded: number;
+  scopeRemoved: number;
+  /** How many events moved the scope, and how many reopened finished work —
+   *  counted across the sprint, for the summary above the chart. */
+  scopeEvents: number;
+  reopenedEvents: number;
+  /** How many issues arrived after the first day, and how many left: the
+   *  summary says scope in issues as well as in hours, because "one more
+   *  issue" and "half an hour more" are different sizes of news. */
+  issuesAdded: number;
+  issuesRemoved: number;
+  /** How much of the commitment is burned, as a percentage; 0 when there is
+   *  nothing to burn. One definition, read by the summary and the marker for
+   *  today. */
+  progress: number;
+  /** Days from today to the sprint's last day, inclusive; null once the
+   *  sprint has run out or when it is not the one being worked. */
+  daysLeft: number | null;
   /** What is left across the sprint right now. */
   remaining: number;
   /** What has been finished: the commitment, less what is left. */
@@ -205,6 +288,41 @@ function daysBetween(start: Date, end: Date): Date[] {
     if (days.length > 400) break;
   }
   return days;
+}
+
+/**
+ * A difference between two days' figures, without the floating-point dust.
+ *
+ * Effort is written in halves and quarters of an hour, so subtracting one
+ * day's total from another's produces things like `2.9999999999999996` — which
+ * is the same number as far as the sprint is concerned, and not the same when
+ * a test or a reader asks whether the day was flat.
+ */
+function round(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/** How many distinct issues a day's changes name for one reason. */
+function countIssues(
+  changes: BurndownChange[],
+  reason: BurndownReason,
+): number {
+  const seen = new Set<string>();
+  for (const change of changes) {
+    if (change.reason === reason) seen.add(change.issueId);
+  }
+  return seen.size;
+}
+
+/**
+ * Re-estimates on a day, counted as scope events.
+ *
+ * Re-sizing work changes what the sprint has committed to just as adding work
+ * does, so the summary counts it alongside. A remainder is not one: saying how
+ * much of a job is left is progress on it, not a change of scope.
+ */
+function estimateCount(point: BurndownPoint): number {
+  return countIssues(point.changes, "estimate");
 }
 
 function byTime<T extends { at: Date; issueId: string }>(
@@ -390,6 +508,15 @@ export function burndown(params: {
     title: item.title ?? "",
   });
 
+  /** The days an item was handed to testing, from the same trail. */
+  const qaMovesFor = new Map<string, number[]>();
+  for (const change of statusHistory) {
+    if (change.to !== "IN_QA" || change.from === "IN_QA") continue;
+    const list = qaMovesFor.get(change.issueId);
+    if (list) list.push(change.at.getTime());
+    else qaMovesFor.set(change.issueId, [change.at.getTime()]);
+  }
+
   /* ------------------------------------------------------------- right now */
 
   const nowCutoff = now.getTime() + 1;
@@ -477,6 +604,11 @@ export function burndown(params: {
         committedEffort: 0,
         completedEffort: 0,
         changes: [],
+        change: null,
+        completedToday: 0,
+        scopeToday: 0,
+        tally: { completed: 0, reopened: 0, added: 0, removed: 0, toQa: 0 },
+        movedToQa: [],
       };
     }
 
@@ -504,6 +636,7 @@ export function burndown(params: {
         issueId: item.issueId,
         ...nameOf(item),
         status,
+        assignee: item.assignee ?? null,
         effortHours: owed,
       });
     }
@@ -533,8 +666,33 @@ export function burndown(params: {
         delta,
         ...(event.from === undefined ? {} : { from: event.from }),
         ...(event.to === undefined ? {} : { to: event.to }),
+        /* Where the issue stood once the day was over — by the same two rules
+           the line and the day's list of what is left are read with. */
+        status: statusAt(event.item, endOfDay),
+        effortHours: owedAt(event.item, endOfDay, false),
       });
     }
+
+    /* Handed to testing today: not a change to the effort — testing is open
+       work — and the one thing a reader looking at a flat day most often
+       wants, because it is usually why the day was flat. */
+    const movedToQa: BurndownIssueRef[] = [];
+    for (const item of holding) {
+      const moves = qaMovesFor.get(item.issueId) ?? [];
+      if (moves.some((at) => at >= date.getTime() && at < endOfDay)) {
+        movedToQa.push({ issueId: item.issueId, ...nameOf(item) });
+      }
+    }
+
+    /* How many issues each kind of event touched. The effort each moved is in
+       `changes`; this is the count a reader asks for first. */
+    const tally = {
+      completed: countIssues(changes, "completed"),
+      reopened: countIssues(changes, "reopened"),
+      added: countIssues(changes, "added"),
+      removed: countIssues(changes, "removed"),
+      toQa: movedToQa.length,
+    };
 
     return {
       date,
@@ -546,13 +704,93 @@ export function burndown(params: {
       committedEffort,
       completedEffort: Math.max(0, committedEffort - actual),
       changes,
+      /* Filled in below, once every day has been measured: they are
+         differences between days, so they cannot be read one day at a time. */
+      change: null,
+      completedToday: 0,
+      scopeToday: 0,
+      tally,
+      movedToQa,
     };
   });
 
+  /*
+   * What each day did, against the day before it.
+   *
+   * Three differences of figures already computed, so nothing is counted a
+   * second way: the line's own step, the effort finished, and the hours the
+   * commitment moved. The first day of the sprint has no day before it and
+   * keeps the null it was given; a day the sprint has not reached has no
+   * reading at all.
+   */
+  for (let index = 1; index < points.length; index += 1) {
+    const day = points[index]!;
+    const before = points[index - 1]!;
+    if (day.actual === null || before.actual === null) continue;
+    day.change = round(day.actual - before.actual);
+    day.completedToday = round(day.completedEffort - before.completedEffort);
+    day.scopeToday = round(day.committedEffort - before.committedEffort);
+  }
+
   const todayIndex = days.findIndex((date) => date.getTime() === today);
+
+  /*
+   * ------------------------------------------------ the sprint's own figures
+   *
+   * All of them read off the days above, so the summary above the chart and
+   * the chart itself cannot disagree.
+   *
+   * `initialEffort` is the commitment on the first day the sprint reached. On
+   * a sprint that has not started there is no such day, and what it holds now
+   * is the only answer; on one whose scope never moved it is `totalEffort`,
+   * and the gap between the two is exactly the work that arrived or left.
+   */
+  const reached = points.filter((point) => point.actual !== null);
+  const initialEffort = reached[0]?.committedEffort ?? totalEffort;
+  const scopeAdded = round(
+    reached.reduce((sum, point) => sum + Math.max(0, point.scopeToday), 0),
+  );
+  const scopeRemoved = round(
+    reached.reduce((sum, point) => sum + Math.min(0, point.scopeToday), 0),
+  );
+  const scopeEvents = reached.reduce(
+    (sum, point) =>
+      sum + point.tally.added + point.tally.removed + estimateCount(point),
+    0,
+  );
+  const reopenedEvents = reached.reduce(
+    (sum, point) => sum + point.tally.reopened,
+    0,
+  );
+  const issuesAdded = reached.reduce((sum, point) => sum + point.tally.added, 0);
+  const issuesRemoved = reached.reduce(
+    (sum, point) => sum + point.tally.removed,
+    0,
+  );
+
+  /* Days from today to the last of them, inclusive: today counts, because a
+     sprint ending today has a day left to work in. Only worth saying while
+     the sprint is the one being worked. */
+  const lastDay = days[days.length - 1]?.getTime() ?? today;
+  const daysLeft =
+    (params.active ?? false) && lastDay >= today
+      ? Math.round((lastDay - today) / DAY) + 1
+      : null;
 
   return {
     totalEffort,
+    initialEffort,
+    scopeAdded,
+    scopeRemoved,
+    scopeEvents,
+    reopenedEvents,
+    issuesAdded,
+    issuesRemoved,
+    progress:
+      totalEffort === 0
+        ? 0
+        : Math.round(((totalEffort - remaining) / totalEffort) * 100),
+    daysLeft,
     remaining,
     completedEffort: Math.max(0, totalEffort - remaining),
     unestimated,

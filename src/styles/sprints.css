@@ -816,13 +816,24 @@
  * the issue counts behind them. Laid out as a row that wraps, so a narrow
  * card stacks them instead of squeezing them.
  */
+/*
+ * The sprint's figures, as a panel of columns.
+ *
+ * A bordered strip rather than a row of loose figures: the metrics are one
+ * reading of the sprint and they read as one thing, with a rule between each
+ * pair so the eye does not have to guess which number belongs to which label.
+ * It wraps on a narrow card, and the rules go with the wrap — a divider at the
+ * start of a line would be a stripe down the edge of the panel.
+ */
 .prio-burndown__summary {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--prio-space-3) var(--prio-space-6);
   margin: 0 0 var(--prio-space-4);
-  padding: 0 0 var(--prio-space-4);
-  border-bottom: 1px solid var(--prio-border-subtle);
+  padding: 0;
+  border: 1px solid var(--prio-border-subtle);
+  border-radius: var(--prio-radius-md);
+  background: var(--prio-bg-subtle);
+  overflow: hidden;
 }
 
 .prio-burndown__figure {
@@ -830,6 +841,16 @@
   flex-direction: column;
   gap: 2px;
   min-width: 0;
+  flex: 1 1 auto;
+  padding: var(--prio-space-3) var(--prio-space-4);
+  border-left: 1px solid var(--prio-border-subtle);
+}
+
+/* No rule before the first figure, nor before the first on a wrapped line —
+   `outline` on the panel would show through, so the rule is drawn per figure
+   and suppressed where a line starts. */
+.prio-burndown__figure:first-child {
+  border-left: 0;
 }
 
 .prio-burndown__figure dt {
@@ -851,6 +872,70 @@
 
 .prio-burndown__figure[data-tone="done"] dd {
   color: var(--prio-status-done-dot);
+}
+
+/* The finished half of "3 / 8": the same green the completed figures carry,
+   on the number it belongs to rather than on the whole pair. */
+.prio-burndown__figuredone {
+  color: var(--prio-status-done-dot);
+}
+
+/* What a figure is counted in, where two figures on one page could be read
+   for one another — quieter and smaller than the label it qualifies. */
+.prio-burndown__figurenote {
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-regular);
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--prio-text-muted);
+}
+
+/* Scope is a figure about work arriving or leaving, and reads in the same
+   green the finished figures use. */
+.prio-burndown__figure[data-tone="scope"] dd:not(:empty) {
+  color: var(--prio-status-done-dot);
+}
+
+/*
+ * Sprint progress: the figure with the bar the rest of Prio draws progress
+ * with.
+ *
+ * Wider than its neighbours because the bar needs a run to be readable, and
+ * it is the last figure in the row so the extra width costs the others
+ * nothing. Below the tablet step the row wraps and it takes the full width,
+ * which is where a bar reads best anyway.
+ */
+.prio-burndown__figure--progress {
+  min-width: 170px;
+  flex: 1 1 200px;
+}
+
+.prio-burndown__figure--progress dd {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-3);
+}
+
+.prio-burndown__progressvalue {
+  flex: none;
+  color: var(--prio-status-done-dot);
+}
+
+.prio-burndown__progressbar {
+  /* Fills what its own column leaves, which is why that column is the widest
+     in the strip: a progress bar is read by its length. */
+  flex: 1;
+  min-width: 48px;
+  /* Thinner than the sprint block's own bar: this one sits under a figure
+     rather than under a heading. */
+  height: 5px;
+}
+
+/* The bar carries the same green as the figure beside it, rather than the
+   brand gradient the project cards use: here it is a completion figure, and
+   the two say the same thing in two ways. */
+.prio-burndown__progressbar .prio-progress__bar {
+  background: var(--prio-status-done-dot);
 }
 
 /* --------------------------------------------------- reading a single day */
@@ -898,18 +983,58 @@
   opacity: 0.7;
 }
 
+/*
+ * Today, as a small panel rather than a one-line chip.
+ *
+ * The four answers a reader wants from the marker without hovering anything —
+ * what is left, how much of the work is done, how far through the commitment
+ * that is, and how long there is to do the rest — each on its own line, so
+ * they can be read down rather than parsed out of a sentence. It keeps the
+ * chip's surface, border and corner so it still belongs to the chart, and
+ * `pointer-events: none` so it never takes a hover from the plot beneath it.
+ */
 .prio-burndown__todaytag {
   position: absolute;
   top: 2px;
+  z-index: 1;
+  display: grid;
+  gap: 1px;
   margin: 0;
-  padding: 2px var(--prio-space-2);
+  padding: var(--prio-space-2) var(--prio-space-3);
   border: 1px solid var(--prio-border-subtle);
-  border-radius: var(--prio-radius-pill);
+  border-radius: var(--prio-radius-md);
   background: var(--prio-bg-surface);
+  box-shadow: var(--prio-shadow-sm);
   font-size: var(--prio-text-2xs);
   color: var(--prio-text-secondary);
   white-space: nowrap;
   pointer-events: none;
+}
+
+.prio-burndown__todaytitle {
+  margin: 0 0 2px;
+  font-size: var(--prio-text-xs);
+  font-weight: var(--prio-weight-semibold);
+  color: var(--prio-text-primary);
+}
+
+/* Label and figure on one line, the figure in the ink that carries meaning. */
+.prio-burndown__todaytag > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--prio-space-3);
+}
+
+.prio-burndown__todaytag dt {
+  color: var(--prio-text-muted);
+}
+
+.prio-burndown__todaytag dd {
+  margin: 0;
+  font-weight: var(--prio-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--prio-text-primary);
 }
 
 /*
@@ -936,6 +1061,12 @@
  * the same width wherever it is placed and whichever build it is running in.
  */
 .prio-burndown__tip {
+  /* The widths of the two right-hand columns in the issues list, shared by
+     the heading and every row so they line up. */
+  --prio-tip-status: 72px;
+  /* Wide enough for the word "Effort" above it, not just for the figures
+     under it. */
+  --prio-tip-effort: 46px;
   position: fixed;
   left: 0;
   top: 0;
@@ -945,7 +1076,9 @@
   max-width: min(420px, calc(100vw - 2 * var(--prio-space-4)));
   overflow-wrap: anywhere;
   padding: var(--prio-space-3) var(--prio-space-4);
-  border: 1px solid var(--prio-border);
+  /* Tinted rather than the ordinary card edge: the panel belongs to the chart
+     it is describing, and the tint is the primary the remaining line uses. */
+  border: 1px solid var(--prio-primary-300);
   border-radius: var(--prio-radius-md);
   background: var(--prio-bg-surface);
   box-shadow: var(--prio-shadow-md);
@@ -966,6 +1099,91 @@
   transform: translateX(-100%);
 }
 
+/*
+ * A heading inside the day's panel.
+ *
+ * Two questions are answered in there — how much effort, and which issues —
+ * and without the headings they read as one paragraph of numbers. Small,
+ * uppercase and muted, which is how every other label on this card is set.
+ */
+.prio-burndown__tipsection {
+  margin: var(--prio-space-3) 0 2px;
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-semibold);
+  letter-spacing: var(--prio-tracking-caps);
+  text-transform: uppercase;
+  color: var(--prio-text-muted);
+}
+
+.prio-burndown__tipsection:first-of-type {
+  margin-top: var(--prio-space-2);
+}
+
+/* The two right-hand column names, on the heading's own line so what sits
+   beneath them is read as columns. */
+.prio-burndown__tipsection:has(.prio-burndown__tipcols) {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--prio-space-3);
+  align-items: baseline;
+}
+
+.prio-burndown__tipcols {
+  display: grid;
+  grid-template-columns: var(--prio-tip-status) var(--prio-tip-effort);
+  gap: var(--prio-space-3);
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* A day nothing happened on says so, and says where the rest is. */
+.prio-burndown__tipquiet {
+  margin: var(--prio-space-2) 0 0;
+  color: var(--prio-text-muted);
+}
+
+/* The changes a busy day has left over, counted rather than listed: a panel
+   as tall as the chart has to sit a long way from the point it describes. */
+.prio-burndown__tipmore {
+  color: var(--prio-text-muted);
+}
+
+/* The dot that carries what kind of change a row is, in the colours this
+   panel and the status pills already use. Colour is never the only thing
+   saying it — the words beside it say the same. */
+.prio-burndown__tipdot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-top: 5px;
+  border-radius: var(--prio-radius-pill);
+  background: var(--prio-text-muted);
+}
+
+.prio-burndown__tipdot[data-reason="completed"] {
+  background: var(--prio-status-done-dot);
+}
+
+.prio-burndown__tipdot[data-reason="reopened"] {
+  background: var(--prio-status-reopened-dot);
+}
+
+.prio-burndown__tipdot[data-reason="added"],
+.prio-burndown__tipdot[data-reason="estimate"] {
+  background: var(--prio-status-todo-dot);
+}
+
+.prio-burndown__tipdot[data-reason="qa"] {
+  background: var(--prio-status-qa-dot);
+}
+
+/* The issue and what became of it, on two lines inside one row. */
+.prio-burndown__tiprow {
+  min-width: 0;
+  flex: 1 1 auto;
+  line-height: 1.45;
+}
+
 .prio-burndown__tipdate {
   margin: 0 0 2px;
   font-size: var(--prio-text-sm);
@@ -975,6 +1193,32 @@
 
 .prio-burndown__tipfigures {
   margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * What the day itself did, above the list of why.
+ *
+ * The figures above it are cumulative; this is the day's own step, which is
+ * the question a reader hovering a point is usually asking. A flat day reads
+ * quieter than a day that moved — it is an answer, not an alarm — and both are
+ * said in words rather than left to be inferred from an empty panel.
+ */
+.prio-burndown__tipchange {
+  margin: var(--prio-space-2) 0 0;
+  font-variant-numeric: tabular-nums;
+  color: var(--prio-text-primary);
+}
+
+.prio-burndown__tipchange[data-flat] {
+  color: var(--prio-text-muted);
+}
+
+/* How many issues each kind of event touched: the counts behind the step. */
+.prio-burndown__tiptally {
+  margin: 2px 0 0;
+  font-size: var(--prio-text-2xs);
+  color: var(--prio-text-secondary);
   font-variant-numeric: tabular-nums;
 }
 
@@ -993,12 +1237,84 @@
   gap: 3px;
 }
 
-.prio-burndown__tipchanges li,
-.prio-burndown__tipissues li {
-  display: flex;
+/*
+ * A reason for a change: a signed figure in its own column, then the words.
+ *
+ * Flex, because the figures line up under one another — which is what makes a
+ * column of deltas readable at a glance.
+ */
+/*
+ * A grid rather than a flowing row: the two right-hand figures line up under
+ * their headings, which is what lets a reader scan a busy day down a column
+ * instead of reading five sentences.
+ */
+.prio-burndown__tipchanges li {
+  display: grid;
+  grid-template-columns: 9px 1fr var(--prio-tip-status) var(--prio-tip-effort);
+  gap: var(--prio-space-2) var(--prio-space-3);
   align-items: baseline;
-  gap: var(--prio-space-2);
-  flex-wrap: wrap;
+}
+
+.prio-burndown__tipname {
+  min-width: 0;
+}
+
+.prio-burndown__tipstatus,
+.prio-burndown__tipeffort {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* What happened to it, in the colour that kind of change carries elsewhere in
+   this panel. */
+.prio-burndown__tipwhy {
+  color: var(--prio-text-muted);
+  white-space: nowrap;
+}
+
+.prio-burndown__tipwhy[data-reason="completed"] {
+  color: var(--prio-status-done-dot);
+}
+
+.prio-burndown__tipwhy[data-reason="reopened"] {
+  color: var(--prio-status-reopened-dot);
+}
+
+.prio-burndown__tipwhy[data-reason="added"],
+.prio-burndown__tipwhy[data-reason="estimate"] {
+  color: var(--prio-status-todo-dot);
+}
+
+.prio-burndown__tipwhy[data-reason="qa"] {
+  color: var(--prio-status-qa-dot);
+}
+
+/*
+ * The leftover count is a sentence, not a row of columns.
+ *
+ * Every other item in this list is itself a grid of four columns; this one
+ * has to say so it is not, or its words are laid out in the nine-pixel column
+ * the marker dot lives in — one letter per line.
+ */
+.prio-burndown__tipchanges li.prio-burndown__tipmore {
+  display: block;
+  color: var(--prio-text-muted);
+}
+
+/*
+ * An open issue: key, summary, status, who holds it, what it owes.
+ *
+ * Plain flowing text rather than a flex row. As a row, each run of words was
+ * a flex item that moved onto the next line whole the moment it did not fit —
+ * so a row wrapped after the title and left a third of the panel empty beside
+ * it, and the panel grew a line taller than the words needed. Flowing, the
+ * line fills and breaks where the text runs out, which is both tighter and
+ * what the reading measure above is for.
+ */
+.prio-burndown__tipissues li {
+  display: block;
+  line-height: 1.45;
 }
 
 /* A step down burns work off the sprint and a step up puts it back, so the
@@ -1015,7 +1331,28 @@
   color: var(--prio-status-reopened-dot);
 }
 
+/* A hand-off to testing moves no effort at all, so its figure is a nought and
+   reads as one rather than as a burn. */
+.prio-burndown__tipdelta[data-flat] {
+  color: var(--prio-text-muted);
+}
+
+/*
+ * The issue's own summary, inside a row that also names its key, its status,
+ * who holds it and what it owes.
+ *
+ * It takes the room the rest of the row leaves and wraps inside it, rather
+ * than being carried whole onto a line of its own: a flex item that will not
+ * shrink pushes everything after it down, which on a panel this narrow left
+ * every row a ragged half-line and made the panel half as tall again as it
+ * needed to be.
+ */
 .prio-burndown__tiptitle {
+  /* Shrinks, never grows: a title that stretched left a short one sitting a
+     third of a panel away from the status that follows it. */
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--prio-text-primary);
 }
 
@@ -1045,7 +1382,173 @@
   margin-top: var(--prio-space-3);
 }
 
+/*
+ * The day's own work, under the chart.
+ *
+ * Everything the hover panel says about a day except the arithmetic, in a
+ * form that holds still: it can be read at leisure and its keys can be
+ * clicked, which a panel that follows the pointer cannot. Scrolls sideways
+ * on a narrow screen rather than crushing five columns into nothing.
+ */
+.prio-burndown__table {
+  margin-top: var(--prio-space-5);
+  padding-top: var(--prio-space-4);
+  border-top: 1px solid var(--prio-border-subtle);
+}
+
+.prio-burndown__tablehead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--prio-space-3);
+  flex-wrap: wrap;
+  margin: 0 0 var(--prio-space-3);
+  font-size: var(--prio-text-xs);
+}
+
+.prio-burndown__tabletitle {
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-semibold);
+  letter-spacing: var(--prio-tracking-caps);
+  text-transform: uppercase;
+  color: var(--prio-text-muted);
+}
+
+.prio-burndown__issuetable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--prio-text-xs);
+}
+
+.prio-burndown__issuetable th {
+  padding: 0 var(--prio-space-3) var(--prio-space-2) 0;
+  border-bottom: 1px solid var(--prio-border-subtle);
+  text-align: left;
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-semibold);
+  letter-spacing: var(--prio-tracking-caps);
+  text-transform: uppercase;
+  color: var(--prio-text-muted);
+  white-space: nowrap;
+}
+
+.prio-burndown__issuetable td {
+  padding: var(--prio-space-2) var(--prio-space-3) var(--prio-space-2) 0;
+  border-bottom: 1px solid var(--prio-border-subtle);
+  vertical-align: middle;
+  color: var(--prio-text-secondary);
+}
+
+.prio-burndown__issuetable tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.prio-burndown__issuetable tbody tr:hover td {
+  background: var(--prio-bg-hover);
+}
+
+/* The summary takes the room the fixed columns leave, and truncates inside
+   it: a long title must not push the effort column off the card. */
+.prio-burndown__summarycell {
+  max-width: 0;
+  width: 55%;
+  color: var(--prio-text-primary);
+}
+
+.prio-burndown__summarycell > .prio-truncate {
+  display: block;
+}
+
+/* Why the row is here, when something happened to it that day. */
+.prio-burndown__rowreason {
+  display: inline-block;
+  margin-top: 2px;
+  font-size: var(--prio-text-2xs);
+  color: var(--prio-text-muted);
+}
+
+.prio-burndown__rowreason[data-reason="completed"] {
+  color: var(--prio-status-done-dot);
+}
+
+.prio-burndown__rowreason[data-reason="reopened"] {
+  color: var(--prio-status-reopened-dot);
+}
+
+.prio-burndown__rowreason[data-reason="added"] {
+  color: var(--prio-status-todo-dot);
+}
+
+/*
+ * The mark down the table's left edge.
+ *
+ * An arrow for work that arrived or left, a dot for work that came back —
+ * the same vocabulary the chart's own markers use, so a reader who has looked
+ * at the plot already knows what it means. Never the only thing saying it:
+ * the row says the same in words.
+ */
+.prio-burndown__markcol {
+  width: 18px;
+  padding-right: var(--prio-space-2) !important;
+  text-align: center;
+}
+
+.prio-burndown__rowmark {
+  font-size: var(--prio-text-xs);
+  line-height: 1;
+  color: var(--prio-text-muted);
+}
+
+.prio-burndown__rowmark[data-reason="added"] {
+  color: var(--prio-status-done-dot);
+}
+
+.prio-burndown__rowmark[data-reason="removed"] {
+  color: var(--prio-red-600);
+}
+
+.prio-burndown__rowmark[data-reason="reopened"] {
+  color: var(--prio-status-reopened-dot);
+}
+
+.prio-burndown__rowmark[data-reason="completed"] {
+  color: var(--prio-status-done-dot);
+}
+
+.prio-burndown__rowmark[data-reason="qa"] {
+  color: var(--prio-status-qa-dot);
+}
+
+/* The status pill keeps its own size; the cell only stops it being stretched
+   by the row's height. */
+.prio-burndown__statuscell {
+  white-space: nowrap;
+}
+
+.prio-burndown__person {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  white-space: nowrap;
+}
+
+.prio-burndown__effortcol {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 @media (max-width: 767.98px) {
+  /* Five columns do not fit a phone, and squeezing them makes every one of
+     them unreadable; the table keeps its shape and the card scrolls. */
+  .prio-burndown__table {
+    overflow-x: auto;
+  }
+
+  .prio-burndown__issuetable {
+    min-width: 520px;
+  }
+
   .prio-burndown__tip {
     position: static;
     visibility: visible;
@@ -1170,6 +1673,51 @@
 
 .prio-burndown__key[data-line="ideal"]::before {
   border-top: 1.5px dashed var(--prio-text-muted);
+}
+
+/*
+ * Scope, on the axis and in the legend.
+ *
+ * A burndown's most misread feature is a line that will not fall because work
+ * arrived rather than because nobody did anything — the line cannot tell the
+ * two apart, so the days the commitment moved are marked on the axis: a
+ * triangle pointing up where work arrived, down where it left. Work coming in
+ * borrows the colour reopened work already uses in this panel, and work going
+ * out the muted one, so nothing new is introduced to learn.
+ */
+.prio-burndown__key[data-line="scope"]::before {
+  width: 0;
+  height: 0;
+  border-top: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 8px solid var(--prio-status-done-dot);
+}
+
+/*
+ * An arrow on the day the scope moved: up for work arriving, green, and down
+ * for work leaving, red. Drawn as a stroke so it reads at any scale the chart
+ * is given, and never filled — a filled arrowhead at this size turns into a
+ * blob.
+ */
+.prio-burndown__scope path {
+  fill: none;
+  stroke: var(--prio-status-done-dot);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.prio-burndown__scope[data-direction="down"] path {
+  stroke: var(--prio-red-600);
+}
+
+/* A reading, on the line. Filled with the card's own surface so the line
+   shows through as a ring rather than a dot on a dot. */
+.prio-burndown__point {
+  fill: var(--prio-bg-surface);
+  stroke: var(--prio-primary-600);
+  stroke-width: 2;
 }
 
 /*
