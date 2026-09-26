@@ -1,20 +1,28 @@
 import { expect, test } from "@playwright/test";
 import { prisma } from "@/lib/prisma";
+import { formatDateRange } from "@/lib/format";
 
 /**
  * Moving an issue out of a sprint, from the card it is read on.
  *
- * "Next sprint" used to insist on a strictly later start date, so a project
- * whose sprints share dates — two boards over the same fortnight — was told
- * "No future Sprint is available." while its own Sprints page listed the
- * sprint it should have offered. This drives the real menu and then checks
- * three things the move has to leave true: the issue is in the other sprint,
- * its status is untouched, and both sprints' figures have followed it.
+ * The menu's own "next sprint" is worked out the same way it always was —
+ * the soonest open sprint on or after the one the issue is in — but it is no
+ * longer a generic "Next sprint" entry: it is named and dated like every
+ * other destination the menu offers, so a project with more than one
+ * candidate is never asked to guess which "Next sprint" it would have been.
+ *
+ * The first case is the point the naming used to get wrong: two boards over
+ * the same fortnight, where a strict "later than" comparison found nothing
+ * and reported "No future Sprint is available." while the project's own
+ * Sprints page listed the sprint it should have offered. This drives the real
+ * menu and then checks three things the move has to leave true: the issue is
+ * in the other sprint, its status is untouched, and both sprints' figures
+ * have followed it.
  *
  * The second describe covers the other half of the same question: a project
- * with nowhere to move to should not offer the move. Restore was already
- * gated that way; Next sprint was not, so on a project running its only
- * sprint the entry sat on every card and failed every time.
+ * with nowhere to move to should not offer a sprint destination at all —
+ * only Restore (when there is somewhere to restore to) and Backlog, neither
+ * of which can ever fail the way a phantom "next sprint" entry did.
  */
 
 const createdProjects: string[] = [];
@@ -91,7 +99,7 @@ async function seedSameDaySprints() {
     select: { id: true, key: true },
   });
 
-  return { key: project.key.toLowerCase(), from, to, issue };
+  return { key: project.key.toLowerCase(), from, to, issue, dates };
 }
 
 /** A project with one sprint and one issue in it: nowhere to move on to. */
@@ -158,14 +166,20 @@ test.describe("Move to · when there is no next sprint", () => {
 
     const menu = page.getByRole("menu", { name: `Move ${issue.key}` });
 
-    /* The entry that could only ever fail here is gone. */
-    await expect(
-      menu.getByRole("menuitem", { name: "Next sprint" }),
-    ).toHaveCount(0);
+    /* Nowhere to send it: the project's only sprint is the one on screen, so
+       no sprint destination is offered at all — not the phantom entry that
+       used to sit here regardless, and not the sprint itself. */
+    await expect(menu.getByRole("menuitem", { name: sprint.name })).toHaveCount(
+      0,
+    );
 
     /* The menu is still worth opening: the backlog is a real destination and
        is still offered. */
     await expect(menu.getByRole("menuitem", { name: "Backlog" })).toBeVisible();
+
+    /* Backlog is the only thing on it — no Restore (nothing has moved this
+       issue yet) and no dated sprint either. */
+    await expect(menu.getByRole("menuitem")).toHaveCount(1);
 
     /* And the move it does offer still works, so gating one entry has not
        taken the control with it. */
@@ -189,7 +203,7 @@ test.describe("Move to · next sprint", () => {
   test("moves the issue to the next sprint even when both sprints run the same dates", async ({
     page,
   }) => {
-    const { key, from, to, issue } = await seedSameDaySprints();
+    const { key, from, to, issue, dates } = await seedSameDaySprints();
 
     await page.goto(`/projects/${key}/sprints/${from.id}`);
     await expect(page.locator(".prio-sprint__total")).toHaveText(
@@ -203,10 +217,18 @@ test.describe("Move to · next sprint", () => {
     await card
       .getByRole("button", { name: new RegExp(`Move ${issue.key} to another`) })
       .click();
-    await page
-      .getByRole("menu", { name: `Move ${issue.key}` })
-      .getByRole("menuitem", { name: "Next sprint" })
-      .click();
+
+    /* Named and dated, not a generic "Next sprint" that could only ever say
+       so much — and proof on its own that the same-day comparison still
+       finds it: an entry that insisted on a strictly later date would have
+       nothing here to be named after. */
+    const menu = page.getByRole("menu", { name: `Move ${issue.key}` });
+    await expect(
+      menu.getByRole("menuitem", {
+        name: `${to.name} (${formatDateRange(dates.startDate, dates.endDate)})`,
+      }),
+    ).toBeVisible();
+    await menu.getByRole("menuitem", { name: to.name }).click();
 
     /* Where it went, said in the words the person gets — and never "No
        future Sprint is available." */

@@ -11,7 +11,7 @@ import {
 } from "@/components/sprints/BurndownDisclosure";
 import { Card, CardBody } from "@/components/ui/primitives";
 import { projectScope, workRoleOf } from "@/lib/authz";
-import { canMoveToNextSprint } from "@/lib/sprintMove";
+import { nextOpenSprint } from "@/lib/sprintMove";
 import {
   canDeleteSprint,
   canEditSprintDetails,
@@ -117,6 +117,38 @@ export default async function ProjectSprintDetailsPage({
     if (previous && previous.id !== sprint.id) previousSprints[issue.id] = previous;
   }
 
+  /*
+   * Where a card's Move to can send its work: the project's current sprint
+   * and its upcoming one, and never more than those two.
+   *
+   * "Current" is the one sprint `startSprint` allows to be running at once —
+   * `status === "ACTIVE"` is the whole rule, read fresh from `sprints` rather
+   * than assumed. "Upcoming" is the same `nextOpenSprint` the Restore and
+   * (elsewhere) the row menu's own "Next sprint" already trust, asked from
+   * the current sprint rather than from whichever sprint is on screen — so a
+   * later sprint stays out of reach from every page except the one directly
+   * before it, exactly as a project moves through them one at a time. Where a
+   * project has not started a sprint at all yet, there is no current one to
+   * ask from, and the same question is asked from this page's own sprint
+   * instead, which is what let a project planning two sprints at once move
+   * work between them before either had begun.
+   *
+   * Whichever of the two equals the sprint this page is already showing is
+   * left out — a card cannot move its issue into the sprint it is already in,
+   * and the server refuses that move regardless.
+   */
+  const activeSprint = sprints.find((one) => one.status === "ACTIVE") ?? null;
+  const upcomingSprint = nextOpenSprint(sprints, activeSprint ?? sprint);
+  const moveDestinations = [activeSprint, upcomingSprint]
+    .filter((one): one is NonNullable<typeof one> => one !== null)
+    .filter((one) => one.id !== sprint.id)
+    .map((one) => ({
+      id: one.id,
+      name: one.name,
+      startDate: one.startDate,
+      endDate: one.endDate,
+    }));
+
   const base = `/projects/${project.key.toLowerCase()}/sprints`;
   const back =
     from === "iterations"
@@ -186,27 +218,18 @@ export default async function ProjectSprintDetailsPage({
                   workRole={workRole}
                   currentUserId={user.id}
                   isAdmin={user.role === "ADMIN"}
-                  /* Where a card's Move to can send its work: this project's
-                     other sprints that are still open, from the same
-                     `loadSprints` read the rest of this page is drawn from. */
+                  /* Where a card's Move to can send its work: the project's
+                     current sprint and its upcoming one, computed above from
+                     the same `loadSprints` read the rest of this page is
+                     drawn from. */
                   previousSprints={previousSprints}
-                  otherOpenSprints={sprints
-                    .filter(
-                      (other) =>
-                        other.id !== sprint.id && other.status !== "COMPLETED",
-                    )
-                    .map((other) => ({ id: other.id, name: other.name }))}
+                  moveDestinations={moveDestinations}
                   /* Filling a sprint, emptying it or moving its work is every
                      working role's, and the server says so again. A completed
                      sprint is a closed record, so nothing moves out of one. */
                   canMoveIssues={
                     canEditSprintIssues(workRole) && sprint.status !== "COMPLETED"
                   }
-                  /* Offered only where there is one to reach — otherwise the
-                     entry is there and the move comes back "No future Sprint is
-                     available." Read from the same `loadSprints` above, so it
-                     costs nothing to ask. */
-                  hasNextSprint={canMoveToNextSprint(sprints, sprint)}
                 />
               </CardBody>
             </Card>

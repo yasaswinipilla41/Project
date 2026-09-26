@@ -8,10 +8,13 @@ import { useToast } from "@/components/ui/Toast";
 import { createSprint, updateSprint } from "@/server/sprints";
 
 /**
- * Create or edit a sprint: name, goal, and the dates it runs between.
+ * Create or edit a sprint.
  *
- * One dialog for both, because they ask for exactly the same four things and
- * a second form would be a second place for the validation to drift.
+ * One dialog for both, so a name, its dates and — once it exists — its goal
+ * share one form rather than two that could drift. Creating asks for a name
+ * and the dates it runs between; the goal is offered only once editing an
+ * existing sprint, which is when a team actually has one to write down.
+ * `goal` is still read and sent either way — see the field below.
  *
  * The dates are plain `<input type="date">` values — `YYYY-MM-DD`, the same
  * shape the Create Issue dialog sends for a due date — and the server reads
@@ -204,23 +207,31 @@ export function SprintFormDialog({
           ) : null}
         </div>
 
-        <div className="prio-field">
-          <label className="prio-label" htmlFor="sprint-goal">
-            Sprint goal
-          </label>
-          <textarea
-            id="sprint-goal"
-            className="prio-textarea"
-            rows={2}
-            value={goal}
-            maxLength={500}
-            placeholder="Complete notification module"
-            onChange={(event) => setGoal(event.target.value)}
-          />
-          {fieldErrors.goal ? (
-            <p className="prio-error">{fieldErrors.goal}</p>
-          ) : null}
-        </div>
+        {/* Asked for only when editing an existing sprint: a goal is
+            something a team settles on once the sprint is under way, not a
+            question the create form needs to hold up starting one for. The
+            field it hides is otherwise unchanged — same state, same schema,
+            same server-side support — so a sprint that already has a goal
+            keeps it, and this is the only place it is not offered. */}
+        {editing ? (
+          <div className="prio-field">
+            <label className="prio-label" htmlFor="sprint-goal">
+              Sprint goal
+            </label>
+            <textarea
+              id="sprint-goal"
+              className="prio-textarea"
+              rows={2}
+              value={goal}
+              maxLength={500}
+              placeholder="Complete notification module"
+              onChange={(event) => setGoal(event.target.value)}
+            />
+            {fieldErrors.goal ? (
+              <p className="prio-error">{fieldErrors.goal}</p>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="row g-3">
           <div className="col-12 col-sm-6">

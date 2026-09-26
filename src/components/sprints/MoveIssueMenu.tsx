@@ -5,17 +5,25 @@ import { useState } from "react";
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/Menu";
 import { IconArrowRight } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/Toast";
+import { formatDateRange } from "@/lib/format";
 import { moveIssueToSprint } from "@/server/sprints";
 
 type Destination =
   | { type: "BACKLOG" }
-  | { type: "NEXT_SPRINT" }
   | { type: "SPRINT"; sprintId: string }
   | { type: "PREVIOUS" };
 
+/** A sprint this menu can name as somewhere to move to. */
+export interface MoveDestination {
+  id: string;
+  name: string;
+  startDate: Date;
+  endDate: Date;
+}
+
 /**
- * Where one sprint issue can go: back to the sprint it came from, the next
- * open sprint, a specific other sprint in this project, or the backlog.
+ * Where one sprint issue can go: back to the sprint it came from, the
+ * project's current or upcoming sprint, or the backlog.
  *
  * Restore is offered only when there is somewhere to restore to — the issue
  * was moved here out of a sprint that is still open — and it names that
@@ -23,11 +31,15 @@ type Destination =
  * The destination is the issue's own record of the move, never anything this
  * menu chooses, so the server decides it and this only asks.
  *
- * Next sprint is offered on the same terms, for the same reason. A project
- * running its only sprint has none after it, and the entry used to be there
- * regardless — failing with "No future Sprint is available." every time it
- * was used. Whether there is one is worked out by the page from the sprints
- * it has already loaded; see `lib/sprintMove`.
+ * The current and upcoming sprints are offered the same way, each labelled
+ * with its own dates so two sprints of the same or similar name are never
+ * mistaken for each other. Neither is the sprint being read now — a card
+ * cannot move its issue into the sprint the issue is already in — and a
+ * project further from an active sprint than that has no other destinations
+ * to offer here: the later sprints stay reachable once they become the
+ * current or the upcoming one, not before. Working out which two sprints
+ * those are is the caller's job, from the project's own sprints; see
+ * `lib/sprintMove`'s `nextOpenSprint`, the one place that answers it.
  *
  * Offered to the same people the Add issues button is — filling a sprint,
  * emptying it or moving its issues elsewhere is every working role's, not a
@@ -37,22 +49,18 @@ type Destination =
 export function MoveIssueMenu({
   issueId,
   issueKey,
-  /** This project's other sprints that are not completed. */
-  otherOpenSprints,
+  /** At most the project's current sprint and its upcoming one, whichever of
+   *  the two is not the sprint this card is already read on. */
+  moveDestinations,
   previousSprint,
-  hasNextSprint = true,
   disabled,
 }: {
   issueId: string;
   issueKey: string;
-  otherOpenSprints: { id: string; name: string }[];
+  moveDestinations: MoveDestination[];
   /** The still-open sprint this issue was moved out of, when there is one —
    *  what Restore puts it back into. Absent means no Restore is offered. */
   previousSprint?: { id: string; name: string } | null;
-  /** Whether this issue's sprint has an open one on or after it. Defaults to
-   *  offering the move, so a caller that does not know keeps the old
-   *  behaviour and the server still has the final word. */
-  hasNextSprint?: boolean;
   disabled?: boolean;
 }) {
   const router = useRouter();
@@ -96,20 +104,15 @@ export function MoveIssueMenu({
           Restore to {previousSprint.name}
         </MenuItem>
       ) : null}
-      {hasNextSprint ? (
-        <MenuItem onSelect={() => void move({ type: "NEXT_SPRINT" })}>
-          Next sprint
-        </MenuItem>
-      ) : null}
-      {otherOpenSprints.length > 0 ? (
+      {moveDestinations.length > 0 ? (
         <>
           <MenuSeparator />
-          {otherOpenSprints.map((sprint) => (
+          {moveDestinations.map((sprint) => (
             <MenuItem
               key={sprint.id}
               onSelect={() => void move({ type: "SPRINT", sprintId: sprint.id })}
             >
-              {sprint.name}
+              {sprint.name} ({formatDateRange(sprint.startDate, sprint.endDate)})
             </MenuItem>
           ))}
         </>

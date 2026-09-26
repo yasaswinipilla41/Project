@@ -119,7 +119,9 @@ async function createSprintThroughUi(page: Page, projectKey: string, name: strin
   await expect(dialog).toBeVisible();
 
   await dialog.getByLabel("Sprint name").fill(name);
-  await dialog.getByLabel("Sprint goal").fill("Complete notification module");
+  /* Sprint goal is not asked for while creating — see
+     `sprint-create-no-goal.spec.ts` — so this fixture leaves it unset, the
+     same as anyone using the real form would. */
   await dialog.getByLabel("Start date").fill(dateValue(0));
   await dialog.getByLabel("End date").fill(dateValue(13));
   await dialog.getByRole("button", { name: "Create sprint" }).click();
@@ -146,11 +148,10 @@ test.describe("The sprint workflow", () => {
     await createSprintThroughUi(page, key, name);
     const card = sprintCard(page, name);
 
-    // Planned, with the goal and dates it was given.
+    // Planned, with the dates it was given and no goal — the create form does
+    // not ask for one; see `sprint-create-no-goal.spec.ts`.
     await expect(card.locator(".prio-sprint__status")).toHaveText(/planned/i);
-    await expect(card.locator(".prio-sprint__goal")).toHaveText(
-      "Complete notification module",
-    );
+    await expect(card.locator(".prio-sprint__goal")).toHaveCount(0);
 
     /* An empty sprint cannot be started — a sprint is a commitment to a set of
        work, so there has to be some. */
