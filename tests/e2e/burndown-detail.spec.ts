@@ -116,6 +116,306 @@ async function seedRunningSprint() {
   };
 }
 
+/**
+ * A running sprint whose scope moved.
+ *
+ * Twenty hours on its first day; ten more arrive on the fourth, recorded the
+ * way `updateIssue` records a move between sprints — an activity entry naming
+ * the sprint the issue joined — and an issue is handed to testing on the
+ * sixth. Both are read back through the real query, so what the chart draws
+ * is what the trail says.
+ */
+async function seedSprintWithScopeChange() {
+  const admin = await prisma.user.findFirstOrThrow({
+    where: { role: "ADMIN" },
+    select: { id: true, name: true },
+  });
+  const key = `SC${Date.now().toString(36).toUpperCase()}`.slice(0, 10);
+  const project = await prisma.project.create({
+    data: {
+      key,
+      name: `Burndown scope fixture ${key}`,
+      createdById: admin.id,
+      members: { create: { userId: admin.id } },
+      issueSequence: 3,
+    },
+    select: { id: true, key: true },
+  });
+  createdProjects.push(project.id);
+
+  const start = ago(7);
+  const sprint = await prisma.sprint.create({
+    data: {
+      name: `E2E burndown scope ${Date.now()}`,
+      startDate: start,
+      endDate: new Date(Date.now() + 6 * DAY),
+      projectId: project.id,
+      createdById: admin.id,
+      status: "ACTIVE",
+      startedAt: start,
+    },
+    select: { id: true, name: true },
+  });
+
+  const issue = async (
+    number: number,
+    title: string,
+    effortHours: number,
+    status: "TODO" | "IN_QA",
+  ) =>
+    prisma.issue.create({
+      data: {
+        projectId: project.id,
+        key: `${project.key}-${number}`,
+        number,
+        title,
+        type: "TASK",
+        status,
+        reporterId: admin.id,
+        assigneeId: admin.id,
+        sprintId: sprint.id,
+        effortHours,
+        remainingHours: effortHours,
+      },
+      select: { id: true, key: true },
+    });
+
+  /* Committed from the first day. */
+  await issue(1, "Twenty hours, planned", 20, "TODO");
+
+  /* Arrived on the fourth day: the sprint's name on the right of the move is
+     what makes it a joining, exactly as `loadBurndown` reads it. */
+  const added = await issue(2, "Ten hours, added later", 10, "TODO");
+  await prisma.activityLogEntry.create({
+    data: {
+      issueId: added.id,
+      actorId: admin.id,
+      action: "issue.updated",
+      field: "sprintId",
+      oldValue: null,
+      newValue: sprint.name,
+      createdAt: ago(4),
+    },
+  });
+
+  /* And handed to testing on the sixth, which burns nothing at all. */
+  const toQa = await issue(3, "Handed to testing", 0, "IN_QA");
+  await prisma.activityLogEntry.create({
+    data: {
+      issueId: toQa.id,
+      actorId: admin.id,
+      action: "issue.updated",
+      field: "status",
+      oldValue: "IN_REVIEW",
+      newValue: "IN_QA",
+      createdAt: ago(2),
+    },
+  });
+
+  return {
+    key: project.key.toLowerCase(),
+    sprintId: sprint.id,
+    added,
+    toQa,
+  };
+}
+
+/**
+ * A running sprint with one very busy day.
+ *
+ * Five issues re-estimated and their remainders rewritten on the same day —
+ * ten changes for one point on the line, which is more than a panel can list
+ * beside a point on any screen. Long titles, because a row that wraps onto two
+ * lines is what makes such a panel taller than the room it has.
+ */
+async function seedBusyDay() {
+  const admin = await prisma.user.findFirstOrThrow({
+    where: { role: "ADMIN" },
+    select: { id: true },
+  });
+  const key = `BZ${Date.now().toString(36).toUpperCase()}`.slice(0, 10);
+  const project = await prisma.project.create({
+    data: {
+      key,
+      name: `Burndown busy fixture ${key}`,
+      createdById: admin.id,
+      members: { create: { userId: admin.id } },
+      issueSequence: 5,
+    },
+    select: { id: true, key: true },
+  });
+  createdProjects.push(project.id);
+
+  const start = ago(7);
+  const sprint = await prisma.sprint.create({
+    data: {
+      name: `E2E burndown busy ${Date.now()}`,
+      startDate: start,
+      endDate: new Date(Date.now() + 6 * DAY),
+      projectId: project.id,
+      createdById: admin.id,
+      status: "ACTIVE",
+      startedAt: start,
+    },
+    select: { id: true },
+  });
+
+  const titles = [
+    "Session expiry signs the user out of every open tab at once",
+    "Board columns lose their order after a drag that fails to save",
+    "Sprint report counts an issue twice when it moves mid-sprint",
+    "Notification digest sends yesterday's items again each morning",
+    "Search ignores the project filter for keys typed in lower case",
+  ];
+
+  for (const [index, title] of titles.entries()) {
+    const issue = await prisma.issue.create({
+      data: {
+        projectId: project.id,
+        key: `${project.key}-${index + 1}`,
+        number: index + 1,
+        title,
+        type: "TASK",
+        status: "IN_PROGRESS",
+        reporterId: admin.id,
+        assigneeId: admin.id,
+        sprintId: sprint.id,
+        effortHours: 4,
+        remainingHours: 4,
+      },
+      select: { id: true },
+    });
+    /* Both halves of a re-estimate, on the third day: the estimate, then the
+       remainder that follows it. Two rows per issue, ten in all. */
+    for (const field of ["effortHours", "remainingHours"] as const) {
+      await prisma.activityLogEntry.create({
+        data: {
+          issueId: issue.id,
+          actorId: admin.id,
+          action: "issue.updated",
+          field,
+          oldValue: "2",
+          newValue: "4",
+          createdAt: ago(3),
+        },
+      });
+    }
+  }
+
+  return { key: project.key.toLowerCase(), sprintId: sprint.id };
+}
+
+/**
+ * A sprint already burned to nothing, days ago.
+ *
+ * Eight hours, finished on the third day, so every day since sits on the floor
+ * of the plot — the row of points along the very bottom that a real sprint's
+ * quiet week is full of. That is the shape the placement is most tempted to
+ * answer badly for: the panel reading in the flow *under* the chart is only a
+ * few pixels from a point that low, so it used to measure as the closest
+ * position going and win, whenever the page happened to be scrolled far enough
+ * for it to be on screen.
+ */
+async function seedBurnedToZero() {
+  const admin = await prisma.user.findFirstOrThrow({
+    where: { role: "ADMIN" },
+    select: { id: true },
+  });
+  const key = `BF${Date.now().toString(36).toUpperCase()}`.slice(0, 10);
+  const project = await prisma.project.create({
+    data: {
+      key,
+      name: `Burndown floor fixture ${key}`,
+      createdById: admin.id,
+      members: { create: { userId: admin.id } },
+      issueSequence: 1,
+    },
+    select: { id: true, key: true },
+  });
+  createdProjects.push(project.id);
+
+  const start = ago(7);
+  const sprint = await prisma.sprint.create({
+    data: {
+      name: `E2E burndown floor ${Date.now()}`,
+      startDate: start,
+      endDate: new Date(Date.now() + 6 * DAY),
+      projectId: project.id,
+      createdById: admin.id,
+      status: "ACTIVE",
+      startedAt: start,
+    },
+    select: { id: true },
+  });
+
+  const done = await prisma.issue.create({
+    data: {
+      projectId: project.id,
+      key: `${project.key}-1`,
+      number: 1,
+      title: "Eight hours, finished on the third day",
+      type: "TASK",
+      status: "DONE",
+      reporterId: admin.id,
+      assigneeId: admin.id,
+      sprintId: sprint.id,
+      effortHours: 8,
+      remainingHours: 8,
+    },
+    select: { id: true },
+  });
+  await prisma.activityLogEntry.create({
+    data: {
+      issueId: done.id,
+      actorId: admin.id,
+      action: "issue.updated",
+      field: "status",
+      oldValue: "IN_PROGRESS",
+      newValue: "DONE",
+      createdAt: ago(5),
+    },
+  });
+
+  /*
+   * And then twenty hours arrive two days ago, which lifts the line off the
+   * floor behind those days.
+   *
+   * That rise is the other half of the shape. A panel above or beside a point
+   * on the floor lies across the climb, which counts against it — and while
+   * covering the line counted for more than being beside the point, that was
+   * enough to send the panel under the chart.
+   */
+  const late = await prisma.issue.create({
+    data: {
+      projectId: project.id,
+      key: `${project.key}-2`,
+      number: 2,
+      title: "Twenty hours, added two days ago",
+      type: "TASK",
+      status: "IN_PROGRESS",
+      reporterId: admin.id,
+      assigneeId: admin.id,
+      sprintId: sprint.id,
+      effortHours: 20,
+      remainingHours: 20,
+    },
+    select: { id: true },
+  });
+  await prisma.activityLogEntry.create({
+    data: {
+      issueId: late.id,
+      actorId: admin.id,
+      action: "issue.updated",
+      field: "effortHours",
+      oldValue: null,
+      newValue: "20",
+      createdAt: ago(2),
+    },
+  });
+
+  return { key: project.key.toLowerCase(), sprintId: sprint.id };
+}
+
 test.describe("The burndown's detail", () => {
   test("shows what the sprint is made of, and what each day is made of", async ({
     page,
