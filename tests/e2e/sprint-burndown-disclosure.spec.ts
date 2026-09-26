@@ -177,7 +177,7 @@ test.describe("the Burndown Chart button", () => {
     await expect(page.locator("polyline.prio-burndown__ideal")).toHaveCount(1);
     await expect(page.locator("polyline.prio-burndown__actual")).toHaveCount(1);
 
-    /* The heading the panel is named by, and the six figures, all inside the
+    /* The heading the panel is named by, and its figures, all inside the
        panel rather than loose on the page. */
     await expect(
       panel(page).getByRole("heading", { name: "Burndown Chart" }),
@@ -186,20 +186,26 @@ test.describe("the Burndown Chart button", () => {
       .locator(".prio-burndown__figure")
       .evaluateAll((nodes) =>
         nodes.map((node) => [
-          node.querySelector("dt")!.textContent!.trim(),
-          node.querySelector("dd")!.textContent!.trim(),
+          node.querySelector("dt")!.textContent!.replace(/\s+/g, " ").trim(),
+          node.querySelector("dd")!.textContent!.replace(/\s+/g, " ").trim(),
         ]),
       );
-    /* All six, and each one's arithmetic: 12 hours committed across two
-       issues, 4 of them finished. Read from the panel, so this is the chart
-       the button opened rather than a figure from the sprint's own strip. */
+    /*
+     * Each figure's own arithmetic, over 12 hours committed across two
+     * issues with 4 of them finished and no scope change since: Initial and
+     * Total agree, Completed Issues reads as a ratio, and Sprint Progress is
+     * completed effort over total (4 of 12, rounded). Read from the panel,
+     * so this is the chart the button opened rather than a figure from the
+     * sprint's own strip.
+     */
     expect(figures).toEqual([
+      ["Initial Effort", "12h"],
       ["Total Effort", "12h"],
       ["Completed Effort", "4h"],
       ["Remaining Effort", "8h"],
-      ["Total Issues", "2"],
-      ["Completed Issues", "1"],
-      ["Remaining Issues", "1"],
+      ["Completed Issues", "1/2"],
+      ["Scope Changes", "None"],
+      ["Sprint Progress of effort", "33%"],
     ]);
 
     /*
