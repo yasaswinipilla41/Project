@@ -50,6 +50,15 @@ export interface MenuProps {
   width?: number | string;
   label?: string;
   className?: string;
+  /**
+   * Told whenever the panel opens or closes.
+   *
+   * For a menu whose contents have to be fetched: opening is the moment the
+   * request is worth making, and nothing outside can see that moment because
+   * the open state is this component's own. Optional, and every existing menu
+   * passes nothing and behaves exactly as before.
+   */
+  onOpenChange?: (open: boolean) => void;
 }
 
 export function Menu({
@@ -60,6 +69,7 @@ export function Menu({
   width,
   label,
   className,
+  onOpenChange,
 }: MenuProps) {
   const [open, setOpen] = useState(false);
   const menuId = useId();
@@ -112,11 +122,48 @@ export function Menu({
        is anchored to a trigger that may sit inside its own scrollport. */
     window.addEventListener("scroll", place, true);
     window.addEventListener("resize", place);
+
+    /*
+     * And when the panel's own contents change size.
+     *
+     * A menu whose items are fetched opens at the height of its loading row
+     * and then grows to the height of the list, and the coordinates measured
+     * for the first would place the second wrongly — a panel that had flipped
+     * above its trigger would grow back down across it. Re-measuring settles
+     * immediately: `place` writes the same coordinates for the same size, so
+     * the observer stops firing rather than chasing itself.
+     */
+    const panel = menuRef.current;
+    const observer =
+      panel && typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(() => place())
+        : null;
+    if (panel && observer) observer.observe(panel);
+
     return () => {
+      observer?.disconnect();
       window.removeEventListener("scroll", place, true);
       window.removeEventListener("resize", place);
     };
   }, [open, place]);
+
+  /*
+   * Whoever owns the menu's contents, told that they are now on screen.
+   *
+   * In an effect rather than at each `setOpen`, so every route into and out of
+   * the open state — the trigger, Escape, a click outside, Tab, choosing an
+   * item — reports itself without having to remember to. Held in a ref so the
+   * effect depends on `open` alone: a caller that passes a fresh closure on
+   * every render would otherwise be told "still open" on every render too,
+   * which for a caller that fetches on open is a request loop.
+   */
+  const notifyOpen = useRef(onOpenChange);
+  useEffect(() => {
+    notifyOpen.current = onOpenChange;
+  }, [onOpenChange]);
+  useEffect(() => {
+    notifyOpen.current?.(open);
+  }, [open]);
 
   const close = useCallback(
     (returnFocus = true) => {
@@ -126,13 +173,37 @@ export function Menu({
     [],
   );
 
-  // Focus the first item when the menu opens by keyboard or click.
+  /*
+   * Focus the first item when the menu opens by keyboard or click — and again
+   * if the items only arrive afterwards.
+   *
+   * A menu whose rows are fetched has none to focus at the moment it opens, so
+   * focus stayed on the trigger and the arrow keys — handled on the panel —
+   * never reached anything: the list was on screen and unreachable from the
+   * keyboard. The observer covers that, and the guard is what keeps it from
+   * being a nuisance anywhere else: once focus is inside the panel, a row
+   * being ticked, a list re-filtered or a note replaced moves nothing.
+   */
   useEffect(() => {
     if (!open) return;
-    const first = menuRef.current?.querySelector<HTMLElement>(
-      '[role="menuitem"]:not([aria-disabled="true"]),[role="menuitemradio"]:not([aria-disabled="true"])',
-    );
-    first?.focus();
+    const panel = menuRef.current;
+    if (!panel) return;
+
+    const focusFirst = () => {
+      if (panel.contains(document.activeElement)) return;
+      panel
+        .querySelector<HTMLElement>(
+          '[role="menuitem"]:not([aria-disabled="true"]),[role="menuitemradio"]:not([aria-disabled="true"])',
+        )
+        ?.focus();
+    };
+
+    focusFirst();
+
+    if (typeof MutationObserver === "undefined") return;
+    const observer = new MutationObserver(focusFirst);
+    observer.observe(panel, { childList: true, subtree: true });
+    return () => observer.disconnect();
   }, [open]);
 
   useEffect(() => {

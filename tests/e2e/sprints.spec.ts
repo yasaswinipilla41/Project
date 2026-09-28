@@ -239,6 +239,18 @@ test.describe("The sprint workflow", () => {
     await expect(closing).toBeHidden();
 
     // ---------------------------------------------------------- history
+    /*
+     * A completed sprint is history, and history is behind the Completed
+     * sprints control rather than under the live sprints — so it is opened
+     * before it is read. The count on the control is how the page says there
+     * is something in there at all.
+     */
+    const history = page.getByRole("button", { name: /Completed sprints/i });
+    await expect(history).toBeVisible();
+    await expect(history).toHaveAttribute("aria-expanded", "false");
+    await history.click();
+    await expect(history).toHaveAttribute("aria-expanded", "true");
+
     const done = sprintCard(page, name);
     await expect(done.locator(".prio-sprint__status")).toHaveText(/completed/i);
 

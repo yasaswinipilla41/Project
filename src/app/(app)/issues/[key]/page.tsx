@@ -19,6 +19,7 @@ import {
   ParentControl,
 } from "@/components/issues/EditableIssueFields";
 import { IssueDetailActions } from "@/components/issues/IssueDetailActions";
+import { MoveToSprintControl } from "@/components/sprints/MoveToSprintControl";
 import { SubmitWorkButton } from "@/components/issues/SubmitWorkButton";
 import { TestResultPanel } from "@/components/issues/TestResultPanel";
 import { ReportBugDialog } from "@/components/issues/ReportBugDialog";
@@ -50,6 +51,7 @@ import {
   canEditDueDate,
   canEditIssueName,
   canEditPriority,
+  canEditSprintIssues,
   doesDeveloperWork,
   doesQaWork,
   isClosedStatus,
@@ -115,6 +117,10 @@ async function loadIssue(rawKey: string, user: CurrentUser) {
       versionBuild: true,
       affectedModule: true,
       project: { select: { id: true, key: true, name: true } },
+      /* Which sprint this work sits in, for the Details panel's Sprint row.
+         Its status comes with it: a completed sprint is a closed record, and
+         the row has to be able to say so rather than offer a move out of it. */
+      sprint: { select: { id: true, name: true, status: true } },
       parentId: true,
       assignee: { select: { id: true, name: true, image: true } },
       reporter: { select: { id: true, name: true, image: true } },
@@ -650,6 +656,29 @@ export default async function IssueDetailPage({
                 </Link>
               </MetaRow>
 
+              {/*
+               * Which sprint this work is in, and the way to move it to
+               * another one.
+               *
+               * Beneath Project deliberately: a sprint belongs to exactly one
+               * project, and the destinations this offers are that project's —
+               * reading the two rows in that order is reading why. The control
+               * writes through `moveIssueToSprint`, the same server action the
+               * sprint board's Move to calls, and its own read decides what is
+               * eligible; nothing about which sprints are offered is settled
+               * here. `canEditSprintIssues` is the one capability behind both,
+               * so the row that offers a move and the action that accepts one
+               * cannot disagree.
+               */}
+              <MetaRow label="Sprint">
+                <MoveToSprintControl
+                  issueId={issue.id}
+                  issueKey={issue.key}
+                  sprint={issue.sprint}
+                  canMove={canEditSprintIssues(workRole)}
+                />
+              </MetaRow>
+
               {issue.labels.length > 0 ? (
                 <MetaRow label="Labels">
                   <span className="prio-labelrow">
@@ -731,8 +760,20 @@ export default async function IssueDetailPage({
                 </span>
               </MetaRow>
 
+              {/*
+                * When this record last changed — a comment, a status, a
+                * sprint, a label, an estimate.
+                *
+                * Titled so it cannot be read as effort consumed, which is the
+                * one thing it is routinely mistaken for: an item touched five
+                * days ago has not had five days of work put into it, and
+                * nothing in Prio reduces Remaining because time has passed.
+                * See `remainingEffort`.
+                */}
               <MetaRow label="Updated">
-                <span title={formatDateTime(issue.updatedAt)}>
+                <span
+                  title={`This record last changed on ${formatDateTime(issue.updatedAt)}. It is not a measure of time spent on the work.`}
+                >
                   {formatRelative(issue.updatedAt)}
                 </span>
               </MetaRow>
@@ -790,10 +831,30 @@ export default async function IssueDetailPage({
               <MetaRow label="Effort">
                 <EffortControl
                   issueId={issue.id}
+                  /* Closed work has nothing left, whatever the column says —
+                     `lib/burndown`'s own rule, which the chart has always
+                     applied and this panel did not. See `remainingEffort`. */
+                  status={issue.status}
                   effortHours={issue.effortHours}
                   remainingHours={issue.remainingHours}
                 />
               </MetaRow>
+
+              {/*
+                * What the two boxes above mean, in one line.
+                *
+                * Effort, Remaining and Updated sit within a few rows of each
+                * other and are read together, and the conclusion somebody
+                * reaches unaided is that the gap between them is work done.
+                * It is not: Prio logs no hours against an item, so a
+                * remainder moves when somebody revises it and at no other
+                * time. Saying so here costs a line and settles it.
+                */}
+              <p className="prio-issue__fieldnote">
+                An estimate, and how much of it somebody says is left. Prio
+                does not log time against work, so neither figure moves on its
+                own.
+              </p>
             </CardBody>
           </Card>
         </div>

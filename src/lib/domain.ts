@@ -61,6 +61,66 @@ export function isClosedStatus(status: IssueStatus): boolean {
   return (CLOSED_STATUSES as readonly IssueStatus[]).includes(status);
 }
 
+/* --------------------------------------------------------------- effort */
+
+/**
+ * What one work item has left to do, right now.
+ *
+ * Prio holds two numbers and deliberately not three. **Effort** is what the
+ * work was estimated to need, written once and never derived. **Remaining** is
+ * a judgement somebody revises as they go — it is not "estimate minus hours
+ * worked", because Prio does not ask anybody to log hours against an item and
+ * subtracting them would produce a third number that is neither.
+ *
+ * Nothing here reads a clock. An item's `updatedAt` says when its row last
+ * changed — a comment, a status, a sprint, a label — and says nothing whatever
+ * about effort consumed. An estimate of two hours that nobody has revised still
+ * has two hours left a fortnight later, and that is the correct answer, not a
+ * stale one.
+ *
+ * The rule, in order:
+ *
+ *   1. **Nothing at all, if the work was never quantified.** No estimate and
+ *      no recorded remainder means nobody has said, and closing the work does
+ *      not make anybody have said. Answering zero here would be the one thing
+ *      Prio is careful never to do: an empty field means nobody has said, zero
+ *      means there is nothing left to do, and they are different answers.
+ *      Closing an unestimated item tells you it is finished — it does not tell
+ *      you it was nought hours.
+ *   2. **Nothing, if the work is closed.** Done, Reject / Not an Issue and
+ *      Cancelled are work nobody has left to do, whatever anybody last said
+ *      was remaining on them. Finishing an item in Prio does not write to its
+ *      remainder, so the stored column goes stale the moment work is closed.
+ *   3. Otherwise the remainder somebody recorded.
+ *   4. Otherwise the estimate — nobody has revised it, so all of it is left,
+ *      which is exactly what `updateIssue` seeds the column with when an
+ *      estimate first arrives.
+ *
+ * Steps 2 to 4 are `lib/burndown`'s own rule for the live moment — see
+ * `remainderAt`, which applies them at an arbitrary past cutoff from the
+ * activity trail instead of to the row as it stands. That chart already
+ * answered "nothing" for closed work while the issue page read the stale
+ * column verbatim, so the same sprint could report a finished item as both 0h
+ * and 2h left. One rule, stated once, is what stops those two disagreeing.
+ * Step 1 is this reading's own: the chart counts unestimated work in
+ * `unestimated` rather than drawing it, and a panel has to say the same thing
+ * in words.
+ *
+ * It reads; it never writes. The stored `remainingHours` is left exactly as it
+ * is on purpose: the burndown's own step needs the reading somebody actually
+ * recorded, and an item that is reopened must not keep a nought it never had.
+ */
+export function remainingEffort(work: {
+  status: IssueStatus;
+  effortHours: number | null;
+  remainingHours: number | null;
+}): number | null {
+  if (work.effortHours === null && work.remainingHours === null) return null;
+  if (isClosedStatus(work.status)) return 0;
+  if (work.remainingHours !== null) return work.remainingHours;
+  return work.effortHours;
+}
+
 /* ------------------------------------------------------- status workflow */
 
 /**

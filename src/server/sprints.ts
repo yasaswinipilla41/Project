@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import type { SprintStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
   assertCanCompleteSprint,
@@ -15,11 +16,13 @@ import {
 } from "@/lib/authz";
 import { isClosedStatus } from "@/lib/domain";
 import { requireUser } from "@/lib/session";
+import { OPEN_SPRINT_STATUSES } from "@/lib/sprintMove";
 import { recordFieldChanges } from "@/server/activity";
 import {
   completeSprintSchema,
   createSprintSchema,
   fieldErrors,
+  issueSprintOptionsSchema,
   moveIssueSchema,
   sprintIdSchema,
   sprintIssueSchema,
@@ -584,6 +587,123 @@ export async function completeSprint(
 /* --------------------------------------------------------------- move to */
 
 /**
+ * The sprints one issue may be moved into, and the one it is in now.
+ *
+ * This is the read behind the issue page's Move to sprint control, and it is
+ * deliberately the *same* rule `moveIssueToSprint` enforces rather than a
+ * second, friendlier version of it:
+ *
+ *  - the caller must be signed in (`requireUser`);
+ *  - the issue must exist, and is read by id from the database — the project
+ *    it belongs to is never taken from the request;
+ *  - the caller must be able to open that project (`assertProjectAccess`);
+ *  - the caller must be allowed to move sprint issues at all
+ *    (`assertCanEditSprintIssues`), which is the same capability the sprint
+ *    board's Move to and `addIssuesToSprint` read;
+ *  - the destinations are this issue's own project's sprints, so no sprint
+ *    from a project the caller happens to be able to see can appear;
+ *  - and only sprints that can still receive work — `OPEN_SPRINT_STATUSES`,
+ *    the one list `nextOpenSprint` filters on too. A completed sprint is a
+ *    closed record, which is why `moveIssueToSprint` refuses one as a
+ *    destination, so offering one here would be offering a move that cannot
+ *    happen.
+ *
+ * Nothing is hidden behind the UI by this: a caller that never opens the
+ * control and posts a sprint id straight at `moveIssueToSprint` is checked
+ * against exactly these rules again. This exists so the control does not offer
+ * a move the server would refuse — not so the server can stop checking.
+ */
+export interface EligibleSprints {
+  /**
+   * The sprint the issue is in now, whatever its status — including a
+   * completed one, because the page has to be able to say where the work sat.
+   * Null for an issue in the backlog.
+   */
+  current: {
+    id: string;
+    name: string;
+    status: SprintStatus;
+  } | null;
+  /** Every sprint this issue may be moved into, soonest first. */
+  sprints: {
+    id: string;
+    name: string;
+    status: SprintStatus;
+    startDate: Date;
+    endDate: Date;
+  }[];
+  /**
+   * True when the issue's own sprint has been completed. Its membership is
+   * part of that sprint's record, so `moveIssueToSprint` refuses to move it
+   * anywhere — there is nothing eligible, and the reason is not "no sprints
+   * exist".
+   */
+  locked: boolean;
+  /** Whether the issue is in no sprint at all, so Backlog is not a move. */
+  inBacklog: boolean;
+}
+
+export async function eligibleSprintsForIssue(
+  raw: unknown,
+): Promise<SprintActionResult<EligibleSprints>> {
+  try {
+    const user = await requireUser();
+
+    const parsed = issueSprintOptionsSchema.safeParse(raw);
+    if (!parsed.success) {
+      return { ok: false, error: "That issue could not be read." };
+    }
+
+    const issue = await prisma.issue.findUnique({
+      where: { id: parsed.data.issueId },
+      select: {
+        id: true,
+        projectId: true,
+        sprintId: true,
+        sprint: { select: { id: true, name: true, status: true } },
+      },
+    });
+    if (!issue) throw new NotFoundError("This issue no longer exists.");
+
+    await assertProjectAccess(user, issue.projectId);
+    await assertCanEditSprintIssues(user);
+
+    const locked = issue.sprint?.status === "COMPLETED";
+
+    /* Scoped to the issue's own project in the query, not filtered afterwards:
+       another project's sprint is never read, let alone returned. */
+    const sprints = locked
+      ? []
+      : await prisma.sprint.findMany({
+          where: {
+            projectId: issue.projectId,
+            status: { in: [...OPEN_SPRINT_STATUSES] },
+          },
+          orderBy: [{ startDate: "asc" }, { createdAt: "asc" }],
+          select: {
+            id: true,
+            name: true,
+            status: true,
+            startDate: true,
+            endDate: true,
+          },
+        });
+
+    return {
+      ok: true,
+      data: {
+        current: issue.sprint,
+        sprints,
+        locked,
+        inBacklog: issue.sprintId === null,
+      },
+    };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/**
  * Move one issue to the next open sprint, a specific other sprint, or the
  * backlog.
  *
@@ -722,7 +842,7 @@ export async function moveIssueToSprint(
       const next = await prisma.sprint.findFirst({
         where: {
           projectId: issue.projectId,
-          status: { in: ["PLANNED", "ACTIVE"] },
+          status: { in: [...OPEN_SPRINT_STATUSES] },
           ...(issue.sprintId ? { id: { not: issue.sprintId } } : {}),
           ...(issue.sprint
             ? { startDate: { gte: issue.sprint.startDate } }
