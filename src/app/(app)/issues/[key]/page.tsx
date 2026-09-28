@@ -46,6 +46,7 @@ import {
   IconWarning,
 } from "@/components/ui/Icon";
 import { issueScope, workRoleOf } from "@/lib/authz";
+import { listLaneMembers } from "@/server/queries/workStatus";
 import {
   ISSUE_TYPE_LABEL,
   canEditDueDate,
@@ -273,9 +274,24 @@ export default async function IssueDetailPage({
    * themselves* through Start and Take over, which can only ever name them.
    * A tester never had this control: `updateIssue` has always refused them the
    * assignee outright.
+   *
+   * One narrowing, for work that is Ready for QA: it is waiting to be tested,
+   * so the names offered are the project's testers rather than everybody on it.
+   * `listLaneMembers("QA", …)` is the same list the Assign Work to QA dialog
+   * draws — active, on this project, doing the QA half of the job — and
+   * `updateIssue` refuses anybody else outright, so this is the offer agreeing
+   * with the rule rather than being it.
    */
   const assignableMembers =
-    workRole === "ADMIN" ? members.map((m) => m.user) : [];
+    workRole !== "ADMIN"
+      ? []
+      : issue.status === "IN_REVIEW"
+        ? (await listLaneMembers("QA", issue.project.id)).map((person) => ({
+            id: person.id,
+            name: person.name,
+            image: person.image,
+          }))
+        : members.map((m) => m.user);
 
   // Activity stores ids for relational fields; resolve them to names once.
   const names: NameLookup = {};

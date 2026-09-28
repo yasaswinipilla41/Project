@@ -67,6 +67,57 @@ test.describe("No horizontal overflow", () => {
       }
     });
   }
+
+  /**
+   * And inside each panel, which the measurement above cannot see.
+   *
+   * A card holding content wider than itself does not widen the *document* —
+   * the card's own box is where that overflow stops being counted — so a
+   * control that will not shrink can spill past a panel's padding, or be cut
+   * off by it, while every assertion above still passes. That is how the issue
+   * Details panel came to lose the right-hand edge of its Effort boxes at
+   * 320px: a fixed label column left about 150px for a value that could not go
+   * below 163px.
+   *
+   * Only the narrow widths, because this is a question about running out of
+   * room, and only panels that are not meant to scroll — a table wrapper or a
+   * board column overflowing itself is the intended pattern, and says so with
+   * its own `overflow-x`.
+   */
+  for (const width of [320, 360, 375, 390] as const) {
+    test(`no panel is narrower than its own content at ${width}px`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 900 });
+
+      for (const target of PAGES) {
+        await page.goto(target.path);
+        await page.waitForTimeout(250);
+
+        const tight = await page.evaluate(() =>
+          [...document.querySelectorAll(".prio-card")]
+            .filter((el) => {
+              const style = getComputedStyle(el);
+              if (style.display === "none") return false;
+              if (style.overflowX === "auto" || style.overflowX === "scroll") {
+                return false;
+              }
+              return el.scrollWidth > el.clientWidth + 1;
+            })
+            .map((el) => {
+              const cls =
+                typeof el.className === "string" ? el.className.trim() : "";
+              return `${cls.split(/\s+/).filter(Boolean).join(".")} (${el.clientWidth}px holding ${el.scrollWidth}px)`;
+            }),
+        );
+
+        expect(
+          tight,
+          `${target.name} (${target.path}) has a panel too narrow for its content at ${width}px`,
+        ).toEqual([]);
+      }
+    });
+  }
 });
 
 test.describe("Navigation adapts rather than shrinking", () => {

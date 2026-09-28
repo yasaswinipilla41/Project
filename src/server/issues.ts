@@ -16,7 +16,9 @@ import {
   AuthorizationError,
   NotFoundError,
   ProjectAtCapacityError,
+  WORK_TEAM_SLUGS,
   assertCanCreateWork,
+  workRoleFromTeams,
   workRoleOf,
   workRolesFor,
 } from "@/lib/authz";
@@ -60,6 +62,9 @@ import {
   type FieldErrors,
 } from "@/server/schemas";
 import { createIssueLink } from "@/server/links";
+import { planBacklogAllocation } from "@/lib/backlogAllocation";
+import { eligibleDeveloperCandidates } from "@/server/queries/backlogAllocation";
+import { laneAcceptsWorkRole } from "@/lib/workLanes";
 
 /**
  * Issue, story and bug writes.
@@ -440,6 +445,47 @@ export async function createIssue(
       return issue;
     });
 
+    /*
+     * A tester's unclaimed backlog item is a request for somebody to pick it
+     * up, so Prio picks somebody.
+     *
+     * Only for a pure tester, and only for work they left in the backlog with
+     * nobody's name on it — the two facts that make it a request rather than a
+     * decision. An administrator parking work in the backlog is planning, and
+     * they have the Auto-assign backlog dialog for when they want it dealt out;
+     * anybody who builds is filing work they may be about to start. Neither is
+     * touched.
+     *
+     * Deliberately after the transaction rather than inside it. If this cannot
+     * run, the issue is already safely stored as Backlog and unassigned, which
+     * is exactly the state the rule falls back to when nobody is eligible — so
+     * a failure here costs the hand-out and never the work.
+     *
+     * Which is also why it is caught rather than allowed to escape: the work
+     * was raised and stored, and reporting the creation as failed would be
+     * false. It is logged the way every other server-side fault here is, so it
+     * is recoverable rather than invisible — an administrator can still deal
+     * the item out from Auto-assign backlog.
+     */
+    if (filesAsTester && status === "BACKLOG" && !input.assigneeId) {
+      try {
+        await handOutNewBacklogWork({
+          issueId: created.id,
+          issueKey: created.key,
+          issueTitle: created.title,
+          type: created.type,
+          priority: input.priority,
+          projectId: input.projectId,
+          actorId: user.id,
+        });
+      } catch (error) {
+        console.error(
+          `[prio] automatic assignment failed for ${created.key}:`,
+          error,
+        );
+      }
+    }
+
     revalidateIssueSurfaces(created.project.key, created.key);
 
     return {
@@ -455,6 +501,123 @@ export async function createIssue(
   } catch (error) {
     return failure(error);
   }
+}
+
+/**
+ * Handing one newly raised backlog item to whoever is free to build it.
+ *
+ * Nothing about *who* is decided here. The candidates are
+ * `eligibleDeveloperCandidates` — the project's members who do development
+ * work, narrowed to the people a rule may hand work to, weighed by the
+ * workload figure Admin Home already shows — and the choice is
+ * `planBacklogAllocation`, the same engine the Auto-assign backlog dialog
+ * runs. One issue is a one-element backlog to it, so the priority order, the
+ * lightest-queue rule and the tie-break by name then id are all the existing
+ * ones rather than a second implementation that agrees today.
+ *
+ * What this adds is the pair of writes the dialog does not do:
+ *
+ *  - **the assignment and the move out of the backlog together.** Backlog is
+ *    where work waits for somebody; once it has somebody it is New. They are
+ *    one `updateMany` so the intermediate state cannot be observed or left
+ *    behind, and its `where` carries the state this ran against — still
+ *    Backlog, still unassigned — so a second creation path, an administrator
+ *    assigning by hand in the same moment, or a retry cannot take the work off
+ *    whoever already has it. No rows matched means somebody got there first,
+ *    and then nothing at all is written, including the history.
+ *  - **the trail and the notice**, through `recordFieldChanges`, `addWatchers`
+ *    and `notify` — the same three the rest of `issues.ts` writes an
+ *    assignment with. The assignment row carries
+ *    `AUTOMATIC_ASSIGNMENT_ACTION`, so the history says this was Prio's
+ *    decision and not the tester's choice of developer.
+ *
+ * Nobody eligible means nothing happens: the issue stays Backlog and
+ * unassigned rather than becoming New with no one on it, and rather than being
+ * handed to somebody who should not have it.
+ */
+async function handOutNewBacklogWork(params: {
+  issueId: string;
+  issueKey: string;
+  issueTitle: string;
+  type: IssueType;
+  priority: Priority;
+  projectId: string;
+  actorId: string;
+}): Promise<void> {
+  const candidates = await eligibleDeveloperCandidates(params.projectId);
+  if (candidates.length === 0) return;
+
+  const { allocations } = planBacklogAllocation(
+    [
+      {
+        id: params.issueId,
+        key: params.issueKey,
+        title: params.issueTitle,
+        priority: params.priority,
+        stage: "BACKLOG",
+      },
+    ],
+    candidates,
+  );
+
+  const placed = allocations[0];
+  if (!placed) return;
+
+  await prisma.$transaction(async (tx) => {
+    const claimed = await tx.issue.updateMany({
+      where: { id: params.issueId, status: "BACKLOG", assigneeId: null },
+      data: { assigneeId: placed.assigneeId, status: "TODO" },
+    });
+    if (claimed.count === 0) return;
+
+    /* Prio's decision, recorded as one. The actor is the person who raised the
+       work — they caused it — and the action says they did not choose who. */
+    await recordFieldChanges(tx, {
+      issueId: params.issueId,
+      actorId: params.actorId,
+      action: AUTOMATIC_ASSIGNMENT_ACTION,
+      changes: [
+        { field: "assigneeId", oldValue: null, newValue: placed.assigneeId },
+      ],
+    });
+
+    /* And the move it caused, as the ordinary status entry every other status
+       change writes — `issue.assigned.auto` names an assignment, and putting it
+       on a status row would make the assignment history read one that is not
+       there. */
+    await recordFieldChanges(tx, {
+      issueId: params.issueId,
+      actorId: params.actorId,
+      changes: [{ field: "status", oldValue: "BACKLOG", newValue: "TODO" }],
+    });
+
+    await addWatchers(tx, params.issueId, [placed.assigneeId]);
+
+    /*
+     * The notice `createIssue` already sends whoever is handed new work, with
+     * the same type and the same sentence — this is the same event, reached by
+     * a rule instead of by a name in a form.
+     *
+     * `workflowActivity` is deliberately not set, matching the assignment
+     * notice beside it in `createIssue`: it would divert a full stack
+     * reporter's notice to the administrators, and the one person who must
+     * hear that work is now theirs is the developer it went to. `tester` is
+     * false because `eligibleDeveloperCandidates` only ever yields somebody
+     * whose working role is DEVELOPER.
+     */
+    await notify(tx, {
+      issueId: params.issueId,
+      actorId: params.actorId,
+      userIds: [placed.assigneeId],
+      type: "ISSUE_ASSIGNED",
+      message: assignmentMessage({
+        issueKey: params.issueKey,
+        issueTitle: params.issueTitle,
+        typeLabel: ISSUE_TYPE_LABEL[params.type].toLowerCase(),
+        tester: false,
+      }),
+    });
+  });
 }
 
 /* --------------------------------------------------------------- update */
@@ -597,6 +760,78 @@ export async function updateIssue(
           throw new AuthorizationError(
             "You can take work for yourself, but only an administrator can assign it to somebody else.",
           );
+        }
+      }
+
+      /*
+       * Work waiting to be tested may only be given to somebody who tests.
+       *
+       * Ready for QA is a request addressed to testing: the build is finished
+       * and somebody has to check it. An assignee who does no QA work cannot
+       * answer that request, so the issue would sit in a status that means
+       * "waiting for a tester" while the only person on it is not one — and
+       * every count and queue that reads the status would be wrong about it.
+       *
+       * Asked of whatever the issue *ends up* in, so it covers the two ways to
+       * arrive: reassigning work already Ready for QA, and naming an assignee
+       * in the same request that moves it there. Skipped for an unassignment,
+       * which has nobody to be eligible.
+       *
+       * This is the rule the Assign Work to QA dialog has always applied
+       * (`assignWork` → `laneAcceptsWorkRole`), asked in the one place an
+       * assignee actually changes so that a request which never went near that
+       * dialog cannot get round it. The same three facts, checked against the
+       * database rather than taken from the payload: active, on this project,
+       * and doing the QA half of the job — `laneAcceptsWorkRole("QA", …)`, so a
+       * full stack developer and an administrator qualify here for exactly the
+       * reason they qualify there.
+       *
+       * It narrows an administrator alone in practice, since nobody else may
+       * name another person at all, and it takes nothing else away from them:
+       * they may still move the work out of Ready for QA and then hand it to
+       * whoever they like.
+       */
+      const endsUpReadyForQa =
+        (input.status ?? existing.status) === "IN_REVIEW";
+
+      if (changing && next !== null && endsUpReadyForQa) {
+        const person = await prisma.user.findFirst({
+          where: {
+            id: next,
+            isActive: true,
+            projectMemberships: { some: { projectId } },
+          },
+          select: {
+            name: true,
+            role: true,
+            teamMemberships: {
+              where: { team: { slug: { in: [...WORK_TEAM_SLUGS] } } },
+              select: { team: { select: { slug: true } } },
+            },
+          },
+        });
+
+        if (!person) {
+          return {
+            ok: false,
+            error: "That person cannot be given this work.",
+            fieldErrors: {
+              assigneeId: "Not an active member of this project.",
+            },
+          };
+        }
+
+        const theirRole = workRoleFromTeams(
+          person.role,
+          person.teamMemberships.map((row) => row.team.slug),
+        );
+
+        if (!laneAcceptsWorkRole("QA", theirRole)) {
+          return {
+            ok: false,
+            error: `${existing.key} is waiting to be tested, and ${person.name} does not do QA work.`,
+            fieldErrors: { assigneeId: "Choose somebody who does QA work." },
+          };
         }
       }
     }

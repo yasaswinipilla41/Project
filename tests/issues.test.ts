@@ -103,18 +103,30 @@ describe("createIssue", () => {
 
     const row = await prisma.issue.findUniqueOrThrow({
       where: { id: result.data.id },
-      select: { type: true, status: true, priority: true },
+      select: { type: true, status: true, priority: true, assigneeId: true },
     });
 
     expect(row.type).toBe("STORY");
-    /* Priority defaults in the schema; status defaults to where work this
-       person raises starts. A tester raises work into the Backlog — filing it
-       is asking for it to be picked up, and whether it is next, being built or
-       finished is not theirs to declare at the moment they raise it. The
-       people acting in this file are pure testers, so this is deterministic:
-       `joinTestingTeam` takes the Development row away for the run. */
-    expect(row.status).toBe("BACKLOG");
     expect(row.priority).toBe("MEDIUM");
+
+    /*
+     * Priority defaults in the schema. The status is where work this person
+     * raises starts, and then where Prio puts it.
+     *
+     * A tester still files into the Backlog — filing is asking for the work to
+     * be picked up, and whether it is next, being built or finished is not
+     * theirs to declare at the moment they raise it. What happens next is that
+     * the asking is answered: ENG has developers, so the item is handed to the
+     * lightest-loaded one and becomes New. The pair is what is asserted,
+     * because New with nobody on it is the state that must never exist.
+     *
+     * The people acting in this file are pure testers, so this is
+     * deterministic: `joinTestingTeam` takes the Development row away for the
+     * run. `tester-auto-assignment.test.ts` holds the rule itself, including
+     * the case where nobody is eligible and it stays in the Backlog.
+     */
+    expect(row.status).toBe("TODO");
+    expect(row.assigneeId).not.toBeNull();
   });
 
   it("creates a bug from a title alone, now that description is not collected", async () => {

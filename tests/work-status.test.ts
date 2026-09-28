@@ -295,7 +295,14 @@ describe("the numbers on the card", () => {
      * much still waiting for a tester. The mirror holds too: work raised by a
      * tester and left on them has nobody building it.
      */
-    const forQa = await anIssue("IN_REVIEW", "held-by-developer");
+    /*
+     * Built the way Prio actually builds it: the work is the developer's, and
+     * then it is marked ready. Assigning a developer *onto* an issue that is
+     * already Ready for QA is refused now — work waiting to be tested may only
+     * be given to somebody who tests — and it is this state the lane rule is
+     * about rather than that route to it.
+     */
+    const forQa = await anIssue("TODO", "held-by-developer");
     const forDeveloper = await anIssue("TODO", "held-by-tester");
     const project = await projectByKey("ENG");
 
@@ -303,6 +310,10 @@ describe("the numbers on the card", () => {
     expect(
       (await updateIssue({ issueId: forQa, assigneeId: await userId(DEVELOPER) }))
         .ok,
+    ).toBe(true);
+    expect(
+      (await updateIssue({ issueId: forQa, status: "IN_REVIEW" })).ok,
+      "the hand-off itself, which is what leaves a developer holding it",
     ).toBe(true);
     expect(
       (await updateIssue({

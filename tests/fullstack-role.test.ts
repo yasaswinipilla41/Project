@@ -111,9 +111,31 @@ async function anIssue(
   if (!result.ok) throw new Error(result.error);
   createdIssueIds.push(result.data.id);
 
+  /*
+   * The assignee first, then the status — two calls rather than one.
+   *
+   * Work waiting to be tested may only be *given* to somebody who tests, so
+   * naming a pure developer in the same request that marks an issue Ready for
+   * QA is refused. Prio never produces that state that way either: the work
+   * becomes somebody's and is then marked ready, which is exactly these two
+   * calls in this order. Splitting them builds the state the cases below are
+   * about without going through the route the rule forbids.
+   */
   if (patch) {
-    const applied = await updateIssue({ issueId: result.data.id, ...patch });
-    if (!applied.ok) throw new Error(applied.error);
+    if ("assigneeId" in patch) {
+      const assigned = await updateIssue({
+        issueId: result.data.id,
+        assigneeId: patch.assigneeId,
+      });
+      if (!assigned.ok) throw new Error(assigned.error);
+    }
+    if (patch.status) {
+      const moved = await updateIssue({
+        issueId: result.data.id,
+        status: patch.status,
+      });
+      if (!moved.ok) throw new Error(moved.error);
+    }
   }
   return result.data.id;
 }
