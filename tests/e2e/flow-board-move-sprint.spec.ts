@@ -71,7 +71,7 @@ async function seed() {
         title: status === "DONE" ? "Finished work" : "Work to re-plan",
         type: "TASK",
         status,
-        priority: "HIGH",
+        priority: "P1",
         reporterId: admin.id,
         assigneeId: admin.id,
         sprintId: current.id,
@@ -156,7 +156,7 @@ test.describe("Move Sprint on a Flow Board card", () => {
       sprintId: sprints.later.id,
       status: "IN_PROGRESS",
       assigneeId: admin.id,
-      priority: "HIGH",
+      priority: "P1",
       effortHours: 5,
       remainingHours: 3,
     });
