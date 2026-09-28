@@ -26,8 +26,18 @@ import type { SprintStatus } from "@prisma/client";
  * call and refuses regardless of what any menu decided to show.
  */
 
-/** Sprints that can still receive work. A completed sprint is a closed record. */
-const OPEN: readonly SprintStatus[] = ["PLANNED", "ACTIVE"];
+/**
+ * Sprints that can still receive work. A completed sprint is a closed record.
+ *
+ * Exported because it is the same rule on both sides of a move: the predicate
+ * below decides whether a menu offers one, and `server/sprints` builds the
+ * queries that decide whether the server accepts one from it. Two literals
+ * spelt out separately is exactly the drift this module exists to prevent.
+ */
+export const OPEN_SPRINT_STATUSES: readonly SprintStatus[] = [
+  "PLANNED",
+  "ACTIVE",
+];
 
 export interface MovableSprint {
   id: string;
@@ -48,7 +58,7 @@ export function nextOpenSprint<T extends MovableSprint>(
 ): T | null {
   return (
     sprints
-      .filter((sprint) => OPEN.includes(sprint.status))
+      .filter((sprint) => OPEN_SPRINT_STATUSES.includes(sprint.status))
       .filter((sprint) => from === null || sprint.id !== from.id)
       /* `>=`, not `>`: two sprints planned across the same fortnight are an
          ordinary way to split work, and an issue in the first of them can

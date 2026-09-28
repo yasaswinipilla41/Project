@@ -1,8 +1,14 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { CompletedSprintsDisclosure } from "@/components/sprints/CompletedSprintsDisclosure";
 import { NewSprintButton } from "@/components/sprints/NewSprintButton";
 import { SprintCard } from "@/components/sprints/SprintCard";
-import { ButtonLink, Card, EmptyState } from "@/components/ui/primitives";
+import {
+  ButtonLink,
+  Card,
+  CardBody,
+  EmptyState,
+} from "@/components/ui/primitives";
 import { IconEmptyBox, IconTimeline } from "@/components/ui/Icon";
 import { projectScope, workRoleOf } from "@/lib/authz";
 import {
@@ -75,8 +81,25 @@ export default async function ProjectSprintsPage({
   const canComplete = canCompleteSprint(workRole);
   const canEditIssues = canEditSprintIssues(workRole);
 
-  const open = sprints.filter((sprint) => sprint.status !== "COMPLETED");
+  /*
+   * The three groups this page is read in, split out of the one ordered list
+   * `loadSprints` returns rather than re-queried or re-sorted: active first,
+   * then planned by start date, then the completed ones newest first. Taking
+   * them out in that order preserves the ordering inside each group.
+   *
+   * "Upcoming" is every planned sprint, not only the next one. `startSprint`
+   * allows one active sprint per project, so `active` holds at most one — read
+   * as a list all the same, because a project that somehow held two should show
+   * both rather than silently hide one.
+   */
+  const active = sprints.filter((sprint) => sprint.status === "ACTIVE");
+  const upcoming = sprints.filter((sprint) => sprint.status === "PLANNED");
   const completed = sprints.filter((sprint) => sprint.status === "COMPLETED");
+
+  /* Where unfinished work can be carried when a sprint is completed: this
+     project's other sprints that are not themselves completed. The same set
+     as before, built once because every live card needs it. */
+  const openSprints = [...active, ...upcoming];
 
   return (
     <>
@@ -118,34 +141,108 @@ export default async function ProjectSprintsPage({
         </Card>
       ) : (
         <div className="prio-sprints">
-          {open.map((sprint) => (
-            <SprintCard
-              key={sprint.id}
-              sprint={sprint}
-              projectId={project.id}
-              projectKey={project.key}
-              backlog={backlog}
-              /* Where unfinished work can be carried: this project's other
-                 sprints that are not themselves completed. */
-              otherOpenSprints={open
-                .filter((other) => other.id !== sprint.id)
-                .map((other) => ({ id: other.id, name: other.name }))}
-              canEdit={canEdit}
-              canDelete={canDelete}
-              canStart={canStart}
-              canComplete={canComplete}
-              canEditIssues={canEditIssues}
-            />
-          ))}
+          {/*
+            * What is being worked now.
+            *
+            * Its own group, with its own empty state when there is none: a
+            * project between sprints is an ordinary state, and the page should
+            * say so rather than leave the reader to infer it from the first
+            * card happening to be a planned one. This branch is only reached
+            * when the project has sprints, so "no active sprint" here can never
+            * stand in for "nothing loaded".
+            */}
+          <h3 className="prio-sprints__section">Active sprint</h3>
+          {active.length > 0 ? (
+            active.map((sprint) => (
+              <SprintCard
+                key={sprint.id}
+                sprint={sprint}
+                projectId={project.id}
+                projectKey={project.key}
+                backlog={backlog}
+                otherOpenSprints={openSprints
+                  .filter((other) => other.id !== sprint.id)
+                  .map((other) => ({ id: other.id, name: other.name }))}
+                canEdit={canEdit}
+                canDelete={canDelete}
+                canStart={canStart}
+                canComplete={canComplete}
+                canEditIssues={canEditIssues}
+              />
+            ))
+          ) : (
+            <Card>
+              <CardBody>
+                <EmptyState
+                  icon={<IconEmptyBox />}
+                  title="No active sprint"
+                  body={
+                    upcoming.length > 0
+                      ? "No sprint is running on this project yet. Start one of the upcoming sprints below when the team is ready."
+                      : "No sprint is running on this project."
+                  }
+                />
+              </CardBody>
+            </Card>
+          )}
 
+          {/* What is planned next, in start-date order. */}
+          <h3 className="prio-sprints__section">
+            Upcoming sprints
+            {upcoming.length > 0 ? (
+              <span className="prio-sprints__historycount">
+                {upcoming.length}
+              </span>
+            ) : null}
+          </h3>
+          {upcoming.length > 0 ? (
+            upcoming.map((sprint) => (
+              <SprintCard
+                key={sprint.id}
+                sprint={sprint}
+                projectId={project.id}
+                projectKey={project.key}
+                backlog={backlog}
+                otherOpenSprints={openSprints
+                  .filter((other) => other.id !== sprint.id)
+                  .map((other) => ({ id: other.id, name: other.name }))}
+                canEdit={canEdit}
+                canDelete={canDelete}
+                canStart={canStart}
+                canComplete={canComplete}
+                canEditIssues={canEditIssues}
+              />
+            ))
+          ) : (
+            <Card>
+              <CardBody>
+                <EmptyState
+                  icon={<IconEmptyBox />}
+                  title="No upcoming sprints"
+                  body={
+                    canCreate
+                      ? "Nothing is planned after this one yet. Create a sprint to line up the next block of work."
+                      : "Nothing is planned after this one yet."
+                  }
+                  actions={
+                    canCreate ? <NewSprintButton projectId={project.id} /> : null
+                  }
+                />
+              </CardBody>
+            </Card>
+          )}
+
+          {/*
+            * The record, behind a control rather than under the live sprints.
+            *
+            * Only rendered when there is something to open, so nobody is
+            * offered a group that opens onto nothing. The cards themselves are
+            * unchanged — same component, same order, and still
+            * `canEditIssues={false}`, because a completed sprint is a closed
+            * record and `moveIssueToSprint` refuses to move work out of one.
+            */}
           {completed.length > 0 ? (
-            <>
-              <h3 className="prio-sprints__history">
-                Completed sprints
-                <span className="prio-sprints__historycount">
-                  {completed.length}
-                </span>
-              </h3>
+            <CompletedSprintsDisclosure count={completed.length}>
               {completed.map((sprint) => (
                 <SprintCard
                   key={sprint.id}
@@ -161,7 +258,7 @@ export default async function ProjectSprintsPage({
                   canEditIssues={false}
                 />
               ))}
-            </>
+            </CompletedSprintsDisclosure>
           ) : null}
         </div>
       )}

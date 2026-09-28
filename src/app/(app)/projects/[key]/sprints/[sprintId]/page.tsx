@@ -155,9 +155,31 @@ export default async function ProjectSprintDetailsPage({
       ? { href: `${base}/iterations`, label: "Back to iterations" }
       : { href: base, label: "Back to sprints" };
 
-  /* Read here, on the server, from the sprint's own work and the trail its
-     remaining-hours changes are already written to. */
-  const chart = await loadBurndown(sprint.id);
+  /*
+   * Read here, on the server, from the sprint's own work and the trail its
+   * remaining-hours changes are already written to.
+   *
+   * Caught rather than allowed to reach the route's error boundary: the
+   * burndown is one block on this page and the rest of it — the sprint's card,
+   * its figures, its issues, its Issues by status chart — is already read and
+   * correct. A chart that cannot be drawn is not a reason to refuse the page it
+   * sits on, so the failure travels as a value and `BurndownPanel` reports it
+   * where the chart would have been. The sprint itself failing to load is a
+   * different matter, and that one does reach the boundary.
+   */
+  const chart = await loadBurndown(sprint.id).then(
+    (data) => ({ read: true as const, data }),
+    (error: unknown) => {
+      console.error("[prio] burndown failed to load:", error);
+      return { read: false as const, data: null };
+    },
+  );
+
+  /* Whether there is a burndown to offer at all. A failed read still counts:
+     the reader has to be able to open it and be told why it is not there,
+     which a missing button cannot do. Only a sprint that genuinely has no
+     chart — `loadBurndown` answering null — offers none. */
+  const hasBurndown = !chart.read || chart.data !== null;
 
   return (
     <>
@@ -186,9 +208,10 @@ export default async function ProjectSprintDetailsPage({
               <SprintDetailsActions
                 sprint={sprint}
                 /* First in the row, before Add issues and Edit: reading the
-                   sprint comes before changing it. Offered only where there is
-                   a chart to open. */
-                leading={chart ? <BurndownToggle /> : null}
+                   sprint comes before changing it. Offered wherever there is a
+                   burndown to open — including when reading it failed, since
+                   the panel is where that is explained. */
+                leading={hasBurndown ? <BurndownToggle /> : null}
                 projectId={project.id}
                 projectKey={project.key}
                 backlog={backlog}
@@ -208,7 +231,7 @@ export default async function ProjectSprintDetailsPage({
               * is the tallest thing here and the sprint's own work should not
               * start a screen down.
               */}
-            {chart ? <BurndownPanel data={chart} /> : null}
+            {hasBurndown ? <BurndownPanel data={chart.data} /> : null}
 
             <Card style={{ marginTop: "var(--prio-space-4)" }}>
               <CardBody>

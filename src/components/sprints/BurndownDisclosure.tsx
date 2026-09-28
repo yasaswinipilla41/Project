@@ -8,8 +8,10 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { useRouter } from "next/navigation";
 import { BurndownChart } from "@/components/sprints/BurndownChart";
 import { Button, CardBody } from "@/components/ui/primitives";
+import { LoadError } from "@/components/ui/LoadError";
 import {
   IconChevronDown,
   IconChevronUp,
@@ -112,9 +114,25 @@ export function BurndownToggle() {
  * element measures as nothing — it would open with its first tooltip in the
  * wrong place. Nothing is refetched by that: `data` is the same server-read
  * `Burndown` either way.
+ *
+ * ## When the read failed
+ *
+ * `data` is null when the sprint's burndown could not be read. It is a block on
+ * a page, not the page, so it fails as a block: the sprint's own card, its
+ * issues and its Issues by status chart are all read separately and stay
+ * exactly as they are, and the panel says what happened here rather than the
+ * whole page going down for a chart nobody may have opened.
+ *
+ * That failure is deliberately *not* the chart's empty state. `BurndownChart`
+ * already says "nothing has been estimated yet, so there is nothing to burn
+ * down" when the data is real and holds no hours — an answer — and this says
+ * there is no answer, in the danger tone with a retry. Neither is ever drawn
+ * as the other, and nothing here invents a point, a remainder or a zero to
+ * make a chart appear where there is no data for one.
  */
-export function BurndownPanel({ data }: { data: Burndown }) {
+export function BurndownPanel({ data }: { data: Burndown | null }) {
   const { open, panelId, close } = useDisclosure();
+  const router = useRouter();
   if (!open) return null;
 
   return (
@@ -144,7 +162,18 @@ export function BurndownPanel({ data }: { data: Burndown }) {
           </Button>
         </header>
 
-        <BurndownChart data={data} />
+        {data ? (
+          <BurndownChart data={data} />
+        ) : (
+          <LoadError
+            title="Unable to load the burndown."
+            body="The chart could not be read. The sprint's issues and figures above are unaffected."
+            /* Re-reads this page on the server, which is where the burndown is
+               computed — the same refresh every other write on this page ends
+               with, rather than a second fetch path of its own. */
+            onRetry={() => router.refresh()}
+          />
+        )}
       </CardBody>
     </section>
   );
