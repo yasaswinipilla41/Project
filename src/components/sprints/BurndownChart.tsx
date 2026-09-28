@@ -510,6 +510,9 @@ export function BurndownChart({ data }: { data: Burndown }) {
      * remaining line showing or lands nearer than the flow does: under the
      * chart it goes, where it covers nothing at all.
      */
+    const besideThePoint =
+      !!best &&
+      (best.left + width <= marker.left || best.left >= marker.right);
     if (
       !best ||
       (!besideThePoint && (best.cost >= 4000 || best.cost > flowCost))
