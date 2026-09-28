@@ -42,7 +42,7 @@ test.describe("The Create window", () => {
     await dialog.getByLabel("Project").selectOption({ label: "Engineering (ENG)" });
     await dialog.getByLabel("Summary").fill(title);
     await dialog.getByLabel("Description").fill(description);
-    await dialog.getByLabel("Priority").selectOption("HIGH");
+    await dialog.getByLabel("Priority").selectOption("P1");
     await dialog
       .getByLabel("Attachments")
       .setInputFiles({ name: "kept.png", mimeType: "image/png", buffer: PNG_1X1 });
@@ -66,7 +66,7 @@ test.describe("The Create window", () => {
     const kept = async () => {
       await expect(dialog.getByLabel("Summary")).toHaveValue(title);
       await expect(dialog.getByLabel("Description")).toHaveValue(description);
-      await expect(dialog.getByLabel("Priority")).toHaveValue("HIGH");
+      await expect(dialog.getByLabel("Priority")).toHaveValue("P1");
       await expect(dialog.getByTitle("kept.png")).toBeVisible();
     };
 
@@ -163,7 +163,7 @@ async function asTester(email: string) {
   const user = await prisma.user.findUniqueOrThrow({ where: { email }, select: { id: true } });
   const testing =
     (await prisma.team.findUnique({ where: { slug: "testing" }, select: { id: true } })) ??
-    (await prisma.team.create({ data: { slug: "testing", name: "Testing" }, select: { id: true } }));
+    (await prisma.team.create({ data: { slug: "testing", name: "QA Team" }, select: { id: true } }));
   const development = await prisma.team.findUnique({
     where: { slug: "development" },
     select: { id: true },

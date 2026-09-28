@@ -160,7 +160,7 @@ async function anIssue(status: IssueStatus, label: string): Promise<string> {
     title: `Work Status ${label} ${Date.now()}-${Math.random()}`,
     description: "fixture",
     status: "TODO",
-    priority: "MEDIUM",
+    priority: "P2",
   });
   if (!result.ok) throw new Error(result.error);
   created.push(result.data.id);

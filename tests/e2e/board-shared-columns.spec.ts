@@ -45,7 +45,7 @@ async function seedIssue(status: string, title: string) {
       type: "TASK",
       title,
       status: status as never,
-      priority: "MEDIUM",
+      priority: "P2",
       reporterId: admin.id,
     },
     select: { id: true, key: true },

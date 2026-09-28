@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { Alert, Button } from "@/components/ui/primitives";
 import { IconWarning } from "@/components/ui/Icon";
+import { PasswordRequirements } from "@/components/ui/PasswordRequirements";
 import { changeOwnPassword } from "@/server/users";
 import type { FieldErrors } from "@/server/schemas";
 
@@ -108,17 +109,16 @@ export function ChangePasswordForm() {
           className="prio-input"
           autoComplete="new-password"
           required
-          minLength={8}
           value={newPassword}
           onChange={(e) => setNewPassword(e.target.value)}
           aria-invalid={errors.newPassword ? true : undefined}
         />
-        <span className="prio-hint">At least 8 characters.</span>
         {errors.newPassword ? (
           <span className="prio-error" role="alert">
             {errors.newPassword}
           </span>
         ) : null}
+        <PasswordRequirements password={newPassword} />
       </div>
 
       <div className="prio-field">

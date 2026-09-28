@@ -60,7 +60,7 @@ async function anIssue(
     type: "TASK",
     title,
     description: "fixture",
-    priority: "MEDIUM",
+    priority: "P2",
   });
   if (!result.ok) throw new Error(result.error);
   createdIssueIds.push(result.data.id);
@@ -114,7 +114,7 @@ describe("raising work", () => {
       type: "BUG",
       title,
       description: "x",
-      priority: "MEDIUM",
+      priority: "P2",
     });
 
     expect(result.ok, result.ok ? "" : result.error).toBe(true);
@@ -144,7 +144,7 @@ describe("raising work", () => {
       type: "BUG",
       title: `Tester files work ${Date.now()}`,
       description: "x",
-      priority: "MEDIUM",
+      priority: "P2",
     });
 
     expect(result.ok).toBe(true);

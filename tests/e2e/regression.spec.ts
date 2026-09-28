@@ -34,7 +34,7 @@ test.describe("update regressions", () => {
   test("changing only priority leaves the due date and status untouched", async ({
     page,
   }) => {
-    // ENG-1 is a seeded bug: In Progress / High / Major.
+    // ENG-1 is a seeded bug: In Progress / P1 / Major.
     await page.goto("/issues/eng-1");
 
     const status = page.locator(".prio-status").first();
@@ -52,7 +52,7 @@ test.describe("update regressions", () => {
 
     // Change ONLY the priority, through the inline control.
     await page.locator(".prio-issue__headmeta .prio-priority").first().click();
-    await page.getByRole("menuitemradio", { name: /Urgent/ }).click();
+    await page.getByRole("menuitemradio", { name: /P0/ }).click();
     await expect(page.locator(".prio-toast")).toContainText("Priority set to");
 
     await page.reload();
@@ -60,7 +60,7 @@ test.describe("update regressions", () => {
     // Priority changed…
     await expect(page.locator(".prio-priority").first()).toHaveAttribute(
       "data-priority",
-      "URGENT",
+      "P0",
     );
     // …and nothing else did.
     await expect(page.locator(".prio-status").first()).toHaveAttribute(
@@ -81,7 +81,7 @@ test.describe("update regressions", () => {
 
     // Restore the seeded value so the suite is re-runnable.
     await page.locator(".prio-issue__headmeta .prio-priority").first().click();
-    await page.getByRole("menuitemradio", { name: /High/ }).click();
+    await page.getByRole("menuitemradio", { name: /P1/ }).click();
     await expect(page.locator(".prio-toast")).toContainText("Priority set to");
   });
 
@@ -183,7 +183,7 @@ test.describe("update regressions", () => {
       .locator(".prio-issue__headmeta .prio-priority")
       .first()
       .getAttribute("data-priority");
-    const nextPriority = priorityNow === "MEDIUM" ? /High/ : /Medium/;
+    const nextPriority = priorityNow === "P2" ? /P1/ : /P2/;
 
     await page.locator(".prio-issue__headmeta .prio-priority").first().click();
     await page.getByRole("menuitemradio", { name: nextPriority }).click();
@@ -199,13 +199,12 @@ test.describe("update regressions", () => {
     /* Put it back where it started, so the issue is as it was found and the
        next run of this test begins from the same place. */
     const PRIORITY_LABEL: Record<string, RegExp> = {
-      URGENT: /Urgent/,
-      HIGH: /High/,
-      MEDIUM: /Medium/,
-      LOW: /Low/,
-      NONE: /None/,
+      P0: /P0/,
+      P1: /P1/,
+      P2: /P2/,
+      P3: /P3/,
     };
-    const restoreTo = PRIORITY_LABEL[priorityNow ?? "MEDIUM"] ?? /Medium/;
+    const restoreTo = PRIORITY_LABEL[priorityNow ?? "P2"] ?? /P2/;
     await page.locator(".prio-issue__headmeta .prio-priority").first().click();
     await page.getByRole("menuitemradio", { name: restoreTo }).click();
     await expect(page.locator(".prio-toast")).toContainText("Priority set to");

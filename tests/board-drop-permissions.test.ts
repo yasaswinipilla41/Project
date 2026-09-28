@@ -52,7 +52,7 @@ async function anIssue(title: string, status: "IN_PROGRESS" | "IN_REVIEW") {
     type: "TASK",
     title: `${title} ${Date.now()}`,
     description: "fixture",
-    priority: "MEDIUM",
+    priority: "P2",
   });
   if (!created.ok) throw new Error(created.error);
   createdIssueIds.push(created.data.id);

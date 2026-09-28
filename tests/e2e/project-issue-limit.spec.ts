@@ -45,7 +45,7 @@ test.describe("A project at its issue limit", () => {
             type: "TASK",
             title: "The only issue this project may hold",
             status: "TODO",
-            priority: "MEDIUM",
+            priority: "P2",
             reporterId: admin.id,
           },
         },

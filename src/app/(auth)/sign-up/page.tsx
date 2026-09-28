@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { PRIO_TAGLINE, PrioLogo } from "@/components/brand/PrioLogo";
 import { IconActivity, IconBoard, IconBug } from "@/components/ui/Icon";
 import { getCurrentUser } from "@/lib/session";
+import { selfSignupEnabled } from "@/lib/signupPolicy";
 import { SignUpForm } from "./SignUpForm";
 
 export const metadata: Metadata = {
@@ -21,6 +22,8 @@ export const metadata: Metadata = {
 export default async function SignUpPage() {
   const user = await getCurrentUser();
   if (user) redirect("/");
+  /* Closed unless an operator opened it (ALLOW_SELF_SIGNUP) — see signupPolicy. */
+  if (!selfSignupEnabled()) redirect("/sign-in");
 
   return (
     <main className="prio-auth">

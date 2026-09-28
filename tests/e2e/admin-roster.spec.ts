@@ -73,13 +73,13 @@ test.describe("Administration summary blocks", () => {
 test.describe("the Development block", () => {
   test.use({ storageState: ADMIN_STATE });
 
-  test("is a block of its own, beside Testing and Full Stack", async ({
+  test("is a block of its own, beside QA Team and Full Stack", async ({
     page,
   }) => {
     await page.goto("/admin");
 
     await expect(
-      page.getByRole("heading", { name: /^Testing · \d+$/ }),
+      page.getByRole("heading", { name: /^QA Team · \d+$/ }),
     ).toBeVisible();
     await expect(
       page.getByRole("heading", { name: /^Development · \d+$/ }),
@@ -195,7 +195,7 @@ test.describe("the Development block", () => {
   });
 });
 
-test.describe("the Testing block", () => {
+test.describe("the QA Team block", () => {
   test.use({ storageState: ADMIN_STATE });
 
   test("asks for a project and takes several people at once", async ({
@@ -205,7 +205,7 @@ test.describe("the Testing block", () => {
 
     const block = page
       .locator(".prio-issue__section")
-      .filter({ has: page.getByRole("heading", { name: /^Testing · / }) });
+      .filter({ has: page.getByRole("heading", { name: /^QA Team · / }) });
     await block.getByRole("button", { name: "Add members" }).click();
 
     const dialog = page.getByRole("dialog");
@@ -316,11 +316,11 @@ test.describe("a QA member and sprints", () => {
     });
   });
 
-  test("is named a QA / Tester, top right", async ({ page }) => {
+  test("is named a QA member, top right", async ({ page }) => {
     await page.goto("/");
     await expect(
       page.locator(".prio-dash__heroaside .prio-rolebadge"),
-    ).toHaveText("QA / Tester");
+    ).toHaveText("QA member");
   });
 
   test("gets the Sprints tab, but not the power to create one", async ({

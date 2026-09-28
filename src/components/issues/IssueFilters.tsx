@@ -741,6 +741,9 @@ export function IssueFilters({
       {importing ? (
         <ImportIssuesDialog
           project={project}
+          /* The spreadsheet has no project column, so where this surface is
+             not one project's the dialog asks which one. */
+          projectChoices={project ? undefined : projects}
           onClose={() => setImporting(false)}
         />
       ) : null}

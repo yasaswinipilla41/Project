@@ -13,13 +13,15 @@ import { IconChevronDown } from "@/components/ui/Icon";
 import {
   PRIORITIES,
   PRIORITY_LABEL,
+  SEVERITIES,
+  SEVERITY_LABEL,
   STATUS_LABEL,
   allowedStatusesFor,
   isClosedStatus,
   remainingEffort,
   type WorkRole,
 } from "@/lib/domain";
-import type { IssueStatus, Priority } from "@prisma/client";
+import type { IssueStatus, Priority, Severity } from "@prisma/client";
 import { updateIssue } from "@/server/issues";
 
 /**
@@ -175,6 +177,68 @@ export function PriorityControl({
           }
         >
           <PriorityIndicator priority={option} />
+        </MenuItem>
+      ))}
+    </Menu>
+  );
+}
+
+/* -------------------------------------------------------------- severity */
+
+/**
+ * How bad a bug is. Rendered only for a bug — the detail page decides that —
+ * and writes through `updateIssue` like every other control here, which
+ * refuses it on anything else. "Not set" clears it.
+ */
+export function SeverityControl({
+  issueId,
+  severity,
+  disabled,
+}: BaseProps & { severity: Severity | null }) {
+  const { update, busy } = useFieldUpdate(issueId);
+
+  return (
+    <Menu
+      align="start"
+      width={190}
+      label="Change severity"
+      trigger={(props) => (
+        <button
+          type="button"
+          className="prio-fieldtrigger"
+          disabled={disabled || busy}
+          data-severity={severity ?? "NONE"}
+          {...props}
+        >
+          <span className="prio-fieldtrigger__label">
+            Severity: {severity ? SEVERITY_LABEL[severity] : "Not set"}
+          </span>
+          <IconChevronDown size={12} />
+        </button>
+      )}
+    >
+      <MenuLabel>Severity</MenuLabel>
+      <MenuItem
+        selected={severity === null}
+        onSelect={() =>
+          severity !== null && update({ severity: null }, "Severity cleared")
+        }
+      >
+        Not set
+      </MenuItem>
+      {SEVERITIES.map((option) => (
+        <MenuItem
+          key={option}
+          selected={option === severity}
+          onSelect={() =>
+            option !== severity &&
+            update(
+              { severity: option },
+              `Severity set to ${SEVERITY_LABEL[option]}`,
+            )
+          }
+        >
+          {SEVERITY_LABEL[option]}
         </MenuItem>
       ))}
     </Menu>

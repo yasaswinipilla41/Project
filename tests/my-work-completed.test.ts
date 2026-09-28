@@ -95,7 +95,7 @@ async function anIssue(title: string, assigneeId: string): Promise<string> {
     type: "TASK",
     title: `${title} ${Date.now()}`,
     description: "fixture",
-    priority: "MEDIUM",
+    priority: "P2",
     status: "TODO",
     assigneeId,
   });
@@ -150,7 +150,7 @@ async function roundTrip(title: string): Promise<string> {
     type: "BUG",
     title,
     description: "fixture",
-    priority: "MEDIUM",
+    priority: "P2",
     assigneeId: developer.id,
   });
   if (!raised.ok) throw new Error(raised.error);

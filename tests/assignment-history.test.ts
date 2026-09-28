@@ -69,7 +69,7 @@ async function anIssue(title: string, assigneeId?: string) {
     projectId: project.id,
     type: "TASK",
     title: `${title} ${Date.now()}`,
-    priority: "MEDIUM",
+    priority: "P2",
     labelIds: [],
     ...(assigneeId ? { assigneeId } : {}),
   });

@@ -6,7 +6,7 @@ import { Stat } from "@/components/ui/primitives";
 import { IconBug } from "@/components/ui/Icon";
 import { filterOptions, listIssues } from "@/server/queries/issues";
 import { parseIssueParams, type SearchParams } from "@/server/queries/params";
-import { OPEN_STATUSES } from "@/lib/domain";
+import { OPEN_STATUSES, PRIORITY_LABEL } from "@/lib/domain";
 import { prisma } from "@/lib/prisma";
 import { issueScope, workRoleOf } from "@/lib/authz";
 import { formatDateRange } from "@/lib/format";
@@ -43,7 +43,7 @@ export default async function BugsPage({
       where: {
         ...scope,
         type: "BUG",
-        priority: "URGENT",
+        priority: "P0",
         status: { in: [...OPEN_STATUSES] },
       },
     }),
@@ -88,10 +88,10 @@ export default async function BugsPage({
         </div>
         <div className="col-6 col-xl-3">
           <Stat
-            label="Urgent open"
+            label="P0 open"
             value={urgent}
             tone={urgent > 0 ? "danger" : "default"}
-            hint="Priority Urgent"
+            hint={`Priority ${PRIORITY_LABEL.P0}`}
           />
         </div>
         <div className="col-6 col-xl-3">

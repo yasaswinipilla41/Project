@@ -49,7 +49,7 @@ async function startedIssue(title: string): Promise<{ id: string; key: string }>
     type: "TASK",
     title,
     description: "fixture",
-    priority: "MEDIUM",
+    priority: "P2",
   });
   if (!created.ok) throw new Error(created.error);
   createdIssueIds.push(created.data.id);
@@ -119,7 +119,7 @@ describe("marking work ready for QA", () => {
       type: "TASK",
       title: "Ready for QA — not their project",
       description: "fixture",
-      priority: "MEDIUM",
+      priority: "P2",
     });
     if (!created.ok) throw new Error(created.error);
     createdIssueIds.push(created.data.id);

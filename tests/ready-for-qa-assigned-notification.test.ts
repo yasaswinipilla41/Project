@@ -77,7 +77,7 @@ async function developersIssue(title: string) {
     type: "TASK",
     title,
     description: "fixture",
-    priority: "MEDIUM",
+    priority: "P2",
     assigneeId: ids[DEVELOPER],
   });
   if (!issue.ok) throw new Error(issue.error);
@@ -262,7 +262,7 @@ describe("the developer's hand-off, and what it does not open up", () => {
       type: "TASK",
       title: `Not theirs to hand ${Date.now()}`,
       description: "fixture",
-      priority: "MEDIUM",
+      priority: "P2",
       assigneeId: ids[OTHER_DEVELOPER],
     });
     if (!issue.ok) throw new Error(issue.error);

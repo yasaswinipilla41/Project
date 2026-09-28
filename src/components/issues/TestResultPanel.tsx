@@ -83,7 +83,7 @@ export function TestResultPanel({
           <dd>{development}</dd>
         </div>
         <div className="prio-qa__fact">
-          <dt>Testing</dt>
+          <dt>QA</dt>
           <dd>
             <span className="prio-testresult" data-result={testResult}>
               {TEST_RESULT_LABEL[testResult]}

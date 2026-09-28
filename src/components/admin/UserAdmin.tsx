@@ -22,6 +22,7 @@ import {
   setUserRole,
 } from "@/server/users";
 import type { FieldErrors } from "@/server/schemas";
+import { PasswordRequirements } from "@/components/ui/PasswordRequirements";
 import type { Role } from "@prisma/client";
 
 export interface AdminUserRow {
@@ -391,7 +392,6 @@ function CreateUserDialog({
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            minLength={8}
             autoComplete="off"
             aria-invalid={errors.password ? true : undefined}
           />
@@ -400,7 +400,7 @@ function CreateUserDialog({
               {errors.password}
             </span>
           ) : null}
-          <span className="prio-hint">At least 8 characters.</span>
+          <PasswordRequirements password={password} />
         </div>
 
         {projects.length > 0 ? (

@@ -238,7 +238,7 @@ export function planBacklogAllocation(
         issueTitle: issue.title,
         stage,
         reason:
-          "Waiting for testing, and no tester on this project can take it. " +
+          "Waiting for QA, and no QA member on this project can take it. " +
           "Left where it is rather than handed to a developer.",
       });
       continue;

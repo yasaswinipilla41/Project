@@ -52,7 +52,7 @@ async function aDatedIssue(title: string): Promise<string> {
     title: `${title} ${Date.now()}`,
     description: "fixture",
     status: "TODO",
-    priority: "MEDIUM",
+    priority: "P2",
     dueDate: "2099-06-01",
   });
   if (!result.ok) throw new Error(result.error);

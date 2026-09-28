@@ -30,7 +30,7 @@ function issue(
     id,
     key: `ENG-${id}`,
     title: id,
-    priority: "MEDIUM",
+    priority: "P2",
     stage,
     preferred,
   };
@@ -94,7 +94,7 @@ describe("work waiting for testing", () => {
 
     expect(plan.allocations).toHaveLength(0);
     expect(plan.unplaced).toHaveLength(1);
-    expect(plan.unplaced[0]!.reason).toMatch(/tester/i);
+    expect(plan.unplaced[0]!.reason).toMatch(/QA member/i);
   });
 });
 
@@ -127,8 +127,8 @@ describe("the order the stages are considered in", () => {
        order within it, which is the rule that was already here. */
     const plan = planBacklogAllocation(
       [
-        { ...issue("low", "BACKLOG"), priority: "LOW", key: "ENG-1" },
-        { ...issue("urgent", "BACKLOG"), priority: "URGENT", key: "ENG-2" },
+        { ...issue("low", "BACKLOG"), priority: "P3", key: "ENG-1" },
+        { ...issue("urgent", "BACKLOG"), priority: "P0", key: "ENG-2" },
       ],
       [{ id: "solo", name: "Solo", workload: 0 }],
     );

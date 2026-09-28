@@ -742,20 +742,17 @@
   white-space: nowrap;
 }
 
-.prio-priority[data-priority="URGENT"] {
+.prio-priority[data-priority="P0"] {
   color: var(--prio-priority-urgent);
 }
-.prio-priority[data-priority="HIGH"] {
+.prio-priority[data-priority="P1"] {
   color: var(--prio-priority-high);
 }
-.prio-priority[data-priority="MEDIUM"] {
+.prio-priority[data-priority="P2"] {
   color: var(--prio-priority-medium);
 }
-.prio-priority[data-priority="LOW"] {
+.prio-priority[data-priority="P3"] {
   color: var(--prio-priority-low);
-}
-.prio-priority[data-priority="NONE"] {
-  color: var(--prio-priority-none);
 }
 
 /* Issue-type glyph. */
@@ -3212,6 +3209,72 @@ a.prio-stat[data-selected="true"]:hover {
   font-variant-numeric: tabular-nums;
 }
 
+/* One invalid row: its number, what it calls itself, then each thing wrong. */
+.prio-importproblems__summary,
+.prio-importproblems__error {
+  display: block;
+}
+
+.prio-importproblems__summary {
+  color: var(--prio-text-primary);
+}
+
+/*
+ * The verdict on the chosen file, and the counts under it.
+ *
+ * The status line is the sentence that explains the Import button, so it takes
+ * the colour of the answer: green when the button is lit, red when rows need
+ * fixing, plain while the answer is still on its way.
+ */
+.prio-importstatus {
+  margin: var(--prio-space-3) 0 0;
+  font-size: var(--prio-text-sm);
+  font-weight: var(--prio-weight-medium);
+  color: var(--prio-text-secondary);
+}
+
+.prio-importstatus[data-state="valid"] {
+  color: var(--prio-green-700, var(--prio-text-primary));
+}
+
+.prio-importstatus[data-state="invalid"] {
+  color: var(--prio-red-600);
+}
+
+.prio-importsummary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--prio-space-2) var(--prio-space-4);
+  margin-bottom: var(--prio-space-3);
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-secondary);
+}
+
+.prio-importsummary__file {
+  flex-basis: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--prio-text-primary);
+}
+
+.prio-importsummary__valid,
+.prio-importsummary__invalid {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--prio-space-1);
+  font-weight: var(--prio-weight-medium);
+}
+
+.prio-importsummary__valid {
+  color: var(--prio-green-700, var(--prio-text-primary));
+}
+
+.prio-importsummary__invalid {
+  color: var(--prio-red-600);
+}
+
 /* ------------------------------------------------------- split button --- */
 
 /*
@@ -3372,4 +3435,36 @@ a.prio-stat[data-selected="true"]:hover {
   min-height: 28px;
   padding: 2px var(--prio-space-2);
   font-size: var(--prio-text-xs);
+}
+
+/* Password requirements checklist — see PasswordRequirements.tsx. */
+.prio-pwreq {
+  margin-top: var(--prio-space-2);
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-muted);
+}
+.prio-pwreq__title {
+  display: block;
+  margin-bottom: var(--prio-space-1);
+  font-weight: var(--prio-weight-medium);
+}
+.prio-pwreq__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+.prio-pwreq__item {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+}
+.prio-pwreq__mark {
+  width: 1em;
+  text-align: center;
+  flex-shrink: 0;
+}
+.prio-pwreq__item[data-met] {
+  color: var(--prio-success, #15803d);
 }

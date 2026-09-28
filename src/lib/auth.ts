@@ -1,6 +1,8 @@
 import { betterAuth } from "better-auth";
 import { prismaAdapter } from "better-auth/adapters/prisma";
+import { APIError, createAuthMiddleware } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
+import { meetsPasswordPolicy, WEAK_PASSWORD_MESSAGE } from "@/lib/passwordPolicy";
 import { prisma } from "@/lib/prisma";
 import { notifyAdminsOfNewUser } from "@/server/activity";
 
@@ -18,6 +20,23 @@ import { notifyAdminsOfNewUser } from "@/server/activity";
  *      — a hand-written action, not this endpoint, and one that only ever
  *      writes `role: "MEMBER"`, hardcoded, never read from what they submit.
  */
+/**
+ * The better-auth endpoints that take a password somebody is *choosing*.
+ *
+ * Prio's own actions validate a new password through `newPasswordSchema`, but
+ * better-auth also serves `/api/auth/change-password` over plain HTTP, and it
+ * only knows the length limits below. Without this hook that endpoint would be
+ * a way around the strength rule for anyone holding a session. Sign-up and
+ * reset are closed or unconfigured today; they are listed so that turning one
+ * on later cannot quietly open a second way round.
+ */
+const NEW_PASSWORD_FIELD: Record<string, string> = {
+  "/change-password": "newPassword",
+  "/reset-password": "newPassword",
+  "/set-password": "newPassword",
+  "/sign-up/email": "password",
+};
+
 export const auth = betterAuth({
   appName: "Prio",
   secret: process.env.AUTH_SECRET,
@@ -26,6 +45,17 @@ export const auth = betterAuth({
   database: prismaAdapter(prisma, {
     provider: "postgresql",
   }),
+
+  hooks: {
+    before: createAuthMiddleware(async (ctx) => {
+      const field = NEW_PASSWORD_FIELD[ctx.path];
+      if (!field) return;
+      const body = (ctx.body ?? {}) as Record<string, unknown>;
+      if (!meetsPasswordPolicy(body[field])) {
+        throw new APIError("BAD_REQUEST", { message: WEAK_PASSWORD_MESSAGE });
+      }
+    }),
+  },
 
   emailAndPassword: {
     enabled: true,

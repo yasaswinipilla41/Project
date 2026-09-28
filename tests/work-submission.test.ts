@@ -47,7 +47,7 @@ async function anIssue(title: string): Promise<string> {
     title,
     description: "Created by the integration suite.",
     status: "TODO",
-    priority: "MEDIUM",
+    priority: "P2",
   });
   if (!result.ok) throw new Error(`fixture create failed: ${result.error}`);
   created.push(result.data.id);
@@ -228,7 +228,7 @@ describe("assignment protection", () => {
     /* How soon work is done is not a developer's to change — that is its own
        rule, in `role-permissions`. What matters here is that the assignment
        guard did not swallow the status change above with it. */
-    const priority = await updateIssue({ issueId, priority: "HIGH" });
+    const priority = await updateIssue({ issueId, priority: "P1" });
     expect(priority.ok).toBe(false);
 
     const row = await prisma.issue.findUniqueOrThrow({

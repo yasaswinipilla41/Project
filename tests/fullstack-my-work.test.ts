@@ -45,7 +45,7 @@ const suspended: { teamId: string; userId: string }[] = [];
 let projectId = "";
 
 const TEAM_NAMES: Record<string, string> = {
-  [TESTING_TEAM_SLUG]: "Testing",
+  [TESTING_TEAM_SLUG]: "QA Team",
   [DEVELOPMENT_TEAM_SLUG]: "Development",
   [FULLSTACK_TEAM_SLUG]: "Full Stack Developers",
 };
@@ -149,7 +149,7 @@ async function anIssue(status: IssueStatus, assigneeId: string): Promise<string>
     type: "TASK",
     title: `Full stack my work ${status} ${Date.now()}-${Math.random()}`,
     description: "fixture",
-    priority: "MEDIUM",
+    priority: "P2",
     status,
     assigneeId,
   });

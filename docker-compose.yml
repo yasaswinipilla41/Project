@@ -102,6 +102,8 @@ services:
       REDIS_URL: redis://redis:6379
       AUTH_SECRET: ${AUTH_SECRET:?AUTH_SECRET is required}
       BASE_URL: ${BASE_URL:-http://localhost:3000}
+      # Self-registration is closed unless this is exactly "true".
+      ALLOW_SELF_SIGNUP: ${ALLOW_SELF_SIGNUP:-false}
       SMTP_HOST: ${SMTP_HOST:-mailpit}
       SMTP_PORT: ${SMTP_PORT:-1025}
       SMTP_USERNAME: ${SMTP_USERNAME:-}

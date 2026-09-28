@@ -80,7 +80,7 @@ describe("what the server does with a designation", () => {
       type: "TASK",
       title: `Raised without the menu ${Date.now()}`,
       description: "fixture",
-      priority: "MEDIUM",
+      priority: "P2",
     });
 
     expect(result.ok, result.ok ? "" : result.error).toBe(true);

@@ -71,7 +71,7 @@ const PENDING_FULLSTACK_ID = "pending:fullstack";
 
 /** What the roster is, worded the same here as on the row itself. */
 const FULLSTACK_DESCRIPTION =
-  "Builds and verifies. A membership of its own — holding it changes nothing about Development or Testing.";
+  "Builds and verifies. A membership of its own — holding it changes nothing about Development or QA.";
 
 /** The teams whose dialog also hands out work. */
 function handsOutWork(slug: string): boolean {
@@ -367,7 +367,7 @@ export function TeamAdmin({
             {team.members.length === 0 ? (
               <p className="prio-text-muted">
                 {team.slug === FULLSTACK_SLUG
-                  ? "Nobody is on this roster yet. Adding somebody here makes them a full stack developer, and changes nothing about Development or Testing."
+                  ? "Nobody is on this roster yet. Adding somebody here makes them a full stack developer, and changes nothing about Development or QA."
                   : "Nobody is on this team yet. Members added here gain the views that belong to it."}
               </p>
             ) : (
@@ -418,7 +418,7 @@ export function TeamAdmin({
           busy={saving}
           description={
             isFullStack
-              ? "Choose a project, the work to hand over, the account role and the people. Everybody chosen joins the Full Stack roster; their Development and Testing memberships are left as they are."
+              ? "Choose a project, the work to hand over, the account role and the people. Everybody chosen joins the Full Stack roster; their Development and QA memberships are left as they are."
               : isDeveloperTeam
                 ? "Choose a project, the work to hand over, the account role and the people. Issues can only come from the project chosen above them."
                 : "Choose a project and the people to put on it. Team membership and project access are separate facts; this writes both."

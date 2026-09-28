@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/primitives";
 import { Dialog } from "@/components/ui/Dialog";
 import { IconBug } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/Toast";
-import { PRIORITIES, PRIORITY_LABEL } from "@/lib/domain";
+import { DEFAULT_PRIORITY, PRIORITIES, PRIORITY_LABEL } from "@/lib/domain";
 import { reportBug } from "@/server/issues";
 import type { FieldErrors } from "@/server/schemas";
 import type { Priority } from "@prisma/client";
@@ -42,14 +42,14 @@ export function ReportBugDialog({
 
   const [title, setTitle] = useState("");
   const [affectedModule, setAffectedModule] = useState("");
-  const [priority, setPriority] = useState<Priority>("MEDIUM");
+  const [priority, setPriority] = useState<Priority>(DEFAULT_PRIORITY);
 
   if (assigneeId === currentUserId) return null;
 
   function reset() {
     setTitle("");
     setAffectedModule("");
-    setPriority("MEDIUM");
+    setPriority(DEFAULT_PRIORITY);
     setErrors({});
   }
 

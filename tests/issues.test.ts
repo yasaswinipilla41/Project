@@ -50,7 +50,7 @@ describe("createIssue", () => {
       title: "Verify issue key allocation",
       description: "Created by the integration suite.",
       status: "TODO",
-      priority: "HIGH",
+      priority: "P1",
     });
 
     expect(result.ok).toBe(true);
@@ -75,7 +75,7 @@ describe("createIssue", () => {
 
     expect(row.type).toBe("TASK");
     expect(row.status).toBe("TODO");
-    expect(row.priority).toBe("HIGH");
+    expect(row.priority).toBe("P1");
     expect(row.reporterId).toBe(user.id);
     // Bug-only fields stay null on a task.
     expect(row.severity).toBeNull();
@@ -107,7 +107,7 @@ describe("createIssue", () => {
     });
 
     expect(row.type).toBe("STORY");
-    expect(row.priority).toBe("MEDIUM");
+    expect(row.priority).toBe("P2");
 
     /*
      * Priority defaults in the schema. The status is where work this person
@@ -210,7 +210,7 @@ describe("createIssue", () => {
       title: "Board loses card after rapid drag",
       description: "Cards vanish when dropped twice in quick succession.",
       status: "TODO",
-      priority: "URGENT",
+      priority: "P0",
       assigneeId: assignee.id,
       environment: "Staging",
       browser: "Chrome 141",
@@ -242,7 +242,7 @@ describe("createIssue", () => {
     });
 
     expect(bug.type).toBe("BUG");
-    expect(bug.priority).toBe("URGENT");
+    expect(bug.priority).toBe("P0");
     // Retired fields: the create path no longer accepts them, so a bug
     // recorded now stores null rather than keeping whatever was passed.
     expect(bug.stepsToReproduce).toBeNull();
@@ -334,7 +334,7 @@ describe("updateIssue", () => {
       title: "Workflow transition check",
       description: "Used to verify status transitions are recorded.",
       status: "TODO",
-      priority: "MEDIUM",
+      priority: "P2",
     });
 
     expect(result.ok).toBe(true);
@@ -406,7 +406,7 @@ describe("updateIssue", () => {
       type: "BUG",
       title: "Priority and due date independence",
       description: "Neither field may be derived from the other.",
-      priority: "LOW",
+      priority: "P3",
       dueDate: "2099-01-31",
     });
 
@@ -414,7 +414,7 @@ describe("updateIssue", () => {
     if (!result.ok) return;
     created.push(result.data.id);
 
-    await updateIssue({ issueId: result.data.id, priority: "URGENT" });
+    await updateIssue({ issueId: result.data.id, priority: "P0" });
 
     const row = await prisma.issue.findUniqueOrThrow({
       where: { id: result.data.id },
@@ -422,7 +422,7 @@ describe("updateIssue", () => {
     });
 
     // Changing priority left the due date untouched.
-    expect(row.priority).toBe("URGENT");
+    expect(row.priority).toBe("P0");
     expect(row.dueDate?.toISOString().slice(0, 10)).toBe("2099-01-31");
 
     const changes = await prisma.activityLogEntry.findMany({
@@ -433,8 +433,8 @@ describe("updateIssue", () => {
     expect(changes).toHaveLength(1);
     expect(changes[0]).toMatchObject({
       field: "priority",
-      oldValue: "LOW",
-      newValue: "URGENT",
+      oldValue: "P3",
+      newValue: "P0",
     });
   });
 
@@ -476,7 +476,7 @@ describe("updateIssue", () => {
       title: "Reassignment persists",
       description: "Checks the assignee change is saved and logged.",
       status: "TODO",
-      priority: "MEDIUM",
+      priority: "P2",
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -521,7 +521,7 @@ describe("updateIssue", () => {
       title: "Reassignment authorization",
       description: "An outsider must not become assignable via update.",
       status: "TODO",
-      priority: "MEDIUM",
+      priority: "P2",
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;

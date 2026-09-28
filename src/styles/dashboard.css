@@ -421,16 +421,16 @@ a.prio-kpi:focus-visible {
   background: var(--prio-priority-none);
 }
 
-.prio-assigned[data-priority="URGENT"] .prio-assigned__rail {
+.prio-assigned[data-priority="P0"] .prio-assigned__rail {
   background: var(--prio-priority-urgent);
 }
-.prio-assigned[data-priority="HIGH"] .prio-assigned__rail {
+.prio-assigned[data-priority="P1"] .prio-assigned__rail {
   background: var(--prio-priority-high);
 }
-.prio-assigned[data-priority="MEDIUM"] .prio-assigned__rail {
+.prio-assigned[data-priority="P2"] .prio-assigned__rail {
   background: var(--prio-priority-medium);
 }
-.prio-assigned[data-priority="LOW"] .prio-assigned__rail {
+.prio-assigned[data-priority="P3"] .prio-assigned__rail {
   background: var(--prio-priority-low);
 }
 

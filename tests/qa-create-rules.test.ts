@@ -296,7 +296,7 @@ describe("a tester filing work", () => {
       title,
       description: "x",
       status: "DONE",
-      priority: "MEDIUM",
+      priority: "P2",
     });
 
     expect(result.ok).toBe(false);
@@ -319,7 +319,7 @@ describe("a tester filing work", () => {
       title: `Tester files straight into progress ${Date.now()}`,
       description: "x",
       status: "IN_PROGRESS",
-      priority: "MEDIUM",
+      priority: "P2",
     });
 
     expect(result.ok).toBe(false);
@@ -341,7 +341,7 @@ describe("a tester filing work", () => {
       title,
       description: "x",
       status: "IN_QA",
-      priority: "MEDIUM",
+      priority: "P2",
     });
 
     expect(result.ok).toBe(false);
@@ -358,7 +358,7 @@ describe("a tester filing work", () => {
       title: `Tester files as New ${Date.now()}`,
       description: "x",
       status: "TODO",
-      priority: "MEDIUM",
+      priority: "P2",
     });
 
     expect(result.ok).toBe(true);
@@ -394,7 +394,7 @@ describe("a tester filing work", () => {
       type: "BUG",
       title: `Tester files without a status ${Date.now()}`,
       description: "x",
-      priority: "MEDIUM",
+      priority: "P2",
     });
 
     expect(result.ok).toBe(true);
@@ -430,7 +430,7 @@ describe("a tester filing work", () => {
       title: `Tester hands work out ${Date.now()}`,
       description: "x",
       status: "BACKLOG",
-      priority: "MEDIUM",
+      priority: "P2",
       assigneeId: await userId(DEVELOPER),
       // Dating somebody's week is still an administrator's, so this is
       // dropped however it arrives.
@@ -462,7 +462,7 @@ describe("a tester filing work", () => {
       title: `Tester hands work to a fullstack ${Date.now()}`,
       description: "x",
       status: "BACKLOG",
-      priority: "MEDIUM",
+      priority: "P2",
       assigneeId: await userId(FULLSTACK),
     });
 
@@ -488,7 +488,7 @@ describe("a tester filing work", () => {
       title: `Tester tries a tester ${Date.now()}`,
       description: "x",
       status: "BACKLOG",
-      priority: "MEDIUM",
+      priority: "P2",
       assigneeId: await userId(TESTER),
     });
 
@@ -506,7 +506,7 @@ describe("a tester filing work", () => {
       title: `Tester tries an admin ${Date.now()}`,
       description: "x",
       status: "BACKLOG",
-      priority: "MEDIUM",
+      priority: "P2",
       assigneeId: await userId(ADMIN),
     });
 
@@ -524,7 +524,7 @@ describe("a tester filing work", () => {
       type: "TASK",
       title: `Admin files with an assignee ${Date.now()}`,
       description: "x",
-      priority: "MEDIUM",
+      priority: "P2",
       assigneeId: assignee,
       dueDate: "2099-03-01",
     });
@@ -551,7 +551,7 @@ describe("a tester filing work", () => {
       type: "TASK",
       title: `Full stack files with an assignee ${Date.now()}`,
       description: "x",
-      priority: "MEDIUM",
+      priority: "P2",
       assigneeId: assignee,
       dueDate: "2099-03-01",
     });
@@ -583,7 +583,7 @@ describe("the reporter", () => {
         /* Left unsaid on purpose: each of these three files in a different
            status, and the question here is who the reporter is rather than
            what may be filed. Saying "New" would have refused the tester. */
-        priority: "MEDIUM",
+        priority: "P2",
         /* A payload naming somebody else changes nothing: there is no field
            for it, and the reporter is read from the session. */
         reporterId: await userId(DEVELOPER),

@@ -144,7 +144,7 @@ test.describe("Cloning an issue", () => {
     const originalTitle = `Clone source ${stamp()}`;
     const source = await fixture(originalTitle, {
       description: "The original text.",
-      priority: "HIGH",
+      priority: "P1",
     });
     const cloneTitle = `Saved clone ${stamp()}`;
 
@@ -171,7 +171,7 @@ test.describe("Cloning an issue", () => {
     madeIssues.push(clone.id);
     expect(clone.title).toBe(cloneTitle);
     expect(clone.description).toBe("The original text.");
-    expect(clone.priority).toBe("HIGH");
+    expect(clone.priority).toBe("P1");
 
     // The original still says exactly what it said.
     await page.goto(`/issues/${source.key.toLowerCase()}`);
@@ -208,7 +208,8 @@ test.describe("The issue page is one shape for every type", () => {
     expect(await sectionsOf(bug.key)).toEqual(await sectionsOf(task.key));
 
     // Description is one of them, and the header carries the same live
-    // controls on both: status, priority and assignee.
+    // controls on both: status, priority and assignee — plus, on a bug only,
+    // how severe it is.
     for (const key of [task.key, bug.key]) {
       await page.goto(`/issues/${key.toLowerCase()}`);
       await expect(
@@ -216,7 +217,7 @@ test.describe("The issue page is one shape for every type", () => {
       ).toBeVisible();
       await expect(
         page.locator(".prio-issue__headmeta .prio-fieldtrigger"),
-      ).toHaveCount(3);
+      ).toHaveCount(key === bug.key ? 4 : 3);
     }
 
     // No bug-only environment block survives on the bug.

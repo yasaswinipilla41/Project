@@ -438,7 +438,7 @@ export default async function MyWorkPage({
               <Card style={{ height: "100%" }}>
                 <CardBody>
                   <h2 className="prio-issue__section-title">
-                    Testing sent this back
+                    QA sent this back
                     <span className="prio-text-muted">{handedBack.length}</span>
                   </h2>
                   {handedBack.map((issue) => (

@@ -14,6 +14,10 @@ export default defineConfig({
       AUTH_SECRET: process.env.AUTH_SECRET ?? "",
       BASE_URL: process.env.BASE_URL ?? "http://localhost:3000",
       REDIS_URL: process.env.REDIS_URL ?? "redis://localhost:6379",
+      // Self-registration is off unless an operator opens it. The suite
+      // exercises the sign-up action, so it is on here; the tests that prove
+      // it is closed by default (tests/signup-gate.test.ts) unset it themselves.
+      ALLOW_SELF_SIGNUP: "true",
     },
     include: ["tests/**/*.test.ts"],
     setupFiles: ["tests/setup.ts"],

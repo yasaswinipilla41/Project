@@ -55,7 +55,7 @@ const suspended: { teamId: string; userId: string }[] = [];
 let projectId = "";
 
 const TEAM_NAMES: Record<string, string> = {
-  [TESTING_TEAM_SLUG]: "Testing",
+  [TESTING_TEAM_SLUG]: "QA Team",
   [DEVELOPMENT_TEAM_SLUG]: "Development",
   [FULLSTACK_TEAM_SLUG]: "Full Stack Developers",
 };
@@ -203,7 +203,7 @@ describe("raising work, through the action a browser calls", () => {
           type,
           title: `${role} raises ${type} ${Date.now()}-${Math.random()}`,
           description: "fixture",
-          priority: "MEDIUM",
+          priority: "P2",
         });
 
         expect(result.ok, result.ok ? "" : `${role}/${type}: ${result.error}`).toBe(
@@ -310,7 +310,7 @@ describe("project authorization still decides where", () => {
         type: "TASK",
         title,
         description: "fixture",
-        priority: "MEDIUM",
+        priority: "P2",
       });
 
       expect(result.ok).toBe(false);

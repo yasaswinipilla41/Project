@@ -64,7 +64,7 @@ async function anIssueInQa(title: string, status: "IN_QA" | "IN_REVIEW") {
     projectId: project.id,
     type: "BUG",
     title,
-    priority: "MEDIUM",
+    priority: "P2",
     status,
   });
   if (!created.ok) throw new Error(created.error);

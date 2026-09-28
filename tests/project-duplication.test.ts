@@ -162,7 +162,7 @@ async function makeSource(label = "Duplication source") {
     title: "Fix login issue",
     description: "The parent story.",
     status: "IN_PROGRESS",
-    priority: "HIGH",
+    priority: "P1",
     assigneeId: admin.id,
     labelIds: [grown.id],
     dueDate: "2026-12-24",
@@ -174,7 +174,7 @@ async function makeSource(label = "Duplication source") {
     type: "BUG",
     title: "Child bug",
     status: "TODO",
-    priority: "LOW",
+    priority: "P3",
     assigneeId: member.id,
     parentId: parent.data.id,
   });
@@ -185,7 +185,7 @@ async function makeSource(label = "Duplication source") {
     type: "TASK",
     title: "Related task",
     status: "BACKLOG",
-    priority: "MEDIUM",
+    priority: "P2",
   });
   if (!related.ok) throw new Error(related.error);
 
@@ -487,7 +487,7 @@ describe("the copied issues", () => {
     expect(parentAfter.description).toBe(parentBefore.description);
     expect(parentAfter.type).toBe("STORY");
     expect(parentAfter.status).toBe("IN_PROGRESS");
-    expect(parentAfter.priority).toBe("HIGH");
+    expect(parentAfter.priority).toBe("P1");
     expect(parentAfter.assigneeId).toBe(source.admin.id);
     expect(parentAfter.reporterId).toBe(parentBefore.reporterId);
     expect(parentAfter.dueDate?.toISOString()).toBe(
@@ -513,7 +513,7 @@ describe("the copied issues", () => {
       title: "Fix payment issue",
       description: "Rewritten on the copy.",
       status: "DONE",
-      priority: "LOW",
+      priority: "P3",
       assigneeId: source.member.id,
       dueDate: "2027-01-31",
     });
@@ -540,7 +540,7 @@ describe("the copied issues", () => {
     expect(original.title).toBe("Fix login issue");
     expect(original.description).toBe("The parent story.");
     expect(original.status).toBe("IN_PROGRESS");
-    expect(original.priority).toBe("HIGH");
+    expect(original.priority).toBe("P1");
     expect(original.assigneeId).toBe(source.admin.id);
     expect(original.dueDate?.toISOString().slice(0, 10)).toBe("2026-12-24");
     expect(original.labels.map((l) => l.label.name)).toEqual([
@@ -996,7 +996,7 @@ describe("cloning the same project more than once", () => {
     const edited = await updateIssue({
       issueId: aParent.id,
       title: "Only in copy A",
-      priority: "URGENT",
+      priority: "P0",
     });
     expect(edited.ok).toBe(true);
 
@@ -1004,7 +1004,7 @@ describe("cloning the same project more than once", () => {
       const titles = await issuesByTitle(projectId);
       expect(titles.has("Fix login issue")).toBe(true);
       expect(titles.has("Only in copy A")).toBe(false);
-      expect(titles.get("Fix login issue")!.priority).toBe("HIGH");
+      expect(titles.get("Fix login issue")!.priority).toBe("P1");
     }
 
     // Deleting a comment in B removes nothing from C or the original.
@@ -1058,7 +1058,7 @@ describe("cloning a large project", () => {
         type: "TASK" as const,
         title: `Bulk issue ${index + 1}`,
         status: "TODO" as const,
-        priority: "MEDIUM" as const,
+        priority: "P2" as const,
         reporterId: admin.id,
       })),
     });

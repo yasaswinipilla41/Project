@@ -82,7 +82,7 @@ beforeAll(async () => {
       type: "TASK" as const,
       title: `Capacity scenery ${index + 1}`,
       status: "BACKLOG" as const,
-      priority: "MEDIUM" as const,
+      priority: "P2" as const,
       reporterId: admin.id,
       sortIndex: (index + 1) * 1000,
     })),
@@ -107,7 +107,7 @@ async function createOne(title: string) {
     type: "TASK",
     title,
     description: "fixture",
-    priority: "MEDIUM",
+    priority: "P2",
   });
 }
 

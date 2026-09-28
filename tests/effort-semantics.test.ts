@@ -48,7 +48,7 @@ async function anIssue(title: string) {
     projectId: project.id,
     type: "TASK",
     title: `${title} ${Date.now()}`,
-    priority: "MEDIUM",
+    priority: "P2",
     labelIds: [],
   });
   if (!result.ok) throw new Error(result.error);
@@ -190,7 +190,7 @@ describe("an estimate nobody has revised", () => {
      * about the item. `updatedAt` advances, which is exactly the reading that
      * gets mistaken for effort consumed.
      */
-    await updateIssue({ issueId, priority: "HIGH" });
+    await updateIssue({ issueId, priority: "P1" });
     const touched = await readWork(issueId);
 
     expect(touched.updatedAt.getTime()).toBeGreaterThan(

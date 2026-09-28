@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
+import { PRIORITIES } from "../src/lib/domain";
 
 /**
  * Generates bulk issues to check §39's target of roughly 2,000 issues per
@@ -29,7 +30,6 @@ const STATUSES = [
   "DONE",
   "CANCELLED",
 ] as const;
-const PRIORITIES = ["URGENT", "HIGH", "MEDIUM", "LOW", "NONE"] as const;
 const SEVERITIES = ["CRITICAL", "MAJOR", "MINOR", "TRIVIAL"] as const;
 const TYPES = ["TASK", "BUG", "STORY"] as const;
 

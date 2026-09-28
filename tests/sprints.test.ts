@@ -1157,7 +1157,7 @@ describe("Moving an issue", () => {
       await updateIssue({
         issueId: issue.id,
         status: "IN_PROGRESS",
-        priority: "HIGH",
+        priority: "P1",
       });
       const before = await prisma.issue.findUniqueOrThrow({
         where: { id: issue.id },
