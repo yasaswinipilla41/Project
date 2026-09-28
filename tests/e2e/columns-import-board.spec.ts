@@ -243,7 +243,7 @@ test.describe("the import template", () => {
     /* Directly below the sentence that names the columns — it is that
        sentence made into a file. */
     const hint = dialog.locator(".prio-hint");
-    await expect(hint).toContainText("Needs a Title column");
+    await expect(hint).toContainText("Needs a Summary column");
     const button = dialog.getByRole("button", { name: "Download Template" });
     await expect(button).toBeVisible();
 
@@ -290,22 +290,27 @@ test.describe("the import template", () => {
     const headers: string[] = [];
     sheet.getRow(1).eachCell((cell) => headers.push(String(cell.value ?? "").trim()));
 
+    /* Exactly these eight, in this order — no Title, Project key, Type,
+       Labels or Due date. */
     expect(headers).toEqual([
-      "Title",
-      "Project key",
-      "Type",
+      "Summary",
+      "Description",
+      "Issue Type",
       "Status",
       "Priority",
       "Assignee",
-      "Labels",
-      "Due date",
-      "Description",
+      "Severity",
+      "Parent Issue",
     ]);
 
-    /* Header row only. A sample row would have to carry a real project key
-       and a real member to survive validation, and somebody filling in the
-       rows around it would import the sample as work. */
-    expect(sheet.rowCount).toBe(1);
+    /* Header row only. A sample row would have to carry a real member and a
+       real parent to survive validation, and somebody filling in the rows
+       around it would import the sample as work. (`actualRowCount` counts rows
+       with something in them; the drop-downs reach further down than that.) */
+    expect(sheet.actualRowCount).toBe(1);
+
+    /* And the drop-downs are really in the file. */
+    expect(sheet.getCell(2, 4).dataValidation?.type).toBe("list");
   });
 
   test("is offered on a project's list too, where the import is that project's", async ({
@@ -408,10 +413,13 @@ test.describe("the import drop zone", () => {
     const hint = dialog.locator(".prio-hint");
 
     await expect(hint).toContainText(
-      "Needs a Title column and a Project key column. Type, Status, Priority, " +
-        "Assignee, Labels, Due date and Description are used when present.",
+      "Needs a Summary column. Description, Issue Type, Status, Priority, " +
+        "Assignee, Severity and Parent Issue are used when present.",
     );
-    await expect(hint.locator("strong")).toHaveText(["Title", "Project key"]);
+    await expect(hint.locator("strong")).toHaveText(["Summary"]);
+    /* Neither of the columns this replaced is mentioned any more. */
+    await expect(hint).not.toContainText("Title");
+    await expect(hint).not.toContainText("Project key");
   });
 
   test("opens the real file picker when the zone is clicked", async ({ page }) => {
@@ -441,7 +449,13 @@ test.describe("the import drop zone", () => {
       "data-chosen",
       "true",
     );
-    await expect(importButton).toBeEnabled();
+    /* Chosen is not checked, and on the all-projects list nothing can be
+       checked until it is known which project the rows are for. Import waits
+       for a verdict, not for a file. */
+    await expect(dialog.getByRole("status")).toHaveText(
+      "Ready to validate. Choose a project first.",
+    );
+    await expect(importButton).toBeDisabled();
   });
 
   test("takes a pasted file too", async ({ page }) => {
@@ -454,7 +468,7 @@ test.describe("the import drop zone", () => {
     );
     await expect(
       dialog.getByRole("button", { name: "Import", exact: true }),
-    ).toBeEnabled();
+    ).toBeDisabled();
   });
 
   /*
@@ -482,9 +496,7 @@ test.describe("the import drop zone", () => {
     await expect(dialog.locator(".prio-importdrop__file")).toHaveText(
       "second-try.xlsx",
     );
-    await expect(
-      dialog.getByRole("button", { name: "Import", exact: true }),
-    ).toBeEnabled();
+    await expect(dialog.locator(".prio-alert")).toHaveCount(0);
   });
 
   test("marks itself while a file is dragged over it", async ({ page }) => {
@@ -539,5 +551,216 @@ test.describe("the import drop zone", () => {
     await expect(
       dialog.getByRole("button", { name: "Import", exact: true }),
     ).toBeVisible();
+  });
+});
+
+/**
+ * The import, start to finish: check first, then all or nothing.
+ *
+ * Run from a project's own list, where the route says which project the rows
+ * are for — the spreadsheet has no project column. Real workbooks are handed to
+ * the real file input, because what these prove is what happens after a file is
+ * chosen: the verdict, the button, and what does and does not get written.
+ */
+test.describe("the import workflow", () => {
+  const XLSX_TYPE =
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  const stamp = Date.now();
+  const made: string[] = [];
+
+  test.afterAll(async () => {
+    if (made.length > 0) {
+      const issues = await prisma.issue.findMany({
+        where: { title: { in: made } },
+        select: { id: true },
+      });
+      const ids = issues.map((i) => i.id);
+      await prisma.notification.deleteMany({ where: { issueId: { in: ids } } });
+      await prisma.issue.deleteMany({ where: { id: { in: ids } } });
+    }
+  });
+
+  async function workbook(headers: string[], rows: Record<string, string>[]) {
+    const ExcelJS = (await import("exceljs")).default;
+    const book = new ExcelJS.Workbook();
+    const sheet = book.addWorksheet("Work items");
+    sheet.addRow(headers);
+    for (const row of rows) sheet.addRow(headers.map((h) => row[h] ?? ""));
+    return Buffer.from(await book.xlsx.writeBuffer());
+  }
+
+  async function openOnProject(page: import("@playwright/test").Page) {
+    await page.goto("/projects/eng/list");
+    await page.getByRole("button", { name: "Import" }).click();
+    const dialog = page.getByRole("dialog", { name: "Import work items" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText("ENG");
+    return dialog;
+  }
+
+  const choose = (
+    dialog: import("@playwright/test").Locator,
+    name: string,
+    buffer: Buffer,
+  ) =>
+    dialog
+      .locator("#import-file")
+      .setInputFiles({ name, mimeType: XLSX_TYPE, buffer });
+
+  const importButton = (dialog: import("@playwright/test").Locator) =>
+    dialog.getByRole("button", { name: "Import", exact: true });
+
+  test("checks the file as soon as it is chosen, and lights Import only when every row is valid", async ({
+    page,
+  }) => {
+    const titles = [`E2E import A ${stamp}`, `E2E import B ${stamp}`];
+    made.push(...titles);
+    const dialog = await openOnProject(page);
+
+    await expect(importButton(dialog)).toBeDisabled();
+    await choose(
+      dialog,
+      "good.xlsx",
+      await workbook(
+        ["Summary", "Description", "Issue Type", "Status", "Priority"],
+        [
+          { Summary: titles[0]!, "Issue Type": "Task" },
+          {
+            Summary: titles[1]!,
+            Description: "From a spreadsheet",
+            Priority: "High",
+          },
+        ],
+      ),
+    );
+
+    await expect(dialog.getByRole("status")).toHaveText(
+      "All 2 rows are valid. Ready to import.",
+    );
+    await expect(dialog).toContainText("File: good.xlsx");
+    await expect(dialog).toContainText("2 rows detected");
+    await expect(dialog).toContainText("2 valid rows");
+    await expect(dialog.locator(".prio-importsummary__invalid")).toHaveCount(0);
+    await expect(importButton(dialog)).toBeEnabled();
+    /* Checking wrote nothing. */
+    expect(await prisma.issue.count({ where: { title: { in: titles } } })).toBe(0);
+
+    await importButton(dialog).click();
+
+    await expect(
+      page.getByText("2 work items imported successfully."),
+    ).toBeVisible();
+    await expect(dialog).toHaveCount(0);
+    expect(await prisma.issue.count({ where: { title: { in: titles } } })).toBe(2);
+
+    /* The list drew itself again, so the new work is on it without a reload. */
+    await expect(page.getByText(titles[0]!)).toBeVisible();
+    await expect(page).toHaveURL(/\/projects\/eng\/list/);
+
+    /* A blank Status came in as New, in the project the page belongs to. */
+    const first = await prisma.issue.findFirstOrThrow({
+      where: { title: titles[0]! },
+      select: { status: true, project: { select: { key: true } } },
+    });
+    expect(first.status).toBe("TODO");
+    expect(first.project.key).toBe("ENG");
+  });
+
+  test("keeps Import disabled and creates nothing when any row is invalid", async ({
+    page,
+  }) => {
+    const good = `E2E should not exist ${stamp}`;
+    made.push(good);
+    const dialog = await openOnProject(page);
+
+    await choose(
+      dialog,
+      "mixed.xlsx",
+      await workbook(
+        ["Summary", "Assignee", "Parent Issue"],
+        [
+          { Summary: good },
+          { Summary: "Login issue", Assignee: "John123" },
+          { Summary: "Payment failure", "Parent Issue": "ENG-9999" },
+        ],
+      ),
+    );
+
+    await expect(dialog.getByRole("status")).toHaveText(
+      "2 rows need attention before importing.",
+    );
+    await expect(dialog).toContainText("3 rows detected");
+    await expect(dialog).toContainText("1 valid row");
+    await expect(dialog).toContainText("2 invalid rows");
+
+    const problems = dialog.locator(".prio-importproblems");
+    await expect(problems).toContainText("Row 3");
+    await expect(problems).toContainText("Summary: Login issue");
+    await expect(problems).toContainText('Assignee "John123" was not found');
+    await expect(problems).toContainText("Row 4");
+    await expect(problems).toContainText("Summary: Payment failure");
+    await expect(problems).toContainText('Parent Issue "ENG-9999" does not exist');
+
+    await expect(importButton(dialog)).toBeDisabled();
+    expect(await prisma.issue.count({ where: { title: good } })).toBe(0);
+
+    /* Fixing the file and choosing it again is the way out. */
+    await choose(
+      dialog,
+      "fixed.xlsx",
+      await workbook(["Summary"], [{ Summary: good }]),
+    );
+    await expect(dialog.getByRole("status")).toHaveText(
+      "All 1 row is valid. Ready to import.",
+    );
+    await expect(importButton(dialog)).toBeEnabled();
+  });
+
+  test("refuses the old template, saying what to use instead", async ({ page }) => {
+    const dialog = await openOnProject(page);
+
+    await choose(
+      dialog,
+      "old.xlsx",
+      await workbook(
+        ["Title", "Project key", "Type", "Status"],
+        [{ Title: "Old shape", "Project key": "ENG" }],
+      ),
+    );
+
+    const alert = dialog.locator(".prio-alert");
+    await expect(alert).toContainText("Missing required column: Summary");
+    await expect(alert).toContainText(
+      "Unrecognised columns: Title, Project key, Type",
+    );
+    await expect(importButton(dialog)).toBeDisabled();
+  });
+
+  test("on the all-projects list, asks which project once, then checks the file", async ({
+    page,
+  }) => {
+    const title = `E2E all-projects ${stamp}`;
+    made.push(title);
+    await page.goto("/issues");
+    await page.getByRole("button", { name: "Import" }).click();
+    const dialog = page.getByRole("dialog", { name: "Import work items" });
+
+    await choose(
+      dialog,
+      "one.xlsx",
+      await workbook(["Summary"], [{ Summary: title }]),
+    );
+    await expect(dialog.getByRole("status")).toHaveText(
+      "Ready to validate. Choose a project first.",
+    );
+    await expect(importButton(dialog)).toBeDisabled();
+
+    await dialog
+      .getByLabel("Project")
+      .selectOption({ label: "Engineering" });
+    await expect(dialog.getByRole("status")).toHaveText(
+      "All 1 row is valid. Ready to import.",
+    );
+    await expect(importButton(dialog)).toBeEnabled();
   });
 });

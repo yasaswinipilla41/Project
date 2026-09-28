@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { ISSUE_STATUSES, ISSUE_TYPES, PRIORITIES } from "@/lib/domain";
+import {
+  ISSUE_STATUSES,
+  ISSUE_TYPES,
+  PRIORITIES,
+  SEVERITIES,
+} from "@/lib/domain";
 
 /**
  * Input contracts for every write path.
@@ -112,6 +117,7 @@ const patchDate = z
 export const issueStatusSchema = z.enum(ISSUE_STATUSES);
 export const issueTypeSchema = z.enum(ISSUE_TYPES);
 export const prioritySchema = z.enum(PRIORITIES);
+export const severitySchema = z.enum(SEVERITIES);
 
 /* --------------------------------------------------------------- projects */
 
@@ -262,7 +268,14 @@ const issueBase = z.object({
  * trail that names those fields still reads correctly. They are simply never
  * written from here.
  */
-export const createIssueSchema = issueBase;
+export const createIssueSchema = issueBase.extend({
+  /*
+   * Only the spreadsheet import supplies this. No form offers a severity any
+   * more, so it is optional and absent from every other caller — `issueBase`
+   * itself, which the clone schema shares, is deliberately left without it.
+   */
+  severity: severitySchema.optional(),
+});
 
 export type CreateIssueInput = z.infer<typeof createIssueSchema>;
 

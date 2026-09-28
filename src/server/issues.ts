@@ -12,13 +12,10 @@ import { AUTOMATIC_ASSIGNMENT_ACTION } from "@/lib/activity";
 import { listIssues } from "@/server/queries/issues";
 import {
   assertIssueAccess,
-  assertProjectAccess,
   AuthorizationError,
   NotFoundError,
   ProjectAtCapacityError,
-  assertCanCreateWork,
   workRoleOf,
-  workRolesFor,
 } from "@/lib/authz";
 import { requireUser } from "@/lib/session";
 import {
@@ -27,10 +24,8 @@ import {
   canEditDueDate,
   canEditIssueName,
   canEditPriority,
-  canHoldAnotherIssue,
   canSetDueDateInStatus,
   canSetStatus,
-  filableStatusesFor,
   doesDeveloperWork,
   isClosedStatus,
   statusRefusalReason,
@@ -53,13 +48,19 @@ import {
 import {
   claimIssueSchema,
   cloneIssueSchema,
-  createIssueSchema,
   fieldErrors,
   reportBugSchema,
   updateIssueSchema,
   type FieldErrors,
 } from "@/server/schemas";
 import { createIssueLink } from "@/server/links";
+import {
+  checkNewIssue,
+  insertIssue,
+  nextIssueNumber,
+  parentProblem,
+  revalidateIssueSurfaces,
+} from "@/server/issueCreation";
 
 /**
  * Issue, story and bug writes.
@@ -92,109 +93,6 @@ function failure(error: unknown): ActionResult<never> {
   };
 }
 
-/* ------------------------------------------------------------- issue key */
-
-/**
- * Allocates the next issue number for a project.
- *
- * The increment happens inside the caller's transaction, so concurrent creates
- * serialise on the project row and no two issues can take the same number. The
- * counter is never decremented, so a deleted issue's key is never reused (§10).
- */
-async function nextIssueNumber(
-  tx: Prisma.TransactionClient,
-  projectId: string,
-): Promise<{ number: number; key: string }> {
-  const project = await tx.project.update({
-    where: { id: projectId },
-    data: { issueSequence: { increment: 1 } },
-    select: { key: true, issueSequence: true, maxIssues: true },
-  });
-
-  /*
-   * The project's issue limit, checked here because here is where every new
-   * issue necessarily passes.
-   *
-   * Filing work and allocating its key are the same act, so a creation path
-   * that skipped this check could not produce a key — which is a stronger
-   * guarantee than remembering to repeat the check in each caller, and is why
-   * it is not written at the two call sites instead.
-   *
-   * The update above holds this project's row for the rest of the transaction,
-   * so the count cannot be raced: a second create arriving at the same moment
-   * waits here, and reads a count that already includes the first. Refusing by
-   * `throw` rolls the transaction back, which also returns the sequence number
-   * this call just took — a refused create leaves no gap in the keys.
-   */
-  if (project.maxIssues !== null) {
-    const held = await tx.issue.count({ where: { projectId } });
-    if (!canHoldAnotherIssue(held, project.maxIssues)) {
-      throw new ProjectAtCapacityError();
-    }
-  }
-
-  return {
-    number: project.issueSequence,
-    key: `${project.key}-${project.issueSequence}`,
-  };
-}
-
-/* ------------------------------------------------------------ parenthood */
-
-/**
- * Whether `parentId` may become the parent of an issue in `projectId`.
- *
- * The parent of an issue is another **issue** — never its project. The two are
- * separate relationships and neither substitutes for the other: `projectId`
- * says where the work is filed, `parentId` says what larger piece of work it
- * belongs to, and this only ever resolves the second.
- *
- * Returns the message to show, or `null` when the choice is legal. Four things
- * are refused, and the fourth is why this exists as a function at all:
- *
- *   - a parent in another project — a child would then belong to two;
- *   - a parent that is itself a sub-issue (Prio supports one level, §24);
- *   - the issue itself, which is a cycle of length one;
- *   - a parent chosen for an issue that already *has* sub-issues, which would
- *     make three levels and, if the two pointed at each other, a loop.
- *
- * `createIssue` checked the first two inline. `updateIssue` checked none of
- * them: it tracked `parentId` as ordinary text and wrote whatever it was
- * handed, so a crafted payload could file an issue under another project's, or
- * under itself. Both callers now go through here.
- */
-async function parentProblem(
-  parentId: string,
-  projectId: string,
-  /** The issue being re-parented, or `null` when it does not exist yet. */
-  childId: string | null,
-): Promise<string | null> {
-  if (childId !== null && parentId === childId) {
-    return "An issue cannot be its own parent.";
-  }
-
-  const parent = await prisma.issue.findUnique({
-    where: { id: parentId },
-    select: { projectId: true, parentId: true },
-  });
-
-  if (!parent || parent.projectId !== projectId) {
-    return "Choose an issue from this project.";
-  }
-  if (parent.parentId) {
-    return "Prio supports one level of sub-issues.";
-  }
-
-  if (childId !== null) {
-    const children = await prisma.issue.count({ where: { parentId: childId } });
-    if (children > 0) {
-      return "This issue has sub-issues of its own, so it cannot become one.";
-    }
-  }
-
-  return null;
-}
-
 /* --------------------------------------------------------------- create */
 
 export interface CreatedIssue {
@@ -211,234 +109,12 @@ export async function createIssue(
   try {
     const user = await requireUser();
 
-    const parsed = createIssueSchema.safeParse(raw);
-    if (!parsed.success) {
-      return {
-        ok: false,
-        error: "Please correct the highlighted fields.",
-        fieldErrors: fieldErrors(parsed.error),
-      };
-    }
-    const input = parsed.data;
+    const checked = await checkNewIssue(user, raw);
+    if (!checked.ok) return checked;
 
-    await assertProjectAccess(user, input.projectId);
-    /* What may be raised, by this person, of this kind — the approved matrix,
-       applied on the server because a hidden button is not what stops a direct
-       call. Where it may be raised was settled on the line above. */
-    await assertCanCreateWork(user, input.type);
-
-    const role = await workRoleOf(user);
-
-    /*
-     * What this person may file work as.
-     *
-     * Raising work and moving it are separate decisions, so this is not the
-     * transition list and, for a pure tester, not the settable list either. A
-     * tester raises work into the Backlog or as New — what they file is a
-     * request for somebody to pick up, and whether it is being built or
-     * finished is not theirs to declare at the moment they raise it.
-     *
-     * Enforced here rather than by the form offering one option: a stale form,
-     * a copied request or a clone of a finished issue would otherwise put a
-     * different status back.
-     *
-     * Omitting the status means the first one they may file in, which is
-     * Backlog for a tester and Backlog for an administrator.
-     */
-    const permitted = filableStatusesFor(role);
-    const status = input.status ?? permitted[0] ?? "TODO";
-
-    if (!permitted.includes(status)) {
-      return {
-        ok: false,
-        error: statusRefusalReason(role, null, status),
-        fieldErrors: { status: "Not a status you can file work as." },
-      };
-    }
-
-    /*
-     * A tester hands work to somebody who builds, and dates nothing.
-     *
-     * Raising a defect and saying who should fix it are one act for a tester,
-     * so the assignee is theirs to set. Two limits still apply, and both are
-     * enforced below rather than by the form: the person named must actually
-     * build — a tester may not hand work to another tester, and may not hand
-     * it to an administrator — and the project-membership rule every assignee
-     * faces applies unchanged.
-     *
-     * The due date stays an administrator's. A tester reporting something is
-     * not planning somebody's week, and unlike the assignee there is nobody
-     * the work is being passed to. It is dropped rather than refused, because
-     * it is an optional fact about the work rather than an instruction that
-     * failed: a tester cloning a dated issue gets their copy, undated.
-     *
-     * None of this touches anybody who also builds; it is the pure tester's
-     * rule, not QA's half of a fullstack job.
-     */
-    const filesAsTester = role === "QA";
-    if (filesAsTester) {
-      input.dueDate = null;
-
-      if (input.assigneeId) {
-        const [assigneeRole] = (
-          await workRolesFor([input.assigneeId])
-        ).values();
-
-        if (!assigneeRole || !doesDeveloperWork(assigneeRole) ||
-            assigneeRole === "ADMIN") {
-          return {
-            ok: false,
-            error: "Work can only be handed to a developer.",
-            fieldErrors: {
-              assigneeId: "Choose a developer or full stack developer.",
-            },
-          };
-        }
-      }
-    }
-
-    // An assignee must be a member of the project they are being assigned in.
-    if (input.assigneeId) {
-      const member = await prisma.projectMember.count({
-        where: { projectId: input.projectId, userId: input.assigneeId },
-      });
-      if (member === 0) {
-        return {
-          ok: false,
-          error: "That person is not a member of this project.",
-          fieldErrors: { assigneeId: "Not a member of this project." },
-        };
-      }
-    }
-
-    // Labels must belong to the same project.
-    if (input.labelIds.length > 0) {
-      const validLabels = await prisma.label.count({
-        where: { id: { in: input.labelIds }, projectId: input.projectId },
-      });
-      if (validLabels !== input.labelIds.length) {
-        return { ok: false, error: "One or more labels are not valid here." };
-      }
-    }
-
-    // The parent is an issue in this project, and only one level deep (§24).
-    if (input.parentId) {
-      const problem = await parentProblem(
-        input.parentId,
-        input.projectId,
-        null,
-      );
-      if (problem) {
-        return { ok: false, error: problem, fieldErrors: { parentId: problem } };
-      }
-    }
-
-    const created = await prisma.$transaction(async (tx) => {
-      const { number, key } = await nextIssueNumber(tx, input.projectId);
-
-      // Place new work at the end of its column.
-      const last = await tx.issue.findFirst({
-        where: { projectId: input.projectId, status },
-        orderBy: { sortIndex: "desc" },
-        select: { sortIndex: true },
-      });
-
-      const issue = await tx.issue.create({
-        data: {
-          key,
-          number,
-          projectId: input.projectId,
-          type: input.type,
-          title: input.title,
-          /* The schema has always accepted a description and this never
-             wrote it, so every description handed to `createIssue` was
-             silently dropped. Harmless while no form offered the field;
-             not harmless now that every type has one. */
-          description: input.description,
-          status,
-          priority: input.priority,
-          assigneeId: input.assigneeId,
-          reporterId: user.id,
-          dueDate: input.dueDate,
-          parentId: input.parentId,
-          sortIndex: (last?.sortIndex ?? 0) + 1000,
-          completedAt: isClosedStatus(status) ? new Date() : null,
-
-          // The retired bug columns. Nothing collects them any more; they are
-          // still accepted so an existing caller is not broken.
-          environment: input.type === "BUG" ? input.environment : null,
-          browser: input.type === "BUG" ? input.browser : null,
-          operatingSystem: input.type === "BUG" ? input.operatingSystem : null,
-          versionBuild: input.type === "BUG" ? input.versionBuild : null,
-          affectedModule: input.type === "BUG" ? input.affectedModule : null,
-
-          labels:
-            input.labelIds.length > 0
-              ? {
-                  createMany: {
-                    data: input.labelIds.map((labelId) => ({ labelId })),
-                  },
-                }
-              : undefined,
-        },
-        select: {
-          id: true,
-          key: true,
-          type: true,
-          title: true,
-          project: { select: { key: true } },
-        },
-      });
-
-      await recordIssueCreated(tx, {
-        issueId: issue.id,
-        actorId: user.id,
-        isBug: input.type === "BUG",
-      });
-
-      /*
-       * Work that is born assigned is still work that was assigned.
-       *
-       * The creation row names the type and the actor but carries no field,
-       * so an issue filed straight to somebody had no assignment history at
-       * all — including every row brought in by the spreadsheet import and
-       * every clone, which both go through here. The history then answered
-       * "who gave this to me?" with silence for exactly the cases where
-       * nobody remembers.
-       */
-      if (input.assigneeId) {
-        await recordFieldChanges(tx, {
-          issueId: issue.id,
-          actorId: user.id,
-          changes: [
-            {
-              field: "assigneeId",
-              oldValue: null,
-              newValue: input.assigneeId,
-            },
-          ],
-        });
-      }
-
-      await addWatchers(tx, issue.id, [user.id, input.assigneeId]);
-
-      if (input.assigneeId) {
-        await notify(tx, {
-          issueId: issue.id,
-          actorId: user.id,
-          userIds: [input.assigneeId],
-          type: "ISSUE_ASSIGNED",
-          message: assignmentMessage({
-            issueKey: issue.key,
-            issueTitle: issue.title,
-            typeLabel: ISSUE_TYPE_LABEL[input.type].toLowerCase(),
-            tester: await isTester(tx, input.assigneeId),
-          }),
-        });
-      }
-
-      return issue;
-    });
+    const created = await prisma.$transaction((tx) =>
+      insertIssue(tx, user, checked.input, checked.status),
+    );
 
     revalidateIssueSurfaces(created.project.key, created.key);
 
@@ -456,6 +132,7 @@ export async function createIssue(
     return failure(error);
   }
 }
+
 
 /* --------------------------------------------------------------- update */
 
@@ -1714,19 +1391,6 @@ export async function reportBug(
 }
 
 /* ---------------------------------------------------------- revalidation */
-
-function revalidateIssueSurfaces(projectKey: string, issueKey: string): void {
-  revalidatePath("/");
-  revalidatePath("/issues");
-  revalidatePath("/bugs");
-  revalidatePath("/my-work");
-  revalidatePath(`/issues/${issueKey.toLowerCase()}`);
-  revalidatePath(`/projects/${projectKey.toLowerCase()}`);
-  /* Summary is a route of its own now, so the base path no longer covers it. */
-  revalidatePath(`/projects/${projectKey.toLowerCase()}/summary`);
-  revalidatePath(`/projects/${projectKey.toLowerCase()}/timeline`);
-  revalidatePath(`/projects/${projectKey.toLowerCase()}/board`);
-}
 
 /**
  * Issues matching a fragment typed after `#` in a comment.
