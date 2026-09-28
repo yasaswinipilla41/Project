@@ -27,6 +27,7 @@ import {
   TEMPLATE_HEADERS,
 } from "@/lib/importTemplate";
 import {
+  afterIssueCreated,
   checkNewIssue,
   insertIssue,
   revalidateIssueSurfaces,
@@ -194,6 +195,7 @@ function inSpreadsheetWords(message: string): string {
 interface ValidRow {
   input: CreateIssueInput;
   status: IssueStatus;
+  filesAsTester: boolean;
 }
 
 type Prepared =
@@ -507,7 +509,11 @@ async function prepare(
         });
 
         if (result.ok) {
-          checked = { input: result.input, status: result.status };
+          checked = {
+            input: result.input,
+            status: result.status,
+            filesAsTester: result.filesAsTester,
+          };
         } else if (result.fieldErrors && Object.keys(result.fieldErrors).length > 0) {
           for (const [field, message] of Object.entries(result.fieldErrors)) {
             const column = COLUMN_OF_FIELD[field];
@@ -626,7 +632,22 @@ export async function importWorkItems(
       { timeout: 120_000, maxWait: 10_000 },
     );
 
-    for (const issue of created) {
+    /*
+     * What follows a work item being made, as it does for the Create form —
+     * today, handing a tester's unclaimed backlog item to a developer. After
+     * the transaction, and each one on its own: it is best-effort by design,
+     * and a failure there must not undo, or report as failed, work that is
+     * already stored.
+     */
+    for (const [index, issue] of created.entries()) {
+      const item = prepared.valid[index]!;
+      await afterIssueCreated({
+        created: issue,
+        input: item.input,
+        status: item.status,
+        filesAsTester: item.filesAsTester,
+        actorId: user.id,
+      });
       revalidateIssueSurfaces(issue.project.key, issue.key);
     }
 

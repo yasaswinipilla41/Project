@@ -372,7 +372,20 @@ describe("a tester filing work", () => {
     expect(row.status).toBe("TODO");
   });
 
-  it("files into the Backlog when it does not say", async () => {
+  it("files into the Backlog when it does not say, and it is handed out", async () => {
+    /*
+     * Backlog is still what a tester files as — it is the first status
+     * `filableStatusesFor("QA")` offers and the only one this omits — and it is
+     * still true that where the work goes from there is not theirs to declare.
+     *
+     * What has changed is that the answer no longer waits for somebody to
+     * notice. Raising work into the backlog with nobody on it *is* the request
+     * for it to be picked up, so Prio picks somebody: the lightest-loaded
+     * eligible developer on the project, and only then does the work become
+     * New. ENG has developers, so that is what happens here; the case where
+     * nobody is eligible is asserted in `tester-auto-assignment.test.ts`, where
+     * a project can be built without any.
+     */
     await actAs(TESTER);
     const project = await projectByKey("ENG");
 
@@ -390,11 +403,21 @@ describe("a tester filing work", () => {
 
     const row = await prisma.issue.findUniqueOrThrow({
       where: { id: result.data.id },
-      select: { status: true },
+      select: { status: true, assigneeId: true },
     });
-    /* Backlog: raising work is asking for it to be picked up, and where it
-       goes from there is somebody else's decision. */
-    expect(row.status).toBe("BACKLOG");
+
+    /* New, and never New with nobody on it: the transition is what having a
+       developer means, so the two facts come together or not at all. */
+    expect(row.status).toBe("TODO");
+    expect(row.assigneeId).not.toBeNull();
+
+    /* And it was filed as Backlog rather than as New — the move is recorded,
+       which is what tells the two apart. */
+    const moved = await prisma.activityLogEntry.findFirst({
+      where: { issueId: result.data.id, field: "status" },
+      select: { oldValue: true, newValue: true },
+    });
+    expect(moved).toEqual({ oldValue: "BACKLOG", newValue: "TODO" });
   });
 
   it("hands work to a developer, but still files without a due date", async () => {

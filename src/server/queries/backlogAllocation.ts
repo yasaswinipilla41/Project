@@ -203,14 +203,26 @@ export async function loadAllocationInputs(
     }),
   );
 
-  const members = developers;
-  if (members.length === 0) return { issues, candidates: [] };
+  return { issues, candidates: await developerWorkloads(developers) };
+}
 
-  /*
-   * How busy each of them is: open issues assigned, across everything they
-   * hold rather than this project alone. Somebody buried in another project is
-   * not available here either, and the workload panel counts it the same way.
-   */
+/**
+ * How busy each of these people is, as the planner's candidates.
+ *
+ * Open issues assigned, across everything they hold rather than this project
+ * alone. Somebody buried in another project is not available here either, and
+ * the workload panel counts it the same way.
+ *
+ * Split out of `loadAllocationInputs` so that the run which deals a whole
+ * backlog and the one which places a single newly raised issue weigh people by
+ * the same figure. A second reading of "busy" would eventually disagree with
+ * the one on screen, which is the whole reason this is one function.
+ */
+export async function developerWorkloads(
+  members: WorkStatusMember[],
+): Promise<AllocationCandidate[]> {
+  if (members.length === 0) return [];
+
   const open = await prisma.issue.groupBy({
     by: ["assigneeId"],
     where: {
@@ -226,12 +238,29 @@ export async function loadAllocationInputs(
     ),
   );
 
-  return {
-    issues,
-    candidates: members.map((member) => ({
-      id: member.id,
-      name: member.name,
-      workload: workload.get(member.id) ?? 0,
-    })),
-  };
+  return members.map((member) => ({
+    id: member.id,
+    name: member.name,
+    workload: workload.get(member.id) ?? 0,
+  }));
+}
+
+/**
+ * Who one project's work may be handed to by a rule, and how busy each is.
+ *
+ * The same two questions `loadAllocationInputs` asks, composed for a caller
+ * that has one issue rather than a backlog: the project's members who do
+ * development work, narrowed by `autoAssignable` to the people a rule running
+ * on its own may hand work to, and weighed by `developerWorkloads`.
+ *
+ * Nothing new is decided here. Eligibility, the exclusions and the workload
+ * figure are all the existing ones, which is what keeps a single issue placed
+ * at creation and a whole backlog dealt by hand agreeing about who is free.
+ */
+export async function eligibleDeveloperCandidates(
+  projectId: string,
+): Promise<AllocationCandidate[]> {
+  return developerWorkloads(
+    autoAssignable(await listLaneMembers("DEVELOPER", projectId), "DEVELOPER"),
+  );
 }

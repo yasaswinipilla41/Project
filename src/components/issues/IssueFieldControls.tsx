@@ -15,6 +15,8 @@ import {
   PRIORITY_LABEL,
   STATUS_LABEL,
   allowedStatusesFor,
+  isClosedStatus,
+  remainingEffort,
   type WorkRole,
 } from "@/lib/domain";
 import type { IssueStatus, Priority } from "@prisma/client";
@@ -292,20 +294,46 @@ export function AssigneeControl({
  * moving says the estimate needs revisiting, which is the conversation the
  * numbers exist to start.
  *
+ * Neither is read from the clock either. Nothing here looks at `updatedAt`:
+ * an estimate of two hours that nobody has revised still has two hours left a
+ * fortnight after the row was last touched, because a row being touched is not
+ * work being done. The only thing that moves the remainder is somebody saying
+ * so — or the work being closed, below.
+ *
  * Saved on blur and on Enter rather than behind a Save button — the same way
  * the rest of this page edits — and only when the value actually changed, so
  * tabbing through writes nothing.
+ *
+ * ## Work that is finished
+ *
+ * Closed work has nothing left, whatever the column last said. That is not a
+ * rule invented here: it is `lib/burndown`'s own first step, which the chart
+ * has always applied and the panel never did — so the same finished item could
+ * read 0h on its sprint's burndown and 2h here. Both now read
+ * `remainingEffort`, so they answer together.
+ *
+ * It is stated rather than offered, the way this file already states a field
+ * somebody may not set. Nothing is written: the stored remainder is left
+ * exactly as it stands, because the burndown needs the reading somebody
+ * actually recorded and an item that is reopened must not keep a nought it
+ * never had. Reopening the work brings the box straight back.
  */
 export function EffortControl({
   issueId,
+  status,
   effortHours,
   remainingHours,
   disabled,
 }: BaseProps & {
+  /** What the work is now — the one thing that can make the remainder nought
+   *  without anybody having typed it. */
+  status: IssueStatus;
   effortHours: number | null;
   remainingHours: number | null;
 }) {
   const { update, busy } = useFieldUpdate(issueId);
+  const closed = isClosedStatus(status);
+  const left = remainingEffort({ status, effortHours, remainingHours });
 
   return (
     <span className="prio-effort">
@@ -321,18 +349,34 @@ export function EffortControl({
           )
         }
       />
-      <HoursField
-        label="Remaining"
-        name={`remaining-${issueId}`}
-        value={remainingHours}
-        disabled={disabled || busy}
-        onCommit={(next) =>
-          update(
-            { remainingHours: next },
-            next === null ? "Remaining cleared" : `${next}h remaining`,
-          )
-        }
-      />
+      {closed ? (
+        <span
+          className="prio-effort__field"
+          data-readonly
+          title={
+            left === null
+              ? `This work is ${STATUS_LABEL[status]}. Nobody estimated it, so there is no figure to show — finishing it does not make it nought hours.`
+              : `This work is ${STATUS_LABEL[status]}, so none of it is left to do. The estimate of ${effortHours === null ? "—" : `${effortHours}h`} is unchanged.`
+          }
+        >
+          <span className="prio-effort__label">Remaining</span>
+          <span className="prio-effort__stated">{left ?? "—"}</span>
+          <span className="prio-effort__unit">h</span>
+        </span>
+      ) : (
+        <HoursField
+          label="Remaining"
+          name={`remaining-${issueId}`}
+          value={remainingHours}
+          disabled={disabled || busy}
+          onCommit={(next) =>
+            update(
+              { remainingHours: next },
+              next === null ? "Remaining cleared" : `${next}h remaining`,
+            )
+          }
+        />
+      )}
     </span>
   );
 }

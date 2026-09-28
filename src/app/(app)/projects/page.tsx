@@ -200,9 +200,24 @@ export default async function ProjectsPage({
                           {/* Picking a project out of the directory is
                               exactly the choice the Welcome page introduces,
                               so that is where it leads -- not straight into
-                              Summary. */}
+                              Summary.
+
+                              One link, and the whole card is its target:
+                              `prio-projectcard__link` stretches it over the
+                              card with a transparent overlay, so the name, the
+                              key, the description, the figures, the avatars and
+                              the padding between them all open the project. It
+                              stays a real anchor — one tab stop, Enter to
+                              follow, the middle-click and open-in-new-tab a
+                              link is expected to have — rather than a click
+                              handler on a div, and nothing is nested inside
+                              anything interactive. Any control added to this
+                              card later rides above the overlay; see the
+                              stylesheet. */}
                           <Link
+                            className="prio-projectcard__link"
                             href={`/projects/${project.key.toLowerCase()}/welcome`}
+                            title={`Open ${project.name}`}
                           >
                             {project.name}
                           </Link>

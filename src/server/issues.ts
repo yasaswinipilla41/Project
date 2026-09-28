@@ -15,6 +15,8 @@ import {
   AuthorizationError,
   NotFoundError,
   ProjectAtCapacityError,
+  WORK_TEAM_SLUGS,
+  workRoleFromTeams,
   workRoleOf,
 } from "@/lib/authz";
 import { requireUser } from "@/lib/session";
@@ -55,12 +57,14 @@ import {
 } from "@/server/schemas";
 import { createIssueLink } from "@/server/links";
 import {
+  afterIssueCreated,
   checkNewIssue,
   insertIssue,
   nextIssueNumber,
   parentProblem,
   revalidateIssueSurfaces,
 } from "@/server/issueCreation";
+import { laneAcceptsWorkRole } from "@/lib/workLanes";
 
 /**
  * Issue, story and bug writes.
@@ -115,6 +119,14 @@ export async function createIssue(
     const created = await prisma.$transaction((tx) =>
       insertIssue(tx, user, checked.input, checked.status),
     );
+
+    await afterIssueCreated({
+      created,
+      input: checked.input,
+      status: checked.status,
+      filesAsTester: checked.filesAsTester,
+      actorId: user.id,
+    });
 
     revalidateIssueSurfaces(created.project.key, created.key);
 
@@ -274,6 +286,78 @@ export async function updateIssue(
           throw new AuthorizationError(
             "You can take work for yourself, but only an administrator can assign it to somebody else.",
           );
+        }
+      }
+
+      /*
+       * Work waiting to be tested may only be given to somebody who tests.
+       *
+       * Ready for QA is a request addressed to testing: the build is finished
+       * and somebody has to check it. An assignee who does no QA work cannot
+       * answer that request, so the issue would sit in a status that means
+       * "waiting for a tester" while the only person on it is not one — and
+       * every count and queue that reads the status would be wrong about it.
+       *
+       * Asked of whatever the issue *ends up* in, so it covers the two ways to
+       * arrive: reassigning work already Ready for QA, and naming an assignee
+       * in the same request that moves it there. Skipped for an unassignment,
+       * which has nobody to be eligible.
+       *
+       * This is the rule the Assign Work to QA dialog has always applied
+       * (`assignWork` → `laneAcceptsWorkRole`), asked in the one place an
+       * assignee actually changes so that a request which never went near that
+       * dialog cannot get round it. The same three facts, checked against the
+       * database rather than taken from the payload: active, on this project,
+       * and doing the QA half of the job — `laneAcceptsWorkRole("QA", …)`, so a
+       * full stack developer and an administrator qualify here for exactly the
+       * reason they qualify there.
+       *
+       * It narrows an administrator alone in practice, since nobody else may
+       * name another person at all, and it takes nothing else away from them:
+       * they may still move the work out of Ready for QA and then hand it to
+       * whoever they like.
+       */
+      const endsUpReadyForQa =
+        (input.status ?? existing.status) === "IN_REVIEW";
+
+      if (changing && next !== null && endsUpReadyForQa) {
+        const person = await prisma.user.findFirst({
+          where: {
+            id: next,
+            isActive: true,
+            projectMemberships: { some: { projectId } },
+          },
+          select: {
+            name: true,
+            role: true,
+            teamMemberships: {
+              where: { team: { slug: { in: [...WORK_TEAM_SLUGS] } } },
+              select: { team: { select: { slug: true } } },
+            },
+          },
+        });
+
+        if (!person) {
+          return {
+            ok: false,
+            error: "That person cannot be given this work.",
+            fieldErrors: {
+              assigneeId: "Not an active member of this project.",
+            },
+          };
+        }
+
+        const theirRole = workRoleFromTeams(
+          person.role,
+          person.teamMemberships.map((row) => row.team.slug),
+        );
+
+        if (!laneAcceptsWorkRole("QA", theirRole)) {
+          return {
+            ok: false,
+            error: `${existing.key} is waiting to be tested, and ${person.name} does not do QA work.`,
+            fieldErrors: { assigneeId: "Choose somebody who does QA work." },
+          };
         }
       }
     }

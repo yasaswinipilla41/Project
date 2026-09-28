@@ -97,6 +97,21 @@
   color: var(--prio-red-600);
 }
 
+/*
+ * A line under a field in the Details panel, saying what it means.
+ *
+ * Quieter and smaller than the values above it, because it is read once and
+ * then stops being read — it settles a question rather than carrying a fact.
+ * Indented to the value column so it reads as belonging to the row it follows
+ * rather than to the row after it.
+ */
+.prio-issue__fieldnote {
+  margin: calc(var(--prio-space-1) * -1) 0 var(--prio-space-3);
+  font-size: var(--prio-text-xs);
+  line-height: 1.45;
+  color: var(--prio-text-muted);
+}
+
 .prio-issue__section-title--environment {
   align-self: flex-start;
   padding: var(--prio-space-1) var(--prio-space-3);

@@ -434,6 +434,15 @@ export const sprintIssueSchema = z.object({
 });
 
 /**
+ * Which sprints one issue may be moved into. Just the issue: the project, the
+ * sprint it is in now and the set of destinations are all read from the
+ * database against the caller's own session, never named by the caller.
+ */
+export const issueSprintOptionsSchema = z.object({
+  issueId: z.string().min(1),
+});
+
+/**
  * Where one issue moves to: the next open sprint, a named sprint, or the
  * backlog. `sprintId` is only present for `SPRINT`, so the server always
  * knows exactly which case it is reading rather than guessing from which

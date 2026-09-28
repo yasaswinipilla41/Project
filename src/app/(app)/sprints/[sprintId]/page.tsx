@@ -57,7 +57,17 @@ export default async function SprintDetailsPage({
   const sprint = sprints.find((s) => s.id === sprintId);
   if (!sprint) notFound();
 
-  const chart = await loadBurndown(sprint.id);
+  /* Caught, not thrown: the burndown is one block on this page, and the
+     sprint's own details are already read. See the same note on the project's
+     sprint page, which reads it exactly this way. */
+  const chart = await loadBurndown(sprint.id).then(
+    (data) => ({ read: true as const, data }),
+    (error: unknown) => {
+      console.error("[prio] burndown failed to load:", error);
+      return { read: false as const, data: null };
+    },
+  );
+  const hasBurndown = !chart.read || chart.data !== null;
 
   return (
     <>
@@ -83,9 +93,9 @@ export default async function SprintDetailsPage({
                chart is opened the same way it is on the project's own sprint
                page, rather than being always open on one page and not the
                other. */
-            actions={chart ? <BurndownToggle /> : null}
+            actions={hasBurndown ? <BurndownToggle /> : null}
           >
-            {chart ? <BurndownPanel data={chart} /> : null}
+            {hasBurndown ? <BurndownPanel data={chart.data} /> : null}
           </SprintDetailsView>
         </BurndownDisclosure>
       </div>

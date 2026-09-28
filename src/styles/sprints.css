@@ -22,16 +22,93 @@
   gap: var(--prio-space-5);
 }
 
-.prio-sprints__history {
+/*
+ * A group heading inside the sprints list — Active sprint, Upcoming sprints.
+ *
+ * The treatment the Completed sprints heading carried before it became the
+ * disclosure control below, kept verbatim: they are the same kind of thing, a
+ * quiet label over a run of cards. No margin of its own — the list is a flex
+ * column with its own gap, and a heading that opens a group needs no extra air
+ * above it, least of all the first one on the page.
+ */
+.prio-sprints__section {
   display: flex;
   align-items: center;
   gap: var(--prio-space-2);
-  margin: var(--prio-space-4) 0 0;
+  margin: 0;
   font-size: var(--prio-text-xs);
   font-weight: var(--prio-weight-semibold);
   letter-spacing: var(--prio-tracking-caps);
   text-transform: uppercase;
   color: var(--prio-text-muted);
+}
+
+/* ------------------------------------------------- the completed group */
+
+/*
+ * Completed sprints, behind their own control.
+ *
+ * The group is one item in the sprints column, so the control and the cards it
+ * opens stack inside it with the same gap the column uses between cards.
+ */
+.prio-sprints__completed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-5);
+}
+
+/*
+ * The control itself: the history heading, made pressable.
+ *
+ * It keeps that heading's size, weight, tracking and colour, because it is
+ * still the label over the group rather than an action on it — what it gains
+ * is the edge, the hover and the chevron that say it opens. The edge is the
+ * same 1px `--prio-border` every block on this page carries, so a closed group
+ * still reads as part of the column rather than as loose text in it.
+ *
+ * `align-self: flex-start` keeps the hit area to the words rather than the
+ * full width of the column, so the space beside it is not a click that opens
+ * the group by accident.
+ */
+.prio-sprints__disclosure {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+  margin: var(--prio-space-2) 0 0;
+  padding: var(--prio-space-2) var(--prio-space-3);
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-md);
+  background: var(--prio-bg-surface);
+  font-family: inherit;
+  font-size: var(--prio-text-xs);
+  font-weight: var(--prio-weight-semibold);
+  letter-spacing: var(--prio-tracking-caps);
+  text-transform: uppercase;
+  color: var(--prio-text-muted);
+  cursor: pointer;
+  transition:
+    border-color var(--prio-duration-fast) var(--prio-ease),
+    background var(--prio-duration-fast) var(--prio-ease),
+    color var(--prio-duration-fast) var(--prio-ease);
+}
+
+.prio-sprints__disclosure:hover {
+  border-color: var(--prio-border-strong);
+  background: var(--prio-bg-hover);
+  color: var(--prio-text-primary);
+}
+
+/* The cards behind it, stacked exactly as the live ones are. `[hidden]` is
+   what closes the group, and it is set on this element by the component. */
+.prio-sprints__completedlist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--prio-space-5);
+}
+
+.prio-sprints__completedlist[hidden] {
+  display: none;
 }
 
 .prio-sprints__historycount,
@@ -201,14 +278,32 @@
 
 /* ---------------------------------------------------------- the figures */
 
+/*
+ * A sprint's five figures, as a bordered panel.
+ *
+ * They are a distinct block on a sprint's page — the statistics, read as one
+ * thing — and every other block there has an edge of its own: the sprint's
+ * card, the burndown panel and its own figures strip, Issues in this sprint and
+ * each status block inside it, Issues by status. These had two rules and open
+ * sides, which read as a divider between parts of the card rather than as a
+ * panel in its own right.
+ *
+ * The same treatment `.prio-burndown__summary` already gives the burndown's
+ * figures — the subtle border, the medium radius, the subtle fill — from the
+ * same tokens, so one change to `--prio-border-subtle` still moves all of them
+ * together. The figures themselves, their layout, their type and the gaps
+ * between them are untouched; the only spacing that moved is the horizontal
+ * padding the border needs to not sit against the numbers.
+ */
 .prio-sprint__summary {
   display: flex;
   flex-wrap: wrap;
   gap: var(--prio-space-3) var(--prio-space-6);
-  padding: var(--prio-space-3) 0;
+  padding: var(--prio-space-3) var(--prio-space-4);
   margin-bottom: var(--prio-space-3);
-  border-top: 1px solid var(--prio-border-subtle);
-  border-bottom: 1px solid var(--prio-border-subtle);
+  border: 1px solid var(--prio-border-subtle);
+  border-radius: var(--prio-radius-md);
+  background: var(--prio-bg-subtle);
 }
 
 .prio-sprint__stat {
@@ -258,10 +353,22 @@
 
 /* ------------------------------------------- one figure's work, in place */
 
+/*
+ * The work behind one figure, opened in place.
+ *
+ * Its own bordered container, for the same reason the figures above it have
+ * one: it is a distinct block — its own heading, its own Back, its own list —
+ * and a single rule above it left it looking like the bottom of the card rather
+ * than a panel inside it. Bordered like a status block on the sprint's issues
+ * (`.prio-sprint__column`), which is the established treatment for a block
+ * nested inside a sprint card.
+ */
 .prio-summaryview {
   margin-top: var(--prio-space-4);
-  padding-top: var(--prio-space-4);
-  border-top: 1px solid var(--prio-border-subtle);
+  padding: var(--prio-space-4);
+  border: 1px solid var(--prio-border);
+  border-radius: var(--prio-radius-md);
+  background: var(--prio-bg-subtle);
 }
 
 .prio-summaryview[hidden] {

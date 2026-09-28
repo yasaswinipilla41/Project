@@ -1660,6 +1660,33 @@ a.prio-key:hover {
   min-width: 0;
 }
 
+@media (max-width: 380px) {
+  /*
+   * The Details panel's rows stack at the narrowest phone widths.
+   *
+   * The 108px label column above is what keeps every value on the panel
+   * aligned down one edge, and it is worth having right down to a card of
+   * about 300px. Below that it stops paying for itself: 108px and the gap
+   * leave roughly 150px for the value, and a value that cannot shrink past
+   * that runs out of the card — Effort and Remaining are two number boxes of
+   * 5.5rem each, so one of them alone is wider than the space left.
+   *
+   * Stacking gives the value the card's whole width rather than squeezing the
+   * label or re-sizing the controls inside it, so nothing is truncated and
+   * every row on the panel is fixed at once instead of one value at a time.
+   * The alignment is given up only where there is no room for it.
+   */
+  .prio-meta-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--prio-space-1);
+  }
+
+  .prio-meta-row__label {
+    width: auto;
+  }
+}
+
 /* ---------------------------------------------------------------- stats */
 .prio-stat {
   display: flex;
@@ -2247,8 +2274,55 @@ a.prio-stat[data-selected="true"]:hover {
 }
 
 /* ---------------------------------------------------------- project card */
+/*
+ * The whole card opens the project.
+ *
+ * `position: relative` is what makes that possible: the project name's own
+ * link stretches a transparent overlay across this box (see
+ * `.prio-projectcard__link`), so the name, the key, the description, the
+ * figures, the avatars and every bit of padding between them are one click
+ * target. One anchor, one tab stop, and no click handler standing in for a
+ * link.
+ */
 .prio-projectcard {
+  position: relative;
   height: 100%;
+}
+
+/*
+ * The stretched link.
+ *
+ * The overlay is the link's own `::after`, so hovering anywhere on the card
+ * hovers the link — including its `title` — and the focus ring stays on the
+ * name, which is where a reader looking for "what is focused" expects it. It
+ * sits above the card's content and below any control on the card, which is
+ * what lets such a control keep its own click — see the rule after this one.
+ */
+.prio-projectcard__link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  /* Rounded to the card's own corners so the target never reaches past them. */
+  border-radius: var(--prio-radius-lg);
+}
+
+/*
+ * Anything on this card that does something of its own.
+ *
+ * Raised above the overlay, so a menu, an edit or archive button, a checkbox or
+ * a dropdown added to a project card performs its own action instead of opening
+ * the project underneath it. Written as a rule over the card rather than as a
+ * class each control has to remember, because the failure it prevents —
+ * pressing Archive and being navigated away — is silent and easy to ship.
+ * The stretched link itself is excluded: it *is* the overlay.
+ */
+.prio-projectcard
+  :is(a, button, input, select, textarea, label, [role="button"], [tabindex]):not(
+    .prio-projectcard__link
+  ) {
+  position: relative;
+  z-index: 2;
 }
 
 .prio-projectcard__head {
@@ -3291,6 +3365,30 @@ a.prio-stat[data-selected="true"]:hover {
 .prio-effort__unit {
   font-size: var(--prio-text-xs);
   color: var(--prio-text-muted);
+}
+
+/*
+ * A remainder that is stated rather than typed: finished work, which has
+ * nothing left whatever the column last said.
+ *
+ * Sized and aligned like the box it stands in for — same width, same height,
+ * same tabular figures — so the row does not change shape when an item is
+ * closed or reopened. Quieter than an input, because it is a fact rather than
+ * a field: the surface is the subtle fill this application already uses for a
+ * value somebody may read and not set.
+ */
+.prio-effort__stated {
+  display: inline-flex;
+  align-items: center;
+  width: 5.5rem;
+  min-height: 28px;
+  padding: 2px var(--prio-space-2);
+  border: 1px solid var(--prio-border-subtle);
+  border-radius: var(--prio-radius-sm);
+  background: var(--prio-bg-subtle);
+  font-size: var(--prio-text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--prio-text-secondary);
 }
 
 /* ------------------------------------------------- backlog history ---- */
