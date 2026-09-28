@@ -408,16 +408,116 @@ export function BurndownChart({ data }: { data: Burndown }) {
      */
     const width = tip.offsetWidth;
     const height = tip.offsetHeight;
+
+    /*
+     * A panel too tall for the room gives up rows rather than its place.
+     *
+     * Height is the one thing the search cannot solve by moving: a panel
+     * taller than the region between the chart's top and the table below has
+     * no position beside the point at all, and would fall through to reading
+     * in the flow — under the chart, often off the bottom of the window,
+     * where scrolling to it ends the hover that created it.
+     *
+     * So the list is trimmed to what the room can hold, by as many rows as the
+     * overflow is worth, and this pass ends there: the shorter panel is
+     * measured and placed on the next one, before the browser paints either.
+     * The rows given up are counted in the panel, and the table under the
+     * chart lists the day in full.
+     */
+    const roomHeight = bounds.bottom - bounds.top - inset * 2;
+    if (height > roomHeight && tipChangesRef.current > TIP_CHANGES_MIN) {
+      const rows = Array.from(
+        tip.querySelectorAll<HTMLElement>(".prio-burndown__tipchanges > li"),
+      );
+      const rowHeight = rows.length
+        ? rows.reduce((total, row) => total + row.offsetHeight, 0) / rows.length
+        : 0;
+      if (rowHeight > 0) {
+        const give = Math.max(1, Math.ceil((height - roomHeight) / rowHeight));
+        setChangeRows(Math.max(TIP_CHANGES_MIN, tipChangesRef.current - give));
+        return;
+      }
+    }
+
     const minLeft = bounds.left + inset;
     const maxLeft = bounds.right - inset - width;
     const minTop = bounds.top + inset;
     const maxTop = bounds.bottom - inset - height;
+    const roomForPanel = maxLeft >= minLeft && maxTop >= minTop;
 
     let best: { left: number; top: number; cost: number } | null = null;
 
-    /* Unless the card cannot hold the panel at all, in which case the flow
-       below is the only place for it. */
-    if (maxLeft >= minLeft && maxTop >= minTop) {
+    /*
+     * ------------------------------------------------- beside the point first
+     *
+     * The four placements a reader expects, each exactly `gap` clear of the
+     * marker: above it, below it, to its right, to its left. Whichever of them
+     * fits inside the bounds wins, so the panel sits a few pixels from the day
+     * it describes on every point of the chart — and flips side at a boundary
+     * rather than moving away.
+     *
+     * Covering the remaining line is a preference between these, not a veto:
+     * a panel this size, this close to a point, cannot always miss a line that
+     * crosses the whole plot, and treating that as disqualifying is what used
+     * to send the panel hundreds of pixels across the chart. The marker itself
+     * is never covered — each candidate is checked against the keep-clear ring.
+     */
+    const anchored: { left: number; top: number; fits: boolean }[] = [
+      /* Above, centred: the placement a tooltip is expected in. */
+      {
+        left: clamp(centreX - width / 2, minLeft, maxLeft),
+        top: marker.top - gap - height,
+        fits: marker.top - gap - height >= minTop,
+      },
+      /* Below, for a point near the top of the scale. */
+      {
+        left: clamp(centreX - width / 2, minLeft, maxLeft),
+        top: marker.bottom + gap,
+        fits: marker.bottom + gap <= maxTop,
+      },
+      /* Beside it, for a point near the top or the bottom boundary. */
+      {
+        left: marker.right + gap,
+        top: clamp(centreY - height / 2, minTop, maxTop),
+        fits: marker.right + gap <= maxLeft,
+      },
+      {
+        left: marker.left - gap - width,
+        top: clamp(centreY - height / 2, minTop, maxTop),
+        fits: marker.left - gap - width >= minLeft,
+      },
+    ];
+
+    for (const [order, candidate] of anchored.entries()) {
+      if (!roomForPanel || !candidate.fits) continue;
+      const box: Box = {
+        left: candidate.left,
+        top: candidate.top,
+        right: candidate.left + width,
+        bottom: candidate.top + height,
+      };
+      if (overlaps(keepClear, box)) continue;
+      /* Clear of the line if it can be, and the earlier placement when two
+         are equally clear — the order above is the order a reader expects. */
+      const cost =
+        (touchesLine(box, actual) ? 40 : 0) +
+        (touchesLine(box, ideal) ? 4 : 0) +
+        order;
+      if (!best || cost < best.cost) best = { ...box, cost };
+    }
+
+    /*
+     * A placement beside the point is taken as it stands; it never competes
+     * with reading in the flow. The flow is below the chart, which for the
+     * days on the floor of the plot measures a few pixels away while reading
+     * as a panel that has gone somewhere else — and it only counts when it is
+     * on screen, so letting it compete made the scroll position decide.
+     */
+    const besideThePoint = best !== null;
+
+    /* Only when nothing beside the point fits does the sweep look further —
+       and only if the card can hold the panel at all. */
+    if (best === null && roomForPanel) {
       /*
        * Where to look.
        *
@@ -510,9 +610,6 @@ export function BurndownChart({ data }: { data: Burndown }) {
      * remaining line showing or lands nearer than the flow does: under the
      * chart it goes, where it covers nothing at all.
      */
-    const besideThePoint =
-      !!best &&
-      (best.left + width <= marker.left || best.left >= marker.right);
     if (
       !best ||
       (!besideThePoint && (best.cost >= 4000 || best.cost > flowCost))

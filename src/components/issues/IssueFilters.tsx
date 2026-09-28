@@ -141,6 +141,8 @@ function FilterMenu({
   selected,
   onToggle,
   single = false,
+  width = 230,
+  panelClassName,
 }: {
   label: string;
   paramKey: string;
@@ -157,11 +159,17 @@ function FilterMenu({
    * how many values may be held, not how the control looks.
    */
   single?: boolean;
+  /** The panel's width. Every filter keeps 230px unless it says otherwise;
+   *  `null` sets none, leaving the width to the panel's own class. */
+  width?: number | null;
+  /** A class for the panel, for a filter whose rows need their own layout. */
+  panelClassName?: string;
 }) {
   return (
     <Menu
       align="start"
-      width={230}
+      width={width ?? undefined}
+      panelClassName={panelClassName}
       label={label}
       trigger={(props) => (
         <button
@@ -540,24 +548,35 @@ export function IssueFilters({
             paramKey="sprint"
             selected={values("sprint")}
             onToggle={toggle}
+            /* Sized to its rows rather than the filters' shared 230px: a
+               sprint's name carries its start and end dates, and at 230px
+               every one of them was cut off mid-date — see
+               `.prio-menu--iteration`. */
+            width={null}
+            panelClassName="prio-menu--iteration"
             options={sprints.map((s) => ({
               value: s.id,
-              node: s.completed ? (
+              node: (
                 <span className="prio-filter__iteration">
                   {s.name}
-                  <IconCheck
-                    size={13}
-                    strokeWidth={2.25}
-                    className="prio-filter__iteration-done"
-                    /* Set on the element itself, so no theme, hover or
-                       selected-row rule can repaint it. */
-                    stroke={ITERATION_DONE_COLOR}
-                    style={{ color: ITERATION_DONE_COLOR, stroke: ITERATION_DONE_COLOR }}
-                  />
-                  <span className="prio-visually-hidden"> (completed)</span>
+                  {s.completed ? (
+                    <>
+                      <IconCheck
+                        size={13}
+                        strokeWidth={2.25}
+                        className="prio-filter__iteration-done"
+                        /* Set on the element itself, so no theme, hover or
+                           selected-row rule can repaint it. */
+                        stroke={ITERATION_DONE_COLOR}
+                        style={{
+                          color: ITERATION_DONE_COLOR,
+                          stroke: ITERATION_DONE_COLOR,
+                        }}
+                      />
+                      <span className="prio-visually-hidden"> (completed)</span>
+                    </>
+                  ) : null}
                 </span>
-              ) : (
-                s.name
               ),
             }))}
           />

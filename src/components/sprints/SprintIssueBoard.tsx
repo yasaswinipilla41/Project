@@ -158,8 +158,11 @@ export function SprintIssueBoard({
                    dedicated control already covers and more besides — a
                    second, narrower way to do the same thing would be
                    redundant here rather than useful. */
+                /* A Done issue stays in the sprint it was finished in, so it
+                   gets no Move to at all; `moveIssueToSprint` refuses it on
+                   the server too. The card's ⋮ menu is unaffected. */
                 actions={
-                  canMoveIssues ? (
+                  canMoveIssues && issue.status !== "DONE" ? (
                     <MoveIssueMenu
                       issueId={issue.id}
                       issueKey={issue.key}

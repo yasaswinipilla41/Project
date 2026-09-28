@@ -1654,12 +1654,14 @@
   color: var(--prio-text-muted);
 }
 
+/* The same up and down arrows as the chart's scope marks, in the same colours:
+   up red, down green. */
 .prio-burndown__rowmark[data-reason="added"] {
-  color: var(--prio-status-done-dot);
+  color: var(--prio-red-600);
 }
 
 .prio-burndown__rowmark[data-reason="removed"] {
-  color: var(--prio-red-600);
+  color: var(--prio-status-done-dot);
 }
 
 .prio-burndown__rowmark[data-reason="reopened"] {
@@ -1836,9 +1838,8 @@
  * A burndown's most misread feature is a line that will not fall because work
  * arrived rather than because nobody did anything — the line cannot tell the
  * two apart, so the days the commitment moved are marked on the axis: a
- * triangle pointing up where work arrived, down where it left. Work coming in
- * borrows the colour reopened work already uses in this panel, and work going
- * out the muted one, so nothing new is introduced to learn.
+ * triangle pointing up where work arrived, down where it left — red up, green
+ * down, the same as the arrows on the plot.
  */
 .prio-burndown__key[data-line="scope"]::before {
   width: 0;
@@ -1846,25 +1847,32 @@
   border-top: 0;
   border-left: 5px solid transparent;
   border-right: 5px solid transparent;
-  border-bottom: 8px solid var(--prio-status-done-dot);
+  /* The legend's triangle points up, so it wears the up arrow's colour. */
+  border-bottom: 8px solid var(--prio-red-600);
 }
 
 /*
- * An arrow on the day the scope moved: up for work arriving, green, and down
- * for work leaving, red. Drawn as a stroke so it reads at any scale the chart
- * is given, and never filled — a filled arrowhead at this size turns into a
- * blob.
+ * An arrow on the day the scope moved, coloured by which way it points: up —
+ * work the day added and did not get solved — red, and down — work the day
+ * cleared — green. The direction is the chart's own, set from the day's data
+ * as `data-direction`, so the colour can never disagree with the arrow. Drawn
+ * as a stroke so it reads at any scale the chart is given, and never filled —
+ * a filled arrowhead at this size turns into a blob. Both colours are theme
+ * tokens, so each mode has its own step.
  */
 .prio-burndown__scope path {
   fill: none;
-  stroke: var(--prio-status-done-dot);
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
-.prio-burndown__scope[data-direction="down"] path {
+.prio-burndown__scope[data-direction="up"] path {
   stroke: var(--prio-red-600);
+}
+
+.prio-burndown__scope[data-direction="down"] path {
+  stroke: var(--prio-status-done-dot);
 }
 
 /* A reading, on the line. Filled with the card's own surface so the line
