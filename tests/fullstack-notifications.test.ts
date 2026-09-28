@@ -47,7 +47,7 @@ async function userId(email: string): Promise<string> {
 }
 
 const TEAM_NAMES: Record<string, string> = {
-  [TESTING_TEAM_SLUG]: "Testing",
+  [TESTING_TEAM_SLUG]: "QA Team",
   [DEVELOPMENT_TEAM_SLUG]: "Development",
   [FULLSTACK_TEAM_SLUG]: "Full Stack Developers",
 };
@@ -135,7 +135,7 @@ async function anIssue(
     type: "TASK",
     title: `${title} ${Date.now()}-${Math.random()}`,
     description: "fixture",
-    priority: "MEDIUM",
+    priority: "P2",
     status: "TODO",
   });
   if (!result.ok) throw new Error(result.error);
@@ -288,7 +288,7 @@ describe("a full stack member's QA activity", () => {
       type: "BUG",
       title: `Full stack verdict ${Date.now()}`,
       description: "fixture",
-      priority: "MEDIUM",
+      priority: "P2",
       assigneeId: await userId(DEVELOPER),
     });
     if (!raised.ok) throw new Error(raised.error);

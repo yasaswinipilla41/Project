@@ -113,7 +113,7 @@ async function anIssue(
     type: "TASK",
     title: `My Work scope ${label} ${Date.now()}-${Math.random()}`,
     description: "fixture",
-    priority: "MEDIUM",
+    priority: "P2",
   });
   if (!result.ok) throw new Error(result.error);
   created.push(result.data.id);

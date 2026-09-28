@@ -54,7 +54,7 @@ async function fixture() {
         title: `QA browser flow fixture ${Date.now()}`,
         description: "Created by the E2E suite.",
         status: "TODO",
-        priority: "URGENT",
+        priority: "P0",
         assigneeId: dev.id,
         reporterId: tester.id,
       },

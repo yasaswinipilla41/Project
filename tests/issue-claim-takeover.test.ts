@@ -88,7 +88,7 @@ async function anIssue(title: string, assignTo?: string): Promise<string> {
     type: "TASK",
     title,
     description: "fixture",
-    priority: "MEDIUM",
+    priority: "P2",
   });
   if (!result.ok) throw new Error(result.error);
   createdIssueIds.push(result.data.id);
@@ -203,7 +203,7 @@ describe("claiming unassigned work", () => {
 
     const result = await claimIssue({ issueId });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toMatch(/testers do not take/i);
+    if (!result.ok) expect(result.error).toMatch(/QA members do not take/i);
 
     const after = await stateOf(issueId);
     expect(after.assigneeId).toBeNull();

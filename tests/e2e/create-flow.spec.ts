@@ -98,7 +98,9 @@ test.describe("Create flow", () => {
     const bug = await labelsFor("Bug");
     const story = await labelsFor("Story");
 
-    expect(bug).toEqual(task);
+    /* A bug is the Task form plus exactly one field: how bad it is. That is a
+       bug's own attribute, not one of the retired bug-only prompts. */
+    expect(bug).toEqual([...task, "Severity"].sort());
     expect(story).toEqual(task);
 
     for (const standard of [
@@ -172,7 +174,7 @@ test.describe("Create flow", () => {
     await dialog.getByLabel("Project").selectOption({ label: "Engineering (ENG)" });
     await dialog.getByLabel("Summary").fill(title);
     await dialog.getByLabel("Status").selectOption("TODO");
-    await dialog.getByLabel("Priority").selectOption("HIGH");
+    await dialog.getByLabel("Priority").selectOption("P1");
 
     // The assignee list is populated from the chosen project's members.
     const assignee = dialog.getByLabel("Assignee");
@@ -207,7 +209,7 @@ test.describe("Create flow", () => {
     // The detail page is server-rendered from PostgreSQL.
     await expect(page.getByRole("heading", { name: title })).toBeVisible();
     await expect(page.locator(".prio-status").first()).toContainText("New");
-    await expect(page.locator(".prio-issue__headmeta")).toContainText("High");
+    await expect(page.locator(".prio-issue__headmeta")).toContainText("P1");
     await expect(page.locator(".prio-issue__aside")).toContainText("Priya Nair");
     await expect(page.locator(".prio-label-chip").first()).toContainText("backend");
 
@@ -256,7 +258,7 @@ test.describe("Create flow", () => {
     await dialog.getByLabel("Project").selectOption({ label: "Engineering (ENG)" });
     await dialog.getByLabel("Summary").fill(title);
     await dialog.getByLabel("Status").selectOption("TODO");
-    await dialog.getByLabel("Priority").selectOption("URGENT");
+    await dialog.getByLabel("Priority").selectOption("P0");
 
     await dialog.getByRole("button", { name: /^create bug$/i }).click();
 
@@ -266,7 +268,7 @@ test.describe("Create flow", () => {
 
     await expect(page.locator(".prio-priority").first()).toHaveAttribute(
       "data-priority",
-      "URGENT",
+      "P0",
     );
 
     // The description was stored and is rendered on the issue itself.
@@ -322,17 +324,57 @@ test.describe("Create flow", () => {
     }
   });
 
-  test("severity is not a field on any type", async ({ page }) => {
-    /* Severity was a field on every type. It was removed from the whole
-       application — forms, filters, tables, charts and the issue itself — so
-       what is asserted now is its absence, on the form where it was last
-       offered. The column is still in the database; nothing writes it. */
-    for (const type of ["Task", "Bug"] as const) {
+  test("severity is offered for a bug and for nothing else", async ({ page }) => {
+    /* How bad a defect is describes a defect, so the field is drawn for the
+       Bug form alone. It is optional, and "Not set" is the default. */
+    for (const type of ["Task", "Story"] as const) {
       const dialog = await openCreate(page, type);
       await expect(dialog.getByLabel("Severity")).toHaveCount(0);
-      await expect(dialog.getByText("Severity")).toHaveCount(0);
       await expect(dialog.locator("#create-severity")).toHaveCount(0);
       await page.keyboard.press("Escape");
     }
+
+    const dialog = await openCreate(page, "Bug");
+    const severity = dialog.locator("#create-severity");
+    await expect(severity).toHaveCount(1);
+    await expect(severity).toHaveValue("");
+    expect(await severity.locator("option").allInnerTexts()).toEqual([
+      "Not set",
+      "Critical",
+      "Major",
+      "Minor",
+      "Trivial",
+    ]);
+    await page.keyboard.press("Escape");
+  });
+
+  test("a bug is created with the severity that was chosen, and it can be edited", async ({
+    page,
+  }) => {
+    const title = `Severity e2e ${Date.now()}`;
+    const dialog = await openCreate(page, "Bug");
+    await dialog.getByLabel("Project").selectOption({ label: "Engineering (ENG)" });
+    await dialog.getByLabel("Summary").fill(title);
+    await dialog.locator("#create-severity").selectOption("MAJOR");
+    await dialog.getByRole("button", { name: /^create bug$/i }).click();
+
+    await expect(dialog).toBeHidden();
+    await expect(page).toHaveURL(/\/issues\/eng-\d+$/i);
+    const trigger = page.getByRole("button", { name: /^Severity: Major/ });
+    await expect(trigger).toBeVisible();
+
+    await trigger.click();
+    await page.getByRole("menuitemradio", { name: "Critical" }).click();
+    await expect(
+      page.locator(".prio-toast").filter({ hasText: "Severity set to Critical" }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Severity: Critical/ })).toBeVisible();
+
+    const row = await prisma.issue.findFirstOrThrow({
+      where: { title },
+      select: { id: true, severity: true },
+    });
+    expect(row.severity).toBe("CRITICAL");
+    await prisma.issue.delete({ where: { id: row.id } });
   });
 });

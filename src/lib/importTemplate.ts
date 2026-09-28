@@ -25,6 +25,7 @@
  */
 
 import {
+  DEFAULT_PRIORITY,
   ISSUE_STATUSES,
   ISSUE_TYPES,
   ISSUE_TYPE_LABEL,
@@ -127,10 +128,10 @@ export const TEMPLATE_NOTES: Record<string, string> = {
   [IMPORT_COLUMNS.description]: "Optional. Free text.",
   [IMPORT_COLUMNS.issueType]: "Optional. Leave blank for Task.",
   [IMPORT_COLUMNS.status]: `Optional. Leave blank for ${DEFAULT_STATUS_LABEL}.`,
-  [IMPORT_COLUMNS.priority]: "Optional. Leave blank for Medium.",
+  [IMPORT_COLUMNS.priority]: `Optional. Leave blank for ${PRIORITY_LABEL[DEFAULT_PRIORITY]}.`,
   [IMPORT_COLUMNS.assignee]:
     "Optional. The name or email of a member of this project.",
-  [IMPORT_COLUMNS.severity]: "Optional.",
+  [IMPORT_COLUMNS.severity]: "Optional. Bug rows only.",
   [IMPORT_COLUMNS.parentIssue]:
     "Optional. The key of an existing work item in this project, e.g. ENG-12.",
 };

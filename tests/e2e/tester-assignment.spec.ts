@@ -29,7 +29,7 @@ test.beforeAll(async () => {
       select: { id: true },
     })) ??
     (await prisma.team.create({
-      data: { slug: TESTING_TEAM_SLUG, name: "Testing" },
+      data: { slug: TESTING_TEAM_SLUG, name: "QA Team" },
       select: { id: true },
     }));
 
@@ -121,7 +121,7 @@ test("a tester is told they are the tester, and the notification opens the issue
 
   const row = memberPage
     .locator("button.prio-notification__link")
-    .filter({ hasText: /as tester/i })
+    .filter({ hasText: /as QA member/i })
     .first();
   await expect(row).toBeVisible();
   await expect(row).toContainText(issue.key);

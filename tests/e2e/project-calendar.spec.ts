@@ -335,7 +335,7 @@ test.describe("The calendar composer and a tester", () => {
         select: { id: true },
       })) ??
       (await prisma.team.create({
-        data: { slug: TESTING_TEAM_SLUG, name: "Testing" },
+        data: { slug: TESTING_TEAM_SLUG, name: "QA Team" },
         select: { id: true },
       }));
     const already = await prisma.teamMember.findFirst({

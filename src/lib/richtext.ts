@@ -35,6 +35,8 @@
  * convention several Markdown dialects settled on.
  */
 
+import { isSafeLocalPath } from "@/lib/safePath";
+
 /* -------------------------------------------------------------- inline */
 
 export type InlineNode =
@@ -83,9 +85,9 @@ export function safeUrl(raw: string): string | null {
   // Control characters are the classic way to smuggle a scheme past a check.
   if (/[\u0000-\u0020]/.test(value)) return null;
 
-  // Relative links inside Prio are fine, but not protocol-relative ("//host"),
-  // which inherits the page's scheme and points off-site.
-  if (value.startsWith("/") && !value.startsWith("//")) return value;
+  // Relative links inside Prio are fine, but not protocol-relative ("//host")
+  // or its backslash spellings ("/host"), which point off-site.
+  if (value.startsWith("/")) return isSafeLocalPath(value) ? value : null;
 
   const scheme = value.slice(0, value.indexOf(":")).toLowerCase();
   if (!/^(https?|mailto)$/.test(scheme)) return null;

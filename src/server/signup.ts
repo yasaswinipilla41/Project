@@ -5,7 +5,15 @@ import { createLocalAccountIssuer } from "@better-auth/core/db";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { fieldErrors, type FieldErrors } from "@/server/schemas";
+import {
+  SELF_SIGNUP_DISABLED_MESSAGE,
+  selfSignupEnabled,
+} from "@/lib/signupPolicy";
+import {
+  fieldErrors,
+  newPasswordSchema,
+  type FieldErrors,
+} from "@/server/schemas";
 
 /**
  * Public self-registration.
@@ -69,11 +77,9 @@ const signUpSchema = z
       .toLowerCase()
       .email("Enter a valid email address.")
       .max(200),
-    // Deliberately not trimmed — see the note on the sign-in form. A space is
-    // technically a valid password character, and silently altering what
-    // someone typed here would mean the password they set is not the one
-    // sign-in later checks against.
-    password: z.string().min(8, "Use at least 8 characters.").max(128),
+    // Not trimmed — see the note on `newPasswordSchema`, which also carries the
+    // strength rule shared by every path that sets a password.
+    password: newPasswordSchema,
     confirmPassword: z.string(),
   })
   .superRefine((value, ctx) => {
@@ -87,6 +93,16 @@ const signUpSchema = z
   });
 
 export async function signUp(raw: unknown): Promise<SignUpResult> {
+  /*
+   * The gate is here, in the action, not only in the page: the page merely
+   * declines to draw a form, and a server action is callable without one.
+   * Checked before the body is even parsed so a closed door reveals nothing —
+   * not which emails exist, not which fields were wrong.
+   */
+  if (!selfSignupEnabled()) {
+    return { ok: false, error: SELF_SIGNUP_DISABLED_MESSAGE };
+  }
+
   try {
     const parsed = signUpSchema.safeParse(raw);
     if (!parsed.success) {

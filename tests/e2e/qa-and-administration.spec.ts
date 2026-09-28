@@ -19,7 +19,7 @@ async function teamId(slug: string): Promise<string> {
   const team =
     (await prisma.team.findUnique({ where: { slug }, select: { id: true } })) ??
     (await prisma.team.create({
-      data: { slug, name: slug === TESTING_TEAM_SLUG ? "Testing" : "Development" },
+      data: { slug, name: slug === TESTING_TEAM_SLUG ? "QA Team" : "Development" },
       select: { id: true },
     }));
   return team.id;
@@ -163,7 +163,7 @@ test.describe("A QA member", () => {
     await expect(dialog.locator("#create-due")).toHaveCount(0);
     await expect(dialog.getByText("Due date", { exact: true })).toHaveCount(0);
 
-    // …and severity is gone for everybody, this form included.
+    // …and severity is a bug's field only, so this (non-bug) form has none.
     await expect(dialog.locator("#create-severity")).toHaveCount(0);
     await expect(dialog.getByText("Severity")).toHaveCount(0);
 
@@ -332,7 +332,7 @@ test.describe("A developer", () => {
 test.describe("Severity", () => {
   test.use({ storageState: ADMIN_STATE });
 
-  test("is absent from the list, its filters and an issue", async ({ page }) => {
+  test("is absent from the list and its filters, and only a bug shows the control", async ({ page }) => {
     await page.goto("/issues");
     await expect(page.getByRole("columnheader", { name: "Severity" })).toHaveCount(
       0,
@@ -350,8 +350,10 @@ test.describe("Severity", () => {
       orderBy: { createdAt: "desc" },
       select: { key: true },
     });
+    /* A bug's own page is the one place severity is drawn — as the control
+       that sets it, not as the retired chip. */
     await page.goto(`/issues/${bug.key.toLowerCase()}`);
-    await expect(page.getByText("Severity")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^Severity:/ })).toHaveCount(1);
     await expect(page.locator(".prio-severity")).toHaveCount(0);
   });
 });
@@ -459,7 +461,7 @@ test.describe("Administration", () => {
      un-runnable against a database it had already been run on. */
   test.afterAll(restoreAssignees);
 
-  test("puts Development, Testing and Full Stack side by side", async ({
+  test("puts Development, QA Team and Full Stack side by side", async ({
     page,
   }) => {
     await page.goto("/admin");
@@ -508,7 +510,7 @@ test.describe("Administration", () => {
     await expect(
       block.getByRole("button", { name: "Add members" }),
     ).toHaveCount(1);
-    for (const team of ["Development", "Testing"]) {
+    for (const team of ["Development", "QA Team"]) {
       await expect(
         page.locator(".prio-issue__section").filter({
           has: page.getByRole("heading", { name: new RegExp(`^${team} · `) }),
@@ -561,7 +563,7 @@ test.describe("Administration", () => {
     await expect(people.getByRole("button", { name: /new user/i })).toBeVisible();
 
     /* And it sits below the two rosters, in the order Administration lists
-       them: Development, Testing, then People. */
+       them: Development, QA Team, then People. */
     const order = await page.evaluate(() => {
       const heads = [...document.querySelectorAll("h2")].map((h) =>
         (h.textContent ?? "").trim(),
@@ -569,7 +571,7 @@ test.describe("Administration", () => {
       return heads;
     });
     const development = order.findIndex((t) => t.startsWith("Development"));
-    const testing = order.findIndex((t) => t.startsWith("Testing"));
+    const testing = order.findIndex((t) => t.startsWith("QA Team"));
     const peopleHeading = order.findIndex((t) => t.startsWith("People"));
     expect(development).toBeGreaterThanOrEqual(0);
     expect(testing).toBeGreaterThanOrEqual(0);
@@ -788,13 +790,13 @@ test.describe("Administration", () => {
 test.describe("The Development roster", () => {
   test.use({ storageState: ADMIN_STATE });
 
-  test("exists as its own block, beside Testing", async ({ page }) => {
+  test("exists as its own block, beside QA Team", async ({ page }) => {
     await page.goto("/admin");
     await expect(
       page.locator(".prio-issue__section-title", { hasText: "Development" }),
     ).toBeVisible();
     await expect(
-      page.locator(".prio-issue__section-title", { hasText: "Testing" }),
+      page.locator(".prio-issue__section-title", { hasText: "QA" }),
     ).toBeVisible();
   });
 });

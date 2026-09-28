@@ -138,7 +138,7 @@ async function testerRaises(
     type: "BUG",
     title: `${label} ${Date.now()}-${Math.random()}`,
     description: "Raised by QA for this test.",
-    priority: "MEDIUM",
+    priority: "P2",
     ...extra,
   });
   if (!result.ok) throw new Error(result.error);
@@ -177,7 +177,7 @@ async function loadUpTo(email: string, target: number): Promise<void> {
       title: `Ballast for ${email} ${Date.now()}-${Math.random()}`,
       description: "fixture",
       status: "TODO",
-      priority: "LOW",
+      priority: "P3",
       assigneeId: ids[email]!,
     });
     if (!result.ok) throw new Error(result.error);
@@ -398,7 +398,7 @@ describe("A8 / A9  what the rule deliberately does not touch", () => {
       title: `Admin parks work ${Date.now()}`,
       description: "fixture",
       status: "BACKLOG",
-      priority: "MEDIUM",
+      priority: "P2",
     });
     if (!result.ok) throw new Error(result.error);
     madeIssues.push(result.data.id);
@@ -417,7 +417,7 @@ describe("A8 / A9  what the rule deliberately does not touch", () => {
       type: "TASK",
       title: `Developer raises work ${Date.now()}`,
       description: "fixture",
-      priority: "MEDIUM",
+      priority: "P2",
     });
     if (!result.ok) throw new Error(result.error);
     madeIssues.push(result.data.id);
@@ -461,7 +461,7 @@ async function readyForQa(label: string): Promise<string> {
     title: `${label} ${Date.now()}-${Math.random()}`,
     description: "fixture",
     status: "TODO",
-    priority: "MEDIUM",
+    priority: "P2",
     assigneeId: ids[DEVELOPER_A]!,
   });
   if (!result.ok) throw new Error(result.error);
@@ -516,7 +516,7 @@ describe("C1 / C5  an administrator may hand it to another tester", () => {
       title: `Named on the way in ${Date.now()}`,
       description: "fixture",
       status: "IN_PROGRESS",
-      priority: "MEDIUM",
+      priority: "P2",
       assigneeId: ids[DEVELOPER_A]!,
     });
     if (!created.ok) throw new Error(created.error);
@@ -564,7 +564,7 @@ describe("C2 / C3 / C4  and may not hand it to anybody else", () => {
       title: `Refused on the way in ${Date.now()}`,
       description: "fixture",
       status: "IN_PROGRESS",
-      priority: "MEDIUM",
+      priority: "P2",
       assigneeId: ids[DEVELOPER_A]!,
     });
     if (!created.ok) throw new Error(created.error);
@@ -678,7 +678,7 @@ describe("C6  who may decide is unchanged", () => {
       title: `Status only ${Date.now()}`,
       description: "fixture",
       status: "IN_PROGRESS",
-      priority: "MEDIUM",
+      priority: "P2",
       assigneeId: ids[DEVELOPER_A]!,
     });
     if (!created.ok) throw new Error(created.error);

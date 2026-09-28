@@ -93,7 +93,7 @@ async function anIssueIn(sprintId: string, title: string): Promise<string> {
     type: "TASK",
     title: `${title} ${Date.now()}`,
     description: "fixture",
-    priority: "MEDIUM",
+    priority: "P2",
   });
   if (!created.ok) throw new Error(created.error);
   createdIssues.push(created.data.id);

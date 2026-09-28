@@ -9,6 +9,7 @@ import { IssueTypeIcon } from "@/components/ui/Indicators";
 import { useToast } from "@/components/ui/Toast";
 import { IconWarning } from "@/components/ui/Icon";
 import {
+  DEFAULT_PRIORITY,
   ISSUE_LIMIT_CODE,
   ISSUE_LIMIT_REACHED,
   ISSUE_TYPES,
@@ -85,7 +86,7 @@ export function CloneIssueDialog({
     description: "",
     type: "TASK" as IssueType,
     status: "BACKLOG" as IssueStatus,
-    priority: "MEDIUM" as Priority,
+    priority: DEFAULT_PRIORITY as Priority,
     assigneeId: "",
   });
 

@@ -1,10 +1,13 @@
 import { z } from "zod";
 import {
+  DEFAULT_PRIORITY,
   ISSUE_STATUSES,
   ISSUE_TYPES,
   PRIORITIES,
   SEVERITIES,
+  severityAppliesTo,
 } from "@/lib/domain";
+import { meetsPasswordPolicy, WEAK_PASSWORD_MESSAGE } from "@/lib/passwordPolicy";
 
 /**
  * Input contracts for every write path.
@@ -118,6 +121,21 @@ export const issueStatusSchema = z.enum(ISSUE_STATUSES);
 export const issueTypeSchema = z.enum(ISSUE_TYPES);
 export const prioritySchema = z.enum(PRIORITIES);
 export const severitySchema = z.enum(SEVERITIES);
+
+/**
+ * A password somebody is *choosing* — sign-up, an administrator setting one,
+ * changing your own, a reset. Every one of those paths validates through this
+ * single schema so the rule cannot differ between them, and it is the server's
+ * check: the form's checklist is only a hint.
+ *
+ * Whichever rule fails, the message is the same generic one (see
+ * `WEAK_PASSWORD_MESSAGE`). Deliberately not trimmed — a space is a legal
+ * password character, and altering what was typed would mean the password that
+ * is stored is not the one sign-in later checks against.
+ */
+export const newPasswordSchema = z
+  .string()
+  .refine(meetsPasswordPolicy, WEAK_PASSWORD_MESSAGE);
 
 /* --------------------------------------------------------------- projects */
 
@@ -240,7 +258,7 @@ const issueBase = z.object({
    * the schema does not know who is asking.
    */
   status: issueStatusSchema.optional(),
-  priority: prioritySchema.default("MEDIUM"),
+  priority: prioritySchema.default(DEFAULT_PRIORITY),
   assigneeId: optionalId,
   labelIds: z.array(z.string()).default([]),
   dueDate: optionalDate,
@@ -268,14 +286,25 @@ const issueBase = z.object({
  * trail that names those fields still reads correctly. They are simply never
  * written from here.
  */
-export const createIssueSchema = issueBase.extend({
-  /*
-   * Only the spreadsheet import supplies this. No form offers a severity any
-   * more, so it is optional and absent from every other caller — `issueBase`
-   * itself, which the clone schema shares, is deliberately left without it.
-   */
-  severity: severitySchema.optional(),
-});
+export const createIssueSchema = issueBase
+  .extend({
+    /*
+     * How bad a bug is. Optional, and only meaningful for a bug: the Create
+     * form offers it for that type alone and the import reads it from Bug rows
+     * alone. `issueBase` itself, which the clone schema shares, is deliberately
+     * left without it.
+     */
+    severity: severitySchema.optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.severity !== undefined && !severityAppliesTo(value.type)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["severity"],
+        message: "Severity applies to bugs only.",
+      });
+    }
+  });
 
 export type CreateIssueInput = z.infer<typeof createIssueSchema>;
 
@@ -298,6 +327,9 @@ export const updateIssueSchema = z.object({
   description: patchText(20_000),
   status: issueStatusSchema.optional(),
   priority: prioritySchema.optional(),
+  /* Absent leaves it alone; null clears it. `updateIssue` refuses it on
+     anything that is not a bug, because the schema does not know the type. */
+  severity: severitySchema.nullable().optional(),
   assigneeId: patchId,
   dueDate: patchDate,
   effortHours: patchHours,
@@ -372,7 +404,7 @@ export const reportBugSchema = z.object({
   issueId: z.string().min(1),
   title: trimmed(200).min(5, "Summarise the problem in a few words."),
   affectedModule: trimmed(120).min(2, "Say where you found it."),
-  priority: prioritySchema.default("MEDIUM"),
+  priority: prioritySchema.default(DEFAULT_PRIORITY),
 });
 
 export type ReportBugInput = z.infer<typeof reportBugSchema>;

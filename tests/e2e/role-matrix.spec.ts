@@ -15,7 +15,7 @@ import { signIn } from "./support";
  *
  * Three people, made here and unmade afterwards:
  *
- *   QA1   Testing only              -> QA / Tester
+ *   QA1   QA Team only              -> QA member
  *   DEV1  neither team              -> Member
  *   FSD1  Testing and Development   -> Fullstack Developer
  *
@@ -184,11 +184,11 @@ async function tileValue(page: Page, label: string): Promise<number> {
 }
 
 test.describe("effective role resolution, as the application reports it", () => {
-  test("Testing only is a QA / Tester", async ({ browser }) => {
+  test("QA Team only is a QA member", async ({ browser }) => {
     const { page, close } = await pageAs(browser, QA1);
     try {
       await page.goto("/");
-      expect(await roleBadge(page)).toBe("QA / Tester");
+      expect(await roleBadge(page)).toBe("QA member");
     } finally {
       await close();
     }
@@ -212,13 +212,13 @@ test.describe("effective role resolution, as the application reports it", () => 
   test("Testing and Development is a Full Stack Developer", async ({
     browser,
   }) => {
-    /* The rule the whole change turns on: not "QA / Tester", not "Member". */
+    /* The rule the whole change turns on: not "QA member", not "Member". */
     const { page, close } = await pageAs(browser, FSD1);
     try {
       await page.goto("/");
       const badge = await roleBadge(page);
       expect(badge).toBe("Fullstack Developer");
-      expect(badge).not.toBe("QA / Tester");
+      expect(badge).not.toBe("QA member");
       expect(badge).not.toBe("Member");
     } finally {
       await close();

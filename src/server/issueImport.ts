@@ -16,6 +16,7 @@ import {
   ISSUE_TYPE_LABEL,
   PRIORITIES,
   PRIORITY_LABEL,
+  priorityFromLegacy,
   SEVERITIES,
   SEVERITY_LABEL,
   STATUS_LABEL,
@@ -424,7 +425,12 @@ async function prepare(
     const priorityText = read(row, IMPORT_COLUMNS.priority);
     let priority: Priority | undefined;
     if (priorityText !== "") {
-      const found = fromLabel<Priority>(priorityText, PRIORITIES, PRIORITY_LABEL);
+      /* A sheet exported before P0–P3 says Urgent / High / Medium / Low / None;
+         those still mean what they meant (LEGACY_PRIORITY), so an old file
+         keeps importing. Nothing else is guessed at. */
+      const found =
+        fromLabel<Priority>(priorityText, PRIORITIES, PRIORITY_LABEL) ??
+        priorityFromLegacy(priorityText);
       if (found) priority = found;
       else
         fail(

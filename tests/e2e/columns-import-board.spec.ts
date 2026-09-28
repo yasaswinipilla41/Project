@@ -414,7 +414,7 @@ test.describe("the import drop zone", () => {
 
     await expect(hint).toContainText(
       "Needs a Summary column. Description, Issue Type, Status, Priority, " +
-        "Assignee, Severity and Parent Issue are used when present.",
+        "Assignee, Severity (Bug rows only) and Parent Issue are used when present.",
     );
     await expect(hint.locator("strong")).toHaveText(["Summary"]);
     /* Neither of the columns this replaced is mentioned any more. */

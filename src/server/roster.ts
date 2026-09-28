@@ -385,7 +385,7 @@ async function fullStackTeamId(): Promise<string> {
       slug: FULLSTACK_TEAM_SLUG,
       name: "Full Stack Developers",
       description:
-        "Builds and verifies. A membership of its own — holding it changes nothing about Development or Testing.",
+        "Builds and verifies. A membership of its own — holding it changes nothing about Development or QA.",
     },
     select: { id: true },
   });

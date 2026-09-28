@@ -98,7 +98,7 @@ describe("who each menu offers", () => {
         type: "BUG",
         title: "Held by the tester, raised by the developer",
         status: "IN_REVIEW",
-        priority: "MEDIUM",
+        priority: "P2",
         reporterId: developerId,
         assigneeId: testerId,
       },

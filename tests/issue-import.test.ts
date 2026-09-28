@@ -110,7 +110,7 @@ describe("a spreadsheet Prio can use", () => {
     });
     expect(made.key.startsWith(`${project.key}-`)).toBe(true);
     expect(made.type).toBe("TASK");
-    expect(made.priority).toBe("HIGH");
+    expect(made.priority).toBe("P1");
     /* No project column anywhere in the file: the project is the one the
        import was opened from. */
     expect(made.projectId).toBe(project.id);
@@ -166,7 +166,7 @@ describe("a spreadsheet Prio can use", () => {
             [S.description]: "Written in the spreadsheet",
             [S.issueType]: "Bug",
             [S.status]: "New",
-            [S.priority]: "Urgent",
+            [S.priority]: "P0 (Urgent)",
             [S.assignee]: member.user.name,
             [S.severity]: "Major",
             [S.parentIssue]: parent.key.toLowerCase(),
@@ -194,7 +194,7 @@ describe("a spreadsheet Prio can use", () => {
       description: "Written in the spreadsheet",
       type: "BUG",
       status: "TODO",
-      priority: "URGENT",
+      priority: "P0",
       assigneeId: member.user.id,
       severity: "MAJOR",
       parentId: parent.id,

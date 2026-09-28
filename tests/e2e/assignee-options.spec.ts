@@ -328,7 +328,7 @@ test.describe("Assignee options for a member account", () => {
 
     const added: string[] = [];
     for (const [slug, name] of [
-      [TESTING_TEAM_SLUG, "Testing"],
+      [TESTING_TEAM_SLUG, "QA Team"],
       [DEVELOPMENT_TEAM_SLUG, "Development"],
     ] as const) {
       const team =

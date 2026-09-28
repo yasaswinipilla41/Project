@@ -72,7 +72,7 @@ async function anIssueDue(title: string, dueDate: Date | null): Promise<string> 
     title: `${title} ${Date.now()}`,
     description: "fixture",
     status: "TODO",
-    priority: "MEDIUM",
+    priority: "P2",
     assigneeId: tester.id,
     ...(dueDate ? { dueDate: dueDate.toISOString() } : {}),
   });

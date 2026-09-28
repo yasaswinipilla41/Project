@@ -31,7 +31,7 @@ async function anIssue(title: string) {
     projectId: project.id,
     type: "TASK",
     title: `${title} ${Date.now()}`,
-    priority: "MEDIUM",
+    priority: "P2",
     labelIds: [],
   });
   if (!result.ok) throw new Error(result.error);

@@ -30,6 +30,7 @@ import {
 import { QuickActions } from "@/components/dashboard/QuickActions";
 import { WorkStatusCard } from "@/components/dashboard/WorkStatusCard";
 import { requireUser } from "@/lib/session";
+import { PRIORITY_LABEL } from "@/lib/domain";
 import { displayRoleOf, workRoleOf } from "@/lib/authz";
 import { loadDashboard } from "@/server/queries/dashboard";
 import { loadWorkStatus } from "@/server/queries/workStatus";
@@ -213,14 +214,14 @@ export default async function HomePage() {
                 * opens are one question.
                 */}
               <KpiCard
-                label="High priority"
+                label="P1 priority"
                 value={data.kpi.highPriorityOpen}
                 icon={<IconWarning size={13} />}
                 tone={data.kpi.highPriorityOpen > 0 ? "danger" : "default"}
                 hint={`${data.kpi.highPriorityOpenBugs} of them ${
                   data.kpi.highPriorityOpenBugs === 1 ? "is a bug" : "are bugs"
                 }`}
-                href="/issues?priority=HIGH&resolution=open"
+                href="/issues?priority=P1&resolution=open"
               />
             </div>
             <div className="col-12 col-sm-6 col-xl-3">
@@ -362,14 +363,14 @@ export default async function HomePage() {
                         <span className="prio-worktile__label">Ready for QA</span>
                       </Link>
                       <Link
-                        href="/bugs?priority=URGENT&resolution=open"
+                        href="/bugs?priority=P0&resolution=open"
                         className="prio-worktile"
                         data-tone={data.qa.urgentOpen > 0 ? "danger" : undefined}
                       >
                         <span className="prio-worktile__value">
                           {data.qa.urgentOpen}
                         </span>
-                        <span className="prio-worktile__label">Urgent</span>
+                        <span className="prio-worktile__label">{PRIORITY_LABEL.P0}</span>
                       </Link>
                     </div>
                   </CardBody>
@@ -431,8 +432,8 @@ export default async function HomePage() {
               <SectionHead
                 title="Needs attention"
                 count={data.important.length}
-                href="/issues?priority=URGENT&priority=HIGH&resolution=open"
-                linkLabel="View all high priority"
+                href="/issues?priority=P0&priority=P1&resolution=open"
+                linkLabel="View all P0 and P1"
               />
               <Card className="prio-dash__attention">
                 <CardBody tight>
@@ -471,7 +472,7 @@ export default async function HomePage() {
                     value={data.org.openBugs}
                     icon={<IconBug size={13} />}
                     tone={data.org.openBugs > 0 ? "danger" : "default"}
-                    hint={`${data.org.urgentOpen} urgent`}
+                    hint={`${data.org.urgentOpen} P0`}
                     href="/bugs?resolution=open"
                   />
                 </div>

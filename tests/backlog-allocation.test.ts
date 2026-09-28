@@ -18,7 +18,7 @@ import {
  * described.
  */
 
-function issues(count: number, priority: Priority = "MEDIUM"): AllocationIssue[] {
+function issues(count: number, priority: Priority = "P2"): AllocationIssue[] {
   return Array.from({ length: count }, (_, index) => ({
     id: `issue-${index + 1}`,
     key: `ENG-${String(index + 1).padStart(3, "0")}`,
@@ -132,9 +132,9 @@ describe("the two rules", () => {
     /* Keys deliberately out of order, so what decides the sequence is the
        priority and not the name. */
     const mixed: AllocationIssue[] = [
-      { id: "low", key: "ENG-002", title: "Low", priority: "LOW" },
-      { id: "urgent", key: "ENG-003", title: "Urgent", priority: "URGENT" },
-      { id: "medium", key: "ENG-001", title: "Medium", priority: "MEDIUM" },
+      { id: "low", key: "ENG-002", title: "Low", priority: "P3" },
+      { id: "urgent", key: "ENG-003", title: "Urgent", priority: "P0" },
+      { id: "medium", key: "ENG-001", title: "Medium", priority: "P2" },
     ];
 
     const plan = allocationsOf(mixed, [
@@ -168,7 +168,7 @@ describe("the two rules", () => {
   });
 
   it("explains each choice in the row itself", () => {
-    const [first] = allocationsOf(issues(1, "URGENT"), FOUR);
+    const [first] = allocationsOf(issues(1, "P0"), FOUR);
     expect(first!.reason).toContain("Urgent");
     expect(first!.reason).toContain("D");
     expect(first!.reason).toContain("5");

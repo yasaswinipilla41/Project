@@ -295,7 +295,7 @@ export function WorkStatusCard({ data }: { data: WorkStatusData }) {
           busy={saving}
           description={
             lane === "QA"
-              ? "Work a developer has handed over. Choose the project, the issue that is Ready for QA, and the tester who will check it."
+              ? "Work a developer has handed over. Choose the project, the issue that is Ready for QA, and the QA member who will check it."
               : "Work that has been raised and not picked up. Choose the project, the issue — New, Reopen or Backlog — and the developer who will build it."
           }
           footer={
@@ -375,7 +375,7 @@ export function WorkStatusCard({ data }: { data: WorkStatusData }) {
 
           <div className="prio-field">
             <label className="prio-label" htmlFor="workstatus-person">
-              {lane === "QA" ? "QA / Tester" : "Developer"}
+              {lane === "QA" ? "QA member" : "Developer"}
             </label>
             {!projectId ? (
               <p className="prio-text-muted">
@@ -433,7 +433,7 @@ export function WorkStatusCard({ data }: { data: WorkStatusData }) {
           title="Auto-assign backlog"
           size="lg"
           busy={applying}
-          description="Returns work to whoever it already belongs to — a hand-off to the tester who raised it, a reopen to the developer who built it — and then deals what is left across the project's developers, most urgent first, to whoever has the lightest queue at the time."
+          description="Returns work to whoever it already belongs to — a hand-off to the QA member who raised it, a reopen to the developer who built it — and then deals what is left across the project's developers, most urgent first, to whoever has the lightest queue at the time."
           footer={
             <>
               <Button

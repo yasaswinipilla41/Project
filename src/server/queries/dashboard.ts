@@ -412,7 +412,7 @@ export async function loadDashboard(user: CurrentUser): Promise<DashboardData> {
          * no new concept was invented to fill this section.
          */
         OR: [
-          { priority: { in: ["URGENT", "HIGH"] } },
+          { priority: { in: ["P0", "P1"] } },
           /*
            * Overdue, by the one definition of it.
            *
@@ -808,10 +808,10 @@ async function countBundle(
      * different sets.
      */
     prisma.issue.count({
-      where: { ...scope, status: open, priority: "HIGH" },
+      where: { ...scope, status: open, priority: "P1" },
     }),
     prisma.issue.count({
-      where: { ...scope, status: open, priority: "HIGH", type: "BUG" },
+      where: { ...scope, status: open, priority: "P1", type: "BUG" },
     }),
     prisma.issue.count({
       where: { ...scope, createdAt: { gte: w.startOfMonth } },
@@ -906,7 +906,7 @@ async function countBundle(
       where: { ...scope, reporterId: user.id, type: "BUG", status: "IN_REVIEW" },
     }),
     prisma.issue.count({
-      where: { ...scope, type: "BUG", priority: "URGENT", status: open },
+      where: { ...scope, type: "BUG", priority: "P0", status: open },
     }),
     prisma.issue.count({
       where: { ...scope, type: "BUG", completedAt: { gte: w.weekAgo } },
@@ -994,7 +994,7 @@ async function loadOrgStats() {
       prisma.issue.count(),
       prisma.issue.count({ where: { type: "BUG", status: open } }),
       prisma.issue.count({
-        where: { type: "BUG", priority: "URGENT", status: open },
+        where: { type: "BUG", priority: "P0", status: open },
       }),
       prisma.issue.count({ where: { assigneeId: null, status: open } }),
       prisma.issue.groupBy({

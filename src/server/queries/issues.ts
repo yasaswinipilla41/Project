@@ -1,5 +1,5 @@
 import type { Prisma } from "@prisma/client";
-import type { IssueType } from "@prisma/client";
+import type { IssueType, Priority } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
   completedByFilter,
@@ -21,6 +21,7 @@ import {
   isIssueStatus,
   isIssueType,
   isPriority,
+  priorityFromLegacy,
 } from "@/lib/domain";
 
 /**
@@ -99,7 +100,7 @@ export interface IssueListRow {
   type: IssueType;
   title: string;
   status: (typeof OPEN_STATUSES)[number] | (typeof CLOSED_STATUSES)[number];
-  priority: "URGENT" | "HIGH" | "MEDIUM" | "LOW" | "NONE";
+  priority: Priority;
   dueDate: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -147,7 +148,15 @@ export function buildIssueWhere(
     where.status = { in: [...CLOSED_STATUSES] };
   }
 
-  const priorities = (filters.priorities ?? []).filter(isPriority);
+  /* A bookmarked `?priority=HIGH` from before P0–P3 still means what it
+     did; anything that is neither a current value nor a legacy word is dropped. */
+  const priorities = [
+    ...new Set(
+      (filters.priorities ?? [])
+        .map((p) => (isPriority(p) ? p : priorityFromLegacy(p)))
+        .filter(isPriority),
+    ),
+  ];
   if (priorities.length > 0) where.priority = { in: priorities };
 
   if (filters.assigneeIds?.length) {
@@ -347,7 +356,7 @@ function buildOrderBy(
     case "created":
       return [{ createdAt: dir }];
     case "priority":
-      // URGENT is first in the enum, so "desc" urgency is "asc" enum order.
+      // P0 is first in the enum, so "desc" urgency is "asc" enum order.
       return [{ priority: dir === "desc" ? "asc" : "desc" }, { updatedAt: "desc" }];
     case "due":
       // Items without a due date sort last regardless of direction.

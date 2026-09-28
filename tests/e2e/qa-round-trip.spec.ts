@@ -50,7 +50,7 @@ async function teamId(slug: string): Promise<string> {
   const team =
     (await prisma.team.findUnique({ where: { slug }, select: { id: true } })) ??
     (await prisma.team.create({
-      data: { slug, name: slug === TESTING_TEAM_SLUG ? "Testing" : "Development" },
+      data: { slug, name: slug === TESTING_TEAM_SLUG ? "QA Team" : "Development" },
       select: { id: true },
     }));
   return team.id;

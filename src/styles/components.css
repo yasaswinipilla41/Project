@@ -742,20 +742,17 @@
   white-space: nowrap;
 }
 
-.prio-priority[data-priority="URGENT"] {
+.prio-priority[data-priority="P0"] {
   color: var(--prio-priority-urgent);
 }
-.prio-priority[data-priority="HIGH"] {
+.prio-priority[data-priority="P1"] {
   color: var(--prio-priority-high);
 }
-.prio-priority[data-priority="MEDIUM"] {
+.prio-priority[data-priority="P2"] {
   color: var(--prio-priority-medium);
 }
-.prio-priority[data-priority="LOW"] {
+.prio-priority[data-priority="P3"] {
   color: var(--prio-priority-low);
-}
-.prio-priority[data-priority="NONE"] {
-  color: var(--prio-priority-none);
 }
 
 /* Issue-type glyph. */
@@ -3438,4 +3435,36 @@ a.prio-stat[data-selected="true"]:hover {
   min-height: 28px;
   padding: 2px var(--prio-space-2);
   font-size: var(--prio-text-xs);
+}
+
+/* Password requirements checklist — see PasswordRequirements.tsx. */
+.prio-pwreq {
+  margin-top: var(--prio-space-2);
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-muted);
+}
+.prio-pwreq__title {
+  display: block;
+  margin-bottom: var(--prio-space-1);
+  font-weight: var(--prio-weight-medium);
+}
+.prio-pwreq__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+.prio-pwreq__item {
+  display: flex;
+  align-items: center;
+  gap: var(--prio-space-2);
+}
+.prio-pwreq__mark {
+  width: 1em;
+  text-align: center;
+  flex-shrink: 0;
+}
+.prio-pwreq__item[data-met] {
+  color: var(--prio-success, #15803d);
 }

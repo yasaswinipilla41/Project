@@ -230,13 +230,13 @@ test.describe("Bug management", () => {
     await page.goto("/bugs");
 
     await page.getByRole("button", { name: /^Priority/ }).click();
-    await page.getByRole("menuitemradio", { name: "Urgent" }).first().click();
-    await expect(page).toHaveURL(/priority=URGENT/);
+    await page.getByRole("menuitemradio", { name: /P0/ }).first().click();
+    await expect(page).toHaveURL(/priority=P0/);
 
     const priorities = await page
       .locator(".prio-table tbody .prio-priority")
       .evaluateAll((els) => els.map((e) => e.getAttribute("data-priority")));
-    expect(new Set(priorities)).toEqual(new Set(["URGENT"]));
+    expect(new Set(priorities)).toEqual(new Set(["P0"]));
   });
 });
 

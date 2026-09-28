@@ -101,7 +101,7 @@ async function aTestedBuild(
     type: "BUG",
     title,
     description: "fixture",
-    priority: "MEDIUM",
+    priority: "P2",
     assigneeId: builder,
   });
   if (!raised.ok) throw new Error(raised.error);
@@ -259,7 +259,7 @@ describe("QA reopens work", () => {
       type: "BUG",
       title: `Reopen from in progress ${Date.now()}`,
       description: "fixture",
-      priority: "MEDIUM",
+      priority: "P2",
       assigneeId: developerId,
     });
     if (!raised.ok) throw new Error(raised.error);
@@ -351,7 +351,7 @@ describe("QA reopens work", () => {
       type: "TASK",
       title: `Reopen with no build ${Date.now()}`,
       description: "fixture",
-      priority: "MEDIUM",
+      priority: "P2",
       status: "IN_QA",
     });
     if (!raised.ok) throw new Error(raised.error);

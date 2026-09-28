@@ -69,7 +69,7 @@ async function makeIssue(opts: {
       type: "TASK",
       title: opts.title,
       status: opts.status ?? "TODO",
-      priority: "MEDIUM",
+      priority: "P2",
       reporterId: ownerId,
       assigneeId: opts.assigneeId,
       dueDate: opts.dueDate ?? null,

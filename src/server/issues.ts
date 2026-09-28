@@ -26,6 +26,7 @@ import {
   canEditDueDate,
   canEditIssueName,
   canEditPriority,
+  severityAppliesTo,
   canSetDueDateInStatus,
   canSetStatus,
   doesDeveloperWork,
@@ -207,6 +208,7 @@ export async function updateIssue(
         type: true,
         status: true,
         priority: true,
+        severity: true,
         title: true,
         description: true,
         assigneeId: true,
@@ -408,7 +410,7 @@ export async function updateIssue(
       !canEditIssueName(role)
     ) {
       throw new AuthorizationError(
-        "Renaming an issue is not a developer's — ask an administrator or the tester who raised it.",
+        "Renaming an issue is not a developer's — ask an administrator or the QA member who raised it.",
       );
     }
 
@@ -421,6 +423,29 @@ export async function updateIssue(
       throw new AuthorizationError(
         "How soon work is done is decided for you, not by you.",
       );
+    }
+
+    /*
+     * How bad a bug is describes the bug, so it exists only on one. Checked
+     * against the stored type rather than anything in the payload — the update
+     * schema does not carry the type, and a request that says "BUG" would be
+     * taking the caller's word. Clearing it (null) on a non-bug is a no-op and
+     * not refused; only setting a value is.
+     *
+     * No role gate beyond who may edit the issue at all: unlike priority, it
+     * says how serious the defect is, not when it gets done.
+     */
+    if (
+      "severity" in input &&
+      input.severity !== undefined &&
+      input.severity !== null &&
+      !severityAppliesTo(existing.type)
+    ) {
+      return {
+        ok: false,
+        error: "Severity applies to bugs only.",
+        fieldErrors: { severity: "Severity applies to bugs only." },
+      };
     }
 
     if ("dueDate" in input && input.dueDate !== undefined) {
@@ -465,6 +490,7 @@ export async function updateIssue(
       "description",
       "status",
       "priority",
+      "severity",
       "assigneeId",
       "dueDate",
       "effortHours",
@@ -897,7 +923,7 @@ export async function claimIssue(
     const role = await workRoleOf(user);
     if (!doesDeveloperWork(role)) {
       throw new AuthorizationError(
-        "Testers do not take development work; a developer picks this up.",
+        "QA members do not take development work; a developer picks this up.",
       );
     }
 

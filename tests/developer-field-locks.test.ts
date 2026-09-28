@@ -75,7 +75,7 @@ async function anIssue(title: string): Promise<string> {
     title: `${title} ${Date.now()}`,
     description: "fixture",
     status: "TODO",
-    priority: "MEDIUM",
+    priority: "P2",
     dueDate: "2099-06-01",
   });
   if (!result.ok) throw new Error(result.error);
@@ -124,10 +124,10 @@ describe("a developer", () => {
     const issueId = await anIssue("Developer priority");
 
     await actAs(DEVELOPER);
-    const result = await updateIssue({ issueId, priority: "URGENT" });
+    const result = await updateIssue({ issueId, priority: "P0" });
 
     expect(result.ok).toBe(false);
-    expect((await stateOf(issueId)).priority).toBe("MEDIUM");
+    expect((await stateOf(issueId)).priority).toBe("P2");
   });
 
   it("cannot set, move or clear the due date", async () => {
@@ -197,11 +197,11 @@ describe("a tester", () => {
     expect((await updateIssue({ issueId, title: "Renamed by a tester" })).ok).toBe(
       true,
     );
-    expect((await updateIssue({ issueId, priority: "HIGH" })).ok).toBe(true);
+    expect((await updateIssue({ issueId, priority: "P1" })).ok).toBe(true);
 
     const after = await stateOf(issueId);
     expect(after.title).toBe("Renamed by a tester");
-    expect(after.priority).toBe("HIGH");
+    expect(after.priority).toBe("P1");
   });
 });
 
@@ -213,14 +213,14 @@ describe("an administrator", () => {
     const result = await updateIssue({
       issueId,
       title: "Renamed by an administrator",
-      priority: "LOW",
+      priority: "P3",
       dueDate: "2099-09-09",
     });
     expect(result.ok).toBe(true);
 
     const after = await stateOf(issueId);
     expect(after.title).toBe("Renamed by an administrator");
-    expect(after.priority).toBe("LOW");
+    expect(after.priority).toBe("P3");
     expect(after.dueDate?.toISOString().slice(0, 10)).toBe("2099-09-09");
   });
 });

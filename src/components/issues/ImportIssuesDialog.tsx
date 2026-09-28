@@ -418,8 +418,8 @@ export function ImportIssuesDialog({
 
         <span className="prio-hint">
           Needs a <strong>Summary</strong> column. Description, Issue Type,
-          Status, Priority, Assignee, Severity and Parent Issue are used when
-          present.
+          Status, Priority, Assignee, Severity (Bug rows only) and Parent Issue
+          are used when present.
         </span>
 
         {/* Directly under the sentence that describes the columns, because it

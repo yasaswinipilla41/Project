@@ -298,7 +298,7 @@ export function assignmentMessage(params: {
   tester: boolean;
 }): string {
   if (params.tester) {
-    return `assigned you as tester for ${params.issueKey} — ${params.issueTitle}`;
+    return `assigned you as QA member for ${params.issueKey} — ${params.issueTitle}`;
   }
   return `assigned ${params.typeLabel} ${params.issueKey} to you`;
 }
