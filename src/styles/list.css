@@ -112,6 +112,19 @@
   line-height: 1.4;
 }
 
+/* The current sprint's mark, at the very start of its name: a small filled
+   dot in the primary the sprint pages use for "Current sprint", the same size
+   as a status pill's dot, and on the text's own line. */
+.prio-filter__iteration-active {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: var(--prio-space-2);
+  border-radius: 50%;
+  background: var(--prio-primary-600);
+  vertical-align: 1px;
+}
+
 /* The completed check follows the name on the same line, a little apart. */
 .prio-filter__iteration-done {
   display: inline-block;

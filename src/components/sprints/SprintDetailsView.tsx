@@ -59,7 +59,10 @@ export function SprintDetailsView({
 
   return (
     <>
-      <section className="prio-card prio-sprint" data-status={sprint.status}>
+      <section
+        className="prio-card prio-sprint prio-sprint--details"
+        data-status={sprint.status}
+      >
         <CardBody>
           <header className="prio-sprint__head">
             <div className="prio-sprint__identity">

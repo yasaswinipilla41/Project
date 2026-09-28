@@ -3,15 +3,12 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/Menu";
-import { IconArrowRight } from "@/components/ui/Icon";
+import { IconArrowRight, IconInfo } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/Toast";
-import { formatDateRange } from "@/lib/format";
+import { formatDate } from "@/lib/format";
 import { moveIssueToSprint } from "@/server/sprints";
 
-type Destination =
-  | { type: "BACKLOG" }
-  | { type: "SPRINT"; sprintId: string }
-  | { type: "PREVIOUS" };
+type Destination = { type: "SPRINT"; sprintId: string } | { type: "PREVIOUS" };
 
 /** A sprint this menu can name as somewhere to move to. */
 export interface MoveDestination {
@@ -22,24 +19,23 @@ export interface MoveDestination {
 }
 
 /**
- * Where one sprint issue can go: back to the sprint it came from, the
- * project's current or upcoming sprint, or the backlog.
+ * Where one sprint issue can go: back to the upcoming sprint it came from, or
+ * any of the project's upcoming sprints. Sprints only — the backlog is never
+ * offered here.
  *
  * Restore is offered only when there is somewhere to restore to — the issue
- * was moved here out of a sprint that is still open — and it names that
+ * was moved here out of a sprint that is still upcoming — and it names that
  * sprint, because "Restore" on its own does not say where the work would go.
  * The destination is the issue's own record of the move, never anything this
  * menu chooses, so the server decides it and this only asks.
  *
- * The current and upcoming sprints are offered the same way, each labelled
- * with its own dates so two sprints of the same or similar name are never
- * mistaken for each other. Neither is the sprint being read now — a card
- * cannot move its issue into the sprint the issue is already in — and a
- * project further from an active sprint than that has no other destinations
- * to offer here: the later sprints stay reachable once they become the
- * current or the upcoming one, not before. Working out which two sprints
- * those are is the caller's job, from the project's own sprints; see
- * `lib/sprintMove`'s `nextOpenSprint`, the one place that answers it.
+ * The upcoming sprints — every planned one, not only the next — are listed
+ * soonest first, each with its own start and end dates so two sprints of the
+ * same or similar name are never mistaken for each other. The running sprint
+ * and completed ones are never listed, nor is the sprint being read now: a
+ * card cannot move its issue into the sprint the issue is already in. Working
+ * out which sprints those are is the caller's job, from the project's own
+ * sprints; a project with none says so rather than leaving a gap.
  *
  * Offered to the same people the Add issues button is — filling a sprint,
  * emptying it or moving its issues elsewhere is every working role's, not a
@@ -49,8 +45,8 @@ export interface MoveDestination {
 export function MoveIssueMenu({
   issueId,
   issueKey,
-  /** At most the project's current sprint and its upcoming one, whichever of
-   *  the two is not the sprint this card is already read on. */
+  /** The project's upcoming sprints, soonest first, less the sprint this card
+   *  is already read on. */
   moveDestinations,
   previousSprint,
   disabled,
@@ -83,13 +79,15 @@ export function MoveIssueMenu({
   return (
     <Menu
       align="end"
-      width={220}
+      /* Sized to its rows rather than a fixed 220px, which cut every
+         sprint's dates off — see `.prio-menu--movesprint`. */
+      panelClassName="prio-menu--movesprint"
       label={`Move ${issueKey}`}
       trigger={(props) => (
         <button
           type="button"
           className="prio-btn prio-btn--ghost prio-btn--icon prio-btn--sm"
-          aria-label={`Move ${issueKey} to another sprint or the backlog`}
+          aria-label={`Move ${issueKey} to another sprint`}
           title="Move to"
           disabled={disabled || moving}
           {...props}
@@ -112,13 +110,28 @@ export function MoveIssueMenu({
               key={sprint.id}
               onSelect={() => void move({ type: "SPRINT", sprintId: sprint.id })}
             >
-              {sprint.name} ({formatDateRange(sprint.startDate, sprint.endDate)})
+              {/* The sprint's name, and under it the dates it runs — start
+                  and end, each with its year — so two similarly named
+                  sprints are never mistaken for each other. */}
+              <span className="prio-movesprint__name">{sprint.name}</span>
+              <span className="prio-movesprint__dates">
+                {formatDate(sprint.startDate)} – {formatDate(sprint.endDate)}
+              </span>
             </MenuItem>
           ))}
         </>
-      ) : null}
-      <MenuSeparator />
-      <MenuItem onSelect={() => void move({ type: "BACKLOG" })}>Backlog</MenuItem>
+      ) : (
+        <>
+          <MenuSeparator />
+          {/* Said, not left as a gap: the project has no sprint planned
+              after this one, in the same note the issue page's sprint
+              picker uses for the same answer. */}
+          <p className="prio-menu__note">
+            <IconInfo size={14} />
+            No upcoming sprints available
+          </p>
+        </>
+      )}
     </Menu>
   );
 }

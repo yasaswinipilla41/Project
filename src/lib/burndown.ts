@@ -156,6 +156,24 @@ export interface BurndownChange {
   effortHours: number;
 }
 
+/**
+ * One issue's share of a day's burn: the effort work on it actually removed
+ * from the sprint that day.
+ */
+export interface BurndownBurn {
+  issueId: string;
+  key: string;
+  title: string;
+  /** Hours burned: always positive. */
+  hours: number;
+  /** Finished by the end of the day, as opposed to its remaining effort
+   *  having been lowered. */
+  finished: boolean;
+  /** The status it ended the day in. */
+  status: IssueStatus | null;
+  assignee: BurndownIssue["assignee"];
+}
+
 export interface BurndownPoint {
   /** Midnight at the start of this day, in the server's own calendar. */
   date: Date;
@@ -182,20 +200,27 @@ export interface BurndownPoint {
   /*
    * ------------------------------------------------- what today did to the line
    *
-   * Three differences against the day before, and they decompose the step the
-   * line took: `change` is what the reader sees the line do, and it is exactly
-   * `scope − completed`. A day where work was finished and work was added can
-   * therefore say so, rather than showing a flat line that hides both.
+   * `change` is what the reader sees the line do since the day before — the
+   * net of everything that happened. It is not the effort burned: a day on
+   * which work was moved out of the sprint, or finished work reopened, moves
+   * the line without anybody having done anything.
    *
-   * Differences of figures this already computes — no second way of counting
-   * effort, and nothing stored. Null on the first day of the sprint and on any
-   * day the sprint has not reached, where there is no day before to compare
-   * with.
+   * So the burn is counted from the day's own events instead: only finishing
+   * work and lowering its remaining effort burn, netted per issue, so an issue
+   * finished and reopened on the same day burned nothing. Work arriving,
+   * leaving or being re-estimated is scope, and reopened work is reported on
+   * its own — neither is ever counted as burned.
    */
-  /** What the remaining effort did since the day before: negative burns down. */
+  /** What the remaining effort did since the day before: negative burns down.
+   *  Null on the first day of the sprint and on a day it has not reached. */
   change: number | null;
-  /** Effort finished during this day. */
+  /** Effort actually burned during this day — the sum of `burned`. Never
+   *  negative, and never moved by scope changes or reopened work. */
   completedToday: number;
+  /** Effort put back during this day by reopening finished work. */
+  reopenedToday: number;
+  /** Which issues burned `completedToday`, heaviest first. */
+  burned: BurndownBurn[];
   /** Hours the sprint's commitment moved during this day: work added, taken
    *  out, or re-estimated. */
   scopeToday: number;
@@ -584,6 +609,37 @@ export function burndown(params: {
   }
   events.sort((a, b) => a.at.getTime() - b.at.getTime());
 
+  /*
+   * Events saved together count once.
+   *
+   * One edit can write several fields of the same issue at the same instant —
+   * an estimate and the remainder that goes with it, a status and a sprint.
+   * Each event's effect is read as what the issue owed just after it against
+   * just before it, so two events at the same instant each saw the *combined*
+   * jump, and a day's listed reasons added up to more than the step the line
+   * took. The jump is now given to one of them — the one that explains it
+   * best: a move in or out of the sprint, then a status change, then a
+   * re-estimate, then a remainder — and the others carry nothing.
+   */
+  const precedence: Record<BurndownReason, number> = {
+    added: 0,
+    removed: 0,
+    completed: 1,
+    reopened: 1,
+    estimate: 2,
+    remainder: 3,
+  };
+  const primary = new Map<string, (typeof events)[number]>();
+  for (const event of events) {
+    const key = `${event.item.issueId}@${event.at.getTime()}`;
+    const current = primary.get(key);
+    if (!current || precedence[event.reason] < precedence[current.reason]) {
+      primary.set(key, event);
+    }
+  }
+  const carriesJump = (event: (typeof events)[number]) =>
+    primary.get(`${event.item.issueId}@${event.at.getTime()}`) === event;
+
   const points: BurndownPoint[] = days.map((date, index) => {
     const ideal =
       lastIdeal <= 0 ? 0 : totalEffort - (totalEffort * index) / lastIdeal;
@@ -606,6 +662,8 @@ export function burndown(params: {
         changes: [],
         change: null,
         completedToday: 0,
+        reopenedToday: 0,
+        burned: [],
         scopeToday: 0,
         tally: { completed: 0, reopened: 0, added: 0, removed: 0, toQa: 0 },
         movedToQa: [],
@@ -616,6 +674,11 @@ export function burndown(params: {
        that decides what it is holding now. */
     const endOfDay = date.getTime() + DAY;
     const holding = items.filter((item) => memberAt(item, endOfDay));
+    /* Today is read on the same evidence as the sprint's "Remaining Effort"
+       right now — the live remainder column included — so the point for today
+       and the figure above the chart are always the same number. Past days
+       have readings of their own and never use it. */
+    const live = date.getTime() === today;
 
     const remainingIssues: BurndownIssue[] = [];
     let actual = 0;
@@ -623,7 +686,7 @@ export function burndown(params: {
     let completedCount = 0;
 
     for (const item of holding) {
-      const owed = remainderAt(item, endOfDay, false);
+      const owed = remainderAt(item, endOfDay, live);
       const status = statusAt(item, endOfDay);
       committedEffort += estimateAt(item, endOfDay);
       actual += owed;
@@ -655,8 +718,9 @@ export function burndown(params: {
     for (const event of events) {
       const at = event.at.getTime();
       if (at < date.getTime() || at >= endOfDay) continue;
-      const delta =
-        owedAt(event.item, at + 1, false) - owedAt(event.item, at, false);
+      const delta = carriesJump(event)
+        ? owedAt(event.item, at + 1, false) - owedAt(event.item, at, false)
+        : 0;
       if (delta === 0 && event.reason !== "estimate") continue;
       changes.push({
         at: event.at,
@@ -669,9 +733,63 @@ export function burndown(params: {
         /* Where the issue stood once the day was over — by the same two rules
            the line and the day's list of what is left are read with. */
         status: statusAt(event.item, endOfDay),
-        effortHours: owedAt(event.item, endOfDay, false),
+        effortHours: owedAt(event.item, endOfDay, live),
       });
     }
+
+    /*
+     * What was burned today, issue by issue.
+     *
+     * Only work burns: finishing an issue, or lowering what it still owes.
+     * Those are netted with any reopening of the same issue on the same day,
+     * so an issue finished and reopened again burned nothing, and one whose
+     * remainder was lowered and then corrected upward burned only the
+     * difference. Work added, taken out or re-estimated never enters this —
+     * that is scope, and it is what used to be counted as burned whenever it
+     * lowered the line.
+     */
+    const progress = new Map<
+      string,
+      { item: BurndownItem; net: number; reopened: boolean }
+    >();
+    for (const change of changes) {
+      if (
+        change.reason !== "completed" &&
+        change.reason !== "reopened" &&
+        change.reason !== "remainder"
+      ) {
+        continue;
+      }
+      const item = items.find((candidate) => candidate.issueId === change.issueId)!;
+      const entry = progress.get(change.issueId) ?? {
+        item,
+        net: 0,
+        reopened: false,
+      };
+      entry.net += change.delta;
+      if (change.reason === "reopened") entry.reopened = true;
+      progress.set(change.issueId, entry);
+    }
+
+    const burned: BurndownBurn[] = [];
+    let reopenedToday = 0;
+    for (const { item, net, reopened } of progress.values()) {
+      const hours = round(net);
+      if (hours < 0) {
+        const status = statusAt(item, endOfDay);
+        burned.push({
+          issueId: item.issueId,
+          ...nameOf(item),
+          hours: -hours,
+          finished: status !== null && isClosedStatus(status),
+          status,
+          assignee: item.assignee ?? null,
+        });
+      } else if (hours > 0 && reopened) {
+        reopenedToday += hours;
+      }
+    }
+    burned.sort((a, b) => b.hours - a.hours || a.key.localeCompare(b.key));
 
     /* Handed to testing today: not a change to the effort — testing is open
        work — and the one thing a reader looking at a flat day most often
@@ -707,7 +825,9 @@ export function burndown(params: {
       /* Filled in below, once every day has been measured: they are
          differences between days, so they cannot be read one day at a time. */
       change: null,
-      completedToday: 0,
+      completedToday: round(burned.reduce((sum, burn) => sum + burn.hours, 0)),
+      reopenedToday: round(reopenedToday),
+      burned,
       scopeToday: 0,
       tally,
       movedToQa,
@@ -715,20 +835,19 @@ export function burndown(params: {
   });
 
   /*
-   * What each day did, against the day before it.
-   *
-   * Three differences of figures already computed, so nothing is counted a
-   * second way: the line's own step, the effort finished, and the hours the
-   * commitment moved. The first day of the sprint has no day before it and
-   * keeps the null it was given; a day the sprint has not reached has no
-   * reading at all.
+   * What each day did, against the day before it: the line's own step, and
+   * the hours the commitment moved. The effort burned is not one of these —
+   * it is counted from the day's own events above, because the difference
+   * between two days' completed effort also moves when work leaves the
+   * sprint, is re-estimated or is reopened, none of which is burning it. The
+   * first day of the sprint has no day before it and keeps the null it was
+   * given; a day the sprint has not reached has no reading at all.
    */
   for (let index = 1; index < points.length; index += 1) {
     const day = points[index]!;
     const before = points[index - 1]!;
     if (day.actual === null || before.actual === null) continue;
     day.change = round(day.actual - before.actual);
-    day.completedToday = round(day.completedEffort - before.completedEffort);
     day.scopeToday = round(day.committedEffort - before.committedEffort);
   }
 

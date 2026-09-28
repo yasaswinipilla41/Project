@@ -49,6 +49,9 @@ export interface FilterOption {
   /** A sprint that has been completed — the Iteration dropdown marks it with
    *  a check. Read from the sprint's own status; absent everywhere else. */
   completed?: boolean;
+  /** The sprint being worked now — the Iteration dropdown marks it with a
+   *  dot before its name. Read from the sprint's own status. */
+  active?: boolean;
 }
 
 export interface IssueFiltersProps {
@@ -554,10 +557,34 @@ export function IssueFilters({
                `.prio-menu--iteration`. */
             width={null}
             panelClassName="prio-menu--iteration"
-            options={sprints.map((s) => ({
+            /* Active sprints first, then the upcoming ones, then the
+               completed ones last — each group in the order it already
+               had (the sort is stable), read from each sprint's own
+               status. Display order only. */
+            options={[...sprints]
+              .sort(
+                (a, b) =>
+                  (a.active ? 0 : a.completed ? 2 : 1) -
+                  (b.active ? 0 : b.completed ? 2 : 1),
+              )
+              .map((s) => ({
               value: s.id,
               node: (
                 <span className="prio-filter__iteration">
+                  {/* The sprint being worked now, marked at the very start of
+                      its name — from its real status, so it moves on by
+                      itself when the next sprint is started. */}
+                  {s.active ? (
+                    <>
+                      <span
+                        className="prio-filter__iteration-active"
+                        aria-hidden
+                      />
+                      <span className="prio-visually-hidden">
+                        Current sprint:{" "}
+                      </span>
+                    </>
+                  ) : null}
                   {s.name}
                   {s.completed ? (
                     <>

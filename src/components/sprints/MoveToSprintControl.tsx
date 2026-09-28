@@ -72,43 +72,20 @@ type Load =
   | { state: "ready"; options: EligibleSprints }
   | { state: "error"; message: string };
 
-export function MoveToSprintControl({
-  issueId,
-  issueKey,
-  sprint,
-  canMove,
-}: {
-  issueId: string;
-  issueKey: string;
-  /** Where the work is now — null for an issue in the backlog. */
-  sprint: CurrentSprint | null;
-  /**
-   * Whether this reader may move sprint issues at all — `canEditSprintIssues`,
-   * the same capability the sprint board reads. Presentation only: both server
-   * actions behind this control assert it again.
-   */
-  canMove: boolean;
-}) {
+/**
+ * The sprint picker's state and its two requests: reading where an issue may
+ * go, and moving it there.
+ *
+ * Shared by this control and the Flow Board card's ⋯ menu ("Move Sprint"), so
+ * both offer the same sprints, in the same states, through the same
+ * `eligibleSprintsForIssue` and `moveIssueToSprint` — one picker in two
+ * places, not two pickers that could drift apart.
+ */
+export function useSprintMove(issueId: string, issueKey: string) {
   const router = useRouter();
   const { toast } = useToast();
   const [load, setLoad] = useState<Load>({ state: "idle" });
   const [moving, setMoving] = useState(false);
-
-  const current = sprint ? (
-    <span className="prio-truncate">
-      {sprint.name}
-      {sprint.status === "COMPLETED" ? (
-        <span className="prio-text-muted">
-          {" "}
-          · {SPRINT_STATUS_LABEL[sprint.status]}
-        </span>
-      ) : null}
-    </span>
-  ) : (
-    /* The existing no-sprint state: an issue in the backlog is in no sprint,
-       which is a fact about it rather than something missing. */
-    <span className="prio-text-muted">No sprint</span>
-  );
 
   const read = useCallback(async () => {
     setLoad({ state: "loading" });
@@ -134,24 +111,6 @@ export function MoveToSprintControl({
       });
     }
   }, [issueId]);
-
-  /*
-   * Stated rather than offered, in the same place and the same shape the menu
-   * would occupy — the row reads identically whoever is looking at it, and the
-   * server refuses the move either way. The same treatment `PriorityControl`
-   * and `AssigneeControl` already give a field somebody may read and not set.
-   */
-  if (!canMove) {
-    return (
-      <span
-        className="prio-fieldtrigger"
-        data-readonly
-        title="You do not have permission to move this work between sprints."
-      >
-        {current}
-      </span>
-    );
-  }
 
   async function move(
     destination: { type: "BACKLOG" } | { type: "SPRINT"; sprintId: string },
@@ -205,41 +164,24 @@ export function MoveToSprintControl({
     router.refresh();
   }
 
+  return { load, setLoad, moving, read, move };
+}
+
+type SprintMove = ReturnType<typeof useSprintMove>;
+
+/**
+ * The picker's body: its heading, whichever state the read is in, the
+ * eligible sprints, and the way out to the backlog. Rendered inside a `Menu` —
+ * this control's own, or the Flow Board card's ⋯ menu.
+ */
+export function SprintMoveOptions({
+  picker,
+}: {
+  picker: Pick<SprintMove, "load" | "read" | "move">;
+}) {
+  const { load, read, move } = picker;
   return (
-    <Menu
-      align="start"
-      /*
-       * Wide enough for a sprint's name and its dates beside the status that
-       * marks the running one — the dates are what tell two similarly named
-       * sprints apart, so they are the last thing that should be clipped.
-       *
-       * A ceiling rather than a width, because 340px does not fit a 320px
-       * phone and `Menu` can only move a panel, not shrink one: it clamps the
-       * left edge to the viewport, so an over-wide panel is pinned at the
-       * margin and runs off the right. The gutter is the 8px `place()` leaves
-       * on each side, with the same again for a scrollbar.
-       */
-      width="min(340px, calc(100vw - 32px))"
-      label={`Move ${issueKey} to a sprint`}
-      /* The request is worth making when the panel opens, and only the first
-         time: reopening shows what was read, and a move or a failure is what
-         puts it back to `idle`. */
-      onOpenChange={(open) => {
-        if (open && load.state === "idle") void read();
-      }}
-      trigger={(props) => (
-        <button
-          type="button"
-          className="prio-fieldtrigger"
-          disabled={moving}
-          aria-label={`Move ${issueKey} to a sprint`}
-          {...props}
-        >
-          {current}
-          <IconChevronDown size={12} />
-        </button>
-      )}
-    >
+    <>
       <MenuLabel>Move to sprint</MenuLabel>
 
       {load.state === "loading" ? (
@@ -316,6 +258,100 @@ export function MoveToSprintControl({
           )}
         </>
       ) : null}
+    </>
+  );
+}
+
+export function MoveToSprintControl({
+  issueId,
+  issueKey,
+  sprint,
+  canMove,
+}: {
+  issueId: string;
+  issueKey: string;
+  /** Where the work is now — null for an issue in the backlog. */
+  sprint: CurrentSprint | null;
+  /**
+   * Whether this reader may move sprint issues at all — `canEditSprintIssues`,
+   * the same capability the sprint board reads. Presentation only: both server
+   * actions behind this control assert it again.
+   */
+  canMove: boolean;
+}) {
+  const picker = useSprintMove(issueId, issueKey);
+  const { load, moving, read } = picker;
+
+  const current = sprint ? (
+    <span className="prio-truncate">
+      {sprint.name}
+      {sprint.status === "COMPLETED" ? (
+        <span className="prio-text-muted">
+          {" "}
+          · {SPRINT_STATUS_LABEL[sprint.status]}
+        </span>
+      ) : null}
+    </span>
+  ) : (
+    /* The existing no-sprint state: an issue in the backlog is in no sprint,
+       which is a fact about it rather than something missing. */
+    <span className="prio-text-muted">No sprint</span>
+  );
+
+  /*
+   * Stated rather than offered, in the same place and the same shape the menu
+   * would occupy — the row reads identically whoever is looking at it, and the
+   * server refuses the move either way. The same treatment `PriorityControl`
+   * and `AssigneeControl` already give a field somebody may read and not set.
+   */
+  if (!canMove) {
+    return (
+      <span
+        className="prio-fieldtrigger"
+        data-readonly
+        title="You do not have permission to move this work between sprints."
+      >
+        {current}
+      </span>
+    );
+  }
+
+  return (
+    <Menu
+      align="start"
+      /*
+       * Wide enough for a sprint's name and its dates beside the status that
+       * marks the running one — the dates are what tell two similarly named
+       * sprints apart, so they are the last thing that should be clipped.
+       *
+       * A ceiling rather than a width, because 340px does not fit a 320px
+       * phone and `Menu` can only move a panel, not shrink one: it clamps the
+       * left edge to the viewport, so an over-wide panel is pinned at the
+       * margin and runs off the right. The gutter is the 8px `place()` leaves
+       * on each side, with the same again for a scrollbar.
+       */
+      width="min(340px, calc(100vw - 32px))"
+      label={`Move ${issueKey} to a sprint`}
+      /* The request is worth making when the panel opens, and only the first
+         time: reopening shows what was read, and a move or a failure is what
+         puts it back to `idle`. */
+      onOpenChange={(open) => {
+        if (open && load.state === "idle") void read();
+      }}
+      trigger={(props) => (
+        <button
+          type="button"
+          className="prio-fieldtrigger"
+          disabled={moving}
+          aria-label={`Move ${issueKey} to a sprint`}
+          {...props}
+        >
+          {current}
+          <IconChevronDown size={12} />
+        </button>
+      )}
+    >
+      <SprintMoveOptions picker={picker} />
     </Menu>
   );
 }

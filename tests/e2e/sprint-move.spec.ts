@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { prisma } from "@/lib/prisma";
-import { formatDateRange } from "@/lib/format";
+import { formatDate } from "@/lib/format";
 
 /**
  * Moving an issue out of a sprint, from the card it is read on.
@@ -220,6 +220,137 @@ async function seedDoneAndOpen() {
   };
 }
 
+test.describe("Move to · the sprints it lists", () => {
+  for (const [width, height] of [
+    [1440, 900],
+    [390, 844],
+  ] as const) {
+    for (const theme of ["light", "dark"] as const) {
+      test(`show each sprint's name and both dates in full (${width}px, ${theme})`, async ({
+        page,
+      }) => {
+        /*
+         * The menu was a fixed 220px with one ellipsised line per row, so a
+         * sprint's dates were cut off. Each row is the sprint's name, then its
+         * start and end dates — "Sep 28, 2026 – Oct 5, 2026" — and nothing in
+         * it may be clipped: not the dates, and not a very long name either.
+         */
+        const admin = await prisma.user.findFirstOrThrow({
+          where: { role: "ADMIN" },
+          select: { id: true },
+        });
+        const key = `MD${Date.now().toString(36).toUpperCase()}`.slice(0, 10);
+        const project = await prisma.project.create({
+          data: {
+            key,
+            name: `Move dates fixture ${key}`,
+            createdById: admin.id,
+            members: { create: { userId: admin.id } },
+            issueSequence: 1,
+          },
+          select: { id: true, key: true },
+        });
+        createdProjects.push(project.id);
+        const day = 86_400_000;
+        const current = await prisma.sprint.create({
+          data: {
+            name: `Current ${Date.now()}`,
+            startDate: new Date(Date.now() - 2 * day),
+            endDate: new Date(Date.now() + 11 * day),
+            projectId: project.id,
+            createdById: admin.id,
+            status: "ACTIVE",
+            startedAt: new Date(Date.now() - 2 * day),
+          },
+          select: { id: true },
+        });
+        const next = await prisma.sprint.create({
+          data: {
+            name: "Payments reconciliation and ledger export hardening sprint",
+            startDate: new Date(Date.now() + 12 * day),
+            endDate: new Date(Date.now() + 25 * day),
+            projectId: project.id,
+            createdById: admin.id,
+          },
+          select: { name: true, startDate: true, endDate: true },
+        });
+        const issue = await prisma.issue.create({
+          data: {
+            projectId: project.id,
+            key: `${project.key}-1`,
+            number: 1,
+            title: "Work to move",
+            type: "TASK",
+            status: "IN_PROGRESS",
+            reporterId: admin.id,
+            sprintId: current.id,
+          },
+          select: { key: true },
+        });
+
+        await page.setViewportSize({ width, height });
+        await page.goto(
+          `/projects/${project.key.toLowerCase()}/sprints/${current.id}`,
+        );
+        await page.evaluate(
+          (value) => document.documentElement.setAttribute("data-theme", value),
+          theme,
+        );
+        const card = page
+          .locator(".prio-board__card")
+          .filter({ hasText: issue.key });
+        await card.hover();
+        await card
+          .getByRole("button", {
+            name: new RegExp(`Move ${issue.key} to another`),
+          })
+          .click();
+        const menu = page.getByRole("menu", { name: `Move ${issue.key}` });
+
+        /* The row, named in words: the sprint, then its two dates. */
+        const dates = `${formatDate(next.startDate)} – ${formatDate(next.endDate)}`;
+        await expect(
+          menu.getByRole("menuitem", { name: `${next.name} ${dates}` }),
+        ).toBeVisible();
+
+        const seen = await menu.evaluate((node) => {
+          const panel = node.getBoundingClientRect();
+          const contentRight = panel.left + node.clientLeft + node.clientWidth;
+          const row = node
+            .querySelector(".prio-movesprint__dates")!
+            .closest(".prio-menu__itemlabel") as HTMLElement;
+          const datesEl = row.querySelector(".prio-movesprint__dates")!;
+          const range = document.createRange();
+          range.selectNodeContents(datesEl);
+          const lines = Array.from(range.getClientRects()).filter(
+            (r) => r.width > 0,
+          );
+          return {
+            text: datesEl.textContent!.trim(),
+            clipped: row.scrollWidth > row.clientWidth + 1,
+            oneLine: new Set(lines.map((r) => Math.round(r.top))).size === 1,
+            inside: Math.max(...lines.map((r) => r.right)) <= contentRight,
+            sideways: node.scrollWidth > node.clientWidth,
+            onScreen: panel.left >= 0 && panel.right <= window.innerWidth,
+            colour: getComputedStyle(datesEl).color,
+            background: getComputedStyle(node).backgroundColor,
+          };
+        });
+
+        expect(seen.text).toBe(dates);
+        expect(seen.clipped, "row is cut off").toBe(false);
+        expect(seen.oneLine, "the dates break across lines").toBe(true);
+        expect(seen.inside, "the dates run past the menu").toBe(true);
+        expect(seen.sideways, "the menu scrolls sideways").toBe(false);
+        expect(seen.onScreen, "the menu is off the screen").toBe(true);
+        /* Readable in this theme: the dates are not drawn in the menu's own
+           background colour. */
+        expect(seen.colour).not.toBe(seen.background);
+      });
+    }
+  }
+});
+
 test.describe("Move to · a Done issue", () => {
   test("is not shown for Done, and unchanged for every other status", async ({
     page,
@@ -257,7 +388,7 @@ test.describe("Move to · a Done issue", () => {
     await expect(
       page
         .getByRole("menu", { name: `Move ${open.key}` })
-        .getByRole("menuitem", { name: "Backlog" }),
+        .getByRole("menuitem", { name: /E2E done elsewhere/ }),
     ).toBeVisible();
 
     /* And nothing about the Done issue changed. */
@@ -271,7 +402,7 @@ test.describe("Move to · a Done issue", () => {
 });
 
 test.describe("Move to · when there is no next sprint", () => {
-  test("does not offer it, and still offers the backlog", async ({ page }) => {
+  test("says so, and never offers the backlog", async ({ page }) => {
     const { key, sprint, issue } = await seedLonelySprint();
 
     await page.goto(`/projects/${key}/sprints/${sprint.id}`);
@@ -293,29 +424,24 @@ test.describe("Move to · when there is no next sprint", () => {
       0,
     );
 
-    /* The menu is still worth opening: the backlog is a real destination and
-       is still offered. */
-    await expect(menu.getByRole("menuitem", { name: "Backlog" })).toBeVisible();
+    /* It says so rather than opening onto nothing — and the backlog is not
+       offered in the sprints' place: this menu moves work between sprints
+       only. */
+    await expect(menu).toContainText("No upcoming sprints available");
+    await expect(menu.getByRole("menuitem", { name: /Backlog/ })).toHaveCount(
+      0,
+    );
+    await expect(menu.getByRole("menuitem")).toHaveCount(0);
 
-    /* Backlog is the only thing on it — no Restore (nothing has moved this
-       issue yet) and no dated sprint either. */
-    await expect(menu.getByRole("menuitem")).toHaveCount(1);
-
-    /* And the move it does offer still works, so gating one entry has not
-       taken the control with it. */
-    await menu.getByRole("menuitem", { name: "Backlog" }).click();
-    await expect
-      .poll(
-        async () =>
-          (
-            await prisma.issue.findUniqueOrThrow({
-              where: { id: issue.id },
-              select: { sprintId: true },
-            })
-          ).sprintId,
-        { timeout: 15_000 },
-      )
-      .toBeNull();
+    /* Nothing was moved by opening it. */
+    expect(
+      (
+        await prisma.issue.findUniqueOrThrow({
+          where: { id: issue.id },
+          select: { sprintId: true },
+        })
+      ).sprintId,
+    ).toBe(sprint.id);
   });
 });
 
@@ -345,7 +471,7 @@ test.describe("Move to · next sprint", () => {
     const menu = page.getByRole("menu", { name: `Move ${issue.key}` });
     await expect(
       menu.getByRole("menuitem", {
-        name: `${to.name} (${formatDateRange(dates.startDate, dates.endDate)})`,
+        name: `${to.name} ${formatDate(dates.startDate)} – ${formatDate(dates.endDate)}`,
       }),
     ).toBeVisible();
     await menu.getByRole("menuitem", { name: to.name }).click();

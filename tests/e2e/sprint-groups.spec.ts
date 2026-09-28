@@ -175,7 +175,9 @@ test.describe("Completed sprints", () => {
        openable — its own page is where its record is read. */
     const closed = sprintCard(page, names.completed);
     await expect(closed).toBeVisible();
-    await expect(closed.locator(".prio-sprint__status")).toHaveText(/completed/i);
+    await expect(closed.locator(".prio-sprint__status")).toHaveText(
+      /completed/i,
+    );
 
     await closed.locator(".prio-sprint__identitylink").click();
     await expect(page).toHaveURL(/\/sprints\/[a-z0-9]+$/i);
@@ -199,6 +201,106 @@ test.describe("Completed sprints", () => {
     await page.keyboard.press(" ");
     await expect(control).toHaveAttribute("aria-expanded", "false");
     await expect(sprintCard(page, names.completed)).toBeHidden();
+  });
+
+  for (const theme of ["light", "dark"] as const) {
+    test(`sit behind a control at the top right, and open above the active sprint (${theme})`, async ({
+      page,
+    }) => {
+      const { key, names } = await seedProject([
+        "active",
+        "upcoming",
+        "completed",
+      ]);
+      await page.goto(`/projects/${key}/sprints`);
+      await page.evaluate(
+        (value) => document.documentElement.setAttribute("data-theme", value),
+        theme,
+      );
+
+      /* The control is in the page's header actions, on the same row as
+         Iterations / Sprints and directly beside it. */
+      const control = page.getByRole("button", { name: /Completed sprints/i });
+      const iterations = page.getByRole("link", {
+        name: /Iterations \/ Sprints/,
+      });
+      const place = await page.evaluate(() => {
+        const control = document.querySelector(".prio-sprints__disclosure")!;
+        const actions = control.closest(".prio-sprints__headactions");
+        const link = actions?.querySelector("a");
+        const a = control.getBoundingClientRect();
+        const b = link!.getBoundingClientRect();
+        return {
+          inHeader: actions !== null,
+          besideIterations: control.nextElementSibling === link,
+          sameRow: Math.abs(a.top + a.height / 2 - (b.top + b.height / 2)) <= 1,
+          sameHeight: Math.round(a.height) === Math.round(b.height),
+        };
+      });
+      expect(place).toEqual({
+        inHeader: true,
+        besideIterations: true,
+        sameRow: true,
+        sameHeight: true,
+      });
+      await expect(iterations).toBeVisible();
+
+      /* By default: the active sprint and the upcoming one, and no completed
+         sprint on the page. */
+      await expect(sprintCard(page, names.active)).toBeVisible();
+      await expect(sprintCard(page, names.upcoming)).toBeVisible();
+      await expect(sprintCard(page, names.completed)).toBeHidden();
+
+      /* Opened: the completed sprint, under a heading of its own, above the
+         Active sprint group — and the live sprints are still there below. */
+      await control.click();
+      const closed = sprintCard(page, names.completed);
+      await expect(closed).toBeVisible();
+      const order = await page.evaluate(() => {
+        const top = (node: Element | null) =>
+          node ? node.getBoundingClientRect().top : Number.NaN;
+        const headings = Array.from(
+          document.querySelectorAll(".prio-sprints__section"),
+        );
+        const heading = (text: string) =>
+          headings.find((node) => node.textContent!.trim().startsWith(text)) ??
+          null;
+        return {
+          completedHeading: top(heading("Completed sprints")),
+          completedCard: top(
+            document.querySelector('.prio-sprint[data-status="COMPLETED"]'),
+          ),
+          activeHeading: top(heading("Active sprint")),
+          upcomingHeading: top(heading("Upcoming sprints")),
+        };
+      });
+      expect(order.completedHeading).toBeLessThan(order.completedCard);
+      expect(order.completedCard).toBeLessThan(order.activeHeading);
+      expect(order.activeHeading).toBeLessThan(order.upcomingHeading);
+      await expect(sprintCard(page, names.active)).toBeVisible();
+      await expect(sprintCard(page, names.upcoming)).toBeVisible();
+
+      /* And closes cleanly again. */
+      await control.click();
+      await expect(closed).toBeHidden();
+    });
+  }
+
+  test("keep the page within a phone's width, open or closed", async ({
+    page,
+  }) => {
+    const { key } = await seedProject(["active", "upcoming", "completed"]);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`/projects/${key}/sprints`);
+    const overflow = () =>
+      page.evaluate(
+        () =>
+          document.documentElement.scrollWidth -
+          document.documentElement.clientWidth,
+      );
+    expect(await overflow()).toBeLessThanOrEqual(0);
+    await page.getByRole("button", { name: /Completed sprints/i }).click();
+    expect(await overflow()).toBeLessThanOrEqual(0);
   });
 
   test("offer no control at all on a project that has closed none", async ({
