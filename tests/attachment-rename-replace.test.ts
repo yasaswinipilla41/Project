@@ -54,7 +54,7 @@ async function anIssue(title: string): Promise<string> {
     projectId: project.id,
     type: "BUG",
     title,
-    priority: "MEDIUM",
+    priority: "P2",
   });
   if (!created.ok) throw new Error(created.error);
   createdIssueIds.push(created.data.id);

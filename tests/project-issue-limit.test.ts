@@ -55,7 +55,7 @@ async function fileOne(projectId: string, title: string) {
     type: "TASK",
     title,
     description: "fixture",
-    priority: "MEDIUM",
+    priority: "P2",
   });
 }
 
@@ -176,7 +176,7 @@ describe("a project at its limit", () => {
       issueId: target.id,
       title: "A defect that cannot be filed",
       affectedModule: "Fixture",
-      priority: "HIGH",
+      priority: "P1",
     });
 
     expect(result.ok).toBe(false);
@@ -326,7 +326,7 @@ describe("the limit is the server's", () => {
       type: "BUG",
       title: "Straight at the action",
       description: "fixture",
-      priority: "URGENT",
+      priority: "P0",
       status: "TODO",
     });
 
@@ -389,7 +389,7 @@ describe("the limit is the only new rule", () => {
         type,
         title: `A ${type} a member may raise`,
         description: "fixture",
-        priority: "MEDIUM",
+        priority: "P2",
       });
       expect(result.ok, result.ok ? "" : `${type}: ${result.error}`).toBe(true);
     }

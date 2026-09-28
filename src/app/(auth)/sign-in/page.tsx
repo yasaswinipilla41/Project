@@ -2,18 +2,22 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { PRIO_TAGLINE, PrioLogo } from "@/components/brand/PrioLogo";
 import { IconActivity, IconBoard, IconBug } from "@/components/ui/Icon";
+import { safeLocalPath } from "@/lib/safePath";
 import { getCurrentUser } from "@/lib/session";
+import { selfSignupEnabled } from "@/lib/signupPolicy";
 import { SignInForm } from "./SignInForm";
 
 export const metadata: Metadata = {
   title: "Sign in",
 };
 
-/** Only same-origin paths are accepted, so `next` cannot be used as an open redirect. */
+/**
+ * Only paths inside Prio are accepted, so `next` cannot be used as an open
+ * redirect. See `isSafeLocalPath` for why "starts with / but not //" is not
+ * enough (`/host` and `/<TAB>/host` both leave the site).
+ */
 function safeNext(value: string | undefined): string {
-  if (!value) return "/";
-  if (!value.startsWith("/") || value.startsWith("//")) return "/";
-  return value;
+  return safeLocalPath(value, "/");
 }
 
 export default async function SignInPage({
@@ -87,7 +91,11 @@ export default async function SignInPage({
             Use your Prio account to continue.
           </p>
 
-          <SignInForm next={target} initialEmail={email ?? ""} />
+          <SignInForm
+            next={target}
+            initialEmail={email ?? ""}
+            allowSignUp={selfSignupEnabled()}
+          />
         </div>
       </section>
     </main>

@@ -175,7 +175,7 @@ export async function loadAllocationInputs(
             ? {
                 id: tester.id,
                 name: tester.name,
-                because: `Waiting for testing. ${tester.name} raised it and tests on this project.`,
+                because: `Waiting for QA. ${tester.name} raised it and is a QA member on this project.`,
               }
             : null,
         };

@@ -75,7 +75,7 @@ async function seedTwoSprints() {
       title: "Work that comes back",
       type: "TASK",
       status: "IN_PROGRESS",
-      priority: "HIGH",
+      priority: "P1",
       reporterId: admin.id,
       assigneeId: admin.id,
       sprintId: a.id,

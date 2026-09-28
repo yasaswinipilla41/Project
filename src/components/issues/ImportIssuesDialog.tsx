@@ -6,47 +6,63 @@ import { Dialog } from "@/components/ui/Dialog";
 import { Alert, Button } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/Toast";
 import {
+  IconCheck,
+  IconClose,
   IconDownload,
   IconSpreadsheetDown,
   IconWarning,
 } from "@/components/ui/Icon";
+import { TEMPLATE_FILENAME } from "@/lib/importTemplate";
 import {
-  TEMPLATE_FILENAME,
-  templateColumns,
-  templateRows,
-} from "@/lib/importTemplate";
-import { importWorkItems, type ImportProblem } from "@/server/issueImport";
+  importWorkItems,
+  validateWorkItemsImport,
+  type ImportValidation,
+} from "@/server/issueImport";
+
+/** A file that got as far as being read: its rows, counted and judged. */
+type Checked = Extract<ImportValidation, { ok: true }>;
 
 /**
  * Bringing work items in from a spreadsheet.
  *
- * Deliberately plain: a file, a button, and — when the file is not right — a
- * list of what to correct. The interesting design is on the server, which
- * validates every row before it writes any of them, so this never has to
- * report a half-finished import.
+ * A file, a verdict, and a button that only lights when the verdict is good.
+ * The moment a file is chosen it is sent to the server to be *checked* — every
+ * row read and judged, nothing written — and what comes back is shown before
+ * anybody is offered Import: how many rows there are, how many would go in,
+ * and for each that would not, which row and why. Import stays disabled until
+ * every row is valid, and even then the server checks the file again before it
+ * writes, because this screen's opinion is not what protects the database.
  *
  * The errors are shown in full rather than summarised. "Import failed" sends
- * somebody back to a spreadsheet with nothing to look for; "Row 7: Unknown
- * priority" sends them to row 7.
+ * somebody back to a spreadsheet with nothing to look for; "Row 7: Parent
+ * Issue does not exist" sends them to row 7.
  *
  * Download Template answers the question before it is asked: the columns the
  * parser matches on, spelled the way it spells them, in an empty sheet. See
- * `lib/importTemplate`, which is checked against the parser's own header list
- * so the offer and the requirement cannot drift.
+ * `lib/importTemplate`, the single list both sides read.
  */
 export function ImportIssuesDialog({
   project,
+  projectChoices,
   onClose,
 }: {
   /**
    * The project this import belongs to, on a surface that is one project's.
    *
    * Sent to the server, which re-resolves it inside what the signed-in person
-   * may reach and then refuses any row naming a different project — so a
-   * spreadsheet opened on the Engineering tab cannot quietly file work in
-   * Website, whatever its "Project key" column says.
+   * may reach. It is the only thing that says where the rows go: the
+   * spreadsheet has no project column, and nothing in it could override this.
    */
   project?: { id: string; key: string };
+  /**
+   * Where the choice is the person's, on a surface that belongs to no project.
+   *
+   * The spreadsheet has no project column, so an import opened from the
+   * all-projects list has to be told where to put the rows, and the dialog
+   * asks — once, here, never in the file. Ignored when `project` is set,
+   * because there the route has already answered.
+   */
+  projectChoices?: { id: string; name: string }[];
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -54,11 +70,25 @@ export function ImportIssuesDialog({
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [file, setFile] = useState<File | null>(null);
+  /* Where the rows go when the surface does not say. */
+  const [chosenProject, setChosenProject] = useState("");
+  /* The file has been sent to be read and judged, and no answer yet. */
+  const [checking, setChecking] = useState(false);
+  /* The file is being written. */
   const [busy, setBusy] = useState(false);
   const [building, setBuilding] = useState(false);
+  /* Something wrong with the file as a whole, as opposed to with its rows. */
   const [error, setError] = useState<string | null>(null);
-  const [problems, setProblems] = useState<ImportProblem[]>([]);
+  const [checked, setChecked] = useState<Checked | null>(null);
   const [dragging, setDragging] = useState(false);
+
+  /* The project the rows are for: the surface's own, or the one picked. */
+  const projectId = project?.id ?? chosenProject;
+
+  /* Stamps each check, so an answer that arrives after the file or the project
+     has been changed again is thrown away rather than shown against the wrong
+     file. */
+  const checkRun = useRef(0);
 
   /**
    * Takes a file from whichever way it arrived — picker, drop or paste.
@@ -68,25 +98,71 @@ export function ImportIssuesDialog({
    *
    * The extension is checked here only so that dropping a PDF says so at once
    * rather than after a round trip; the same rule is enforced on the server,
-   * which is where it counts. `.xlsx` is what the parser reads, and the
-   * wording is the server's own so the two cannot contradict each other.
+   * which is where it counts.
    */
-  const accept = useCallback((chosen: File | null | undefined) => {
-    if (!chosen) return;
+  const accept = useCallback(
+    (chosen: File | null | undefined) => {
+      if (!chosen || busy) return;
 
-    setProblems([]);
+      /* A new file starts from nothing: the last one's verdict is not this
+         one's. */
+      checkRun.current += 1;
+      setChecked(null);
+      setChecking(false);
 
-    if (!/\.xlsx$/i.test(chosen.name)) {
-      setFile(null);
-      setError(
-        "Import expects an .xlsx spreadsheet — the format Export produces.",
-      );
-      return;
-    }
+      if (!/\.xlsx$/i.test(chosen.name)) {
+        setFile(null);
+        setError(
+          "Import expects an .xlsx spreadsheet — the format Export produces.",
+        );
+        return;
+      }
 
-    setError(null);
-    setFile(chosen);
-  }, []);
+      setError(null);
+      setFile(chosen);
+    },
+    [busy],
+  );
+
+  /**
+   * Sends the chosen file to be checked, whenever the file or the project
+   * changes.
+   *
+   * Nothing is created by this. It is a question — would this import work? —
+   * and its answer is what decides whether the button lights.
+   */
+  useEffect(() => {
+    if (!file || !projectId) return;
+
+    const run = (checkRun.current += 1);
+    const body = new FormData();
+    body.set("file", file);
+    body.set("projectId", projectId);
+
+    /* From a microtask, so the effect does not set state in its own body. */
+    queueMicrotask(() => {
+      if (run === checkRun.current) setChecking(true);
+    });
+
+    validateWorkItemsImport(body)
+      .then((result) => {
+        if (run !== checkRun.current) return;
+        setChecking(false);
+        if (result.ok) {
+          setError(null);
+          setChecked(result);
+        } else {
+          setChecked(null);
+          setError(result.error);
+        }
+      })
+      .catch(() => {
+        if (run !== checkRun.current) return;
+        setChecking(false);
+        setChecked(null);
+        setError("That file could not be checked. Please try again.");
+      });
+  }, [file, projectId]);
 
   /*
    * Pasting a file, where the browser offers one.
@@ -126,29 +202,28 @@ export function ImportIssuesDialog({
   }, []);
 
   /**
-   * Writes the empty template and hands it to the browser.
+   * Fetches the empty template and hands it to the browser.
    *
-   * Entirely in the browser: `write-excel-file` — the library the export
-   * already writes workbooks with — ships a browser build, and a sheet of
-   * nine headers needs nothing from the server. So this asks the database
-   * nothing, costs a request nothing, and works the same whether or not the
-   * import it belongs to ever runs.
-   *
-   * Imported on demand rather than at the top of the file so the workbook
-   * writer is fetched by the people who press the button, not by everyone who
-   * opens a list with an Import button on it.
+   * The file is built on the server (`api/issues/import-template`) because it
+   * carries drop-downs, which the browser-side writer this used to use cannot
+   * express. It is a plain download — nothing about the database is asked —
+   * and it is fetched and saved from here rather than linked to, so that a
+   * failure can say so instead of navigating the person to an error page.
    */
   async function downloadTemplate() {
     setBuilding(true);
     try {
-      const { default: writeXlsxFile } = await import("write-excel-file/browser");
-      /* The browser build hands back the file rather than writing one, so the
-         name is given to `toFile` — the node build's `fileName` option does
-         not exist here. */
-      await writeXlsxFile(templateRows(), {
-        columns: templateColumns(),
-        sheet: "Work items",
-      }).toFile(TEMPLATE_FILENAME);
+      const response = await fetch("/api/issues/import-template");
+      if (!response.ok) throw new Error(String(response.status));
+
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = TEMPLATE_FILENAME;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
     } catch {
       /* Said rather than swallowed: a download that silently does nothing is
          indistinguishable from a button that is broken. */
@@ -159,31 +234,62 @@ export function ImportIssuesDialog({
   }
 
   async function submit() {
-    if (!file) return;
+    if (!file || !projectId || !checked || checked.invalidCount > 0) return;
 
     setBusy(true);
     setError(null);
-    setProblems([]);
 
     const body = new FormData();
     body.set("file", file);
-    if (project) body.set("projectId", project.id);
+    body.set("projectId", projectId);
 
-    const result = await importWorkItems(body);
+    let result;
+    try {
+      result = await importWorkItems(body);
+    } catch {
+      setBusy(false);
+      setError("Nothing was imported. Please try again.");
+      return;
+    }
     setBusy(false);
 
     if (!result.ok) {
       setError(result.error);
-      setProblems(result.problems ?? []);
+      /* The server judged the file again and found rows to fix — the data
+         changed since it was checked. Show them. */
+      setChecked(result.validation ?? null);
       return;
     }
 
     onClose();
     toast(
-      `${result.created} work item${result.created === 1 ? "" : "s"} imported`,
+      `${result.created} work item${result.created === 1 ? "" : "s"} imported successfully.`,
     );
     /* The list is server-rendered, so the server has to draw it again. */
     router.refresh();
+  }
+
+  /*
+   * Where the import is, in one sentence.
+   *
+   * The same sentence is what explains the button, so the two cannot
+   * disagree: disabled while a file is being checked, disabled with rows to
+   * fix, enabled only on "Ready to import".
+   */
+  const invalidCount = checked?.invalidCount ?? 0;
+  const canImport =
+    Boolean(file) && Boolean(checked) && invalidCount === 0 && !checking && !busy;
+
+  let status: string | null = null;
+  if (file) {
+    if (busy) status = "Importing…";
+    else if (checking) status = "Checking your work items…";
+    else if (checked && invalidCount === 0)
+      status = `All ${checked.total} row${checked.total === 1 ? " is" : "s are"} valid. Ready to import.`;
+    else if (checked)
+      status = `${invalidCount} row${invalidCount === 1 ? " needs" : "s need"} attention before importing.`;
+    else if (!projectId) status = "Ready to validate. Choose a project first.";
+    else if (!error) status = "Ready to validate.";
   }
 
   return (
@@ -194,8 +300,8 @@ export function ImportIssuesDialog({
       title="Import work items"
       description={
         project
-          ? `An .xlsx spreadsheet — the same shape Export produces. Everything imports into ${project.key}.`
-          : "An .xlsx spreadsheet — the same shape Export produces."
+          ? `An .xlsx spreadsheet based on the template. Everything imports into ${project.key}.`
+          : "An .xlsx spreadsheet based on the template."
       }
       footer={
         <>
@@ -209,7 +315,7 @@ export function ImportIssuesDialog({
             variant="brand"
             onClick={() => void submit()}
             loading={busy}
-            disabled={!file}
+            disabled={!canImport}
           >
             Import
           </Button>
@@ -221,6 +327,29 @@ export function ImportIssuesDialog({
           <Alert tone="danger" icon={<IconWarning />}>
             {error}
           </Alert>
+        </div>
+      ) : null}
+
+      {/* Only where nothing has said which project this is. */}
+      {!project && projectChoices ? (
+        <div className="prio-field">
+          <label className="prio-label" htmlFor="import-project">
+            Project
+          </label>
+          <select
+            id="import-project"
+            className="prio-select"
+            value={chosenProject}
+            onChange={(event) => setChosenProject(event.target.value)}
+            disabled={busy}
+          >
+            <option value="">Choose a project…</option>
+            {projectChoices.map((choice) => (
+              <option key={choice.id} value={choice.id}>
+                {choice.name}
+              </option>
+            ))}
+          </select>
         </div>
       ) : null}
 
@@ -288,18 +417,8 @@ export function ImportIssuesDialog({
         </button>
 
         <span className="prio-hint">
-          Needs a <strong>Title</strong> column
-          {project ? (
-            <>
-              ; a <strong>Project key</strong> column is optional here and must
-              say <strong>{project.key}</strong> where it is present
-            </>
-          ) : (
-            <>
-              {" "}and a <strong>Project key</strong> column
-            </>
-          )}
-          . Type, Status, Priority, Assignee, Labels, Due date and Description
+          Needs a <strong>Summary</strong> column. Description, Issue Type,
+          Status, Priority, Assignee, Severity (Bug rows only) and Parent Issue
           are used when present.
         </span>
 
@@ -318,18 +437,68 @@ export function ImportIssuesDialog({
         </div>
       </div>
 
-      {problems.length > 0 ? (
+      {/* The verdict: what is happening, then what was found. */}
+      {status ? (
+        <p
+          className="prio-importstatus"
+          data-state={
+            checked ? (invalidCount === 0 ? "valid" : "invalid") : undefined
+          }
+          role="status"
+          aria-live="polite"
+        >
+          {status}
+        </p>
+      ) : null}
+
+      {checked ? (
         <div className="prio-field">
-          <span className="prio-label">What to correct</span>
-          <ul className="prio-importproblems">
-            {problems.map((problem, index) => (
-              <li key={`${problem.row}-${index}`}>
-                <strong>Row {problem.row}</strong>
-                {problem.column ? ` · ${problem.column}` : null} —{" "}
-                {problem.message}
-              </li>
-            ))}
-          </ul>
+          <div className="prio-importsummary">
+            <span className="prio-importsummary__file">
+              File: {checked.fileName}
+            </span>
+            <span>
+              {checked.total} row{checked.total === 1 ? "" : "s"} detected
+            </span>
+            <span className="prio-importsummary__valid">
+              <IconCheck size={13} />
+              {checked.valid} valid row{checked.valid === 1 ? "" : "s"}
+            </span>
+            {invalidCount > 0 ? (
+              <span className="prio-importsummary__invalid">
+                <IconClose size={13} />
+                {invalidCount} invalid row{invalidCount === 1 ? "" : "s"}
+              </span>
+            ) : null}
+          </div>
+
+          {checked.invalid.length > 0 ? (
+            <ul className="prio-importproblems">
+              {checked.invalid.map((row) => (
+                <li key={row.row}>
+                  <strong>Row {row.row}</strong>
+                  <span className="prio-importproblems__summary">
+                    Summary: {row.summary}
+                  </span>
+                  {row.errors.map((problem, index) => (
+                    <span
+                      key={`${problem.column ?? ""}-${index}`}
+                      className="prio-importproblems__error"
+                    >
+                      Error: {problem.message}
+                    </span>
+                  ))}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+
+          {invalidCount > checked.invalid.length ? (
+            <span className="prio-hint">
+              Showing the first {checked.invalid.length} of {invalidCount}{" "}
+              rows that need attention.
+            </span>
+          ) : null}
         </div>
       ) : null}
     </Dialog>

@@ -21,7 +21,7 @@ async function testingTeamId(): Promise<string> {
       select: { id: true },
     })) ??
     (await prisma.team.create({
-      data: { slug: TESTING_TEAM_SLUG, name: "Testing" },
+      data: { slug: TESTING_TEAM_SLUG, name: "QA Team" },
       select: { id: true },
     }));
   return team.id;
@@ -144,7 +144,7 @@ test.describe("A tester", () => {
   }) => {
     await page.goto("/");
     await expect(page.locator(".prio-dash__heroaside .prio-rolebadge")).toHaveText(
-      "QA / Tester",
+      "QA member",
     );
 
     await expect(page.locator(".prio-create__main")).toBeVisible();

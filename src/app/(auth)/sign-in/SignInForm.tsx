@@ -60,10 +60,13 @@ export function describeSignInError(
 export function SignInForm({
   next,
   initialEmail = "",
+  allowSignUp = false,
 }: {
   next: string;
   /** Prefilled after registering, so a new account is not retyping its own address. */
   initialEmail?: string;
+  /** Whether to offer "Create Account" — only when self-registration is on. */
+  allowSignUp?: boolean;
 }) {
   const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState("");
@@ -166,9 +169,11 @@ export function SignInForm({
         {pending ? "Signing in…" : "Sign in to Prio"}
       </Button>
 
-      <p className="prio-auth__note">
-        Don&rsquo;t have an account? <Link href="/sign-up">Create Account</Link>
-      </p>
+      {allowSignUp ? (
+        <p className="prio-auth__note">
+          Don&rsquo;t have an account? <Link href="/sign-up">Create Account</Link>
+        </p>
+      ) : null}
     </form>
   );
 }

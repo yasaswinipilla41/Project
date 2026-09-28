@@ -85,7 +85,7 @@ async function raisedByTester(title: string): Promise<{ id: string; key: string 
     type: "BUG",
     title,
     description: "Raised by QA for this test.",
-    priority: "MEDIUM",
+    priority: "P2",
     assigneeId: developerId,
   });
   if (!created.ok) throw new Error(created.error);
@@ -207,7 +207,7 @@ describe("QA-05 / QA-06  Ready for QA returns the work to whoever raised it", ()
       type: "BUG",
       title: `Second tester raises ${Date.now()}`,
       description: "fixture",
-      priority: "MEDIUM",
+      priority: "P2",
     });
     if (!created.ok) throw new Error(created.error);
     createdIssueIds.push(created.data.id);
@@ -239,7 +239,7 @@ describe("QA-05 / QA-06  Ready for QA returns the work to whoever raised it", ()
       type: "TASK",
       title: `Admin raises ${Date.now()}`,
       description: "fixture",
-      priority: "MEDIUM",
+      priority: "P2",
       assigneeId: developerId,
     });
     if (!created.ok) throw new Error(created.error);
@@ -447,7 +447,7 @@ describe("QA-16 / QA-17  an administrator is unaffected", () => {
       type: "TASK",
       title: `Admin assigns ${Date.now()}`,
       description: "fixture",
-      priority: "MEDIUM",
+      priority: "P2",
     });
     if (!created.ok) throw new Error(created.error);
     createdIssueIds.push(created.data.id);

@@ -76,7 +76,7 @@ async function seedSource(): Promise<Source> {
       title: "Fix login issue",
       description: "The parent story.",
       status: "IN_PROGRESS",
-      priority: "HIGH",
+      priority: "P1",
       assigneeId: admin.id,
       reporterId: admin.id,
       labels: { createMany: { data: [{ labelId: project.labels[0]!.id }] } },
@@ -92,7 +92,7 @@ async function seedSource(): Promise<Source> {
       type: "BUG",
       title: "Child bug",
       status: "TODO",
-      priority: "LOW",
+      priority: "P3",
       severity: "MAJOR",
       assigneeId: member.id,
       reporterId: admin.id,
@@ -344,7 +344,7 @@ test.describe("Duplicating a project through the interface", () => {
     });
     expect(original.title).toBe("Fix login issue");
     expect(original.status).toBe("IN_PROGRESS");
-    expect(original.priority).toBe("HIGH");
+    expect(original.priority).toBe("P1");
   });
 
   test("commenting and replying on the copy leaves the original thread alone", async ({

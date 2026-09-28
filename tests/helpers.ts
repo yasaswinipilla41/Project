@@ -76,7 +76,7 @@ export async function actAsTester(email: string, password?: string) {
 
 /** The rosters a working role is derived from, and what they are called. */
 const WORK_TEAM_NAMES: Record<string, string> = {
-  [TESTING_TEAM_SLUG]: "Testing",
+  [TESTING_TEAM_SLUG]: "QA Team",
   [DEVELOPMENT_TEAM_SLUG]: "Development",
   [FULLSTACK_TEAM_SLUG]: "Full Stack Developers",
 };
@@ -226,7 +226,7 @@ export async function joinTestingTeam(
       select: { id: true },
     })) ??
     (await prisma.team.create({
-      data: { slug: TESTING_TEAM_SLUG, name: "Testing" },
+      data: { slug: TESTING_TEAM_SLUG, name: "QA Team" },
       select: { id: true },
     }));
 

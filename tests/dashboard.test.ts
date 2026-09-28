@@ -230,12 +230,12 @@ describe("loadDashboard — every figure is the real count", () => {
          reproduce -- and the list the card opens is cut on this one
          priority. */
       prisma.issue.count({
-        where: { ...scope, status: open, priority: "HIGH" },
+        where: { ...scope, status: open, priority: "P1" },
       }),
       /* And the sub-line under it counts the bugs *within that figure*,
          not every open bug in scope, which is what it used to do. */
       prisma.issue.count({
-        where: { ...scope, status: open, priority: "HIGH", type: "BUG" },
+        where: { ...scope, status: open, priority: "P1", type: "BUG" },
       }),
     ]);
 
@@ -586,7 +586,7 @@ describe("loadDashboard — new assignment highlight", () => {
       title: "Dashboard new-assignment highlight fixture",
       description: "Created by the integration suite.",
       status: "TODO",
-      priority: "URGENT",
+      priority: "P0",
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;

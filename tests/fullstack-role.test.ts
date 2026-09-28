@@ -51,7 +51,7 @@ const EXPLICIT_FULLSTACK = "vikram.shetty@symbiosystech.com";
 
 /** Proper names for the rosters, for the one that may not exist yet. */
 const TEAM_NAMES: Record<string, string> = {
-  [TESTING_TEAM_SLUG]: "Testing",
+  [TESTING_TEAM_SLUG]: "QA Team",
   [DEVELOPMENT_TEAM_SLUG]: "Development",
   [FULLSTACK_TEAM_SLUG]: "Full Stack Developers",
 };
@@ -106,7 +106,7 @@ async function anIssue(
     type: "TASK",
     title,
     description: "fixture",
-    priority: "MEDIUM",
+    priority: "P2",
   });
   if (!result.ok) throw new Error(result.error);
   createdIssueIds.push(result.data.id);
@@ -314,7 +314,7 @@ describe("the Full Stack membership on its own", () => {
       type: "BUG",
       title: `Explicit full stack files work ${Date.now()}`,
       description: "x",
-      priority: "MEDIUM",
+      priority: "P2",
     });
     expect(raised.ok, raised.ok ? "" : raised.error).toBe(true);
     if (raised.ok) createdIssueIds.push(raised.data.id);
@@ -350,7 +350,7 @@ describe("the QA half", () => {
       type: "BUG",
       title: `Full stack files work ${createdIssueIds.length}`,
       description: "x",
-      priority: "MEDIUM",
+      priority: "P2",
     });
 
     expect(result.ok).toBe(true);
@@ -382,7 +382,7 @@ describe("the QA half", () => {
     await actAs(DEVELOPER);
     const intoQa = await updateIssue({ issueId, status: "IN_QA" });
     expect(intoQa.ok).toBe(false);
-    if (!intoQa.ok) expect(intoQa.error).toMatch(/tester or an administrator/i);
+    if (!intoQa.ok) expect(intoQa.error).toMatch(/QA member or an administrator/i);
   });
 
   it("no longer withholds raising work from a pure developer", async () => {
@@ -399,7 +399,7 @@ describe("the QA half", () => {
       type: "BUG",
       title,
       description: "x",
-      priority: "MEDIUM",
+      priority: "P2",
     });
 
     expect(result.ok, result.ok ? "" : result.error).toBe(true);

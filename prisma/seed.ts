@@ -10,6 +10,7 @@ import {
 import { hashPassword } from "@better-auth/utils/password";
 import { createLocalAccountIssuer } from "@better-auth/core/db";
 import { DEFAULT_PROJECT_LABELS } from "../src/lib/domain";
+import { meetsPasswordPolicy } from "../src/lib/passwordPolicy";
 
 /**
  * Development seed for Symbiosys Technologies.
@@ -35,6 +36,20 @@ const CREDENTIAL_ISSUER = createLocalAccountIssuer("credential");
 const DEFAULT_PASSWORD = process.env.SEED_DEFAULT_PASSWORD ?? "Prio@12345";
 const ADMIN_EMAIL = process.env.SEED_ADMIN_EMAIL ?? "admin@symbiosystech.com";
 const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD ?? DEFAULT_PASSWORD;
+
+/* The seed sets passwords too, so it answers to the same rule as everything
+   else that does: a seed password from the environment that would be refused
+   at the change-password form is refused here. The value is never printed. */
+for (const [name, value] of [
+  ["SEED_DEFAULT_PASSWORD", DEFAULT_PASSWORD],
+  ["SEED_ADMIN_PASSWORD", ADMIN_PASSWORD],
+] as const) {
+  if (!meetsPasswordPolicy(value)) {
+    throw new Error(
+      `${name} does not meet the password rules (8+ characters with an uppercase letter, a lowercase letter, a number and a special character).`,
+    );
+  }
+}
 
 /* ----------------------------------------------------------------- clock */
 
@@ -173,7 +188,7 @@ const ISSUES: Record<string, SeedIssue[]> = {
       description:
         "Users who leave a tab open overnight cannot sign back in without clearing cookies. The sign-in form accepts the credentials and then returns to the sign-in page.",
       status: "IN_PROGRESS",
-      priority: "HIGH",
+      priority: "P1",
       severity: "MAJOR",
       assignee: "kiran.das@symbiosystech.com",
       reporter: "sneha.iyer@symbiosystech.com",
@@ -198,7 +213,7 @@ const ISSUES: Record<string, SeedIssue[]> = {
       description:
         "Selecting a project filter on the issues list is lost when the page is refreshed, so the user has to reapply it every time.",
       status: "TODO",
-      priority: "MEDIUM",
+      priority: "P2",
       severity: "MINOR",
       assignee: "meera.pillai@symbiosystech.com",
       reporter: "priya.nair@symbiosystech.com",
@@ -221,7 +236,7 @@ const ISSUES: Record<string, SeedIssue[]> = {
       description:
         "Dragging a card to In Review occasionally removes it from the board entirely. The issue still exists and reappears after a refresh, so this is a board state bug rather than data loss.",
       status: "IN_REVIEW",
-      priority: "URGENT",
+      priority: "P0",
       severity: "CRITICAL",
       assignee: "rahul.menon@symbiosystech.com",
       reporter: "sneha.iyer@symbiosystech.com",
@@ -246,7 +261,7 @@ const ISSUES: Record<string, SeedIssue[]> = {
       description:
         "As a team member I want to report a bug with reproduction steps, expected and actual results, so that whoever picks it up can reproduce it without asking me.",
       status: "DONE",
-      priority: "HIGH",
+      priority: "P1",
       assignee: "priya.nair@symbiosystech.com",
       reporter: "aarthi",
       labels: ["backend"],
@@ -258,7 +273,7 @@ const ISSUES: Record<string, SeedIssue[]> = {
       description:
         "Filtering by project, status, type and assignee is doing sequential scans on larger projects. Add composite indexes covering the common filter combinations and confirm with EXPLAIN ANALYZE.",
       status: "DONE",
-      priority: "MEDIUM",
+      priority: "P2",
       assignee: "kiran.das@symbiosystech.com",
       reporter: "rahul.menon@symbiosystech.com",
       labels: ["backend", "performance"],
@@ -271,7 +286,7 @@ const ISSUES: Record<string, SeedIssue[]> = {
       description:
         "Queue a background job that batches unread notifications into a single email per user, rather than one email per event.",
       status: "TODO",
-      priority: "MEDIUM",
+      priority: "P2",
       assignee: "priya.nair@symbiosystech.com",
       reporter: "aarthi",
       labels: ["backend", "api"],
@@ -284,7 +299,7 @@ const ISSUES: Record<string, SeedIssue[]> = {
       description:
         "Add per-IP and per-account throttling to sign-in so repeated failures back off.",
       status: "BACKLOG",
-      priority: "HIGH",
+      priority: "P1",
       reporter: "rahul.menon@symbiosystech.com",
       labels: ["auth", "backend"],
       createdDaysAgo: 9,
@@ -295,7 +310,7 @@ const ISSUES: Record<string, SeedIssue[]> = {
       description:
         "As the person who reported a bug I want to see each status, priority and severity change with who made it and when, so I can follow progress without asking.",
       status: "IN_PROGRESS",
-      priority: "MEDIUM",
+      priority: "P2",
       assignee: "meera.pillai@symbiosystech.com",
       reporter: "sneha.iyer@symbiosystech.com",
       createdDaysAgo: 7,
@@ -307,7 +322,7 @@ const ISSUES: Record<string, SeedIssue[]> = {
       description:
         "A due date saved as 30 September renders as 29 September for users east of UTC. The stored value is correct, so this is a rendering bug.",
       status: "BACKLOG",
-      priority: "LOW",
+      priority: "P3",
       severity: "TRIVIAL",
       reporter: "vikram.shetty@symbiosystech.com",
       createdDaysAgo: 11,
@@ -327,7 +342,7 @@ const ISSUES: Record<string, SeedIssue[]> = {
       description:
         "The old free-text status column is no longer read anywhere. Drop it after confirming no reports depend on it.",
       status: "CANCELLED",
-      priority: "LOW",
+      priority: "P3",
       reporter: "rahul.menon@symbiosystech.com",
       labels: ["backend"],
       createdDaysAgo: 30,
@@ -340,7 +355,7 @@ const ISSUES: Record<string, SeedIssue[]> = {
       description:
         "Between 768px and 1024px the team photos lose their aspect ratio and appear stretched vertically.",
       status: "TODO",
-      priority: "MEDIUM",
+      priority: "P2",
       severity: "MINOR",
       assignee: "vikram.shetty@symbiosystech.com",
       reporter: "meera.pillai@symbiosystech.com",
@@ -362,7 +377,7 @@ const ISSUES: Record<string, SeedIssue[]> = {
       description:
         "Documentation pages are missing meta descriptions, so search results show a truncated first paragraph.",
       status: "IN_PROGRESS",
-      priority: "LOW",
+      priority: "P3",
       assignee: "meera.pillai@symbiosystech.com",
       reporter: "vikram.shetty@symbiosystech.com",
       labels: ["seo", "content"],
@@ -375,7 +390,7 @@ const ISSUES: Record<string, SeedIssue[]> = {
       description:
         "As a keyboard user I want to reach every documentation section without a mouse, so the site is usable with assistive technology.",
       status: "BACKLOG",
-      priority: "MEDIUM",
+      priority: "P2",
       reporter: "vikram.shetty@symbiosystech.com",
       labels: ["accessibility"],
       createdDaysAgo: 12,
@@ -386,7 +401,7 @@ const ISSUES: Record<string, SeedIssue[]> = {
       description:
         "The landing hero ships a 12MB video. Re-encode and serve a poster frame first.",
       status: "DONE",
-      priority: "MEDIUM",
+      priority: "P2",
       assignee: "vikram.shetty@symbiosystech.com",
       reporter: "aarthi",
       createdDaysAgo: 18,
@@ -399,7 +414,7 @@ const ISSUES: Record<string, SeedIssue[]> = {
       description:
         "Provisioning accounts for a new joiner is a manual checklist across five systems. Script the parts that have APIs.",
       status: "IN_PROGRESS",
-      priority: "HIGH",
+      priority: "P1",
       assignee: "priya.nair@symbiosystech.com",
       reporter: "aarthi",
       labels: ["onboarding", "access"],
@@ -412,7 +427,7 @@ const ISSUES: Record<string, SeedIssue[]> = {
       description:
         "The weekly summary arrives twice every Monday morning, roughly a minute apart. Both copies have identical content.",
       status: "TODO",
-      priority: "MEDIUM",
+      priority: "P2",
       severity: "MAJOR",
       assignee: "kiran.das@symbiosystech.com",
       reporter: "aarthi",
@@ -433,7 +448,7 @@ const ISSUES: Record<string, SeedIssue[]> = {
       description:
         "As a manager I want to export open work per person as CSV, so I can review workload in our weekly planning meeting.",
       status: "BACKLOG",
-      priority: "LOW",
+      priority: "P3",
       reporter: "aarthi",
       labels: ["reporting"],
       createdDaysAgo: 15,

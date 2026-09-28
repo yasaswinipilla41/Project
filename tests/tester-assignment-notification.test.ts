@@ -62,7 +62,7 @@ beforeAll(async () => {
       select: { id: true },
     })) ??
     (await prisma.team.create({
-      data: { slug: TESTING_TEAM_SLUG, name: "Testing" },
+      data: { slug: TESTING_TEAM_SLUG, name: "QA Team" },
       select: { id: true },
     }));
   teamId = team.id;
@@ -107,7 +107,7 @@ async function anIssue(title: string): Promise<string> {
     type: "TASK",
     title,
     description: "fixture",
-    priority: "MEDIUM",
+    priority: "P2",
   });
   if (!result.ok) throw new Error(result.error);
   createdIssueIds.push(result.data.id);
@@ -131,7 +131,7 @@ describe("assigning an issue to a tester", () => {
     });
 
     // Says it is a tester assignment, and which issue, by key and by title.
-    expect(rows[0]!.message).toContain("as tester");
+    expect(rows[0]!.message).toContain("as QA member");
     expect(rows[0]!.message).toContain(issue.key);
     expect(rows[0]!.message).toContain(issue.title);
 
@@ -172,7 +172,7 @@ describe("assigning an issue to a tester", () => {
     await updateIssue({ issueId, assigneeId: testerId });
     await updateIssue({ issueId, assigneeId: testerId });
     // …and an edit that touches something else entirely.
-    await updateIssue({ issueId, priority: "HIGH" });
+    await updateIssue({ issueId, priority: "P1" });
 
     expect(await assignmentsFor(testerId, issueId)).toHaveLength(1);
   });
@@ -203,7 +203,7 @@ describe("assigning an issue to a tester", () => {
     const rows = await assignmentsFor(plainId, issueId);
     expect(rows).toHaveLength(1);
     // Assignment is still announced; it simply is not a tester assignment.
-    expect(rows[0]!.message).not.toContain("as tester");
+    expect(rows[0]!.message).not.toContain("as QA member");
     expect(rows[0]!.message).toContain("to you");
   });
 
@@ -216,7 +216,7 @@ describe("assigning an issue to a tester", () => {
       type: "BUG",
       title: "Tester assignment — assigned at creation",
       description: "fixture",
-      priority: "MEDIUM",
+      priority: "P2",
       assigneeId: testerId,
     });
     if (!result.ok) throw new Error(result.error);
@@ -224,7 +224,7 @@ describe("assigning an issue to a tester", () => {
 
     const rows = await assignmentsFor(testerId, result.data.id);
     expect(rows).toHaveLength(1);
-    expect(rows[0]!.message).toContain("as tester");
+    expect(rows[0]!.message).toContain("as QA member");
   });
 });
 

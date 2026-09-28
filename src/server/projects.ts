@@ -887,6 +887,24 @@ export async function updateProject(
 
     await assertProjectManage(user, parsed.data.projectId);
 
+    /*
+     * Making a project a default one is an administrator's decision alone.
+     * It enrols every future self-registered account into the project, so
+     * letting whoever created it decide would let any member who duplicates a
+     * project they can read (and so "created" the copy) publish its contents
+     * to every newcomer. Only a *change* is refused — a creator saving other
+     * settings with the flag as it already is stays fine.
+     */
+    if (parsed.data.isDefaultProject !== undefined) {
+      const current = await prisma.project.findUnique({
+        where: { id: parsed.data.projectId },
+        select: { isDefaultProject: true },
+      });
+      if (current && current.isDefaultProject !== parsed.data.isDefaultProject) {
+        assertAdmin(user);
+      }
+    }
+
     const project = await prisma.project.update({
       where: { id: parsed.data.projectId },
       data: {

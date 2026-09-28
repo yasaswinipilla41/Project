@@ -502,7 +502,7 @@ export function RoleBadge({ role }: { role: DisplayRole }) {
       data-role={role}
       title={
         role === "MEMBER"
-          ? "No job assigned yet. An administrator puts people on Development, Testing or Full Stack."
+          ? "No job assigned yet. An administrator puts people on Development, QA or Full Stack."
           : WORK_ROLE_DESCRIPTION[role as WorkRole]
       }
     >

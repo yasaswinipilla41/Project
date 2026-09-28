@@ -48,7 +48,7 @@ async function anIssue(title: string): Promise<string> {
     title,
     description: "Created by the integration suite.",
     status: "TODO",
-    priority: "MEDIUM",
+    priority: "P2",
   });
   if (!result.ok) throw new Error(`fixture create failed: ${result.error}`);
   created.push(result.data.id);
@@ -369,7 +369,7 @@ describe("reporting a bug against work under test", () => {
       issueId,
       title: "Login button stops responding after a failed attempt",
       affectedModule: "Login page",
-      priority: "HIGH",
+      priority: "P1",
     });
     expect(reported.ok).toBe(true);
     if (!reported.ok) return;
@@ -397,7 +397,7 @@ describe("reporting a bug against work under test", () => {
 
     // ...and what only the tester knew was stored on the existing column.
     expect(bug.affectedModule).toBe("Login page");
-    expect(bug.priority).toBe("HIGH");
+    expect(bug.priority).toBe("P1");
 
     // Linked both ways through the existing IssueLink table.
     const forward = await prisma.issueLink.count({

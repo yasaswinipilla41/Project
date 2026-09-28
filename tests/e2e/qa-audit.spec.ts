@@ -180,7 +180,7 @@ test.describe("Authorization probing", () => {
         select: { id: true },
       })) ??
       (await prisma.team.create({
-        data: { slug: TESTING_TEAM_SLUG, name: "Testing" },
+        data: { slug: TESTING_TEAM_SLUG, name: "QA Team" },
         select: { id: true },
       }));
     const already = await prisma.teamMember.findFirst({
@@ -356,7 +356,7 @@ test.describe("Resilience and empty states", () => {
     const { consoleErrors } = watchForProblems(page);
 
     await page.goto(
-      "/issues?type=STORY&severity=CRITICAL&status=CANCELLED&priority=URGENT",
+      "/issues?type=STORY&severity=CRITICAL&status=CANCELLED&priority=P0",
     );
     await expect(page.getByText("No issues found")).toBeVisible();
     expect(consoleErrors).toEqual([]);

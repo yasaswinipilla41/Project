@@ -112,7 +112,7 @@ async function anIssueReadyToFinish(
     title: `${title} ${Date.now()}`,
     description: "fixture",
     status: "TODO",
-    priority: "MEDIUM",
+    priority: "P2",
   });
   if (!result.ok) throw new Error(result.error);
   created.push(result.data.id);

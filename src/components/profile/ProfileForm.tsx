@@ -7,6 +7,7 @@ import { Dialog } from "@/components/ui/Dialog";
 import { useToast } from "@/components/ui/Toast";
 import { changeOwnPassword, updateProfile } from "@/server/users";
 import type { FieldErrors } from "@/server/schemas";
+import { PasswordRequirements } from "@/components/ui/PasswordRequirements";
 
 /**
  * Profile settings.
@@ -307,9 +308,8 @@ function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
             <span className="prio-error" role="alert">
               {errors.newPassword}
             </span>
-          ) : (
-            <span className="prio-hint">At least 8 characters.</span>
-          )}
+          ) : null}
+          <PasswordRequirements password={newPassword} />
         </div>
 
         <div className="prio-field">

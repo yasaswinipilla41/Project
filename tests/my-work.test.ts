@@ -66,7 +66,7 @@ describe("My Work reflects a new assignment", () => {
       title: "My Work refresh fixture",
       description: "Created by the integration suite.",
       status: "TODO",
-      priority: "MEDIUM",
+      priority: "P2",
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -105,7 +105,7 @@ describe("My Work reflects a new assignment", () => {
       title: "My Work persistence fixture",
       description: "Created by the integration suite.",
       status: "TODO",
-      priority: "MEDIUM",
+      priority: "P2",
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -134,7 +134,7 @@ describe("My Work reflects a new assignment", () => {
       title: "My Work reassignment fixture",
       description: "Created by the integration suite.",
       status: "TODO",
-      priority: "MEDIUM",
+      priority: "P2",
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -192,7 +192,7 @@ describe("the dashboard's capped assigned list", () => {
       title: "Lowest-priority new assignment fixture",
       description: "Created by the integration suite.",
       status: "TODO",
-      priority: "LOW",
+      priority: "P3",
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;

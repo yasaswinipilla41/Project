@@ -136,7 +136,7 @@ describe("opening a clone", () => {
     await actAs(ADMIN);
     const source = await makeIssue({
       description: "The original description.",
-      priority: "HIGH",
+      priority: "P1",
     });
 
     const before = await projectByKey("ENG");
@@ -150,7 +150,7 @@ describe("opening a clone", () => {
 
     expect(draft.data.title.startsWith("Clone of ")).toBe(true);
     expect(draft.data.description).toBe("The original description.");
-    expect(draft.data.priority).toBe("HIGH");
+    expect(draft.data.priority).toBe("P1");
 
     /*
      * The whole of §8 in two assertions: opening the draft moved neither the
@@ -175,7 +175,7 @@ describe("cloning an issue", () => {
     const source = await makeIssue({
       type: "STORY",
       description: "Carried across.",
-      priority: "URGENT",
+      priority: "P0",
       parentId: parent.id,
     });
     await attach(source.id, admin.id, "evidence.txt", "original bytes");
@@ -193,7 +193,7 @@ describe("cloning an issue", () => {
       type: "STORY",
       title: "Clone with nothing carried",
       description: "Carried across.",
-      priority: "URGENT",
+      priority: "P0",
       copyLinks: false,
       copyAttachments: false,
     });
@@ -220,7 +220,7 @@ describe("cloning an issue", () => {
 
     expect(clone.description).toBe("Carried across.");
     expect(clone.type).toBe("STORY");
-    expect(clone.priority).toBe("URGENT");
+    expect(clone.priority).toBe("P0");
     expect(clone.parentId).toBeNull();
     expect(clone._count.linksFrom).toBe(0);
     expect(clone._count.attachments).toBe(0);
@@ -421,7 +421,7 @@ describe("cloning an issue", () => {
     await actAs(ADMIN);
     const source = await makeIssue({
       description: "Untouched.",
-      priority: "LOW",
+      priority: "P3",
     });
 
     const snapshot = await prisma.issue.findUniqueOrThrow({
@@ -445,7 +445,7 @@ describe("cloning an issue", () => {
       type: "TASK",
       title: "A clone that gets edited",
       description: "Untouched.",
-      priority: "LOW",
+      priority: "P3",
       copyLinks: false,
       copyAttachments: false,
     });
@@ -457,7 +457,7 @@ describe("cloning an issue", () => {
       issueId: result.data.id,
       title: "Edited only on the clone",
       description: "Changed here, nowhere else.",
-      priority: "URGENT",
+      priority: "P0",
     });
     expect(edited.ok).toBe(true);
 

@@ -54,7 +54,7 @@ test.describe("Time to complete, on a work item", () => {
         type: "TASK",
         title: options.title,
         status: options.completedAt ? "DONE" : "IN_PROGRESS",
-        priority: "MEDIUM",
+        priority: "P2",
         reporterId: admin.id,
         createdAt: options.createdAt,
         completedAt: options.completedAt,

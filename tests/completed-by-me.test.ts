@@ -79,7 +79,7 @@ async function completedBy(finisher: string, title: string): Promise<string> {
     type: "TASK",
     title: `${title} ${Date.now()}-${Math.random()}`,
     description: "fixture",
-    priority: "MEDIUM",
+    priority: "P2",
     status: "IN_QA",
   });
   if (!raised.ok) throw new Error(raised.error);
@@ -187,7 +187,7 @@ describe("what does not count", () => {
       type: "TASK",
       title: `Still in QA ${Date.now()}`,
       description: "fixture",
-      priority: "MEDIUM",
+      priority: "P2",
       status: "IN_QA",
     });
     if (!raised.ok) throw new Error(raised.error);

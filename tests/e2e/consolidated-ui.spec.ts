@@ -378,7 +378,7 @@ test.describe("Home's due bar", () => {
         type: "TASK",
         title: `Due today ${Date.now()}`,
         status: "TODO",
-        priority: "MEDIUM",
+        priority: "P2",
         reporterId: admin.id,
         assigneeId: admin.id,
         dueDate: today,

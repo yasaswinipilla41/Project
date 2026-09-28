@@ -10,6 +10,7 @@ import {
   AssigneeControl,
   EffortControl,
   PriorityControl,
+  SeverityControl,
   StatusControl,
 } from "@/components/issues/IssueFieldControls";
 import {
@@ -52,6 +53,7 @@ import {
   canEditDueDate,
   canEditIssueName,
   canEditPriority,
+  severityAppliesTo,
   canEditSprintIssues,
   doesDeveloperWork,
   doesQaWork,
@@ -103,6 +105,7 @@ async function loadIssue(rawKey: string, user: CurrentUser) {
       description: true,
       status: true,
       priority: true,
+      severity: true,
       dueDate: true,
       createdAt: true,
       updatedAt: true,
@@ -429,6 +432,10 @@ export default async function IssueDetailPage({
             priority={issue.priority}
             canEdit={canEditPriority(workRole)}
           />
+          {/* A bug's own field: drawn for a bug and for nothing else. */}
+          {severityAppliesTo(issue.type) ? (
+            <SeverityControl issueId={issue.id} severity={issue.severity} />
+          ) : null}
           <AssigneeControl
             issueId={issue.id}
             assignee={issue.assignee}
@@ -481,7 +488,7 @@ export default async function IssueDetailPage({
           {/* ------------------------------------------- development + QA */}
           <Card className="prio-issue__section">
             <CardBody>
-              <h2 className="prio-issue__section-title">Testing</h2>
+              <h2 className="prio-issue__section-title">QA</h2>
               <TestResultPanel
                 issueId={issue.id}
                 status={issue.status}

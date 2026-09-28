@@ -98,7 +98,7 @@ describe("loadMemberDetail", () => {
          holding — see `EARLIEST_DUE`. Assigned in the same call, and the
          result checked: an assignment that quietly failed would surface as a
          confusing absence three assertions later. */
-      priority: "URGENT",
+      priority: "P0",
       dueDate: EARLIEST_DUE,
       assigneeId: member.id,
     });
@@ -166,7 +166,7 @@ describe("loadMemberDetail", () => {
        * exist, so the fixture is made to belong in the window rather than the
        * window widened to admit it.
        */
-      priority: "URGENT",
+      priority: "P0",
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;

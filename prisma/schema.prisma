@@ -45,12 +45,14 @@ enum IssueStatus {
   CANCELLED
 }
 
+/// P0 is the most urgent and is shown as "P0 (Urgent)". The stored value is the
+/// bare code; the label is presentation (see PRIORITY_LABEL in src/lib/domain.ts).
+/// Declaration order is most-urgent-first because `orderBy: { priority }` sorts on it.
 enum Priority {
-  URGENT
-  HIGH
-  MEDIUM
-  LOW
-  NONE
+  P0
+  P1
+  P2
+  P3
 }
 
 enum Severity {
@@ -431,7 +433,7 @@ model Issue {
   title       String
   description String?
   status      IssueStatus @default(BACKLOG)
-  priority    Priority    @default(MEDIUM)
+  priority    Priority    @default(P2)
 
   assigneeId String?
   assignee   User?   @relation("IssueAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)

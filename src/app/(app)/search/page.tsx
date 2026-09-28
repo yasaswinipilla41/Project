@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import type { IssueStatus, IssueType } from "@prisma/client";
+import type { IssueStatus, IssueType, Priority } from "@prisma/client";
 import { Card, CardBody, EmptyState } from "@/components/ui/primitives";
 import {
   IssueKey,
@@ -285,7 +285,7 @@ function IssueResult({
     type: IssueType;
     title: string;
     status: IssueStatus;
-    priority: "URGENT" | "HIGH" | "MEDIUM" | "LOW" | "NONE";
+    priority: Priority;
     updatedAt: Date;
     project: { name: string };
     assignee: { name: string } | null;

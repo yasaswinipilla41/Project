@@ -84,7 +84,7 @@ async function anIssue(
     type: "TASK",
     title: `${name} ${Date.now()}`,
     description: "fixture",
-    priority: options.priority ?? "MEDIUM",
+    priority: options.priority ?? "P2",
     status: options.status,
     assigneeId: options.assigneeId,
   });
@@ -250,11 +250,11 @@ describe("what is eligible", () => {
   it("places the most urgent work first", async () => {
     const low = await anIssue("priority-low", {
       status: "BACKLOG",
-      priority: "LOW",
+      priority: "P3",
     });
     const urgent = await anIssue("priority-urgent", {
       status: "BACKLOG",
-      priority: "URGENT",
+      priority: "P0",
     });
 
     await actAs(ADMIN);

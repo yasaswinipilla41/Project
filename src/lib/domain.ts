@@ -386,10 +386,10 @@ export function statusRefusalReason(
      capability rather than by reading the list back, because the list is
      exactly what has already excluded it. */
   if (next === "DONE" && doesQaWork(role) && !doesDeveloperWork(role)) {
-    return "Done is what testing concluded — put this into In QA first.";
+    return "Done is what QA concluded — put this into In QA first.";
   }
   if (next === "IN_QA" || next === "DONE") {
-    return "Only a tester or an administrator can put work into QA or mark it done.";
+    return "Only a QA member or an administrator can put work into QA or mark it done.";
   }
 
   /* Filing, not moving. A tester may set In QA on work that already exists and
@@ -433,38 +433,84 @@ export function statusOrder(status: IssueStatus): number {
 
 // ---------------------------------------------------------------- priority
 
+/*
+ * The stored value and the label are two different things, and this block is
+ * the only place they meet.
+ *
+ * `P0`…`P3` are what the database, the API, the filters, the import and every
+ * comparison in code use. The label is presentation: `P0` is *shown* as
+ * "P0 (Urgent)", but nothing ever stores, sends or compares that text. The
+ * order matters — most urgent first — because the enum's declaration order is
+ * what every `orderBy: { priority }` in the queries sorts on.
+ */
 export const PRIORITIES = [
-  "URGENT",
-  "HIGH",
-  "MEDIUM",
-  "LOW",
-  "NONE",
+  "P0",
+  "P1",
+  "P2",
+  "P3",
 ] as const satisfies readonly Priority[];
 
 export const PRIORITY_LABEL: Record<Priority, string> = {
-  URGENT: "Urgent",
-  HIGH: "High",
-  MEDIUM: "Medium",
-  LOW: "Low",
-  NONE: "None",
+  P0: "P0 (Urgent)",
+  P1: "P1",
+  P2: "P2",
+  P3: "P3",
 };
+
+/** `{ value, label }` pairs, in order, for every control that lists them. */
+export const PRIORITY_OPTIONS: readonly { value: Priority; label: string }[] =
+  PRIORITIES.map((value) => ({ value, label: PRIORITY_LABEL[value] }));
+
+/** What new work gets when nobody chooses. */
+export const DEFAULT_PRIORITY: Priority = "P2";
 
 /** Descending weight — higher sorts first. */
 export const PRIORITY_WEIGHT: Record<Priority, number> = {
-  URGENT: 4,
-  HIGH: 3,
-  MEDIUM: 2,
-  LOW: 1,
-  NONE: 0,
+  P0: 4,
+  P1: 3,
+  P2: 2,
+  P3: 1,
 };
+
+/**
+ * The words priority used before it was P0–P3, and where each one went.
+ *
+ * Used to *read* the past, never to write the present: an old activity entry
+ * that says "HIGH" still has to make sense, and a spreadsheet exported last
+ * month says "High". `URGENT` becomes P0 because P0 *is* Urgent; `NONE` had no
+ * counterpart in a four-level scale and folds into the lowest, P3. Nothing
+ * outside that table is ever guessed at.
+ */
+export const LEGACY_PRIORITY: Readonly<Record<string, Priority>> = {
+  URGENT: "P0",
+  HIGH: "P1",
+  MEDIUM: "P2",
+  LOW: "P3",
+  NONE: "P3",
+};
+
+/** A legacy priority word (any case) as today's value, or null. */
+export function priorityFromLegacy(value: string): Priority | null {
+  return LEGACY_PRIORITY[value.trim().toUpperCase()] ?? null;
+}
+
+/** The label for a historical priority word, or the text itself if unknown. */
+function priorityLabelOrRaw(value: string): string {
+  const current = priorityFromLegacy(value);
+  return current ? PRIORITY_LABEL[current] : value;
+}
 
 /* ---------------------------------------------------------------- severity
 
-   Severity is no longer a field anybody sets: the control is gone from every
-   form, filter, table and chart. What is left here is the vocabulary needed to
-   *read* it — the activity log is append-only, so entries that recorded a
-   severity change years of work ago still have to render as "Major" rather
-   than "MAJOR". The column and its values are untouched in the database. */
+   How bad a *bug* is: Critical, Major, Minor or Trivial. It applies to bugs
+   only — the create and edit forms offer it for that type and no other — and
+   it is optional. The stored values are the Prisma enum's; the labels below
+   are what is shown. */
+
+/** Severity belongs to bugs; every other issue type leaves it empty. */
+export function severityAppliesTo(type: IssueType): boolean {
+  return type === "BUG";
+}
 
 export const SEVERITIES = [
   "CRITICAL",
@@ -623,7 +669,7 @@ export const ROLE_DESCRIPTION: Record<Role, string> = {
  *
  * Two teams answer it between them:
  *
- *   Testing only                 QA
+ *   QA Team only                 QA
  *   Development only             DEVELOPER
  *   both                         FULLSTACK
  *   neither                      DEVELOPER — the long-standing default
@@ -672,7 +718,7 @@ export type DisplayRole = WorkRole | "MEMBER";
 
 export const DISPLAY_ROLE_LABEL: Record<DisplayRole, string> = {
   ADMIN: "Admin",
-  QA: "QA / Tester",
+  QA: "QA member",
   DEVELOPER: "Developer",
   FULLSTACK: "Fullstack Developer",
   MEMBER: "Member",
@@ -892,7 +938,11 @@ export function humanizeEnumValue(field: string, value: string | null): string {
     case "status":
       return isIssueStatus(value) ? STATUS_LABEL[value] : value;
     case "priority":
-      return isPriority(value) ? PRIORITY_LABEL[value] : value;
+      /* The log is append-only, so old entries still hold URGENT/HIGH/…;
+         they read as the value they became. */
+      return isPriority(value)
+        ? PRIORITY_LABEL[value]
+        : priorityLabelOrRaw(value);
     case "severity":
       return isSeverity(value) ? SEVERITY_LABEL[value] : value;
     case "type":

@@ -7,7 +7,11 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { assertAdmin, AuthorizationError } from "@/lib/authz";
 import { requireUser } from "@/lib/session";
-import { fieldErrors, type FieldErrors } from "@/server/schemas";
+import {
+  fieldErrors,
+  newPasswordSchema,
+  type FieldErrors,
+} from "@/server/schemas";
 import { loadMemberDetail, type MemberDetail } from "@/server/queries/memberDetail";
 import { sendWelcomeMail } from "@/server/mailer";
 import { ROLE_LABEL } from "@/lib/domain";
@@ -52,10 +56,7 @@ const createUserSchema = z.object({
     .optional()
     .transform((v) => (v && v.length > 0 ? v : null)),
   role: z.enum(["ADMIN", "MEMBER"]),
-  password: z
-    .string()
-    .min(8, "Use at least 8 characters.")
-    .max(128),
+  password: newPasswordSchema,
   projectIds: z.array(z.string()).default([]),
 });
 
@@ -266,7 +267,7 @@ export async function setUserActive(
 
 const resetPasswordSchema = z.object({
   userId: z.string().min(1),
-  password: z.string().min(8, "Use at least 8 characters.").max(128),
+  password: newPasswordSchema,
 });
 
 export async function resetUserPassword(
@@ -386,7 +387,7 @@ export async function getMemberDetail(
 const changePasswordSchema = z
   .object({
     currentPassword: z.string().min(1, "Enter your current password."),
-    newPassword: z.string().min(8, "Use at least 8 characters.").max(128),
+    newPassword: newPasswordSchema,
     confirmPassword: z.string(),
   })
   .superRefine((value, ctx) => {

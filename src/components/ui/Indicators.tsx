@@ -2,6 +2,7 @@ import type { IssueStatus, IssueType, Priority } from "@prisma/client";
 import {
   ISSUE_TYPE_LABEL,
   PRIORITY_LABEL,
+  PRIORITY_WEIGHT,
   STATUS_LABEL,
 } from "@/lib/domain";
 import {
@@ -16,7 +17,7 @@ import {
  * Status, priority and issue-type indicators.
  *
  * Every surface in Prio renders these components rather than its own markup,
- * so a bug looks like a bug — and an Urgent priority reads as Urgent —
+ * so a bug looks like a bug — and a P0 priority reads as P0 (Urgent) —
  * whether it appears on a board card, a table row or the detail header.
  */
 
@@ -48,8 +49,8 @@ export function StatusPill({
 
 /**
  * Priority reads as a four-bar meter: filled bars grow with urgency, so the
- * level is legible before the label is read. Urgent additionally reverses to a
- * solid block so it stands out in a dense list.
+ * level is legible before the label is read. P0 fills all four bars and is
+ * coloured to stand out in a dense list.
  */
 export function PriorityIndicator({
   priority,
@@ -60,14 +61,9 @@ export function PriorityIndicator({
   showLabel?: boolean;
   className?: string;
 }) {
-  const filled: Record<Priority, number> = {
-    URGENT: 4,
-    HIGH: 3,
-    MEDIUM: 2,
-    LOW: 1,
-    NONE: 0,
-  };
-  const level = filled[priority];
+  /* Bars filled = the priority's weight (P0 → 4 … P3 → 1): the meter and
+     the sort order read the same table. */
+  const level = PRIORITY_WEIGHT[priority];
 
   return (
     <span

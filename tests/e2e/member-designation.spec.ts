@@ -170,7 +170,7 @@ test.describe("Administration's people picker", () => {
     await page.goto("/admin");
     const block = page
       .locator(".prio-issue__section")
-      .filter({ has: page.getByRole("heading", { name: /^Testing · / }) });
+      .filter({ has: page.getByRole("heading", { name: /^QA Team · / }) });
     await block.getByRole("button", { name: "Add members" }).click();
 
     const dialog = page.getByRole("dialog");

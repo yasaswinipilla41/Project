@@ -6,6 +6,7 @@ import { Alert, Button } from "@/components/ui/primitives";
 import { IconEye, IconEyeOff, IconSuccess, IconWarning } from "@/components/ui/Icon";
 import { signUp } from "@/server/signup";
 import type { FieldErrors } from "@/server/schemas";
+import { PasswordRequirements } from "@/components/ui/PasswordRequirements";
 
 /**
  * The registration form.
@@ -162,7 +163,6 @@ export function SignUpForm() {
             className="prio-input"
             autoComplete="new-password"
             required
-            minLength={8}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             aria-invalid={errors.password ? true : undefined}
@@ -181,9 +181,8 @@ export function SignUpForm() {
           <span className="prio-error" role="alert">
             {errors.password}
           </span>
-        ) : (
-          <span className="prio-hint">At least 8 characters.</span>
-        )}
+        ) : null}
+        <PasswordRequirements password={password} />
       </div>
 
       <div className="prio-field">

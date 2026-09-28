@@ -38,7 +38,7 @@ async function seedIssue(status: "TODO" | "IN_PROGRESS", title: string) {
       type: "TASK",
       title,
       status,
-      priority: "MEDIUM",
+      priority: "P2",
       reporterId: admin.id,
     },
     select: { id: true, key: true },
