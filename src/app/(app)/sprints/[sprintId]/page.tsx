@@ -1,9 +1,12 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { BurndownChart } from "@/components/sprints/BurndownChart";
+import {
+  BurndownDisclosure,
+  BurndownPanel,
+  BurndownToggle,
+} from "@/components/sprints/BurndownDisclosure";
 import { BackLink } from "@/components/shell/BackLink";
 import { SprintDetailsView } from "@/components/sprints/SprintDetailsView";
-import { Card, CardBody } from "@/components/ui/primitives";
 import { canAccessProject } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
@@ -71,16 +74,20 @@ export default async function SprintDetailsPage({
       </p>
 
       <div style={{ marginTop: "var(--prio-space-3)" }}>
-        <SprintDetailsView sprint={sprint}>
-          {chart ? (
-            <Card style={{ marginTop: "var(--prio-space-4)" }}>
-              <CardBody>
-                <h2 className="prio-issue__section-title">Burndown Chart</h2>
-                <BurndownChart data={chart} />
-              </CardBody>
-            </Card>
-          ) : null}
-        </SprintDetailsView>
+        <BurndownDisclosure>
+          <SprintDetailsView
+            sprint={sprint}
+            /* This page has no actions on the sprint — it is read from the
+               Projects directory, with no project in context to add work from
+               — so the header's row holds the burndown's button alone. The
+               chart is opened the same way it is on the project's own sprint
+               page, rather than being always open on one page and not the
+               other. */
+            actions={chart ? <BurndownToggle /> : null}
+          >
+            {chart ? <BurndownPanel data={chart} /> : null}
+          </SprintDetailsView>
+        </BurndownDisclosure>
       </div>
     </>
   );

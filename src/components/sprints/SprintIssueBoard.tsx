@@ -4,7 +4,10 @@ import { useRouter } from "next/navigation";
 import { useEffect, useOptimistic, useTransition } from "react";
 import type { IssueStatus } from "@prisma/client";
 import { BoardCard, type BoardIssue } from "@/components/projects/FlowBoard";
-import { MoveIssueMenu } from "@/components/sprints/MoveIssueMenu";
+import {
+  MoveIssueMenu,
+  type MoveDestination,
+} from "@/components/sprints/MoveIssueMenu";
 import { useToast } from "@/components/ui/Toast";
 import { ISSUE_STATUSES, STATUS_LABEL, type WorkRole } from "@/lib/domain";
 import { updateIssue } from "@/server/issues";
@@ -34,28 +37,24 @@ export function SprintIssueBoard({
   workRole,
   currentUserId,
   isAdmin,
-  otherOpenSprints = [],
+  moveDestinations = [],
   previousSprints = {},
   canMoveIssues = false,
-  hasNextSprint = true,
 }: {
   issues: BoardIssue[];
   workRole: WorkRole;
   currentUserId: string;
   isAdmin: boolean;
-  /** This project's other sprints that are still open — where a card's Move
-   *  to can send an issue, besides the next sprint and the backlog. */
-  otherOpenSprints?: { id: string; name: string }[];
+  /** The project's current sprint and its upcoming one, minus whichever of
+   *  the two this board is already showing — where a card's Move to can send
+   *  an issue, besides the backlog. See `MoveIssueMenu`. */
+  moveDestinations?: MoveDestination[];
   /** Per issue, the still-open sprint it was moved out of — what Restore
    *  puts it back into. An issue with no entry is offered no Restore. */
   previousSprints?: Record<string, { id: string; name: string }>;
   /** Whether this reader may move a sprint's issues at all. Presentation
    *  only: `moveIssueToSprint` asserts the same rule on the server. */
   canMoveIssues?: boolean;
-  /** Whether this sprint has an open one on or after it, so a card's Move to
-   *  can offer Next sprint. The same for every issue here, so the page works
-   *  it out once rather than each card asking. */
-  hasNextSprint?: boolean;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -145,11 +144,15 @@ export function SprintIssueBoard({
                 workRole={workRole}
                 currentUserId={currentUserId}
                 isAdmin={isAdmin}
-                /* Move to, on the card itself: the next sprint, another of
-                   this project's open sprints, or back to the backlog. The
-                   menu refreshes the page, so the sprint's totals and its
-                   Issues by status chart follow the move without anything
-                   here keeping a second copy of the figures.
+                /* This board never drags its cards, so the whole surface can
+                   safely open the issue — see `linkWholeCard` on `BoardCard`
+                   for why the Flow Board itself stays opt-out. */
+                linkWholeCard
+                /* Move to, on the card itself: the project's current or
+                   upcoming sprint, or back to the backlog. The menu refreshes
+                   the page, so the sprint's totals and its Issues by status
+                   chart follow the move without anything here keeping a
+                   second copy of the figures.
                    Deliberately not `inSprint`: that offers the same "Move to
                    next sprint" from inside the card's own ⋮ menu, which this
                    dedicated control already covers and more besides — a
@@ -160,9 +163,8 @@ export function SprintIssueBoard({
                     <MoveIssueMenu
                       issueId={issue.id}
                       issueKey={issue.key}
-                      otherOpenSprints={otherOpenSprints}
+                      moveDestinations={moveDestinations}
                       previousSprint={previousSprints[issue.id]}
-                      hasNextSprint={hasNextSprint}
                     />
                   ) : undefined
                 }

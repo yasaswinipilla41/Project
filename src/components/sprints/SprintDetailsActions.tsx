@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Alert, Button } from "@/components/ui/primitives";
 import { Dialog } from "@/components/ui/Dialog";
 import { IconEdit, IconPlus, IconTrash, IconWarning } from "@/components/ui/Icon";
@@ -25,9 +25,15 @@ import { SprintFormDialog } from "./SprintFormDialog";
  * One thing differs from the block, and has to: deleting a sprint from the
  * sprint's own page destroys the page. So a delete leaves for the list it came
  * from, rather than re-reading a route that would now be a not-found.
+ *
+ * `leading` is the one thing in this row that is not an action on the sprint:
+ * the button that opens its burndown. It is passed in rather than built here
+ * because reading the chart is nobody's permission — it goes in this row, and
+ * in front of the rest of it, but it is not one of the four things below.
  */
 export function SprintDetailsActions({
   sprint,
+  leading,
   projectId,
   projectKey,
   backlog,
@@ -39,6 +45,8 @@ export function SprintDetailsActions({
   backHref,
 }: {
   sprint: SprintView;
+  /** Drawn first in the row, before every action: the burndown's own button. */
+  leading?: ReactNode;
   projectId: string;
   projectKey: string;
   /** This project's unsprinted open work — the only thing that can be added. */
@@ -113,11 +121,15 @@ export function SprintDetailsActions({
     !(live && canEditIssues) &&
     !(live && canEdit) &&
     !(sprint.status === "PLANNED" && canStart);
-  if (nothingToShow) return null;
+  /* Somebody who may change nothing here may still read the burndown, so the
+     row survives for `leading` alone. */
+  if (nothingToShow && !leading) return null;
 
   return (
     <>
       <div className="prio-sprint__actions">
+        {leading}
+
         {live && canEditIssues ? (
           <Button
             variant="ghost"

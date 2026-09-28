@@ -244,10 +244,11 @@ test.describe("Move, from the issue's own menu", () => {
      *
      * This used to go through the ⋮ menu, which carried a single "Move to
      * next sprint". That entry has since been replaced by a dedicated
-     * control offering the whole set — restore, next sprint, a named sprint,
-     * the backlog — so the move is driven where it now lives. What is
-     * asserted below is unchanged: where the issue ends up, what its status
-     * is, and that both sprints' figures follow it.
+     * control offering the whole set — restore, the project's current or
+     * upcoming sprint by name and dates, and the backlog — so the move is
+     * driven where it now lives. What is asserted below is unchanged: where
+     * the issue ends up, what its status is, and that both sprints' figures
+     * follow it.
      *
      * The ⋮ menu is still checked for the actions it has always had, because
      * gaining a control beside it must not cost it any of them.
@@ -264,8 +265,10 @@ test.describe("Move, from the issue's own menu", () => {
       .getByRole("button", { name: new RegExp(`Move ${issueKey} to another`) })
       .click();
 
+    /* Named and dated — the second sprint is this project's only other open
+       one, so it is exactly what "current or upcoming" resolves to here. */
     const menu = page.getByRole("menu", { name: new RegExp(`Move ${issueKey}`) });
-    await menu.getByRole("menuitem", { name: "Next sprint" }).click();
+    await menu.getByRole("menuitem", { name: `${KEY} sprint two` }).click();
 
     /* The control's own wording: "<key> moved to <sprint>". */
     await expect(page.locator(".prio-toast")).toContainText(

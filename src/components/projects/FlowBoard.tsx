@@ -11,6 +11,7 @@ import {
   useState,
   useTransition,
   type DragEvent,
+  type KeyboardEvent,
   type ReactNode,
 } from "react";
 import type { IssueStatus, IssueType, Priority } from "@prisma/client";
@@ -1090,6 +1091,7 @@ export function BoardCard({
   onDragEnd,
   inSprint = false,
   actions,
+  linkWholeCard = false,
 }: {
   issue: BoardIssue;
   /** False whenever the column isn't a status — a group like "Assignee" has
@@ -1114,17 +1116,40 @@ export function BoardCard({
    * same card it is read on. The Flow Board passes nothing and is unchanged.
    */
   actions?: ReactNode;
+  /**
+   * Makes the card's own empty space open the issue, not only its key.
+   *
+   * Off by default, and left off on the Flow Board: that board's primary
+   * interaction is dragging, and a drag that ends near where it started still
+   * produces a click — see the comment below on why the whole card stopped
+   * being a link there. A sprint's own board never drags its cards
+   * (`draggable={false}` throughout `SprintIssueBoard`), so that failure mode
+   * cannot occur and the card can safely go back to being the target its
+   * cursor and hover already promise.
+   *
+   * The row-actions menu, the Move to control and the status menu already
+   * stop their own clicks from reaching the card (see below), so turning
+   * this on does not have to touch any of them.
+   */
+  linkWholeCard?: boolean;
 }) {
+  const router = useRouter();
   const href = `/issues/${issue.key.toLowerCase()}`;
   const cancelled = issue.status === "CANCELLED";
 
   /*
-   * The whole card used to be a link. On a board whose primary interaction is
-   * dragging that is the wrong default: a drag that ends near where it started
-   * still produces a click, so moving a card between columns could navigate
-   * away from the board instead. Opening an issue is now something you aim at
-   * — the key below, or "Open / edit" in the card's own menu — and the card
-   * surface is left to do the one job it exists for.
+   * The whole card used to be a link, unconditionally. On a board whose
+   * primary interaction is dragging that was the wrong default: a drag that
+   * ends near where it started still produces a click, so moving a card
+   * between columns could navigate away from the board instead. Opening an
+   * issue became something you aim at — the key below, or "Open / edit" in
+   * the card's own menu — and the card surface was left to do the one job it
+   * exists for.
+   *
+   * `linkWholeCard` restores the old behaviour where that risk does not
+   * exist: a sprint's own board, which is never draggable. `role="link"` and
+   * the keyboard handler are exactly what the card used to carry, so Enter
+   * and Space open it the same way a real link would.
    */
   return (
     <div
@@ -1134,6 +1159,19 @@ export function BoardCard({
       data-cancelled={cancelled || undefined}
       onDragStart={draggable ? onDragStart : undefined}
       onDragEnd={draggable ? onDragEnd : undefined}
+      {...(linkWholeCard
+        ? {
+            role: "link" as const,
+            tabIndex: 0,
+            onClick: () => router.push(href),
+            onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                router.push(href);
+              }
+            },
+          }
+        : {})}
     >
       <div className="prio-board__card-top">
         <p className="prio-board__card-title">{issue.title}</p>

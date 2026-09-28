@@ -115,3 +115,28 @@ export function watchForProblems(page: Page) {
 export async function waitForNextFrame(page: Page): Promise<void> {
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
 }
+
+/**
+ * Opens a sprint's burndown.
+ *
+ * The chart lives behind a button in the sprint header rather than being drawn
+ * on load: it is the tallest thing on the page and answers a question that is
+ * not always being asked. Every test that reads the chart therefore opens it
+ * first, which is one line here rather than the same three lines in each spec.
+ *
+ * Waits for the panel, because the chart draws inside it — a locator resolved
+ * before the panel exists is a locator for nothing.
+ */
+export async function openBurndown(page: Page): Promise<void> {
+  /* Exactly that name: the panel's own way out is "Close Burndown Chart", and
+     an accessible-name match is a substring match unless it is told not to
+     be. */
+  const button = page.getByRole("button", {
+    name: "Burndown Chart",
+    exact: true,
+  });
+  await button.waitFor({ timeout: 45_000 });
+  if ((await button.getAttribute("aria-expanded")) === "true") return;
+  await button.click();
+  await page.locator(".prio-burndownpanel").waitFor({ timeout: 45_000 });
+}

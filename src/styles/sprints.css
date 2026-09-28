@@ -458,10 +458,20 @@
   opacity: 0.6;
 }
 
+/*
+ * A status block inside Issues in this sprint.
+ *
+ * Bordered like every other block on a sprint's page — the sprint's own card,
+ * the burndown panel, Issues in this sprint and Issues by status all carry
+ * `.prio-card`'s 1px, and these sat inside that group with a fill and no edge
+ * of their own. Same token, so one change to `--prio-border` still moves all
+ * of them together.
+ */
 .prio-sprint__column {
   flex: 1 1 240px;
   min-width: 240px;
   padding: var(--prio-space-3);
+  border: 1px solid var(--prio-border);
   border-radius: var(--prio-radius-md);
   background: var(--prio-bg-subtle);
 }
@@ -805,6 +815,44 @@
 }
 
 /* ------------------------------------------------------------ burndown */
+
+/*
+ * The panel the header's Burndown Chart button opens.
+ *
+ * `.prio-card` gives it the border, fill and radius every other block on the
+ * page has; this is only where it sits and how its own head reads. The chart
+ * inside it is unchanged, and keeps its own responsive behaviour — it is
+ * `width: 100%` of whatever box it is given, and this one is the card.
+ */
+.prio-burndownpanel {
+  margin-top: var(--prio-space-4);
+}
+
+.prio-burndownpanel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--prio-space-3);
+  margin-bottom: var(--prio-space-4);
+}
+
+/* Capitals from the stylesheet, so the heading that is read aloud is the
+   heading that is written — the same treatment a status block's head gets. */
+.prio-burndownpanel__title {
+  margin: 0;
+  font-size: var(--prio-text-2xs);
+  font-weight: var(--prio-weight-semibold);
+  letter-spacing: var(--prio-tracking-caps);
+  text-transform: uppercase;
+  color: var(--prio-text-muted);
+}
+
+/* Icon, label and chevron in one row. The chevron is the open/closed
+   indication for everybody who is not being told by `aria-expanded`. */
+.prio-burndowntoggle {
+  gap: var(--prio-space-2);
+  white-space: nowrap;
+}
 
 .prio-burndown {
   margin: 0;
