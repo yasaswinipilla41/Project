@@ -77,6 +77,48 @@
   gap: var(--prio-space-2);
 }
 
+/*
+ * The Iteration filter's panel.
+ *
+ * Every row here is a sprint's name *and* its start and end dates with their
+ * years — "ENG · sprint 2 (17 Sep 2026 - 01 Oct 2026)" — and at the shared
+ * 230px the menu row's one-line ellipsis cut every one of them off mid-date,
+ * taking a completed sprint's check with it.
+ *
+ * So this one panel is as wide as its longest row, up to a measure that still
+ * fits the screen, and a row that is longer than that wraps onto a second line
+ * rather than being clipped. Its scrollbar gets a gutter of its own, so when
+ * the list is long enough to scroll the bar sits beside the text instead of
+ * over its end, and the rows never scroll sideways. Scoped to this panel: the
+ * other filters keep their width and their single-line rows.
+ */
+.prio-menu.prio-menu--iteration {
+  width: max-content;
+  min-width: 230px;
+  max-width: min(440px, calc(100vw - 16px));
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+}
+
+.prio-menu--iteration .prio-menu__item {
+  white-space: normal;
+}
+
+.prio-menu--iteration .prio-menu__itemlabel {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+}
+
+/* The completed check follows the name on the same line, a little apart. */
+.prio-filter__iteration-done {
+  display: inline-block;
+  margin-left: var(--prio-space-2);
+  vertical-align: -2px;
+}
+
 .prio-filters__trailing {
   display: flex;
   /* Wraps, because this row grows: the result count, Export, Import, the

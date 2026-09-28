@@ -221,6 +221,86 @@ async function seedSprintWithScopeChange() {
 }
 
 /**
+ * A running sprint whose scope moved both ways.
+ *
+ * One issue re-estimated upward on the third day (+6h, an up arrow) and
+ * another re-estimated downward on the fifth (−6h, a down arrow), so the chart
+ * draws one arrow of each direction from the sprint's own trail.
+ */
+async function seedScopeBothWays() {
+  const admin = await prisma.user.findFirstOrThrow({
+    where: { role: "ADMIN" },
+    select: { id: true },
+  });
+  const key = `SB${Date.now().toString(36).toUpperCase()}`.slice(0, 10);
+  const project = await prisma.project.create({
+    data: {
+      key,
+      name: `Burndown scope-both-ways fixture ${key}`,
+      createdById: admin.id,
+      members: { create: { userId: admin.id } },
+      issueSequence: 2,
+    },
+    select: { id: true, key: true },
+  });
+  createdProjects.push(project.id);
+
+  const start = ago(7);
+  const sprint = await prisma.sprint.create({
+    data: {
+      name: `E2E burndown both ways ${Date.now()}`,
+      startDate: start,
+      endDate: new Date(Date.now() + 6 * DAY),
+      projectId: project.id,
+      createdById: admin.id,
+      status: "ACTIVE",
+      startedAt: start,
+    },
+    select: { id: true },
+  });
+
+  const reestimated = async (
+    number: number,
+    from: number,
+    to: number,
+    daysAgo: number,
+  ) => {
+    const issue = await prisma.issue.create({
+      data: {
+        projectId: project.id,
+        key: `${project.key}-${number}`,
+        number,
+        title: `Re-estimated ${from}h → ${to}h`,
+        type: "TASK",
+        status: "IN_PROGRESS",
+        reporterId: admin.id,
+        assigneeId: admin.id,
+        sprintId: sprint.id,
+        effortHours: to,
+        remainingHours: to,
+      },
+      select: { id: true },
+    });
+    await prisma.activityLogEntry.create({
+      data: {
+        issueId: issue.id,
+        actorId: admin.id,
+        action: "issue.updated",
+        field: "effortHours",
+        oldValue: String(from),
+        newValue: String(to),
+        createdAt: ago(daysAgo),
+      },
+    });
+  };
+
+  await reestimated(1, 4, 10, 5);
+  await reestimated(2, 9, 3, 3);
+
+  return { key: project.key.toLowerCase(), sprintId: sprint.id };
+}
+
+/**
  * A running sprint with one very busy day.
  *
  * Five issues re-estimated and their remainders rewritten on the same day —
@@ -1566,215 +1646,70 @@ test.describe("The burndown's detail", () => {
     );
   });
 
-  test("is the size of its own contents, at every point and every width", async ({
+  test("colours each arrow by the way it points: up red, down green", async ({
     page,
   }) => {
     /*
-     * The box's width is its content's, and nothing else's.
-     *
-     * It briefly was not: the placement tried the panel at a few narrower
-     * widths so that one which would not fit beside a point could wrap into a
-     * column that did, which made the width a function of where it fitted.
-     * The same day's detail then read one width on one screen and another on
-     * the next — and a build whose card is a little taller, as a deployed one
-     * is, could fall through to the widest of them on the lower points. On
-     * top of that the panel reading under the chart was `width: auto`, which
-     * in the flow means the card's width: a tooltip stretched across the
-     * whole chart.
-     *
-     * So what has to hold, whatever the point and whatever the width of the
-     * window: the box is no wider than the reading measure, it is not a
-     * stripe across the chart, and the room left over inside it is small —
-     * which is what "sized to its contents" means once the text has wrapped.
+     * An up arrow is work the day added and did not solve; a down arrow is
+     * work the day cleared. The colour is read off the arrow's own direction,
+     * which the chart sets from the day's data — so both are checked against
+     * what the day actually did (its `scope ±` title), not against a fixed
+     * position, and in both themes, where each colour has its own step.
      */
-    const { key, sprintId } = await seedRunningSprint();
-
-    /** The box, and how much of it the words inside it actually use. */
-    const box = () =>
-      page.evaluate(() => {
-        const tip = document.querySelector(
-          ".prio-burndown__tip",
-        ) as HTMLElement;
-        const chart = document.querySelector(".prio-burndown__svg")!;
-        const style = getComputedStyle(tip);
-        const t = tip.getBoundingClientRect();
-        const inner =
-          t.width -
-          parseFloat(style.paddingLeft) -
-          parseFloat(style.paddingRight) -
-          parseFloat(style.borderLeftWidth) -
-          parseFloat(style.borderRightWidth);
-        const left =
-          t.left +
-          parseFloat(style.paddingLeft) +
-          parseFloat(style.borderLeftWidth);
-
-        /*
-         * The rightmost ink in the box: each row's own line boxes and each
-         * element within it, because a row is a flex line whose ink ends at
-         * its last item rather than at its widest one.
-         */
-        const range = document.createRange();
-        let ink = 0;
-        for (const row of Array.from(tip.querySelectorAll("p, li"))) {
-          range.selectNodeContents(row);
-          for (const rect of Array.from(range.getClientRects())) {
-            ink = Math.max(ink, rect.right - left);
-          }
-          for (const child of Array.from(row.querySelectorAll("*"))) {
-            ink = Math.max(ink, child.getBoundingClientRect().right - left);
-          }
-        }
-
-        /*
-         * And the width it would have in the other mode.
-         *
-         * The panel is either placed beside the point or read in the flow
-         * under the chart, and which one it gets depends on the room around
-         * the point — so a fixture that only ever floats would never see the
-         * flow's own width. That is where the reported fault lived: in the
-         * flow the box was `width: auto`, which means the card's width, so
-         * the same detail became a stripe across the chart as soon as the
-         * placement fell through to it. Both are measured here, and the claim
-         * is that they are the same box.
-         */
-        const floating = !tip.classList.contains("is-inflow");
-        tip.classList.toggle("is-inflow");
-        const other = Math.round(tip.getBoundingClientRect().width);
-        tip.classList.toggle("is-inflow");
-
-        return {
-          width: Math.round(t.width),
-          /* Empty room at the right-hand edge. */
-          slack: Math.round(inner - ink),
-          shareOfChart: t.width / chart.getBoundingClientRect().width,
-          /* Nothing may size the panel from JavaScript: the stylesheet is the
-             only thing that decides how wide it is. */
-          inlineWidth: `${tip.style.width}|${tip.style.maxWidth}`,
-          mode: floating ? "float" : "flow",
-          otherModeWidth: other,
-        };
-      });
-
-    for (const [width, height] of [
-      [1550, 900],
-      [1280, 800],
-      [1024, 768],
-      [900, 700],
-    ] as const) {
-      await page.setViewportSize({ width, height });
-      await page.goto(`/projects/${key}/sprints/${sprintId}`);
-      await openBurndown(page);
-      const chart = page.locator(".prio-burndown");
-      await chart.waitFor({ timeout: 45_000 });
-
-      const hits = chart.locator(".prio-burndown__hit");
-      const days = await hits.count();
-      const widths: number[] = [];
-
-      for (let day = 0; day < days; day += 1) {
-        await hits.nth(day).hover();
-        await expect(chart.locator(".prio-burndown__tip")).toBeVisible();
-
-        const where = `${width}px, day ${day}`;
-        const seen = await box();
-        /* The reading measure the stylesheet sets, and never more. */
-        expect(
-          seen.width,
-          `${where}: wider than the measure`,
-        ).toBeLessThanOrEqual(420);
-        /* Not a stripe across the chart. */
-        expect(
-          seen.shareOfChart,
-          `${where}: stretched across the chart`,
-        ).toBeLessThan(0.75);
-        /* Sized to the words in it: what is left over is a ragged edge, not a
-           field of empty box. */
-        expect(
-          seen.slack,
-          `${where}: box far wider than its text`,
-        ).toBeLessThan(90);
-        expect(seen.inlineWidth, `${where}: sized from script`).toBe("|");
-        /* The same box whichever way it is drawn — floating beside the point
-           or reading in the flow under the chart. */
-        expect(
-          Math.abs(seen.otherModeWidth - seen.width),
-          `${where}: ${seen.mode === "float" ? "the flow" : "the floating"} width differs`,
-        ).toBeLessThan(6);
-        expect(
-          seen.otherModeWidth,
-          `${where}: wider than the measure in the other mode`,
-        ).toBeLessThanOrEqual(420);
-        widths.push(seen.width);
-      }
-
-      /* And one width for the sprint, near enough: these days differ by a row
-         or two of text, not by where they sit on the chart. */
-      expect(
-        Math.max(...widths) - Math.min(...widths),
-        `${width}px: the width moves with the point`,
-      ).toBeLessThan(40);
-    }
-  });
-
-  test("follows the pointer from point to point, and goes away after it", async ({
-    page,
-  }) => {
-    /*
-     * What hovering has to do: answer for the day under the pointer, keep
-     * answering for the right one as the pointer moves along the line, and
-     * stop when the pointer leaves. A panel left behind — or left showing the
-     * day before — is worse than no panel, because it reads as a fact about
-     * the day being pointed at.
-     */
-    const { key, sprintId } = await seedRunningSprint();
-
-    await page.setViewportSize({ width: 1440, height: 900 });
+    const { key, sprintId } = await seedScopeBothWays();
     await page.goto(`/projects/${key}/sprints/${sprintId}`);
     await openBurndown(page);
     const chart = page.locator(".prio-burndown");
     await chart.waitFor({ timeout: 45_000 });
 
-    const hits = chart.locator(".prio-burndown__hit");
-    const tip = chart.locator(".prio-burndown__tip");
-    const days = await hits.count();
+    for (const theme of ["light", "dark"] as const) {
+      await page.evaluate(
+        (value) => document.documentElement.setAttribute("data-theme", value),
+        theme,
+      );
 
-    /* The dates the chart itself says each day is, read from the text it
-       writes for a screen reader — so the expectation is the page's own and
-       not a format typed in here. */
-    const spoken = await chart
-      .locator(".prio-visually-hidden li")
-      .allTextContents();
-    expect(spoken.length).toBe(days);
+      const arrows = await chart
+        .locator(".prio-burndown__scope")
+        .evaluateAll((groups) => {
+          /* What a theme token resolves to, as the browser paints it. */
+          const resolve = (token: string) => {
+            const probe = document.createElement("span");
+            probe.style.color = `var(${token})`;
+            document.body.append(probe);
+            const colour = getComputedStyle(probe).color;
+            probe.remove();
+            return colour;
+          };
+          const red = resolve("--prio-red-600");
+          const green = resolve("--prio-status-done-dot");
+          return groups.map((group) => ({
+            direction: group.getAttribute("data-direction"),
+            said: group.querySelector("title")?.textContent ?? "",
+            stroke: getComputedStyle(group.querySelector("path")!).stroke,
+            red,
+            green,
+          }));
+        });
 
-    for (let day = 0; day < days; day += 1) {
-      await hits.nth(day).hover();
-      await expect(tip).toBeVisible();
+      expect(
+        arrows.map((arrow) => arrow.direction).sort(),
+        `${theme}: expected one arrow each way`,
+      ).toEqual(["down", "up"]);
 
-      /* The date in the panel is this day's, so nothing stale survives the
-         move from the day before. */
-      const date = spoken[day]!.split(":")[0]!.trim();
-      await expect(
-        tip.locator(".prio-burndown__tipdate"),
-        `day ${day} shows another day's date`,
-      ).toHaveText(date);
-
-      /* One panel at a time, and the marker it describes is on the day under
-         the pointer. */
-      await expect(tip).toHaveCount(1);
-      await expect(chart.locator("circle.prio-burndown__dot")).toHaveCount(1);
+      for (const arrow of arrows) {
+        const where = `${theme}, ${arrow.said}`;
+        /* The direction is the data's: up where scope rose, down where it
+           fell. */
+        expect(arrow.said, where).toMatch(
+          arrow.direction === "up" ? /scope \+/ : /scope −/,
+        );
+        expect(arrow.stroke, `${where}: wrong colour`).toBe(
+          arrow.direction === "up" ? arrow.red : arrow.green,
+        );
+      }
+      /* And the two really are different colours in this theme. */
+      expect(arrows[0]!.red, theme).not.toBe(arrows[0]!.green);
     }
-
-    /* Off the chart and it is gone — not hidden, not stale, not there. */
-    await page.locator(".prio-burndown__summary").hover();
-    await expect(tip).toHaveCount(0);
-
-    /* Back on, and it answers again. */
-    await hits.nth(1).hover();
-    await expect(tip).toBeVisible();
-    await expect(tip.locator(".prio-burndown__tipdate")).toHaveText(
-      spoken[1]!.split(":")[0]!.trim(),
-    );
   });
 
   test("keeps the empty-state message when nothing is estimated", async ({

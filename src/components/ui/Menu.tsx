@@ -59,6 +59,9 @@ export interface MenuProps {
    * passes nothing and behaves exactly as before.
    */
   onOpenChange?: (open: boolean) => void;
+  /** Extra class for the portalled panel itself — `className` sits on the
+   *  wrapper around the trigger, which the panel is not inside. */
+  panelClassName?: string;
 }
 
 export function Menu({
@@ -70,6 +73,7 @@ export function Menu({
   label,
   className,
   onOpenChange,
+  panelClassName,
 }: MenuProps) {
   const [open, setOpen] = useState(false);
   const menuId = useId();
@@ -319,7 +323,11 @@ export function Menu({
               ref={menuRef}
               role="menu"
               aria-label={label}
-              className="prio-menu prio-scroll"
+              className={
+                panelClassName
+                  ? `prio-menu prio-scroll ${panelClassName}`
+                  : "prio-menu prio-scroll"
+              }
               onKeyDown={onMenuKeyDown}
               onClick={(event) => {
                 // Any activated item closes the menu unless it opts out.

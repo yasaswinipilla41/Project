@@ -150,6 +150,126 @@ async function seedLonelySprint() {
   return { key: project.key.toLowerCase(), sprint, issue };
 }
 
+/**
+ * A sprint with one Done issue and one still in progress, and a second open
+ * sprint either of them could otherwise be sent to.
+ */
+async function seedDoneAndOpen() {
+  const admin = await prisma.user.findFirstOrThrow({
+    where: { role: "ADMIN" },
+    select: { id: true },
+  });
+  const key = `DN${Date.now().toString(36).toUpperCase()}`.slice(0, 10);
+  const project = await prisma.project.create({
+    data: {
+      key,
+      name: `Done move fixture ${key}`,
+      createdById: admin.id,
+      members: { create: { userId: admin.id } },
+      issueSequence: 2,
+    },
+    select: { id: true, key: true },
+  });
+  createdProjects.push(project.id);
+
+  const dates = {
+    startDate: new Date(),
+    endDate: new Date(Date.now() + 13 * 86_400_000),
+  };
+  const sprint = await prisma.sprint.create({
+    data: {
+      name: `E2E done source ${Date.now()}`,
+      ...dates,
+      projectId: project.id,
+      createdById: admin.id,
+      status: "ACTIVE",
+      startedAt: dates.startDate,
+    },
+    select: { id: true },
+  });
+  await prisma.sprint.create({
+    data: {
+      name: `E2E done elsewhere ${Date.now()}`,
+      startDate: new Date(Date.now() + 14 * 86_400_000),
+      endDate: new Date(Date.now() + 27 * 86_400_000),
+      projectId: project.id,
+      createdById: admin.id,
+    },
+  });
+
+  const issue = (number: number, status: "DONE" | "IN_PROGRESS") =>
+    prisma.issue.create({
+      data: {
+        projectId: project.id,
+        key: `${project.key}-${number}`,
+        number,
+        title: status === "DONE" ? "Finished here" : "Still going",
+        type: "TASK",
+        status,
+        reporterId: admin.id,
+        sprintId: sprint.id,
+      },
+      select: { id: true, key: true },
+    });
+
+  return {
+    key: project.key.toLowerCase(),
+    sprintId: sprint.id,
+    done: await issue(1, "DONE"),
+    open: await issue(2, "IN_PROGRESS"),
+  };
+}
+
+test.describe("Move to · a Done issue", () => {
+  test("is not shown for Done, and unchanged for every other status", async ({
+    page,
+  }) => {
+    const { key, sprintId, done, open } = await seedDoneAndOpen();
+    await page.goto(`/projects/${key}/sprints/${sprintId}`);
+
+    /* The Done card has no Move control at all — while its ⋮ menu, and the
+       actions in it, are still there. */
+    const doneCard = page
+      .locator(".prio-board__card")
+      .filter({ hasText: done.key });
+    await doneCard.hover();
+    const doneActions = doneCard.getByRole("button", {
+      name: `Actions for ${done.key}`,
+    });
+    await expect(doneActions).toBeVisible();
+    await expect(doneCard.getByRole("button", { name: /^Move / })).toHaveCount(
+      0,
+    );
+    await doneActions.click();
+    await expect(page.getByRole("menuitem").first()).toBeVisible();
+    await page.keyboard.press("Escape");
+
+    /* Every other status keeps the control exactly as it was. */
+    const openCard = page
+      .locator(".prio-board__card")
+      .filter({ hasText: open.key });
+    await openCard.hover();
+    const openMove = openCard.getByRole("button", {
+      name: new RegExp(`Move ${open.key} to another`),
+    });
+    await expect(openMove).toBeEnabled();
+    await openMove.click();
+    await expect(
+      page
+        .getByRole("menu", { name: `Move ${open.key}` })
+        .getByRole("menuitem", { name: "Backlog" }),
+    ).toBeVisible();
+
+    /* And nothing about the Done issue changed. */
+    expect(
+      await prisma.issue.findUniqueOrThrow({
+        where: { id: done.id },
+        select: { sprintId: true, status: true },
+      }),
+    ).toMatchObject({ sprintId, status: "DONE" });
+  });
+});
+
 test.describe("Move to · when there is no next sprint", () => {
   test("does not offer it, and still offers the backlog", async ({ page }) => {
     const { key, sprint, issue } = await seedLonelySprint();

@@ -320,7 +320,8 @@ describe("Adding issues to a sprint", () => {
 
     // Refused outright, not quietly skipped.
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toMatch(/only issues in this project/i);
+    if (!result.ok)
+      expect(result.error).toMatch(/only issues in this project/i);
 
     expect(
       await prisma.issue.findUniqueOrThrow({
@@ -431,7 +432,10 @@ describe("Adding issues to a sprint", () => {
      */
     await actAs(ADMIN);
     const project = await projectByKey("ENG");
-    const sprintId = await makeSprint(project.id, "Not this outsider's to fill");
+    const sprintId = await makeSprint(
+      project.id,
+      "Not this outsider's to fill",
+    );
     const issue = await makeIssue(project.id, "Outsider cannot touch this");
 
     // Every seeded account is a member of every seeded project, so MEMBER is
@@ -443,7 +447,10 @@ describe("Adding issues to a sprint", () => {
 
     try {
       await actAs(MEMBER);
-      const result = await addIssuesToSprint({ sprintId, issueIds: [issue.id] });
+      const result = await addIssuesToSprint({
+        sprintId,
+        issueIds: [issue.id],
+      });
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.error).toMatch(/access/i);
       expect(await prisma.issue.count({ where: { sprintId } })).toBe(0);
@@ -561,18 +568,31 @@ describe("An active sprint's figures", () => {
     });
     await startSprint({ sprintId });
 
-    const before = (await loadSprints(project.id)).find((s) => s.id === sprintId);
-    expect(before?.stats).toMatchObject({ total: 2, completed: 0, progress: 0 });
+    const before = (await loadSprints(project.id)).find(
+      (s) => s.id === sprintId,
+    );
+    expect(before?.stats).toMatchObject({
+      total: 2,
+      completed: 0,
+      progress: 0,
+    });
 
     /* Nothing sprint-specific is written here — the issue is moved through the
        ordinary workflow, and the sprint's figures follow because they are
        counted from `Issue.status` rather than stored. */
-    for (const status of ["TODO", "IN_PROGRESS", "IN_REVIEW", "DONE"] as const) {
+    for (const status of [
+      "TODO",
+      "IN_PROGRESS",
+      "IN_REVIEW",
+      "DONE",
+    ] as const) {
       const update = await updateIssue({ issueId: issues[0]!.id, status });
       expect(update.ok).toBe(true);
     }
 
-    const after = (await loadSprints(project.id)).find((s) => s.id === sprintId);
+    const after = (await loadSprints(project.id)).find(
+      (s) => s.id === sprintId,
+    );
     expect(after?.stats).toMatchObject({
       total: 2,
       completed: 1,
@@ -598,7 +618,12 @@ describe("Completing a sprint", () => {
     });
     await startSprint({ sprintId });
 
-    for (const status of ["TODO", "IN_PROGRESS", "IN_REVIEW", "DONE"] as const) {
+    for (const status of [
+      "TODO",
+      "IN_PROGRESS",
+      "IN_REVIEW",
+      "DONE",
+    ] as const) {
       await updateIssue({ issueId: finished.id, status });
     }
 
@@ -778,15 +803,24 @@ describe("Completing a sprint", () => {
     });
     await startSprint({ sprintId });
 
-    for (const status of ["TODO", "IN_PROGRESS", "IN_REVIEW", "DONE"] as const) {
+    for (const status of [
+      "TODO",
+      "IN_PROGRESS",
+      "IN_REVIEW",
+      "DONE",
+    ] as const) {
       await updateIssue({ issueId: finished.id, status });
     }
     await completeSprint({ sprintId, moveIncompleteTo: "BACKLOG" });
 
-    const sprint = (await loadSprints(project.id)).find((s) => s.id === sprintId);
+    const sprint = (await loadSprints(project.id)).find(
+      (s) => s.id === sprintId,
+    );
     expect(sprint?.status).toBe("COMPLETED");
     expect(sprint?.outcome?.completed.map((i) => i.id)).toEqual([finished.id]);
-    expect(sprint?.outcome?.incomplete.map((i) => i.id)).toEqual([unfinished.id]);
+    expect(sprint?.outcome?.incomplete.map((i) => i.id)).toEqual([
+      unfinished.id,
+    ]);
     expect(sprint?.stats).toMatchObject({
       total: 2,
       completed: 1,
@@ -795,12 +829,21 @@ describe("Completing a sprint", () => {
     });
 
     // And it stays true when the issue is later finished somewhere else.
-    for (const status of ["TODO", "IN_PROGRESS", "IN_REVIEW", "DONE"] as const) {
+    for (const status of [
+      "TODO",
+      "IN_PROGRESS",
+      "IN_REVIEW",
+      "DONE",
+    ] as const) {
       await updateIssue({ issueId: unfinished.id, status });
     }
 
-    const later = (await loadSprints(project.id)).find((s) => s.id === sprintId);
-    expect(later?.outcome?.incomplete.map((i) => i.id)).toEqual([unfinished.id]);
+    const later = (await loadSprints(project.id)).find(
+      (s) => s.id === sprintId,
+    );
+    expect(later?.outcome?.incomplete.map((i) => i.id)).toEqual([
+      unfinished.id,
+    ]);
     expect(later?.stats.completed).toBe(1);
   });
 
@@ -877,6 +920,58 @@ describe("Moving an issue", () => {
       oldValue: "Move source",
       newValue: "Move destination",
     });
+  });
+
+  /*
+   * A Done issue stays in the sprint it was finished in. The sprint page
+   * disables its Move to control, and this is the rule behind it: asked
+   * directly, the move is refused for every destination, and nothing about the
+   * issue changes — not its sprint, not its status. Other statuses still move.
+   */
+  it("refuses to move a Done issue anywhere, and changes nothing about it", async () => {
+    await actAs(ADMIN);
+    const project = await makeIsolatedProject();
+    const from = await makeSprint(project.id, "Done stays here");
+    const to = await makeSprint(project.id, "Somewhere else");
+    const done = await makeIssue(project.id, "Finished work");
+    await addIssuesToSprint({ sprintId: from, issueIds: [done.id] });
+    await updateIssue({ issueId: done.id, status: "DONE" });
+
+    for (const destination of [
+      { type: "SPRINT" as const, sprintId: to },
+      { type: "BACKLOG" as const },
+      { type: "PREVIOUS" as const },
+    ]) {
+      const result = await moveIssueToSprint({ issueId: done.id, destination });
+      expect(result, destination.type).toMatchObject({
+        ok: false,
+        error: "A Done issue cannot be moved to another sprint.",
+      });
+    }
+
+    expect(
+      await prisma.issue.findUniqueOrThrow({
+        where: { id: done.id },
+        select: { sprintId: true, status: true },
+      }),
+    ).toMatchObject({ sprintId: from, status: "DONE" });
+    expect(
+      await prisma.activityLogEntry.count({
+        where: {
+          issueId: done.id,
+          field: "sprintId",
+          newValue: "Somewhere else",
+        },
+      }),
+    ).toBe(0);
+
+    /* The same issue moves again once it is no longer Done. */
+    await updateIssue({ issueId: done.id, status: "IN_PROGRESS" });
+    const moved = await moveIssueToSprint({
+      issueId: done.id,
+      destination: { type: "SPRINT", sprintId: to },
+    });
+    expect(moved.ok).toBe(true);
   });
 
   /*
@@ -993,7 +1088,11 @@ describe("Moving an issue", () => {
     await actAs(ADMIN);
     const project = await makeIsolatedProject();
     await makeSprintOn(project.id, "Only earlier one", 0);
-    const latest = await makeSprintOn(project.id, "The last sprint there is", 21);
+    const latest = await makeSprintOn(
+      project.id,
+      "The last sprint there is",
+      21,
+    );
     const issue = await makeIssue(project.id, "Nowhere left to go");
     await addIssuesToSprint({ sprintId: latest, issueIds: [issue.id] });
 
@@ -1188,7 +1287,10 @@ describe("Moving an issue", () => {
          be completed — so it keeps a second issue of its own after the first
          one leaves. */
       const stays = await makeIssue(project.id, "Work that stays behind");
-      await addIssuesToSprint({ sprintId: from, issueIds: [issue.id, stays.id] });
+      await addIssuesToSprint({
+        sprintId: from,
+        issueIds: [issue.id, stays.id],
+      });
       await moveIssueToSprint({
         issueId: issue.id,
         destination: { type: "SPRINT", sprintId: to },
@@ -1309,7 +1411,9 @@ describe("Moving an issue", () => {
     const issue = await makeIssue(project.id, "Nowhere further to go");
     await addIssuesToSprint({ sprintId, issueIds: [issue.id] });
 
-    const before = await prisma.sprint.count({ where: { projectId: project.id } });
+    const before = await prisma.sprint.count({
+      where: { projectId: project.id },
+    });
     const result = await moveIssueToSprint({
       issueId: issue.id,
       destination: { type: "NEXT_SPRINT" },
@@ -1317,9 +1421,9 @@ describe("Moving an issue", () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toBe("No future Sprint is available.");
-    expect(await prisma.sprint.count({ where: { projectId: project.id } })).toBe(
-      before,
-    );
+    expect(
+      await prisma.sprint.count({ where: { projectId: project.id } }),
+    ).toBe(before);
     expect(
       await prisma.issue.findUniqueOrThrow({
         where: { id: issue.id },

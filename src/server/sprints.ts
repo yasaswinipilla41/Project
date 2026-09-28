@@ -739,6 +739,7 @@ export async function moveIssueToSprint(
         id: true,
         projectId: true,
         sprintId: true,
+        status: true,
         /* Where it was before it came here, for a Restore. */
         previousSprintId: true,
         sprint: {
@@ -750,6 +751,16 @@ export async function moveIssueToSprint(
 
     await assertProjectAccess(user, issue.projectId);
     await assertCanEditSprintIssues(user);
+
+    /* A Done issue is finished work: it stays in the sprint it was finished
+       in. The sprint page disables Move to for it, and this is the same rule
+       for any caller that asks anyway. */
+    if (issue.status === "DONE") {
+      return {
+        ok: false,
+        error: "A Done issue cannot be moved to another sprint.",
+      };
+    }
 
     /* A completed sprint is a closed record; an issue still pointing at one
        (a finished issue `completeSprint` left in place) cannot be moved out
