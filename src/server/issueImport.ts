@@ -1,6 +1,7 @@
 "use server";
 
 import ExcelJS from "exceljs";
+import { Prisma } from "@prisma/client";
 import type { IssueStatus, IssueType, Priority, Severity } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
@@ -17,6 +18,7 @@ import {
   PRIORITIES,
   PRIORITY_LABEL,
   priorityFromLegacy,
+  severityFromLegacy,
   SEVERITIES,
   SEVERITY_LABEL,
   STATUS_LABEL,
@@ -442,7 +444,11 @@ async function prepare(
     const severityText = read(row, IMPORT_COLUMNS.severity);
     let severity: Severity | undefined;
     if (severityText !== "") {
-      const found = fromLabel<Severity>(severityText, SEVERITIES, SEVERITY_LABEL);
+      /* An older sheet says Critical / Major / Minor / Trivial; those still
+         mean what they meant (LEGACY_SEVERITY). */
+      const found =
+        fromLabel<Severity>(severityText, SEVERITIES, SEVERITY_LABEL) ??
+        severityFromLegacy(severityText);
       if (found) severity = found;
       else
         fail(
@@ -659,13 +665,48 @@ export async function importWorkItems(
 
     return { ok: true, created: created.length };
   } catch (error) {
-    if (error instanceof ProjectAtCapacityError) {
-      return { ok: false, error: `Nothing was imported. ${error.message}` };
-    }
+    /* The full exception goes to the server log, where it can be read; the
+       person gets a sentence that says what kind of failure it was. */
     console.error("[prio] work item import failed:", error);
-    return {
-      ok: false,
-      error: "Nothing was imported. Something went wrong — please try again.",
-    };
+    return { ok: false, error: `Nothing was imported. ${reasonFor(error)}` };
   }
+}
+
+/**
+ * What a failed write means to the person who pressed Import.
+ *
+ * Only the *kind* of failure is said — never the query, the driver's message,
+ * a path or a connection string, which belong in the server log and nowhere
+ * else. Anything not recognised falls back to the plain "something went
+ * wrong", which is honest: the log has the rest.
+ */
+function reasonFor(error: unknown): string {
+  if (error instanceof ProjectAtCapacityError) return error.message;
+  if (error instanceof AuthorizationError || error instanceof NotFoundError) {
+    return "The selected project is no longer accessible to you.";
+  }
+
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    switch (error.code) {
+      /* A row points at something that has gone: the project, an assignee, a
+         parent issue — removed between the check and the write. */
+      case "P2003":
+      case "P2025":
+        return "A project, assignee or parent issue it refers to is no longer available. Check the file and try again.";
+      /* Two people creating work at the same moment. */
+      case "P2002":
+        return "It clashed with another change made at the same time. Please try again.";
+      default:
+        break;
+    }
+  }
+
+  /* A value the running application built that the database does not accept —
+     in practice the server holding an older generated client than the
+     database it is talking to, after a schema change. */
+  if (error instanceof Prisma.PrismaClientValidationError) {
+    return "The application and the database disagree about a field's allowed values. Restart the server and try again; if it persists, tell an administrator.";
+  }
+
+  return "Something went wrong — please try again.";
 }

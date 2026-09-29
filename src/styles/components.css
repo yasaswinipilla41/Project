@@ -3468,3 +3468,28 @@ a.prio-stat[data-selected="true"]:hover {
 .prio-pwreq__item[data-met] {
   color: var(--prio-success, #15803d);
 }
+
+/* Severity chip — see SeverityIndicator in Indicators.tsx. Reuses the priority
+   colour tokens (and their dark-theme overrides) rather than adding a palette. */
+.prio-severity-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: var(--prio-text-xs);
+  font-weight: var(--prio-weight-medium);
+  white-space: nowrap;
+  color: var(--prio-priority-low);
+}
+.prio-severity-chip[data-severity="HIGH"] {
+  color: var(--prio-priority-urgent);
+  background: var(--prio-priority-urgent-bg);
+}
+.prio-severity-chip[data-severity="MEDIUM"] {
+  color: var(--prio-priority-high);
+  background: var(--prio-priority-high-bg);
+}
+.prio-severity-chip[data-severity="LOW"] {
+  color: var(--prio-priority-low);
+  background: var(--prio-priority-low-bg);
+}

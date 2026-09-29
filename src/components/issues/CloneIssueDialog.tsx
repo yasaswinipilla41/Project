@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
-import type { IssueStatus, IssueType, Priority } from "@prisma/client";
+import type { IssueStatus, IssueType, Priority, Severity } from "@prisma/client";
 import { Dialog } from "@/components/ui/Dialog";
 import { Alert, Button } from "@/components/ui/primitives";
 import { IssueTypeIcon } from "@/components/ui/Indicators";
@@ -16,6 +16,8 @@ import {
   ISSUE_TYPE_LABEL,
   PRIORITIES,
   PRIORITY_LABEL,
+  SEVERITIES,
+  SEVERITY_LABEL,
   STATUS_LABEL,
   filableStatusesFor,
   type WorkRole,
@@ -87,6 +89,7 @@ export function CloneIssueDialog({
     type: "TASK" as IssueType,
     status: "BACKLOG" as IssueStatus,
     priority: DEFAULT_PRIORITY as Priority,
+    severity: "" as Severity | "",
     assigneeId: "",
   });
 
@@ -106,6 +109,7 @@ export function CloneIssueDialog({
         type: result.data.type,
         status: result.data.status,
         priority: result.data.priority,
+        severity: result.data.severity ?? "",
         assigneeId: result.data.assigneeId ?? "",
       });
     });
@@ -151,6 +155,7 @@ export function CloneIssueDialog({
       description: form.description,
       status: form.status,
       priority: form.priority,
+      severity: form.severity !== "" ? form.severity : undefined,
       assigneeId: form.assigneeId,
       labelIds: draft.labelIds,
     });
@@ -421,6 +426,30 @@ export function CloneIssueDialog({
             {PRIORITIES.map((option) => (
               <option key={option} value={option}>
                 {PRIORITY_LABEL[option]}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="prio-field">
+          <label className="prio-label" htmlFor="clone-severity">
+            Severity
+          </label>
+          <select
+            id="clone-severity"
+            className="prio-select"
+            value={form.severity}
+            onChange={(event) =>
+              setForm((prev) => ({
+                ...prev,
+                severity: event.target.value as Severity | "",
+              }))
+            }
+          >
+            <option value="">Not set</option>
+            {SEVERITIES.map((option) => (
+              <option key={option} value={option}>
+                {SEVERITY_LABEL[option]}
               </option>
             ))}
           </select>

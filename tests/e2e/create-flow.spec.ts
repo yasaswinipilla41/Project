@@ -98,10 +98,10 @@ test.describe("Create flow", () => {
     const bug = await labelsFor("Bug");
     const story = await labelsFor("Story");
 
-    /* A bug is the Task form plus exactly one field: how bad it is. That is a
-       bug's own attribute, not one of the retired bug-only prompts. */
-    expect(bug).toEqual([...task, "Severity"].sort());
+    expect(bug).toEqual(task);
     expect(story).toEqual(task);
+    // Severity is one of the shared fields now, on every type.
+    expect(task).toContain("Severity");
 
     for (const standard of [
       "Summary",
@@ -324,28 +324,20 @@ test.describe("Create flow", () => {
     }
   });
 
-  test("severity is offered for a bug and for nothing else", async ({ page }) => {
-    /* How bad a defect is describes a defect, so the field is drawn for the
-       Bug form alone. It is optional, and "Not set" is the default. */
-    for (const type of ["Task", "Story"] as const) {
+  test("severity is offered on every type: Not set, High, Medium, Low", async ({ page }) => {
+    for (const type of ["Task", "Story", "Bug"] as const) {
       const dialog = await openCreate(page, type);
-      await expect(dialog.getByLabel("Severity")).toHaveCount(0);
-      await expect(dialog.locator("#create-severity")).toHaveCount(0);
+      const severity = dialog.locator("#create-severity");
+      await expect(severity).toHaveCount(1);
+      await expect(severity).toHaveValue("");
+      expect(await severity.locator("option").allInnerTexts()).toEqual([
+        "Not set",
+        "High",
+        "Medium",
+        "Low",
+      ]);
       await page.keyboard.press("Escape");
     }
-
-    const dialog = await openCreate(page, "Bug");
-    const severity = dialog.locator("#create-severity");
-    await expect(severity).toHaveCount(1);
-    await expect(severity).toHaveValue("");
-    expect(await severity.locator("option").allInnerTexts()).toEqual([
-      "Not set",
-      "Critical",
-      "Major",
-      "Minor",
-      "Trivial",
-    ]);
-    await page.keyboard.press("Escape");
   });
 
   test("a bug is created with the severity that was chosen, and it can be edited", async ({
@@ -355,26 +347,26 @@ test.describe("Create flow", () => {
     const dialog = await openCreate(page, "Bug");
     await dialog.getByLabel("Project").selectOption({ label: "Engineering (ENG)" });
     await dialog.getByLabel("Summary").fill(title);
-    await dialog.locator("#create-severity").selectOption("MAJOR");
+    await dialog.locator("#create-severity").selectOption("MEDIUM");
     await dialog.getByRole("button", { name: /^create bug$/i }).click();
 
     await expect(dialog).toBeHidden();
     await expect(page).toHaveURL(/\/issues\/eng-\d+$/i);
-    const trigger = page.getByRole("button", { name: /^Severity: Major/ });
+    const trigger = page.getByRole("button", { name: /^Severity: Medium/ });
     await expect(trigger).toBeVisible();
 
     await trigger.click();
-    await page.getByRole("menuitemradio", { name: "Critical" }).click();
+    await page.getByRole("menuitemradio", { name: "High" }).click();
     await expect(
-      page.locator(".prio-toast").filter({ hasText: "Severity set to Critical" }),
+      page.locator(".prio-toast").filter({ hasText: "Severity set to High" }),
     ).toBeVisible();
-    await expect(page.getByRole("button", { name: /^Severity: Critical/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Severity: High/ })).toBeVisible();
 
     const row = await prisma.issue.findFirstOrThrow({
       where: { title },
       select: { id: true, severity: true },
     });
-    expect(row.severity).toBe("CRITICAL");
+    expect(row.severity).toBe("HIGH");
     await prisma.issue.delete({ where: { id: row.id } });
   });
 });

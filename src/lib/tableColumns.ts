@@ -29,6 +29,7 @@ export const TABLE_COLUMNS = [
   { id: "title", label: "Summary", required: true },
   { id: "status", label: "Status", required: false },
   { id: "priority", label: "Priority", required: false },
+  { id: "severity", label: "Severity", required: false },
   { id: "assignee", label: "Assignee", required: false },
   { id: "reporter", label: "Reporter", required: false },
   { id: "completedBy", label: "Completed by", required: false },

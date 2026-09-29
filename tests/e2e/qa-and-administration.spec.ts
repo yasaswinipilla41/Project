@@ -163,8 +163,8 @@ test.describe("A QA member", () => {
     await expect(dialog.locator("#create-due")).toHaveCount(0);
     await expect(dialog.getByText("Due date", { exact: true })).toHaveCount(0);
 
-    // …and severity is a bug's field only, so this (non-bug) form has none.
-    await expect(dialog.locator("#create-severity")).toHaveCount(0);
+    // …and severity is offered here too: it is a field on every type.
+    await expect(dialog.locator("#create-severity")).toHaveCount(1);
     await expect(dialog.getByText("Severity")).toHaveCount(0);
 
     await page.keyboard.press("Escape");
@@ -327,34 +327,32 @@ test.describe("A developer", () => {
   });
 });
 
-/* --------------------------------------------------------- severity gone */
+/* -------------------------------------------------------------- severity */
 
 test.describe("Severity", () => {
   test.use({ storageState: ADMIN_STATE });
 
-  test("is absent from the list and its filters, and only a bug shows the control", async ({ page }) => {
+  test("is a list column and a filter, and every issue page has the control", async ({ page }) => {
     await page.goto("/issues");
-    await expect(page.getByRole("columnheader", { name: "Severity" })).toHaveCount(
-      0,
-    );
-    await expect(
-      page.locator(".prio-filters").getByRole("button", { name: "Severity" }),
-    ).toHaveCount(0);
-    await expect(page.locator(".prio-severity")).toHaveCount(0);
+    await expect(page.getByRole("columnheader", { name: /Severity/ })).toHaveCount(1);
+    await page.getByRole("button", { name: /^Severity/ }).first().click();
+    expect(
+      (await page.getByRole("menuitemradio").allInnerTexts()).map((t) => t.trim()),
+    ).toEqual(["High", "Medium", "Low"]);
+    await page.keyboard.press("Escape");
 
     await page.goto("/bugs");
-    await expect(page.locator(".prio-severity")).toHaveCount(0);
+    await expect(page.getByRole("columnheader", { name: /Severity/ })).toHaveCount(1);
 
-    const bug = await prisma.issue.findFirstOrThrow({
-      where: { type: "BUG" },
-      orderBy: { createdAt: "desc" },
-      select: { key: true },
-    });
-    /* A bug's own page is the one place severity is drawn — as the control
-       that sets it, not as the retired chip. */
-    await page.goto(`/issues/${bug.key.toLowerCase()}`);
-    await expect(page.getByRole("button", { name: /^Severity:/ })).toHaveCount(1);
-    await expect(page.locator(".prio-severity")).toHaveCount(0);
+    for (const type of ["BUG", "TASK"] as const) {
+      const issue = await prisma.issue.findFirstOrThrow({
+        where: { type },
+        orderBy: { createdAt: "desc" },
+        select: { key: true },
+      });
+      await page.goto(`/issues/${issue.key.toLowerCase()}`);
+      await expect(page.getByRole("button", { name: /^Severity:/ })).toHaveCount(1);
+    }
   });
 });
 

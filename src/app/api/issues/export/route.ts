@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/session";
 import {
   ISSUE_TYPE_LABEL,
   PRIORITY_LABEL,
+  SEVERITY_LABEL,
   STATUS_LABEL,
 } from "@/lib/domain";
 import { csvDocument, htmlDocument } from "@/lib/exportText";
@@ -202,6 +203,11 @@ const COLUMNS: Column[] = [
   { header: "Project key", width: 14, value: (r) => r.project.key },
   { header: "Status", width: 16, value: (r) => STATUS_LABEL[r.status] },
   { header: "Priority", width: 12, value: (r) => PRIORITY_LABEL[r.priority] },
+  {
+    header: "Severity",
+    width: 12,
+    value: (r) => (r.severity ? SEVERITY_LABEL[r.severity] : ""),
+  },
   { header: "Assignee", width: 22, value: (r) => r.assignee?.name ?? "" },
   { header: "Reporter", width: 22, value: (r) => r.reporter.name },
   {

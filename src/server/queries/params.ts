@@ -59,6 +59,7 @@ export function parseIssueParams(params: SearchParams): IssueFilters {
     types: many(params.type),
     statuses: many(params.status),
     priorities: many(params.priority),
+    severities: many(params.severity),
     assigneeIds: many(params.assignee),
     reporterIds: many(params.reporter),
     completedByIds: many(params.completedBy),

@@ -1,8 +1,9 @@
-import type { IssueStatus, IssueType, Priority } from "@prisma/client";
+import type { IssueStatus, IssueType, Priority, Severity } from "@prisma/client";
 import {
   ISSUE_TYPE_LABEL,
   PRIORITY_LABEL,
   PRIORITY_WEIGHT,
+  SEVERITY_LABEL,
   STATUS_LABEL,
 } from "@/lib/domain";
 import {
@@ -98,6 +99,37 @@ export function PriorityIndicator({
           Priority {PRIORITY_LABEL[priority]}
         </span>
       )}
+    </span>
+  );
+}
+
+/* -------------------------------------------------------------- severity */
+
+/**
+ * How bad the problem is, as a small labelled chip. Not set reads as a quiet
+ * dash rather than a blank cell, so an empty column still says something.
+ */
+export function SeverityIndicator({
+  severity,
+  className,
+}: {
+  severity: Severity | null;
+  className?: string;
+}) {
+  if (!severity) {
+    return (
+      <span className={`prio-severity-chip${className ? ` ${className}` : ""}`} data-severity="NONE" title="Severity: not set">
+        —
+      </span>
+    );
+  }
+  return (
+    <span
+      className={`prio-severity-chip${className ? ` ${className}` : ""}`}
+      data-severity={severity}
+      title={`Severity: ${SEVERITY_LABEL[severity]}`}
+    >
+      {SEVERITY_LABEL[severity]}
     </span>
   );
 }

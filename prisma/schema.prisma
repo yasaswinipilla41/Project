@@ -55,11 +55,12 @@ enum Priority {
   P3
 }
 
+/// How bad the problem is. Optional, on every type of work item. Declaration
+/// order is most-severe-first because `orderBy: { severity }` sorts on it.
 enum Severity {
-  CRITICAL
-  MAJOR
-  MINOR
-  TRIVIAL
+  HIGH
+  MEDIUM
+  LOW
 }
 
 /// Outcome of the most recent QA pass over an issue.
@@ -466,8 +467,10 @@ model Issue {
   /// leaves nothing to restore to.
   previousSprintId String?
 
-  // --- bug-specific (nullable for TASK / STORY) ---
+  /// Optional on every type (High / Medium / Low).
   severity         Severity?
+
+  // --- bug-specific (nullable for TASK / STORY) ---
   stepsToReproduce String?
   expectedResult   String?
   actualResult     String?

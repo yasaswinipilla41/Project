@@ -298,7 +298,7 @@ describe("deleting a project takes its contents with it", () => {
         title: "Fixture bug",
         description: "For the deletion test.",
         reporterId: owner.id,
-        severity: "MAJOR",
+        severity: "HIGH",
       },
       select: { id: true },
     });

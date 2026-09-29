@@ -5,7 +5,6 @@ import {
   ISSUE_TYPES,
   PRIORITIES,
   SEVERITIES,
-  severityAppliesTo,
 } from "@/lib/domain";
 import { meetsPasswordPolicy, WEAK_PASSWORD_MESSAGE } from "@/lib/passwordPolicy";
 
@@ -259,6 +258,8 @@ const issueBase = z.object({
    */
   status: issueStatusSchema.optional(),
   priority: prioritySchema.default(DEFAULT_PRIORITY),
+  /* How bad the problem is. Optional, on every type; absent is "not set". */
+  severity: severitySchema.optional(),
   assigneeId: optionalId,
   labelIds: z.array(z.string()).default([]),
   dueDate: optionalDate,
@@ -286,25 +287,7 @@ const issueBase = z.object({
  * trail that names those fields still reads correctly. They are simply never
  * written from here.
  */
-export const createIssueSchema = issueBase
-  .extend({
-    /*
-     * How bad a bug is. Optional, and only meaningful for a bug: the Create
-     * form offers it for that type alone and the import reads it from Bug rows
-     * alone. `issueBase` itself, which the clone schema shares, is deliberately
-     * left without it.
-     */
-    severity: severitySchema.optional(),
-  })
-  .superRefine((value, ctx) => {
-    if (value.severity !== undefined && !severityAppliesTo(value.type)) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["severity"],
-        message: "Severity applies to bugs only.",
-      });
-    }
-  });
+export const createIssueSchema = issueBase;
 
 export type CreateIssueInput = z.infer<typeof createIssueSchema>;
 
@@ -327,8 +310,7 @@ export const updateIssueSchema = z.object({
   description: patchText(20_000),
   status: issueStatusSchema.optional(),
   priority: prioritySchema.optional(),
-  /* Absent leaves it alone; null clears it. `updateIssue` refuses it on
-     anything that is not a bug, because the schema does not know the type. */
+  /* Absent leaves it alone; null clears it. */
   severity: severitySchema.nullable().optional(),
   assigneeId: patchId,
   dueDate: patchDate,
@@ -405,6 +387,7 @@ export const reportBugSchema = z.object({
   title: trimmed(200).min(5, "Summarise the problem in a few words."),
   affectedModule: trimmed(120).min(2, "Say where you found it."),
   priority: prioritySchema.default(DEFAULT_PRIORITY),
+  severity: severitySchema.optional(),
 });
 
 export type ReportBugInput = z.infer<typeof reportBugSchema>;

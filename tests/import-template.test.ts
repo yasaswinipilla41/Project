@@ -117,7 +117,7 @@ describe("the workbook it writes", () => {
 
     expect(list("Issue Type")).toEqual(["Epic", "Feature", "Story", "Task", "Bug"]);
     expect(list("Priority")).toEqual(["P0 (Urgent)", "P1", "P2", "P3"]);
-    expect(list("Severity")).toEqual(["Critical", "Major", "Minor", "Trivial"]);
+    expect(list("Severity")).toEqual(["High", "Medium", "Low"]);
 
     /* New leads the status list: it is what a blank cell means. */
     const statuses = list("Status");
