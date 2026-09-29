@@ -2581,10 +2581,29 @@ a.prio-stat[data-selected="true"]:hover {
 }
 
 @media (max-width: 768px) {
-  /* Icon-only below tablet: the label is dropped and the action half becomes
-     square, so the control keeps its proportions rather than collapsing. */
+  /*
+   * Icon-only below tablet: the caption goes and the action half becomes
+   * square, so the control keeps its proportions rather than collapsing.
+   *
+   * Taken out of sight rather than out of the page. `display: none` removed
+   * the word from the accessibility tree too, and since `IconPlus` is
+   * `aria-hidden`, that left the application's primary action as a button with
+   * no accessible name at all on exactly the screens where its caption was
+   * gone — a plus sign that a screen reader could only call "button". The
+   * visually-hidden treatment shows the same icon-only control and still
+   * announces it as Create. `.prio-create` is `position: relative`, so the
+   * positioned label is contained by the control rather than by the page.
+   */
   .prio-create .prio-create__label {
-    display: none;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
 
   .prio-create .prio-create__main {

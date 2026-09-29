@@ -636,34 +636,45 @@
 }
 
 @media (max-width: 640px) {
-  .prio-topbar__search {
-    max-width: none;
-  }
-
-  /* At phone widths the action row runs out of room. Help is the one control
-     here that carries no state and does nothing you cannot do elsewhere, so it
-     is the one that goes; create, theme, notifications and the account menu all
-     stay reachable. */
-  .prio-topbar__help-trigger,
-  .prio-topbar__divider {
+  /*
+   * At phone widths the action row runs out of room, and the two things that
+   * go are the two that cost nothing to lose here.
+   *
+   * Help carries no state and does nothing you cannot do elsewhere. The search
+   * field had already stopped being a field: with the row this tight it was
+   * flexed down to a few pixels — 0px at 390 — so it was an invisible,
+   * still-focusable box eating its own gap while looking like nothing at all.
+   * Hiding it gives that space to the controls that remain, and Search is a
+   * destination of its own in the sidebar, so the capability stays exactly
+   * where it was.
+   *
+   * Both selectors are qualified with `.prio-topbar` for the reason written
+   * against `.prio-topbar__mobile-nav` above: `.prio-btn` sets
+   * `display: inline-flex` at the same specificity from components.css, which
+   * loads after this file, so a bare `display: none` here loses every time.
+   * Help was written without the qualifier and was therefore never actually
+   * hidden — it sat in the row at every width down to 320px.
+   */
+  .prio-topbar .prio-topbar__help-trigger,
+  .prio-topbar .prio-topbar__divider,
+  .prio-topbar .prio-topbar__search {
     display: none;
   }
 }
 
 @media (max-width: 380px) {
-  /* Below this the search field, Create, theme, notifications and account
-     menu no longer all fit on one row even with Help already gone. Create
-     drops its label and becomes icon-only — its icon alone still opens the
-     same menu, so nothing is lost, only the caption. */
-  .prio-create__label {
-    display: none;
-  }
-
-  .prio-create .prio-create__main {
-    padding-left: var(--prio-space-3);
-    padding-right: var(--prio-space-3);
-  }
-
+  /*
+   * Create becoming icon-only is not decided here any more. It happens at
+   * `max-width: 768px` in components.css, beside the rule that squares the
+   * button off — one place, so the label and the width it leaves behind
+   * cannot disagree. The two rules that used to live here said the same thing
+   * later and lost to that block anyway; worse, the `display: none` they set
+   * would have defeated the visually-hidden treatment that now keeps the
+   * button's accessible name.
+   *
+   * What is left below is what is genuinely particular to this width: the bar
+   * and its action row give up the last of their spacing.
+   */
   .prio-topbar {
     padding: 0 var(--prio-space-3);
     gap: var(--prio-space-2);
