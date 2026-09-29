@@ -1,16 +1,16 @@
 import { expect, test } from "@playwright/test";
 import { prisma } from "@/lib/prisma";
-import { formatDateRange } from "@/lib/format";
+import { formatDate } from "@/lib/format";
 
 /**
- * Move to offers the project's current sprint and its upcoming one, named and
- * dated — and nothing further out, however many sprints the project holds.
+ * Move to offers every upcoming sprint of the project, named and dated — and
+ * nothing else that is a sprint.
  *
- * A project running its fourth or fifth sprint still has every earlier one on
- * record, and used to list all of them — Sprint 3, 4, 5 — as places an issue
- * in Sprint 2 could go. A team planning that far ahead does not plan to move
- * work into it yet, so the menu now stops at the one sprint after whichever
- * is running: reachable once it becomes current in its turn, not before.
+ * Upcoming means planned and not yet started. The running sprint is not
+ * offered, nor is a completed one, nor the sprint the card is read on; every
+ * planned sprint is, however far out, soonest first, so work can be
+ * re-planned straight into whichever future sprint it belongs in. A project
+ * with nothing planned says so.
  */
 
 const createdProjects: string[] = [];
@@ -63,8 +63,10 @@ async function seedFiveSprints() {
     { label: "five", status: "PLANNED" as const, offset: 3 * week },
   ];
 
-  const sprints: Record<string, { id: string; name: string; startDate: Date; endDate: Date }> =
-    {};
+  const sprints: Record<
+    string,
+    { id: string; name: string; startDate: Date; endDate: Date }
+  > = {};
   for (const { label, status, offset } of plan) {
     const startDate = day(offset);
     const endDate = day(offset + week - 1);
@@ -102,13 +104,15 @@ async function seedFiveSprints() {
 }
 
 test.describe("Move to, on a project several sprints deep", () => {
-  test("offers only the current and the upcoming sprint, dated, from the current sprint's own page", async ({
+  test("offers every upcoming sprint, dated and soonest first, from the running sprint's page", async ({
     page,
   }) => {
     const { key, sprints, issue } = await seedFiveSprints();
 
     await page.goto(`/projects/${key}/sprints/${sprints.two!.id}`);
-    const card = page.locator(".prio-board__card").filter({ hasText: issue.key });
+    const card = page
+      .locator(".prio-board__card")
+      .filter({ hasText: issue.key });
     await card.hover();
     await card
       .getByRole("button", { name: new RegExp(`Move ${issue.key} to another`) })
@@ -117,41 +121,44 @@ test.describe("Move to, on a project several sprints deep", () => {
     const menu = page.getByRole("menu", { name: `Move ${issue.key}` });
     await expect(menu).toBeVisible();
 
-    /* Named and dated, exactly like the task's own worked example. */
-    await expect(
-      menu.getByRole("menuitem", {
-        name: `${sprints.three!.name} (${formatDateRange(sprints.three!.startDate, sprints.three!.endDate)})`,
-      }),
-    ).toBeVisible();
+    /* All three planned sprints — not only the next — each with its name,
+       its start date and its end date, soonest first. */
+    const upcoming = ["three", "four", "five"] as const;
+    for (const label of upcoming) {
+      await expect(
+        menu.getByRole("menuitem", {
+          name: `${sprints[label]!.name} ${formatDate(sprints[label]!.startDate)} – ${formatDate(sprints[label]!.endDate)}`,
+        }),
+      ).toBeVisible();
+    }
+    const names = await menu
+      .locator(".prio-movesprint__name")
+      .allTextContents();
+    expect(names).toEqual(upcoming.map((label) => sprints[label]!.name));
 
-    /* Nothing further out, however plainly it is named. */
-    for (const label of ["four", "five"] as const) {
+    /* Not the running sprint — the one the card is read on — and not the
+       completed one: there is nothing to move back into a closed record. */
+    for (const label of ["one", "two"] as const) {
       await expect(
         menu.getByRole("menuitem", { name: sprints[label]!.name }),
       ).toHaveCount(0);
     }
-    /* And not the completed sprint either — there is nothing to move back
-       into a closed record. */
-    await expect(
-      menu.getByRole("menuitem", { name: sprints.one!.name }),
-    ).toHaveCount(0);
-    /* Nor the sprint the card is already read on. */
-    await expect(
-      menu.getByRole("menuitem", { name: sprints.two!.name }),
-    ).toHaveCount(0);
 
-    /* Exactly one dated sprint entry, plus Backlog — nothing else. */
-    await expect(menu.getByRole("menuitem")).toHaveCount(2);
+    /* The three upcoming sprints — nothing else, and never the backlog. */
+    await expect(menu.getByRole("menuitem")).toHaveCount(3);
+    await expect(menu.getByRole("menuitem", { name: /Backlog/ })).toHaveCount(
+      0,
+    );
   });
 
-  test("offers the current sprint back, from the upcoming sprint's own page — and stops there too", async ({
+  test("never offers the running sprint, even from an upcoming sprint's page", async ({
     page,
   }) => {
     const { key, sprints } = await seedFiveSprints();
 
-    /* An issue already in "three", the upcoming sprint, seen from its own
+    /* An issue already in "three", an upcoming sprint, seen from its own
        page. Filed directly, so this case does not depend on the move this
-       file's other test already covers. */
+       file's other tests cover. */
     const admin = await prisma.user.findFirstOrThrow({
       where: { role: "ADMIN" },
       select: { id: true },
@@ -175,7 +182,9 @@ test.describe("Move to, on a project several sprints deep", () => {
     });
 
     await page.goto(`/projects/${key}/sprints/${sprints.three!.id}`);
-    const card = page.locator(".prio-board__card").filter({ hasText: issue.key });
+    const card = page
+      .locator(".prio-board__card")
+      .filter({ hasText: issue.key });
     await card.hover();
     await card
       .getByRole("button", { name: new RegExp(`Move ${issue.key} to another`) })
@@ -183,30 +192,58 @@ test.describe("Move to, on a project several sprints deep", () => {
 
     const menu = page.getByRole("menu", { name: `Move ${issue.key}` });
 
-    /* Current is reachable going backward, exactly as it is going forward. */
-    await expect(
-      menu.getByRole("menuitem", {
-        name: `${sprints.two!.name} (${formatDateRange(sprints.two!.startDate, sprints.two!.endDate)})`,
-      }),
-    ).toBeVisible();
-
-    /* "Sprint four" is one step past upcoming from here, and still out of
-       reach — the menu never looks two sprints ahead of current. */
+    /* The other upcoming sprints are offered. */
     for (const label of ["four", "five"] as const) {
       await expect(
-        menu.getByRole("menuitem", { name: sprints[label]!.name }),
+        menu.getByRole("menuitem", { name: new RegExp(sprints[label]!.name) }),
+      ).toBeVisible();
+    }
+    /* The running one is not, and neither is the completed one or this
+       page's own. */
+    for (const label of ["one", "two", "three"] as const) {
+      await expect(
+        menu.getByRole("menuitem", { name: new RegExp(sprints[label]!.name) }),
       ).toHaveCount(0);
     }
     await expect(menu.getByRole("menuitem")).toHaveCount(2);
   });
 
-  test("moving into the upcoming sprint actually works, end to end", async ({
+  test("says so when there are no upcoming sprints", async ({ page }) => {
+    const { key, sprints, issue } = await seedFiveSprints();
+    /* Nothing planned any more: the three upcoming sprints are gone. */
+    await prisma.sprint.deleteMany({
+      where: {
+        id: { in: [sprints.three!.id, sprints.four!.id, sprints.five!.id] },
+      },
+    });
+
+    await page.goto(`/projects/${key}/sprints/${sprints.two!.id}`);
+    const card = page
+      .locator(".prio-board__card")
+      .filter({ hasText: issue.key });
+    await card.hover();
+    await card
+      .getByRole("button", { name: new RegExp(`Move ${issue.key} to another`) })
+      .click();
+
+    const menu = page.getByRole("menu", { name: `Move ${issue.key}` });
+    await expect(menu).toContainText("No upcoming sprints available");
+    /* And offers nothing in the sprints' place — not the backlog. */
+    await expect(menu.getByRole("menuitem")).toHaveCount(0);
+    await expect(menu.getByRole("menuitem", { name: /Backlog/ })).toHaveCount(
+      0,
+    );
+  });
+
+  test("moving into any upcoming sprint — the furthest out — works, end to end", async ({
     page,
   }) => {
     const { key, sprints, issue } = await seedFiveSprints();
 
     await page.goto(`/projects/${key}/sprints/${sprints.two!.id}`);
-    const card = page.locator(".prio-board__card").filter({ hasText: issue.key });
+    const card = page
+      .locator(".prio-board__card")
+      .filter({ hasText: issue.key });
     await card.hover();
     await card
       .getByRole("button", { name: new RegExp(`Move ${issue.key} to another`) })
@@ -214,10 +251,10 @@ test.describe("Move to, on a project several sprints deep", () => {
 
     await page
       .getByRole("menu", { name: `Move ${issue.key}` })
-      .getByRole("menuitem", { name: sprints.three!.name })
+      .getByRole("menuitem", { name: sprints.five!.name })
       .click();
 
-    await expect(page.getByText(`moved to ${sprints.three!.name}`)).toBeVisible({
+    await expect(page.getByText(`moved to ${sprints.five!.name}`)).toBeVisible({
       timeout: 15_000,
     });
 
@@ -226,9 +263,9 @@ test.describe("Move to, on a project several sprints deep", () => {
         where: { id: issue.id },
         select: { sprintId: true, status: true },
       }),
-    ).toMatchObject({ sprintId: sprints.three!.id, status: "IN_PROGRESS" });
+    ).toMatchObject({ sprintId: sprints.five!.id, status: "IN_PROGRESS" });
 
-    await page.goto(`/projects/${key}/sprints/${sprints.three!.id}`);
+    await page.goto(`/projects/${key}/sprints/${sprints.five!.id}`);
     await expect(
       page.locator(".prio-board__card").filter({ hasText: issue.key }),
     ).toBeVisible();

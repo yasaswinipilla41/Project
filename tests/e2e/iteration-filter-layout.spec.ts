@@ -59,8 +59,10 @@ async function seedManySprints() {
           endDate: new Date(Date.now() + (index * 14 - 47) * DAY),
           projectId: project.id,
           createdById: admin.id,
-          /* The first one closed, so it carries the check. */
-          status: index === 1 ? "COMPLETED" : "PLANNED",
+          /* One closed, so it carries the check; the next one running, so it
+             carries the current-sprint mark; the rest upcoming. */
+          status:
+            index === 1 ? "COMPLETED" : index === 2 ? "ACTIVE" : "PLANNED",
         },
         select: { id: true, name: true },
       }),
@@ -181,7 +183,106 @@ test.describe("The Iteration filter", () => {
       await page.getByRole("button", { name: /^Status/ }).click();
       const status = page.getByRole("menu", { name: "Status" });
       await expect(status).toBeVisible();
-      expect(Math.round((await status.boundingBox())!.width)).toBe(230);
+      /* Its layout width: the bounding box would include the opening
+         animation's scale, and read 229 or 230 depending on timing. */
+      expect(
+        await status.evaluate((node) => (node as HTMLElement).offsetWidth),
+      ).toBe(230);
     });
   }
+});
+
+test.describe("The Iteration filter's current sprint", () => {
+  test("is marked at the start of its name; completed and upcoming are as they were", async ({
+    page,
+  }) => {
+    /*
+     * The sprint being worked now carries a small dot before its name, read
+     * from its real status. The completed sprint keeps its green check, after
+     * its name, exactly as it was; the upcoming ones carry neither.
+     */
+    const { key, sprints } = await seedManySprints();
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`/projects/${key}/list`);
+    await page.getByRole("button", { name: /^Iteration/ }).click();
+    const menu = page.getByRole("menu", { name: "Iteration" });
+    await expect(menu).toBeVisible();
+
+    const rows = await menu.evaluate((node) =>
+      Array.from(node.querySelectorAll(".prio-filter__iteration")).map(
+        (row) => {
+          const dot = row.querySelector(".prio-filter__iteration-active");
+          const check = row.querySelector(".prio-filter__iteration-done");
+          /* Where the visible name starts: its first painted text. */
+          const walker = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
+          let nameLeft = Infinity;
+          const range = document.createRange();
+          for (let text = walker.nextNode(); text; text = walker.nextNode()) {
+            if (text.parentElement?.closest(".prio-visually-hidden")) continue;
+            if (!text.textContent?.trim()) continue;
+            range.selectNodeContents(text);
+            nameLeft = range.getBoundingClientRect().left;
+            break;
+          }
+          const dotBox = dot?.getBoundingClientRect();
+          return {
+            text: row.textContent!.replace(/\s+/g, " ").trim(),
+            dot: dotBox
+              ? {
+                  beforeName: dotBox.right <= nameLeft,
+                  size: Math.round(dotBox.width),
+                  colour: getComputedStyle(dot!).backgroundColor,
+                }
+              : null,
+            check: check
+              ? {
+                  afterName: check.getBoundingClientRect().left > nameLeft,
+                  stroke: check.getAttribute("stroke"),
+                }
+              : null,
+          };
+        },
+      ),
+    );
+
+    const current = sprints[2]!.name;
+    const completed = sprints[1]!.name;
+    const marked = rows.filter((row) => row.dot);
+    expect(marked, "exactly one sprint is marked current").toHaveLength(1);
+    expect(marked[0]!.text).toContain(`${current} (`);
+    expect(marked[0]!.dot!.beforeName, "the mark leads the name").toBe(true);
+    expect(marked[0]!.dot!.size).toBeLessThanOrEqual(8);
+    /* Said in words for a screen reader, not by the dot alone. */
+    await expect(
+      menu.getByRole("menuitemradio", { name: /^Current sprint: / }),
+    ).toHaveCount(1);
+
+    /* The completed sprint: its check, after its name, in its own green —
+       and no current mark. */
+    const done = rows.find((row) => row.text.startsWith(`${completed} (`))!;
+    expect(done.dot).toBeNull();
+    expect(done.check).toEqual({ afterName: true, stroke: "#10B981" });
+
+    /* Upcoming sprints carry neither. */
+    for (const row of rows) {
+      if (row === done || row === marked[0]) continue;
+      expect(row.dot, row.text).toBeNull();
+      expect(row.check, row.text).toBeNull();
+    }
+
+    /* And in order: the active sprint at the top, the upcoming ones below
+       it, the completed one at the bottom. */
+    const groups = rows.map((row) => (row.dot ? 0 : row.check ? 2 : 1));
+    expect(groups, "active, then upcoming, then completed").toEqual(
+      [...groups].sort((a, b) => a - b),
+    );
+    expect(groups[0]).toBe(0);
+    expect(groups[groups.length - 1]).toBe(2);
+
+    /* Choosing the current sprint still filters by it. */
+    await menu
+      .getByRole("menuitemradio", { name: /^Current sprint: / })
+      .click();
+    await expect(page).toHaveURL(new RegExp(`sprint=${sprints[2]!.id}`));
+  });
 });

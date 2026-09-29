@@ -10,6 +10,8 @@ import {
 } from "react";
 import type { IssueStatus } from "@prisma/client";
 import { Avatar } from "@/components/ui/primitives";
+import { Dialog } from "@/components/ui/Dialog";
+import { IconClose } from "@/components/ui/Icon";
 import { StatusPill } from "@/components/ui/Indicators";
 import type { Burndown, BurndownChange } from "@/lib/burndown";
 import { STATUS_LABEL } from "@/lib/domain";
@@ -68,30 +70,6 @@ const HEIGHT = 300;
    them at the largest size the stylesheet gives them, which is the phone
    step; too narrow and the first digit is cut off by the edge of the box. */
 const PAD = { top: 14, right: 24, bottom: 34, left: 58 };
-
-/**
- * How many changes a day's panel lists before it stops counting them out.
- *
- * A busy day can carry a dozen — a re-estimate and a remainder for each of
- * several issues — and a panel that lists them all is taller than the chart,
- * which forces it to sit a long way from the point it belongs to. The rest are
- * counted rather than dropped, and the table under the chart carries the whole
- * day either way.
- */
-const TIP_CHANGES = 6;
-
-/**
- * And the fewest it will list when the room beside the point is tight.
- *
- * Six rows are what a day gets when there is room for six. On a short window —
- * or a day whose rows wrap onto two lines each — the full list is taller than
- * the space between the chart's top and the table below it, and a panel that
- * tall has nowhere to go but under the fold, where the reader cannot follow it:
- * scrolling moves the page out from under the pointer, which ends the hover.
- * So the list gives rows up, down to this many, to stay beside its day. The
- * ones given up are counted in the panel and listed in full in the table.
- */
-const TIP_CHANGES_MIN = 2;
 
 const hours = (value: number) => `${Math.round(value * 10) / 10}h`;
 const signed = (value: number) =>
@@ -209,22 +187,33 @@ export function BurndownChart({ data }: { data: Burndown }) {
   const tipRef = useRef<HTMLDivElement | null>(null);
 
   /*
-   * How many changed issues this day's panel is listing.
+   * A day clicked open, as opposed to one merely hovered.
    *
-   * `TIP_CHANGES` until the placement finds the panel too tall for the room
-   * beside the point, which is the one thing it cannot solve by moving: it
-   * lowers this instead and the next pass measures a shorter panel. Mirrored in
-   * a ref because the placement runs outside React's render and must see the
-   * count it last asked for, not the one from the render it was created in.
-   * Rows are only ever given up within a hover, and every hover starts again
-   * at the full list.
+   * The hover card follows the pointer and lets it through, which is what
+   * keeps hovering smooth — and also what makes anything in it impossible to
+   * click, because reaching for it ends the hover. Clicking a point (or
+   * pressing Enter on it) pins that day: its card stays open and takes clicks,
+   * so its "Burn today" link can be used, and the table under the chart stays
+   * on that day. Clicking the point again, pressing Escape or clicking outside
+   * the chart lets it go.
    */
-  const [tipChanges, setTipChanges] = useState(TIP_CHANGES);
-  const tipChangesRef = useRef(TIP_CHANGES);
-  const setChangeRows = useCallback((rows: number) => {
-    if (tipChangesRef.current === rows) return;
-    tipChangesRef.current = rows;
-    setTipChanges(rows);
+  const [pinned, setPinned] = useState<number | null>(null);
+  /*
+   * What the burn details dialog is showing, if anything: a day's burn —
+   * opened from "Burn today" in a pinned card — or one issue's burn from the
+   * sprint's start up to the day the table is showing, opened from that
+   * issue's Burned figure in the table.
+   */
+  const [burnView, setBurnView] = useState<
+    | { kind: "day"; day: number }
+    | { kind: "issue"; issueId: string; upTo: number }
+    | null
+  >(null);
+
+  const togglePin = useCallback((index: number) => {
+    setPinned((current) => (current === index ? null : index));
+    setActive(index);
+    setReading(index);
   }, []);
 
   /*
@@ -409,36 +398,6 @@ export function BurndownChart({ data }: { data: Burndown }) {
     const width = tip.offsetWidth;
     const height = tip.offsetHeight;
 
-    /*
-     * A panel too tall for the room gives up rows rather than its place.
-     *
-     * Height is the one thing the search cannot solve by moving: a panel
-     * taller than the region between the chart's top and the table below has
-     * no position beside the point at all, and would fall through to reading
-     * in the flow — under the chart, often off the bottom of the window,
-     * where scrolling to it ends the hover that created it.
-     *
-     * So the list is trimmed to what the room can hold, by as many rows as the
-     * overflow is worth, and this pass ends there: the shorter panel is
-     * measured and placed on the next one, before the browser paints either.
-     * The rows given up are counted in the panel, and the table under the
-     * chart lists the day in full.
-     */
-    const roomHeight = bounds.bottom - bounds.top - inset * 2;
-    if (height > roomHeight && tipChangesRef.current > TIP_CHANGES_MIN) {
-      const rows = Array.from(
-        tip.querySelectorAll<HTMLElement>(".prio-burndown__tipchanges > li"),
-      );
-      const rowHeight = rows.length
-        ? rows.reduce((total, row) => total + row.offsetHeight, 0) / rows.length
-        : 0;
-      if (rowHeight > 0) {
-        const give = Math.max(1, Math.ceil((height - roomHeight) / rowHeight));
-        setChangeRows(Math.max(TIP_CHANGES_MIN, tipChangesRef.current - give));
-        return;
-      }
-    }
-
     const minLeft = bounds.left + inset;
     const maxLeft = bounds.right - inset - width;
     const minTop = bounds.top + inset;
@@ -621,7 +580,7 @@ export function BurndownChart({ data }: { data: Burndown }) {
     tip.style.left = `${Math.round(best.left)}px`;
     tip.style.top = `${Math.round(best.top)}px`;
     tip.classList.add("is-placed");
-  }, [setChangeRows]);
+  }, []);
 
   /* Before the paint of the render that opened it, so it is never seen
      unplaced. */
@@ -650,6 +609,33 @@ export function BurndownChart({ data }: { data: Burndown }) {
       window.removeEventListener("resize", follow);
     };
   }, [placeTip]);
+
+  /* A pinned day lets go on Escape, or on a click anywhere outside the chart
+     — but not on one inside the details dialog it opened, which is where the
+     reader has gone to read. The dialog handles its own Escape first. */
+  useEffect(() => {
+    if (pinned === null || burnView !== null) return;
+    const release = () => {
+      setPinned(null);
+      setActive(null);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") release();
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Element | null;
+      const chart = wrapRef.current?.closest(".prio-burndown");
+      if (!target || chart?.contains(target)) return;
+      if (target.closest('[role="dialog"]')) return;
+      release();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("pointerdown", onPointerDown);
+    };
+  }, [pinned, burnView]);
 
   if (points.length === 0 || totalEffort === 0) {
     return (
@@ -735,7 +721,46 @@ export function BurndownChart({ data }: { data: Burndown }) {
   const band =
     points.length === 1 ? plotWidth : plotWidth / (points.length - 1);
 
-  const shown = active !== null ? points[active] : undefined;
+  /* A pinned day holds the card; otherwise the one under the pointer. */
+  const showing = pinned ?? active;
+  const shown = showing !== null ? points[showing] : undefined;
+
+  /** One issue's burn from the sprint's first day up to day `upTo`, one entry
+   *  per day it burned anything — the same per-day figures "Burn today"
+   *  adds up, so the two can never disagree. */
+  const burnsOf = (issueId: string, upTo: number) =>
+    points.slice(0, upTo + 1).flatMap((point) =>
+      point.burned
+        .filter((burn) => burn.issueId === issueId)
+        .map((burn) => ({ ...burn, date: point.date })),
+    );
+
+  /* The open burn breakdown, as rows the dialog can list and a total the rows
+     add up to. */
+  const burnDetails = (() => {
+    if (burnView === null) return null;
+    if (burnView.kind === "day") {
+      const point = points[burnView.day];
+      if (!point) return null;
+      return {
+        byIssue: false,
+        title: `Burned on ${formatDayMonthYear(point.date)}`,
+        description: `${hours(point.completedToday)} of effort burned by work done this day.`,
+        rows: point.burned.map((burn) => ({ ...burn, date: point.date })),
+        total: point.completedToday,
+      };
+    }
+    const rows = burnsOf(burnView.issueId, burnView.upTo);
+    const until = points[burnView.upTo];
+    const total = Math.round(rows.reduce((sum, row) => sum + row.hours, 0) * 100) / 100;
+    return {
+      byIssue: true,
+      title: `${rows[0]?.key ?? "Issue"} · burned to ${until ? formatDayMonthYear(until.date) : "date"}`,
+      description: `${hours(total)} burned on this issue from the sprint's first day to this one.`,
+      rows,
+      total,
+    };
+  })();
 
   /*
    * The day the table under the chart is showing.
@@ -817,6 +842,29 @@ export function BurndownChart({ data }: { data: Burndown }) {
   }
 
   /*
+   * Each row's Remaining and Burned, for the two columns beside Effort.
+   *
+   * Remaining is what the issue still owed at the end of the day — read by
+   * the same rule as the line itself. Burned is everything the issue burned
+   * from the sprint's first day up to this one: the sum of its entries in the
+   * days' `burned` lists, which is what "Burn today" is made of too, so a
+   * row's figure and the days' figures always agree.
+   */
+  const tableRowsWithBurn = tableRows.map((row) => ({
+    ...row,
+    remainingHours: row.effortHours,
+    burnedHours:
+      tableIndex === null
+        ? 0
+        : Math.round(
+            burnsOf(row.issueId, tableIndex).reduce(
+              (sum, burn) => sum + burn.hours,
+              0,
+            ) * 100,
+          ) / 100,
+  }));
+
+  /*
    * The sprint's scope movement, in the words the summary uses.
    *
    * Issues and hours read as one line — "+1 issue / +0.5h" — because a scope
@@ -850,6 +898,15 @@ export function BurndownChart({ data }: { data: Burndown }) {
         ] as const)
       : []
   ).filter(([, count]) => count > 0);
+  /* What else moved the line that day, in hours, beside the burn — so a day
+     that burned 1.5h while the line fell 2.5h says where the other hour went,
+     without calling any of it burned. */
+  const movedParts = shown
+    ? [
+        shown.reopenedToday > 0 ? `+${hours(shown.reopenedToday)} reopened` : null,
+        shown.scopeToday !== 0 ? `${signed(shown.scopeToday)} scope` : null,
+      ].filter((part): part is string => part !== null)
+    : [];
   const showToday =
     data.active && data.todayIndex !== null && data.todayIndex < points.length;
   const todayPoint =
@@ -984,6 +1041,13 @@ export function BurndownChart({ data }: { data: Burndown }) {
           <div
             className="prio-burndown__plot"
             onMouseLeave={() => setActive(null)}
+            onBlur={(event) => {
+              /* Keyboard focus leaving the chart ends a preview, as the
+                 pointer leaving it does. */
+              if (!event.currentTarget.contains(event.relatedTarget as Node)) {
+                setActive(null);
+              }
+            }}
           >
             <svg
               viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
@@ -1112,41 +1176,63 @@ export function BurndownChart({ data }: { data: Burndown }) {
               {shown && shown.actual !== null ? (
                 <>
                   <line
-                    x1={x(active!)}
-                    x2={x(active!)}
+                    x1={x(showing!)}
+                    x2={x(showing!)}
                     y1={PAD.top}
                     y2={HEIGHT - PAD.bottom}
                     className="prio-burndown__crosshair"
                   />
                   <circle
-                    cx={x(active!)}
+                    cx={x(showing!)}
                     cy={y(shown.actual)}
                     r={5}
                     className="prio-burndown__dot"
+                    data-pinned={pinned !== null || undefined}
                   />
                 </>
               ) : null}
 
-              {/* One target per day the sprint has reached, a whole band wide
-                so it can be hit without aiming at the line itself. */}
-              {reached.map((index) => (
-                <rect
-                  key={index}
-                  x={x(index) - band / 2}
-                  y={PAD.top}
-                  width={band}
-                  height={plotHeight}
-                  className="prio-burndown__hit"
-                  onMouseEnter={() => {
-                    setActive(index);
-                    setReading(index);
-                    /* Each day asks for the whole list; the placement is what
-                       decides whether the room can hold it. */
-                    setChangeRows(TIP_CHANGES);
-                  }}
-                  aria-hidden
-                />
-              ))}
+              {/*
+               * One target per day the sprint has reached, a whole band wide
+               * so it can be hit without aiming at the line itself — and so
+               * each day's point is clickable wherever in its column it is
+               * clicked. Hovering previews the day; clicking it, or Enter or
+               * Space on it, pins the day open (see `pinned`). While a day is
+               * pinned, hovering the others leaves both its card and the
+               * table below alone.
+               */}
+              {reached.map((index) => {
+                const point = points[index]!;
+                return (
+                  <rect
+                    key={index}
+                    x={x(index) - band / 2}
+                    y={PAD.top}
+                    width={band}
+                    height={plotHeight}
+                    className="prio-burndown__hit"
+                    role="button"
+                    tabIndex={0}
+                    aria-pressed={pinned === index}
+                    aria-label={`${formatDayMonthYear(point.date)}: ${hours(point.actual!)} remaining. ${pinned === index ? "Close" : "Open"} the day's details`}
+                    onMouseEnter={() => {
+                      setActive(index);
+                      if (pinned === null) setReading(index);
+                    }}
+                    onFocus={() => {
+                      setActive(index);
+                      if (pinned === null) setReading(index);
+                    }}
+                    onClick={() => togglePin(index)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        togglePin(index);
+                      }
+                    }}
+                  />
+                );
+              })}
             </svg>
 
             {/*
@@ -1205,9 +1291,29 @@ export function BurndownChart({ data }: { data: Burndown }) {
             ref={tipRef}
             className="prio-burndown__tip"
             role="status"
+            /* Pinned, it takes clicks — see `pinned`. As a hover preview it
+               lets the pointer through, as it always has. */
+            data-pinned={pinned !== null || undefined}
+            /* Under the burn dialog while it is open, like the rest of the
+               page — not floating over its backdrop. */
+            data-behind={burnView !== null || undefined}
           >
             <p className="prio-burndown__tipdate">
               {formatDayMonthYear(shown.date)}
+              {pinned !== null ? (
+                <button
+                  type="button"
+                  className="prio-burndown__tipclose"
+                  aria-label="Close this day's details"
+                  title="Close"
+                  onClick={() => {
+                    setPinned(null);
+                    setActive(null);
+                  }}
+                >
+                  <IconClose size={12} />
+                </button>
+              ) : null}
             </p>
             {/* Effort first, under its own heading: the figures a reader came
                 for, one per line so they can be compared rather than parsed
@@ -1231,42 +1337,43 @@ export function BurndownChart({ data }: { data: Burndown }) {
             </p>
 
             {/*
-             * What this day did, in one line.
+             * What this day burned, in one line.
              *
              * The figures above are cumulative — where the sprint stood at
              * the end of the day — and a reader hovering a point is usually
-             * asking the other question: what moved *today*. So the day's own
-             * step is said plainly, with the two halves that make it up when
-             * they are not the whole of it, and a quiet day says it was quiet
-             * rather than leaving the reader to infer it from an empty panel.
+             * asking the other question: what was done *today*. "Burn today"
+             * is exactly the effort work removed that day (see
+             * `completedToday`), never the line's net step, which also moves
+             * when work is added, taken out or reopened; those are said
+             * beside it when they happened. It opens the day's burned issues
+             * — which takes a click, so it works once the day is pinned by
+             * clicking its point. A quiet day says it was quiet rather than
+             * leaving the reader to infer it from an empty panel.
              */}
             <p
               className="prio-burndown__tipchange"
-              data-flat={shown.change === 0 || undefined}
+              data-flat={shown.completedToday === 0 || undefined}
             >
-              {shown.change === null ? (
+              {shown.completedToday > 0 ? (
+                <button
+                  type="button"
+                  className="prio-burndown__burnlink"
+                  onClick={() => setBurnView({ kind: "day", day: showing! })}
+                  /* Only reachable once the card is pinned: a hover card lets
+                     the pointer through and is not in the tab order. */
+                  tabIndex={pinned === null ? -1 : 0}
+                >
+                  Burn today: <strong>{hours(shown.completedToday)}</strong>
+                </button>
+              ) : shown.change === null ? (
                 <>The sprint&rsquo;s first day</>
-              ) : shown.change === 0 ? (
-                <>No effort completed today</>
               ) : (
-                <>
-                  {shown.change < 0 ? "Burned today: " : "Added today: "}
-                  <strong>{hours(Math.abs(shown.change))}</strong>
-                </>
+                <>No effort completed today</>
               )}
-              {shown.completedToday > 0 && shown.scopeToday !== 0 ? (
-                <>
-                  {" "}
-                  ({hours(shown.completedToday)} completed,{" "}
-                  {signed(shown.scopeToday)} scope)
-                </>
-              ) : null}
+              {movedParts.length > 0 ? <> ({movedParts.join(", ")})</> : null}
 
               {/* And who did what, on the same line: the counts behind the
-                  step, including the hand-offs that move no effort at all. On
-                  a line of its own it cost the panel a row of height for four
-                  words, and a taller panel is one that has to sit further from
-                  the point it describes. */}
+                  day, including the hand-offs that move no effort at all. */}
               {tallied.length > 0 ? (
                 <span className="prio-burndown__tiptally">
                   {" · "}
@@ -1276,105 +1383,6 @@ export function BurndownChart({ data }: { data: Burndown }) {
                 </span>
               ) : null}
             </p>
-
-            {/*
-             * What moved, issue by issue, in three columns.
-             *
-             * The issue on the left with a dot for what happened to it, then
-             * the state it ended the day in, then what it owed — headed, so
-             * the two right-hand columns are read as columns rather than as
-             * more of the sentence. A hand-off to testing is listed with
-             * them: it moves no effort, which is exactly why a reader looking
-             * at a flat day needs to see it.
-             */}
-            {shown.changes.length > 0 || shown.movedToQa.length > 0 ? (
-              <>
-                <p className="prio-burndown__tipsection">
-                  Issues changed
-                  <span className="prio-burndown__tipcols">
-                    <span>Status</span>
-                    <span>Effort</span>
-                  </span>
-                </p>
-                <ul className="prio-burndown__tipchanges">
-                  {shown.changes
-                    .slice(0, tipChanges)
-                    .map((change, position) => (
-                      <li
-                        key={`${change.issueId}-${change.reason}-${position}`}
-                      >
-                        <span
-                          className="prio-burndown__tipdot"
-                          data-reason={change.reason}
-                          aria-hidden
-                        />
-                        <span className="prio-burndown__tipname">
-                          <span className="prio-key">{change.key}</span>{" "}
-                          <span className="prio-burndown__tiptitle">
-                            {change.title}
-                          </span>{" "}
-                          <span
-                            className="prio-burndown__tipwhy"
-                            data-reason={change.reason}
-                          >
-                            {REASON_LABEL[change.reason]}
-                            {change.reason === "estimate" ||
-                            change.reason === "remainder"
-                              ? ` (${change.from === null || change.from === undefined ? "none" : hours(change.from)} → ${
-                                  change.to === null || change.to === undefined
-                                    ? "none"
-                                    : hours(change.to)
-                                })`
-                              : ""}
-                            {change.delta === 0
-                              ? ""
-                              : ` · ${signed(change.delta)}`}
-                          </span>
-                        </span>
-                        <span className="prio-burndown__tipstatus">
-                          {change.status ? STATUS_LABEL[change.status] : "—"}
-                        </span>
-                        <span className="prio-burndown__tipeffort">
-                          {hours(change.effortHours)}
-                        </span>
-                      </li>
-                    ))}
-
-                  {shown.movedToQa.map((issue) => (
-                    <li key={`qa-${issue.issueId}`}>
-                      <span
-                        className="prio-burndown__tipdot"
-                        data-reason="qa"
-                        aria-hidden
-                      />
-                      <span className="prio-burndown__tipname">
-                        <span className="prio-key">{issue.key}</span>{" "}
-                        <span className="prio-burndown__tiptitle">
-                          {issue.title}
-                        </span>{" "}
-                        <span
-                          className="prio-burndown__tipwhy"
-                          data-reason="qa"
-                        >
-                          moved to QA
-                        </span>
-                      </span>
-                      <span className="prio-burndown__tipstatus">
-                        {STATUS_LABEL.IN_QA}
-                      </span>
-                      <span className="prio-burndown__tipeffort">0h</span>
-                    </li>
-                  ))}
-
-                  {shown.changes.length > tipChanges ? (
-                    <li className="prio-burndown__tipmore">
-                      and {shown.changes.length - tipChanges} more — the table
-                      below has the day in full
-                    </li>
-                  ) : null}
-                </ul>
-              </>
-            ) : null}
 
             {/*
              * A quiet day still gets an answer.
@@ -1392,8 +1400,106 @@ export function BurndownChart({ data }: { data: Burndown }) {
                 was carrying.
               </p>
             ) : null}
+
+            {/* How to make it stay: a hover card cannot be clicked, so it
+                says how to pin it — but only where there is something in it
+                to click. */}
+            {pinned === null && shown.completedToday > 0 ? (
+              <p className="prio-burndown__tiphint">
+                Click the point to pin this card and open the burn.
+              </p>
+            ) : null}
           </div>
         ) : null}
+
+        {/*
+         * Burned effort, broken down.
+         *
+         * Two ways in, one dialog: "Burn today" in a pinned card lists what
+         * each issue burned that day, and an issue's Burned figure in the
+         * table lists what that issue burned on each day up to the one the
+         * table shows. Either way the rows add up to the figure that was
+         * clicked, so the number can be checked rather than taken on trust.
+         * It is Prio's own modal — over the page, clear of the chart and the
+         * table rather than drawn into them, with its own border so it reads
+         * as one contained block in both themes — and it closes the way
+         * every dialog does: its close icon, Escape, or the backdrop.
+         */}
+        <Dialog
+          open={burnDetails !== null}
+          onClose={() => setBurnView(null)}
+          size={burnDetails?.byIssue ? "lg" : "md"}
+          className="prio-burndown__burndialog"
+          title={burnDetails?.title ?? "Burned"}
+          description={burnDetails?.description}
+        >
+          {burnDetails ? (
+            <div className="prio-table-wrap">
+              <table className="prio-table prio-burndown__burntable">
+                <thead>
+                  <tr>
+                    {burnDetails.byIssue ? <th scope="col">Date</th> : null}
+                    <th scope="col">Issue key</th>
+                    <th scope="col">Issue name</th>
+                    <th scope="col">What happened</th>
+                    <th scope="col">Assignee</th>
+                    <th scope="col" className="prio-burndown__effortcol">
+                      Burned
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {burnDetails.rows.map((burn) => (
+                    <tr key={`${burn.issueId}-${burn.date.getTime()}`}>
+                      {burnDetails.byIssue ? (
+                        <td className="prio-burndown__burndate">
+                          {formatDayMonthYear(burn.date)}
+                        </td>
+                      ) : null}
+                      <td>
+                        <Link
+                          href={`/issues/${burn.key.toLowerCase()}`}
+                          className="prio-key"
+                        >
+                          {burn.key}
+                        </Link>
+                      </td>
+                      <td>{burn.title}</td>
+                      <td>
+                        {burn.finished
+                          ? `Finished${burn.status ? ` · ${STATUS_LABEL[burn.status]}` : ""}`
+                          : "Remaining effort lowered"}
+                      </td>
+                      <td>
+                        {burn.assignee ? (
+                          <span className="prio-burndown__person">
+                            <Avatar name={burn.assignee} size="xs" />
+                            {burn.assignee}
+                          </span>
+                        ) : (
+                          <span className="prio-text-muted">Unassigned</span>
+                        )}
+                      </td>
+                      <td className="prio-burndown__effortcol">
+                        {hours(burn.hours)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <th scope="row" colSpan={burnDetails.byIssue ? 5 : 4}>
+                      {burnDetails.byIssue ? "Burned in all" : "Burn today"}
+                    </th>
+                    <td className="prio-burndown__effortcol">
+                      <strong>{hours(burnDetails.total)}</strong>
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          ) : null}
+        </Dialog>
       </div>
 
       <figcaption className="prio-burndown__legend">
@@ -1473,10 +1579,19 @@ export function BurndownChart({ data }: { data: Burndown }) {
                   <th scope="col" className="prio-burndown__effortcol">
                     Effort
                   </th>
+                  {/* Beside Effort: what the issue still owed at the end of
+                      the day, and what it had burned from the sprint's
+                      first day up to it. */}
+                  <th scope="col" className="prio-burndown__effortcol">
+                    Remaining
+                  </th>
+                  <th scope="col" className="prio-burndown__effortcol">
+                    Burned
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {tableRows.map((row) => (
+                {tableRowsWithBurn.map((row) => (
                   <tr key={row.issueId}>
                     {/* The mark the reference carries down the left edge: an
                         arrow for work that arrived or left, a dot for work
@@ -1547,6 +1662,31 @@ export function BurndownChart({ data }: { data: Burndown }) {
                     </td>
                     <td className="prio-burndown__effortcol">
                       {hours(row.effortHours)}
+                    </td>
+                    <td className="prio-burndown__effortcol">
+                      {hours(row.remainingHours)}
+                    </td>
+                    <td className="prio-burndown__effortcol">
+                      {/* Opens the burns behind the figure; a nought has
+                          none to show, so it is plain text. */}
+                      {row.burnedHours > 0 ? (
+                        <button
+                          type="button"
+                          className="prio-burndown__burnlink"
+                          aria-label={`${hours(row.burnedHours)} burned on ${row.key}: show the burns`}
+                          onClick={() =>
+                            setBurnView({
+                              kind: "issue",
+                              issueId: row.issueId,
+                              upTo: tableIndex!,
+                            })
+                          }
+                        >
+                          {hours(row.burnedHours)}
+                        </button>
+                      ) : (
+                        hours(0)
+                      )}
                     </td>
                   </tr>
                 ))}

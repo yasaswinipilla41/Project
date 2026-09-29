@@ -1,6 +1,10 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { CompletedSprintsDisclosure } from "@/components/sprints/CompletedSprintsDisclosure";
+import {
+  CompletedSprints,
+  CompletedSprintsPanel,
+  CompletedSprintsToggle,
+} from "@/components/sprints/CompletedSprintsDisclosure";
 import { NewSprintButton } from "@/components/sprints/NewSprintButton";
 import { SprintCard } from "@/components/sprints/SprintCard";
 import {
@@ -102,7 +106,9 @@ export default async function ProjectSprintsPage({
   const openSprints = [...active, ...upcoming];
 
   return (
-    <>
+    /* The Completed sprints control and the list it opens are in two places —
+       the header and the top of the list — so they share their state here. */
+    <CompletedSprints>
       <div className="prio-sprints__head">
         <div>
           <h2 className="prio-issue__section-title">Sprints</h2>
@@ -112,6 +118,11 @@ export default async function ProjectSprintsPage({
           </p>
         </div>
         <div className="prio-sprints__headactions">
+          {/* The record, behind a control at the top right, beside
+              Iterations / Sprints — only when there is something to open. */}
+          {completed.length > 0 ? (
+            <CompletedSprintsToggle count={completed.length} />
+          ) : null}
           {/* Every role that can open this section can open Iterations /
               Sprints, so it is offered to all of them; New sprint stays an
               administrator's. */}
@@ -141,6 +152,33 @@ export default async function ProjectSprintsPage({
         </Card>
       ) : (
         <div className="prio-sprints">
+          {/*
+            * The completed sprints, when their control is opened: above the
+            * live sprints, as a group of their own. The cards themselves are
+            * unchanged — same component, same order, and still
+            * `canEditIssues={false}`, because a completed sprint is a closed
+            * record and `moveIssueToSprint` refuses to move work out of one.
+            */}
+          {completed.length > 0 ? (
+            <CompletedSprintsPanel>
+              {completed.map((sprint) => (
+                <SprintCard
+                  key={sprint.id}
+                  sprint={sprint}
+                  projectId={project.id}
+                  projectKey={project.key}
+                  backlog={backlog}
+                  otherOpenSprints={[]}
+                  canEdit={canEdit}
+                  canDelete={canDelete}
+                  canStart={canStart}
+                  canComplete={canComplete}
+                  canEditIssues={false}
+                />
+              ))}
+            </CompletedSprintsPanel>
+          ) : null}
+
           {/*
             * What is being worked now.
             *
@@ -195,6 +233,10 @@ export default async function ProjectSprintsPage({
               </span>
             ) : null}
           </h3>
+          {/* The group's cards, marked as the upcoming ones so they can be
+              drawn without a border — see `.prio-sprints__upcoming`. It adds
+              no box of its own, so the list's spacing is unchanged. */}
+          <div className="prio-sprints__upcoming">
           {upcoming.length > 0 ? (
             upcoming.map((sprint) => (
               <SprintCard
@@ -231,37 +273,9 @@ export default async function ProjectSprintsPage({
               </CardBody>
             </Card>
           )}
-
-          {/*
-            * The record, behind a control rather than under the live sprints.
-            *
-            * Only rendered when there is something to open, so nobody is
-            * offered a group that opens onto nothing. The cards themselves are
-            * unchanged — same component, same order, and still
-            * `canEditIssues={false}`, because a completed sprint is a closed
-            * record and `moveIssueToSprint` refuses to move work out of one.
-            */}
-          {completed.length > 0 ? (
-            <CompletedSprintsDisclosure count={completed.length}>
-              {completed.map((sprint) => (
-                <SprintCard
-                  key={sprint.id}
-                  sprint={sprint}
-                  projectId={project.id}
-                  projectKey={project.key}
-                  backlog={backlog}
-                  otherOpenSprints={[]}
-                  canEdit={canEdit}
-                  canDelete={canDelete}
-                  canStart={canStart}
-                  canComplete={canComplete}
-                  canEditIssues={false}
-                />
-              ))}
-            </CompletedSprintsDisclosure>
-          ) : null}
+          </div>
         </div>
       )}
-    </>
+    </CompletedSprints>
   );
 }

@@ -75,6 +75,7 @@ export default async function IssuesPage({
              "Sprint 4"s means. */
           name: `${sprint.project.key} · ${sprint.name} (${formatDateRange(sprint.startDate, sprint.endDate)})`,
           completed: sprint.status === "COMPLETED",
+          active: sprint.status === "ACTIVE",
         }))}
         currentUserId={user.id}
         total={result.total}

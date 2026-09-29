@@ -11,7 +11,6 @@ import {
 } from "@/components/sprints/BurndownDisclosure";
 import { Card, CardBody } from "@/components/ui/primitives";
 import { projectScope, workRoleOf } from "@/lib/authz";
-import { nextOpenSprint } from "@/lib/sprintMove";
 import {
   canDeleteSprint,
   canEditSprintDetails,
@@ -99,14 +98,15 @@ export default async function ProjectSprintDetailsPage({
 
   /*
    * What Restore would mean for each card: the sprint the issue was moved out
-   * of, when that sprint is one of this project's and is still open. Resolved
-   * from the sprints already read for this page rather than queried again, and
-   * a sprint that has since been completed or deleted is left out — there is
-   * nothing to restore into, so nothing is offered.
+   * of, when that sprint is one of this project's and is still upcoming.
+   * Resolved from the sprints already read for this page rather than queried
+   * again. Like the rest of the Move to list, Restore only ever offers an
+   * upcoming sprint: one that is running, completed or deleted is left out,
+   * and nothing is offered in its place.
    */
   const openBySprintId = new Map(
     sprints
-      .filter((one) => one.status !== "COMPLETED")
+      .filter((one) => one.status === "PLANNED")
       .map((one) => [one.id, { id: one.id, name: one.name }]),
   );
   const previousSprints: Record<string, { id: string; name: string }> = {};
@@ -118,30 +118,23 @@ export default async function ProjectSprintDetailsPage({
   }
 
   /*
-   * Where a card's Move to can send its work: the project's current sprint
-   * and its upcoming one, and never more than those two.
+   * Where a card's Move to can send its work: every upcoming sprint of this
+   * project — each one planned and not yet started — soonest first.
    *
-   * "Current" is the one sprint `startSprint` allows to be running at once —
-   * `status === "ACTIVE"` is the whole rule, read fresh from `sprints` rather
-   * than assumed. "Upcoming" is the same `nextOpenSprint` the Restore and
-   * (elsewhere) the row menu's own "Next sprint" already trust, asked from
-   * the current sprint rather than from whichever sprint is on screen — so a
-   * later sprint stays out of reach from every page except the one directly
-   * before it, exactly as a project moves through them one at a time. Where a
-   * project has not started a sprint at all yet, there is no current one to
-   * ask from, and the same question is asked from this page's own sprint
-   * instead, which is what let a project planning two sprints at once move
-   * work between them before either had begun.
-   *
-   * Whichever of the two equals the sprint this page is already showing is
-   * left out — a card cannot move its issue into the sprint it is already in,
-   * and the server refuses that move regardless.
+   * Upcoming only. The running sprint is not a place to send work from its
+   * card, and a completed sprint is a closed record, so neither is offered;
+   * "upcoming" is `status === "PLANNED"`, the same definition the Sprints
+   * page's Upcoming group uses. Every one of them, not just the next: work is
+   * re-planned into whichever future sprint it belongs in. The sprint this
+   * page is showing is left out — a card cannot move its issue into the
+   * sprint it is already in, and the server refuses that move regardless.
    */
-  const activeSprint = sprints.find((one) => one.status === "ACTIVE") ?? null;
-  const upcomingSprint = nextOpenSprint(sprints, activeSprint ?? sprint);
-  const moveDestinations = [activeSprint, upcomingSprint]
-    .filter((one): one is NonNullable<typeof one> => one !== null)
-    .filter((one) => one.id !== sprint.id)
+  const moveDestinations = sprints
+    .filter((one) => one.status === "PLANNED" && one.id !== sprint.id)
+    .sort(
+      (a, b) =>
+        new Date(a.startDate).getTime() - new Date(b.startDate).getTime(),
+    )
     .map((one) => ({
       id: one.id,
       name: one.name,

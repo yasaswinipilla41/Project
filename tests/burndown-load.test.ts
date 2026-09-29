@@ -231,12 +231,27 @@ describe("the burndown a sprint page draws", () => {
       ) / 100,
     ).toBe(chart!.totalEffort);
 
-    /* And the decomposition holds on every day the sprint has reached. */
+    /* And on every day the sprint has reached, read through the real query:
+       the reasons a day lists add up to the step its line took, and what it
+       says it burned is exactly the issues it names as burned — never
+       negative. */
+    const round = (value: number) => Math.round(value * 100) / 100;
     for (const [index, day] of chart!.points.entries()) {
-      if (day.change === null) continue;
-      expect(day.change, `day ${index}`).toBe(
-        Math.round((day.scopeToday - day.completedToday) * 100) / 100,
+      if (day.actual === null) continue;
+      expect(day.completedToday, `day ${index}`).toBeGreaterThanOrEqual(0);
+      expect(day.completedToday, `day ${index}`).toBe(
+        round(day.burned.reduce((sum, burn) => sum + burn.hours, 0)),
       );
+      if (day.change === null) continue;
+      expect(
+        round(day.changes.reduce((sum, change) => sum + change.delta, 0)),
+        `day ${index}`,
+      ).toBe(day.change);
+    }
+
+    /* Today's point is the sprint's current remaining effort. */
+    if (chart!.todayIndex !== null) {
+      expect(chart!.points[chart!.todayIndex]!.actual).toBe(chart!.remaining);
     }
 
     /* Progress is the one definition both the summary and the marker for

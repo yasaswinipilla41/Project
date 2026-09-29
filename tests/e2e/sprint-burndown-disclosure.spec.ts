@@ -414,13 +414,30 @@ test.describe("every block on a sprint's page", () => {
     }
 
     /*
-     * One colour across all of them.
+     * One border for the page's blocks, one for what is nested in them.
      *
-     * The running sprint's own card is the exception and stays one: an active
-     * sprint is marked out by its edge, which is deliberate and older than
-     * this change. Everything else is the same token.
+     * The sprint block's border is the page's: the running sprint is marked
+     * out by its edge, and every other top-level block — the Burndown Chart,
+     * Issues in this sprint, Issues by status — now takes that same edge, so
+     * the page reads as one set of blocks. The status columns nested inside
+     * Issues in this sprint keep the ordinary card border between them: a
+     * nested block in the page's strong edge would be a border inside a
+     * border.
      */
-    const ordinary = edges.filter((edge) => edge.selector !== ".prio-sprint");
-    expect(new Set(ordinary.map((edge) => edge.colour)).size).toBe(1);
+    const sprintEdge = edges.find((edge) => edge.selector === ".prio-sprint")!;
+    const topLevel = edges.filter(
+      (edge) =>
+        edge.selector !== ".prio-sprint" &&
+        edge.selector !== ".prio-sprint__column",
+    );
+    for (const edge of topLevel) {
+      expect(edge.colour, `${edge.selector} border colour`).toBe(
+        sprintEdge.colour,
+      );
+    }
+    const nested = edges.filter(
+      (edge) => edge.selector === ".prio-sprint__column",
+    );
+    expect(new Set(nested.map((edge) => edge.colour)).size).toBe(1);
   });
 });

@@ -812,9 +812,15 @@ describe("what each day did", () => {
     expect(day.tally).toMatchObject({ completed: 1, added: 1 });
   });
 
-  it("holds the decomposition on every day of the sprint", () => {
-    /* The property, not a case of it: whatever happened, the step the line
-       took is the scope's movement less the effort finished. */
+  it("burns only work done, and accounts for every step the line takes", () => {
+    /*
+     * The property, not a case of it. Whatever happened on a day, the reasons
+     * it lists add up to the step the line took, and the burn is the sum of
+     * the issues it names — never negative, and never moved by the reopen and
+     * the move-out that also happened here. The old reading of "completed"
+     * (the change in completed effort between two days) called this sprint's
+     * day 3 "−8h completed": the reopen, counted as negative work.
+     */
     const chart = burndown({
       startDate: START,
       endDate: END,
@@ -846,13 +852,35 @@ describe("what each day did", () => {
       now: at(16),
     });
 
+    const round = (value: number) => Math.round(value * 100) / 100;
     for (const [index, day] of chart.points.entries()) {
+      if (day.actual === null) continue;
+      expect(day.completedToday, `day ${index}: negative burn`).toBeGreaterThanOrEqual(0);
+      expect(day.completedToday, `day ${index}: burn is its issues`).toBe(
+        round(day.burned.reduce((sum, burn) => sum + burn.hours, 0)),
+      );
       if (day.change === null) continue;
       expect(
-        day.change,
-        `day ${index}: the step is the scope's move less the work finished`,
-      ).toBe(Math.round((day.scopeToday - day.completedToday) * 100) / 100);
+        round(day.changes.reduce((sum, change) => sum + change.delta, 0)),
+        `day ${index}: the listed reasons are the step`,
+      ).toBe(day.change);
     }
+
+    /* Day 1: "a" finished — 8h burned. */
+    expect(chart.points[1]).toMatchObject({ completedToday: 8, change: -8 });
+    /* Day 2: "b" re-estimated 4h → 10h — scope, not burn. */
+    expect(chart.points[2]).toMatchObject({
+      completedToday: 0,
+      scopeToday: 6,
+      change: 6,
+    });
+    /* Day 3: "a" reopened (+8h) and "c" moved out (−6h) — nothing burned. */
+    expect(chart.points[3]).toMatchObject({
+      completedToday: 0,
+      reopenedToday: 8,
+      change: 2,
+      burned: [],
+    });
   });
 
   it("names the work handed to testing, which moves no effort at all", () => {
@@ -1049,5 +1077,178 @@ describe("what the sprint has become", () => {
         now: new Date(2026, 9, 20),
       }).daysLeft,
     ).toBeNull();
+  });
+});
+
+/*
+ * "Burn today" is the effort work actually removed that day.
+ *
+ * Not the line's net step, and not the change in cumulative completed effort
+ * between two days — both of those also move when work is reopened, added,
+ * taken out or re-estimated, which is nobody burning anything. Each case the
+ * burn has to get right, one at a time, on a sprint of 12–16 October.
+ */
+describe("the effort burned each day", () => {
+  const base = { startDate: START, endDate: END, history: [], now: at(16) };
+  const item = (issueId: string, effortHours: number, extra = {}) => ({
+    issueId,
+    key: issueId.toUpperCase(),
+    title: issueId,
+    effortHours,
+    remainingHours: effortHours,
+    ...extra,
+  });
+  const burns = (chart: ReturnType<typeof burndown>) =>
+    chart.points.map((point) => point.completedToday);
+
+  it("counts a finished issue's remaining effort on the day it was finished", () => {
+    const chart = burndown({
+      ...base,
+      items: [item("a", 8, { status: "DONE" }), item("b", 4)],
+      statusHistory: [
+        { at: at(14, 9), issueId: "a", from: "IN_PROGRESS", to: "DONE" },
+      ],
+    });
+    expect(burns(chart)).toEqual([0, 0, 8, 0, 0]);
+    expect(chart.points[2]!.burned).toEqual([
+      expect.objectContaining({ key: "A", hours: 8, finished: true }),
+    ]);
+  });
+
+  it("counts partial effort as it is burned, and a raised remainder as none", () => {
+    /* 8h → 5h (3 burned), → 6h (raised: nothing burned), → 2h (4 burned),
+       then finished with 2h left (2 burned). */
+    const chart = burndown({
+      ...base,
+      items: [item("a", 8, { status: "DONE" })],
+      history: [
+        { at: at(13, 10), issueId: "a", remainingHours: 5 },
+        { at: at(14, 10), issueId: "a", remainingHours: 6 },
+        { at: at(15, 10), issueId: "a", remainingHours: 2 },
+      ],
+      statusHistory: [
+        { at: at(16, 9), issueId: "a", from: "IN_PROGRESS", to: "DONE" },
+      ],
+    });
+    expect(burns(chart)).toEqual([0, 3, 0, 4, 2]);
+    expect(chart.points[1]!.burned[0]).toMatchObject({ hours: 3, finished: false });
+    /* Everything burned is the estimate plus the hour it was raised by —
+       nothing counted twice. */
+    expect(burns(chart).reduce((sum, hours) => sum + hours, 0)).toBe(9);
+  });
+
+  it("nets a remainder corrected on the same day", () => {
+    const chart = burndown({
+      ...base,
+      items: [item("a", 8)],
+      history: [
+        { at: at(13, 10), issueId: "a", remainingHours: 5 },
+        { at: at(13, 15), issueId: "a", remainingHours: 6 },
+      ],
+    });
+    expect(chart.points[1]!.completedToday).toBe(2);
+  });
+
+  it("never counts reopened work as burned, and says it came back", () => {
+    const chart = burndown({
+      ...base,
+      items: [item("a", 8, { status: "REOPENED" })],
+      statusHistory: [
+        { at: at(13, 9), issueId: "a", from: "IN_PROGRESS", to: "DONE" },
+        { at: at(14, 9), issueId: "a", from: "DONE", to: "REOPENED" },
+        /* Finished and reopened again, both on the 15th: nothing burned. */
+        { at: at(15, 9), issueId: "a", from: "REOPENED", to: "DONE" },
+        { at: at(15, 16), issueId: "a", from: "DONE", to: "REOPENED" },
+      ],
+    });
+    expect(burns(chart)).toEqual([0, 8, 0, 0, 0]);
+    expect(chart.points[2]).toMatchObject({ reopenedToday: 8, change: 8 });
+    expect(chart.points[3]).toMatchObject({ reopenedToday: 0, change: 0 });
+  });
+
+  it("never counts newly added work as burned — even work that arrives finished", () => {
+    const chart = burndown({
+      ...base,
+      items: [
+        item("a", 8),
+        /* Open work joining on the 13th. */
+        item("b", 12),
+        /* Work that was already done when it was moved in on the 14th: the
+           old reading counted its whole estimate as burned that day. */
+        item("c", 5, { status: "DONE" }),
+      ],
+      membershipHistory: [
+        { at: at(13, 11), issueId: "b", joined: true },
+        { at: at(14, 11), issueId: "c", joined: true },
+      ],
+    });
+    expect(burns(chart)).toEqual([0, 0, 0, 0, 0]);
+    expect(chart.points[1]).toMatchObject({ scopeToday: 12, change: 12 });
+    expect(chart.points[2]).toMatchObject({ scopeToday: 5, change: 0 });
+  });
+
+  it("never counts work taken out of the sprint as burned", () => {
+    /* A part-done issue (10h, 4h left) moved out: the line falls by 4h, and
+       the old reading called 6h of that day "completed". */
+    const chart = burndown({
+      ...base,
+      items: [item("a", 8), item("b", 10, { remainingHours: 4, member: false })],
+      /* Lowered to 4h the day before the sprint began. */
+      history: [{ at: at(11, 8), issueId: "b", remainingHours: 4 }],
+      membershipHistory: [{ at: at(14, 11), issueId: "b", joined: false }],
+    });
+    expect(burns(chart)).toEqual([0, 0, 0, 0, 0]);
+    expect(chart.points[2]).toMatchObject({ change: -4, scopeToday: -10 });
+  });
+
+  it("never counts a re-estimate as burned — not even of finished work", () => {
+    const chart = burndown({
+      ...base,
+      items: [item("a", 12, { status: "DONE" }), item("b", 6)],
+      statusHistory: [
+        { at: at(12, 9), issueId: "a", from: "IN_PROGRESS", to: "DONE" },
+      ],
+      estimateHistory: [
+        { at: at(13, 10), issueId: "a", from: 8, to: 12 },
+        { at: at(14, 10), issueId: "b", from: 4, to: 6 },
+      ],
+    });
+    expect(burns(chart)).toEqual([8, 0, 0, 0, 0]);
+    expect(chart.points[1]).toMatchObject({ scopeToday: 4, change: 0 });
+    expect(chart.points[2]).toMatchObject({ scopeToday: 2, change: 2 });
+  });
+
+  it("says a day with no effort change burned nothing", () => {
+    const chart = burndown({ ...base, items: [item("a", 8)] });
+    for (const point of chart.points) {
+      expect(point).toMatchObject({ completedToday: 0, reopenedToday: 0, burned: [] });
+    }
+  });
+
+  it("counts an estimate and its remainder saved in one edit once", () => {
+    /* Both written at the same instant: each used to report the combined
+       jump, so the day's reasons added up to twice the step. */
+    const chart = burndown({
+      ...base,
+      items: [item("a", 3)],
+      estimateHistory: [{ at: at(13, 10), issueId: "a", from: null, to: 3 }],
+      history: [{ at: at(13, 10), issueId: "a", remainingHours: 3 }],
+    });
+    const day = chart.points[1]!;
+    expect(day.change).toBe(3);
+    expect(day.changes.reduce((sum, change) => sum + change.delta, 0)).toBe(3);
+    expect(day.completedToday).toBe(0);
+  });
+
+  it("puts today's point at the sprint's current remaining effort", () => {
+    /* Remaining set on the issue itself, with no reading in the trail: the
+       figure above the chart used it and today's point did not, so the two
+       disagreed. */
+    const chart = burndown({
+      ...base,
+      items: [item("a", 8, { remainingHours: 3 })],
+    });
+    expect(chart.remaining).toBe(3);
+    expect(chart.points[chart.todayIndex!]!.actual).toBe(3);
   });
 });

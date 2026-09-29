@@ -8,6 +8,7 @@ import { Alert, Button } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/Toast";
 import {
   IconArrowRight,
+  IconChevronLeft,
   IconCopy,
   IconEdit,
   IconMore,
@@ -15,6 +16,10 @@ import {
   IconWarning,
 } from "@/components/ui/Icon";
 import { CloneIssueDialog } from "@/components/issues/CloneIssueDialog";
+import {
+  SprintMoveOptions,
+  useSprintMove,
+} from "@/components/sprints/MoveToSprintControl";
 import { deleteIssue } from "@/server/issues";
 import { moveIssueToSprint } from "@/server/sprints";
 import type { WorkRole } from "@/lib/domain";
@@ -59,6 +64,16 @@ export interface IssueRowActionsProps {
    * move with nowhere to go, so this only decides whether to show it.
    */
   inSprint?: boolean;
+  /**
+   * Offer "Move Sprint": the issue's own sprint picker — every eligible sprint
+   * in its project, not only the next — opened inside this menu.
+   *
+   * The Flow Board sets it for the people who may move sprint issues
+   * (`canEditSprintIssues`) and for work that is not Done, which stays in the
+   * sprint it was finished in. Presentation only: `eligibleSprintsForIssue`
+   * and `moveIssueToSprint` re-check all of it on the server.
+   */
+  moveSprint?: boolean;
 }
 
 export function IssueRowActions({
@@ -69,6 +84,7 @@ export function IssueRowActions({
   isAdmin,
   workRole,
   inSprint = false,
+  moveSprint = false,
 }: IssueRowActionsProps) {
   const router = useRouter();
   const { toast } = useToast();
@@ -77,6 +93,14 @@ export function IssueRowActions({
   const [deleting, setDeleting] = useState(false);
   const [moving, setMoving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /*
+   * Which page of the menu is showing: its actions, or — after "Move Sprint" —
+   * the sprint picker, the same one the issue's own page has. It opens in
+   * place rather than in a second popup, and every close of the menu puts it
+   * back to the actions.
+   */
+  const [view, setView] = useState<"actions" | "sprints">("actions");
+  const picker = useSprintMove(issueId, issueKey);
 
   const canDelete = isAdmin || reporterId === currentUserId;
   const href = `/issues/${issueKey.toLowerCase()}`;
@@ -136,8 +160,13 @@ export function IssueRowActions({
     <>
       <Menu
         align="end"
-        width={180}
+        /* The picker is as wide as the issue page's, for the sprints' dates;
+           the actions keep their own width. */
+        width={view === "sprints" ? "min(340px, calc(100vw - 32px))" : 180}
         label={`Actions for ${issueKey}`}
+        onOpenChange={(open) => {
+          if (!open) setView("actions");
+        }}
         trigger={(props) => (
           <button
             type="button"
@@ -149,35 +178,66 @@ export function IssueRowActions({
           </button>
         )}
       >
-        <MenuItem href={href} icon={<IconEdit />}>
-          Open / edit
-        </MenuItem>
-        {/* Cloning creates an issue, which any project member may already do —
-            the same gate the Create dialog has, re-checked on the server. */}
-        <MenuItem icon={<IconCopy />} onSelect={() => setCloning(true)}>
-          Clone
-        </MenuItem>
-        {inSprint ? (
-          <MenuItem
-            icon={<IconArrowRight />}
-            disabled={moving}
-            onSelect={() => void moveToNextSprint()}
-          >
-            {moving ? "Moving…" : "Move to next sprint"}
-          </MenuItem>
-        ) : null}
-        {canDelete ? (
+        {view === "sprints" ? (
           <>
-            <MenuSeparator />
             <MenuItem
-              danger
-              icon={<IconTrash />}
-              onSelect={() => setConfirming(true)}
+              keepOpen
+              icon={<IconChevronLeft />}
+              onSelect={() => setView("actions")}
             >
-              Delete
+              Back
             </MenuItem>
+            <MenuSeparator />
+            <SprintMoveOptions picker={picker} />
           </>
-        ) : null}
+        ) : (
+          <>
+            <MenuItem href={href} icon={<IconEdit />}>
+              Open / edit
+            </MenuItem>
+            {/* Cloning creates an issue, which any project member may already do —
+            the same gate the Create dialog has, re-checked on the server. */}
+            <MenuItem icon={<IconCopy />} onSelect={() => setCloning(true)}>
+              Clone
+            </MenuItem>
+            {inSprint ? (
+              <MenuItem
+                icon={<IconArrowRight />}
+                disabled={moving}
+                onSelect={() => void moveToNextSprint()}
+              >
+                {moving ? "Moving…" : "Move to next sprint"}
+              </MenuItem>
+            ) : null}
+            {moveSprint ? (
+              <MenuItem
+                keepOpen
+                icon={<IconArrowRight />}
+                disabled={picker.moving}
+                onSelect={() => {
+                  setView("sprints");
+                  /* Read where it may go now, as the issue page's picker does on
+                 opening — once, until a move or a failure asks again. */
+                  if (picker.load.state === "idle") void picker.read();
+                }}
+              >
+                {picker.moving ? "Moving…" : "Move Sprint"}
+              </MenuItem>
+            ) : null}
+            {canDelete ? (
+              <>
+                <MenuSeparator />
+                <MenuItem
+                  danger
+                  icon={<IconTrash />}
+                  onSelect={() => setConfirming(true)}
+                >
+                  Delete
+                </MenuItem>
+              </>
+            ) : null}
+          </>
+        )}
       </Menu>
 
       {cloning ? (

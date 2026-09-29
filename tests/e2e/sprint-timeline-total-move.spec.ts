@@ -328,10 +328,14 @@ test.describe("Move, from the issue's own menu", () => {
     const menu = page.getByRole("menu", { name: `Actions for ${key}` });
     await expect(menu.getByRole("menuitem", { name: "Open / edit" })).toBeVisible();
     await expect(menu.getByRole("menuitem", { name: "Clone" })).toBeVisible();
-    /* Moving between sprints is a sprint's own control and belongs to the
-       sprint board; a board card, whose issue may be in no sprint at all, is
-       given neither a sprint entry in its ⋮ menu nor the Move control. */
-    await expect(menu.getByRole("menuitem", { name: /sprint/i })).toHaveCount(0);
+    /* A board card, whose issue may be in no sprint at all, is never offered
+       "Move to next sprint" — a move that assumes a sprint — nor the sprint
+       board's Move control. Its ⋯ menu does offer "Move Sprint", the issue's
+       own picker, which works from no sprint as well as from one; that is
+       covered in `flow-board-move-sprint.spec.ts`. */
+    await expect(
+      menu.getByRole("menuitem", { name: /next sprint/i }),
+    ).toHaveCount(0);
     await page.keyboard.press("Escape");
     await expect(
       card.getByRole("button", { name: new RegExp(`Move ${key} to another`) }),

@@ -37,6 +37,7 @@ import { BOARD_STATUSES, boardColumnFor, dropStatusFor } from "@/lib/board";
 import {
   ISSUE_STATUSES,
   allowedStatusesFor,
+  canEditSprintIssues,
   canSetStatus,
   doesDeveloperWork,
   doesQaWork,
@@ -1061,6 +1062,12 @@ export function FlowBoard({
                         setDragIssueId(null);
                         setDropTarget(null);
                       }}
+                      /* Move Sprint, in the card's ⋯ menu: for the people
+                         who may move sprint work, and for work that is not
+                         Done — the same rules `moveIssueToSprint` enforces. */
+                      moveSprint={
+                        canEditSprintIssues(workRole) && issue.status !== "DONE"
+                      }
                     />
                   ))
                 )}
@@ -1090,6 +1097,7 @@ export function BoardCard({
   onDragStart,
   onDragEnd,
   inSprint = false,
+  moveSprint = false,
   actions,
   linkWholeCard = false,
 }: {
@@ -1110,6 +1118,9 @@ export function BoardCard({
   /** Shown as part of a sprint, so the card's menu can offer Move to next
    *  sprint. Off on the board, where a card may belong to no sprint. */
   inSprint?: boolean;
+  /** Offer "Move Sprint" in the card's ⋯ menu — the Flow Board's cards. The
+   *  sprint page leaves it off: its cards have their own Move to control. */
+  moveSprint?: boolean;
   /**
    * Anything else this card's surface offers, drawn beside its own menu — the
    * sprint page puts Move to there, so a sprint's work can be moved from the
@@ -1201,6 +1212,7 @@ export function BoardCard({
             currentUserId={currentUserId}
             isAdmin={isAdmin}
             inSprint={inSprint}
+            moveSprint={moveSprint}
           />
         </div>
       </div>

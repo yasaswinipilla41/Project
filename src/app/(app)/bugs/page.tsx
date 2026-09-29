@@ -114,6 +114,7 @@ export default async function BugsPage({
           id: sprint.id,
           name: `${sprint.project.key} · ${sprint.name} (${formatDateRange(sprint.startDate, sprint.endDate)})`,
           completed: sprint.status === "COMPLETED",
+          active: sprint.status === "ACTIVE",
         }))}
         showTypeFilter={false}
         currentUserId={user.id}

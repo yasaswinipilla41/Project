@@ -46,6 +46,9 @@ export interface DialogProps {
    * it is modal again. Opt-in, so every other dialog is exactly as it was.
    */
   windowControls?: boolean;
+  /** An extra class on the panel itself, for a dialog that needs its own
+   *  look. Absent, the panel is exactly as every other dialog's. */
+  className?: string;
 }
 
 const FOCUSABLE =
@@ -81,6 +84,7 @@ export function Dialog({
   busy = false,
   description,
   windowControls = false,
+  className,
 }: DialogProps) {
   const titleId = useId();
   const descId = useId();
@@ -244,6 +248,7 @@ export function Dialog({
     "prio-dialog",
     size !== "md" ? `prio-dialog--${size}` : "",
     maximized && !minimized ? "prio-dialog--maximized" : "",
+    className ?? "",
   ]
     .filter(Boolean)
     .join(" ");

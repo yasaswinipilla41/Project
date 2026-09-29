@@ -46,18 +46,6 @@
 /* ------------------------------------------------- the completed group */
 
 /*
- * Completed sprints, behind their own control.
- *
- * The group is one item in the sprints column, so the control and the cards it
- * opens stack inside it with the same gap the column uses between cards.
- */
-.prio-sprints__completed {
-  display: flex;
-  flex-direction: column;
-  gap: var(--prio-space-5);
-}
-
-/*
  * The control itself: the history heading, made pressable.
  *
  * It keeps that heading's size, weight, tracking and colour, because it is
@@ -133,6 +121,85 @@
 
 .prio-sprint[data-status="COMPLETED"] {
   background: var(--prio-bg-subtle);
+}
+
+/*
+ * The rest of the sprint's page, in the sprint block's border.
+ *
+ * Every block on the page — the Burndown Chart, Issues in this sprint, Issues
+ * by status, and anything else drawn as a card after the sprint block — takes
+ * the border the sprint block has, so the page reads as one set of blocks
+ * rather than one strong one and three faint ones. The same width, radius and
+ * colour token (which has its own dark-mode step); not the inset bar, which
+ * says "this sprint is running" and belongs to the sprint block alone. A
+ * sprint that is not running keeps the ordinary card border, and so do these.
+ * Siblings only, so the cards and panels nested inside a block are untouched.
+ *
+ * The details page's own sprint block only (`--details`). The Sprints list
+ * draws its sprints as the same kind of card one after another, and without
+ * this the running sprint's border spread to every card listed after it —
+ * the upcoming sprints and their empty state included.
+ */
+.prio-sprint--details[data-status="ACTIVE"] ~ .prio-card {
+  border-color: var(--prio-primary-500);
+}
+
+/*
+ * The Move to menu on a sprint's issue cards.
+ *
+ * It was a fixed 220px, and its rows the menu's usual single ellipsised line —
+ * so every sprint's dates were cut off. Now it is as wide as its longest row,
+ * up to a measure that still fits the screen, and each sprint is two lines:
+ * its name, which may wrap if it is very long, and under it its start and end
+ * dates, which are kept together on one line and never clipped. Colours are
+ * theme tokens, so both modes follow. This menu only; every other menu is
+ * unchanged.
+ */
+.prio-menu.prio-menu--movesprint {
+  width: max-content;
+  min-width: 220px;
+  max-width: min(360px, calc(100vw - 16px));
+  overflow-x: hidden;
+}
+
+.prio-menu--movesprint .prio-menu__item {
+  white-space: normal;
+}
+
+.prio-menu--movesprint .prio-menu__itemlabel {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.prio-movesprint__name {
+  display: block;
+}
+
+.prio-movesprint__dates {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--prio-text-xs);
+  color: var(--prio-text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/*
+ * The Sprints list's Upcoming group, without a border.
+ *
+ * Transparent rather than removed, so each card keeps the same box and the
+ * list does not shift by a pixel; the card's background and shadow still
+ * mark it out. The wrapper draws nothing itself (`display: contents`), so the
+ * list's spacing is exactly as it was. Active and Completed are untouched.
+ */
+.prio-sprints__upcoming {
+  display: contents;
+}
+
+.prio-sprints__upcoming > .prio-card {
+  border-color: transparent;
 }
 
 .prio-sprint__head {
@@ -220,6 +287,13 @@
   align-items: center;
   gap: var(--prio-space-2);
   flex-wrap: wrap;
+}
+
+/* The Completed sprints control, among the header's buttons: their height,
+   and none of the top margin it had when it sat under the sprints. */
+.prio-sprints__headactions .prio-sprints__disclosure {
+  height: 32px;
+  margin: 0;
 }
 
 .prio-sprint__name {
@@ -1110,10 +1184,20 @@
 }
 
 /* A whole day's width is the target, so the pointer does not have to find the
-   line itself. */
+   line itself — and clicking it pins that day open, so it says it is
+   clickable. */
 .prio-burndown__hit {
   fill: transparent;
-  cursor: crosshair;
+  cursor: pointer;
+}
+
+.prio-burndown__hit:focus {
+  outline: none;
+}
+
+.prio-burndown__hit:focus-visible {
+  outline: 2px solid var(--prio-primary-500);
+  outline-offset: -2px;
 }
 
 .prio-burndown__crosshair {
@@ -1216,12 +1300,6 @@
  * the same width wherever it is placed and whichever build it is running in.
  */
 .prio-burndown__tip {
-  /* The widths of the two right-hand columns in the issues list, shared by
-     the heading and every row so they line up. */
-  --prio-tip-status: 72px;
-  /* Wide enough for the word "Effort" above it, not just for the figures
-     under it. */
-  --prio-tip-effort: 46px;
   position: fixed;
   left: 0;
   top: 0;
@@ -1244,6 +1322,107 @@
 
 .prio-burndown__tip.is-placed {
   visibility: visible;
+}
+
+/* A day clicked open: the card stays and takes clicks, so its "Burn today"
+   link and its close button can be used. As a hover preview it lets the
+   pointer through, as above. */
+.prio-burndown__tip[data-pinned] {
+  pointer-events: auto;
+}
+
+/* While the burn dialog it opened is showing, the card sits with the page,
+   under the dialog's backdrop, instead of on the popover layer above it. */
+.prio-burndown__tip[data-behind] {
+  z-index: var(--prio-z-dropdown);
+}
+
+/* The pinned day's marker, filled, so it reads as held rather than hovered. */
+.prio-burndown__dot[data-pinned] {
+  fill: var(--prio-primary-600);
+}
+
+.prio-burndown__tip[data-pinned] .prio-burndown__tipdate {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--prio-space-3);
+}
+
+.prio-burndown__tipclose {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin: -2px -6px -2px 0;
+  border-radius: var(--prio-radius-sm);
+  color: var(--prio-text-muted);
+}
+
+.prio-burndown__tipclose:hover {
+  background: var(--prio-bg-hover);
+  color: var(--prio-text-primary);
+}
+
+/* "Burn today", as the link it is: it opens the day's burned issues. */
+.prio-burndown__burnlink {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--prio-primary-600);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.prio-burndown__burnlink strong {
+  color: inherit;
+}
+
+.prio-burndown__burnlink:hover {
+  color: var(--prio-primary-700);
+}
+
+.prio-burndown__burnlink:focus-visible {
+  outline: 2px solid var(--prio-primary-500);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* How to make a hover card stay, said quietly at its foot. */
+.prio-burndown__tiphint {
+  margin: var(--prio-space-2) 0 0;
+  font-size: var(--prio-text-2xs);
+  color: var(--prio-text-muted);
+}
+
+/* The burn breakdown's dialog, as one contained block: a border of its own on
+   top of the dialog's shadow, so its edge is clear against the page behind
+   in either theme. Only this dialog — every other one is unchanged. */
+.prio-burndown__burndialog {
+  border: 1px solid var(--prio-border-strong);
+}
+
+/* A day's date in the breakdown, kept on one line. */
+.prio-burndown__burndate {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The total under the burned issues, padded like the rows above it (the
+   shared table styles only pad the head and body), with its figure in the
+   same column as theirs. */
+.prio-burndown__burntable tfoot th,
+.prio-burndown__burntable tfoot td {
+  padding: var(--prio-space-3) var(--prio-space-4);
+  border-top: 1px solid var(--prio-border);
+}
+
+.prio-burndown__burntable tfoot th {
+  text-align: right;
+  font-weight: var(--prio-weight-semibold);
+  color: var(--prio-text-secondary);
 }
 
 .prio-burndown__todaytag[data-side="middle"] {
@@ -1274,62 +1453,10 @@
   margin-top: var(--prio-space-2);
 }
 
-/* The two right-hand column names, on the heading's own line so what sits
-   beneath them is read as columns. */
-.prio-burndown__tipsection:has(.prio-burndown__tipcols) {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: var(--prio-space-3);
-  align-items: baseline;
-}
-
-.prio-burndown__tipcols {
-  display: grid;
-  grid-template-columns: var(--prio-tip-status) var(--prio-tip-effort);
-  gap: var(--prio-space-3);
-  text-align: right;
-  white-space: nowrap;
-}
-
 /* A day nothing happened on says so, and says where the rest is. */
 .prio-burndown__tipquiet {
   margin: var(--prio-space-2) 0 0;
   color: var(--prio-text-muted);
-}
-
-/* The changes a busy day has left over, counted rather than listed: a panel
-   as tall as the chart has to sit a long way from the point it describes. */
-.prio-burndown__tipmore {
-  color: var(--prio-text-muted);
-}
-
-/* The dot that carries what kind of change a row is, in the colours this
-   panel and the status pills already use. Colour is never the only thing
-   saying it — the words beside it say the same. */
-.prio-burndown__tipdot {
-  flex: none;
-  width: 7px;
-  height: 7px;
-  margin-top: 5px;
-  border-radius: var(--prio-radius-pill);
-  background: var(--prio-text-muted);
-}
-
-.prio-burndown__tipdot[data-reason="completed"] {
-  background: var(--prio-status-done-dot);
-}
-
-.prio-burndown__tipdot[data-reason="reopened"] {
-  background: var(--prio-status-reopened-dot);
-}
-
-.prio-burndown__tipdot[data-reason="added"],
-.prio-burndown__tipdot[data-reason="estimate"] {
-  background: var(--prio-status-todo-dot);
-}
-
-.prio-burndown__tipdot[data-reason="qa"] {
-  background: var(--prio-status-qa-dot);
 }
 
 /* The issue and what became of it, on two lines inside one row. */
@@ -1381,7 +1508,6 @@
   color: var(--prio-text-primary);
 }
 
-.prio-burndown__tipchanges,
 .prio-burndown__tipissues {
   list-style: none;
   margin: var(--prio-space-3) 0 0;
@@ -1390,71 +1516,6 @@
   display: flex;
   flex-direction: column;
   gap: 3px;
-}
-
-/*
- * A reason for a change: a signed figure in its own column, then the words.
- *
- * Flex, because the figures line up under one another — which is what makes a
- * column of deltas readable at a glance.
- */
-/*
- * A grid rather than a flowing row: the two right-hand figures line up under
- * their headings, which is what lets a reader scan a busy day down a column
- * instead of reading five sentences.
- */
-.prio-burndown__tipchanges li {
-  display: grid;
-  grid-template-columns: 9px 1fr var(--prio-tip-status) var(--prio-tip-effort);
-  gap: var(--prio-space-2) var(--prio-space-3);
-  align-items: baseline;
-}
-
-.prio-burndown__tipname {
-  min-width: 0;
-}
-
-.prio-burndown__tipstatus,
-.prio-burndown__tipeffort {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-/* What happened to it, in the colour that kind of change carries elsewhere in
-   this panel. */
-.prio-burndown__tipwhy {
-  color: var(--prio-text-muted);
-  white-space: nowrap;
-}
-
-.prio-burndown__tipwhy[data-reason="completed"] {
-  color: var(--prio-status-done-dot);
-}
-
-.prio-burndown__tipwhy[data-reason="reopened"] {
-  color: var(--prio-status-reopened-dot);
-}
-
-.prio-burndown__tipwhy[data-reason="added"],
-.prio-burndown__tipwhy[data-reason="estimate"] {
-  color: var(--prio-status-todo-dot);
-}
-
-.prio-burndown__tipwhy[data-reason="qa"] {
-  color: var(--prio-status-qa-dot);
-}
-
-/*
- * The leftover count is a sentence, not a row of columns.
- *
- * Every other item in this list is itself a grid of four columns; this one
- * has to say so it is not, or its words are laid out in the nine-pixel column
- * the marker dot lives in — one letter per line.
- */
-.prio-burndown__tipchanges li.prio-burndown__tipmore {
-  display: block;
-  color: var(--prio-text-muted);
 }
 
 /*
@@ -1695,6 +1756,42 @@
   white-space: nowrap;
 }
 
+/*
+ * Effort, Remaining and Burned in the day's table: headings over their
+ * figures.
+ *
+ * The figures were right-aligned but their headings were not — the table's
+ * own heading rule (`.prio-burndown__issuetable th`, left-aligned) is the
+ * more specific of the two, so every heading sat to the left of the column it
+ * named. Said again here at that specificity, so heading and figures share
+ * one right edge; and the three columns share one width, so they read as a
+ * set rather than three columns sized by their longest word.
+ */
+.prio-burndown__issuetable th.prio-burndown__effortcol {
+  text-align: right;
+}
+
+.prio-burndown__issuetable .prio-burndown__effortcol {
+  width: 88px;
+}
+
+/*
+ * And that width held on a narrow screen too.
+ *
+ * A cell's `width` is only a preference in an automatically laid-out table:
+ * on a phone the summary's share of the table left too little, and the three
+ * columns fell back to their headings' own widths — each a different one. A
+ * zero-height block the width of the column (less the heading's right
+ * padding) makes 88px the least each can be, so the table takes the room it
+ * needs from its flexible columns instead, as it always did.
+ */
+.prio-burndown__issuetable th.prio-burndown__effortcol::before {
+  content: "";
+  display: block;
+  width: calc(88px - var(--prio-space-3));
+  height: 0;
+}
+
 @media (max-width: 767.98px) {
   /* Five columns do not fit a phone, and squeezing them makes every one of
      them unreadable; the table keeps its shape and the card scrolls. */
@@ -1703,7 +1800,10 @@
   }
 
   .prio-burndown__issuetable {
-    min-width: 520px;
+    /* Room for Remaining and Burned beside Effort at their full, equal width;
+       the table scrolls inside its own block rather than widening the
+       page. */
+    min-width: 780px;
   }
 
   .prio-burndown__tip {

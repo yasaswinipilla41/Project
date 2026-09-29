@@ -133,17 +133,23 @@ test.describe("A sprint card's whole surface opens the issue", () => {
 
       /* The title itself: text content, no control of its own. */
       await card.locator(".prio-board__card-title").click();
-      await expect(page).toHaveURL(new RegExp(`/issues/${issue.key.toLowerCase()}$`));
+      await expect(page).toHaveURL(
+        new RegExp(`/issues/${issue.key.toLowerCase()}$`),
+      );
     });
   }
 
-  test("still opens from the key, exactly as it always did", async ({ page }) => {
+  test("still opens from the key, exactly as it always did", async ({
+    page,
+  }) => {
     const { key, sprintId, done } = await seedSprintWithBothGroups();
 
     await page.goto(`/projects/${key}/sprints/${sprintId}`);
     const card = cardFor(page, done.key);
     await card.locator(".prio-board__card-key").click();
-    await expect(page).toHaveURL(new RegExp(`/issues/${done.key.toLowerCase()}$`));
+    await expect(page).toHaveURL(
+      new RegExp(`/issues/${done.key.toLowerCase()}$`),
+    );
   });
 
   test("opens on Enter and on Space, with no pointer involved", async ({
@@ -154,12 +160,16 @@ test.describe("A sprint card's whole surface opens the issue", () => {
     await page.goto(`/projects/${key}/sprints/${sprintId}`);
     await focusCard(page, backlog.key);
     await page.keyboard.press("Enter");
-    await expect(page).toHaveURL(new RegExp(`/issues/${backlog.key.toLowerCase()}$`));
+    await expect(page).toHaveURL(
+      new RegExp(`/issues/${backlog.key.toLowerCase()}$`),
+    );
 
     await page.goBack();
     await focusCard(page, backlog.key);
     await page.keyboard.press(" ");
-    await expect(page).toHaveURL(new RegExp(`/issues/${backlog.key.toLowerCase()}$`));
+    await expect(page).toHaveURL(
+      new RegExp(`/issues/${backlog.key.toLowerCase()}$`),
+    );
   });
 
   test("a subtle hover and a pointer cursor mark the whole card, not only the key", async ({
@@ -196,7 +206,9 @@ test.describe("A sprint card's whole surface opens the issue", () => {
       await expect(menu).toBeVisible();
       /* A choice within a menu is `menuitemradio`, not `menuitem` — the same
          status menu the Flow Board itself uses. */
-      await menu.getByRole("menuitemradio", { name: "New", exact: true }).click();
+      await menu
+        .getByRole("menuitemradio", { name: "New", exact: true })
+        .click();
 
       /* The menu closes and the status actually changed — and the click that
          did it never left this page. */
@@ -234,23 +246,42 @@ test.describe("A sprint card's whole surface opens the issue", () => {
       page,
     }) => {
       const { key, sprintId, backlog } = await seedSprintWithBothGroups();
+      /* An upcoming sprint for the menu to offer — it lists sprints only. */
+      const admin = await prisma.user.findFirstOrThrow({
+        where: { role: "ADMIN" },
+        select: { id: true },
+      });
+      const next = await prisma.sprint.create({
+        data: {
+          name: `E2E whole-card next ${Date.now()}`,
+          startDate: new Date(Date.now() + 14 * 86_400_000),
+          endDate: new Date(Date.now() + 27 * 86_400_000),
+          projectId: createdProjects[createdProjects.length - 1]!,
+          createdById: admin.id,
+        },
+        select: { name: true },
+      });
 
       await page.goto(`/projects/${key}/sprints/${sprintId}`);
       const card = cardFor(page, backlog.key);
       await card.hover();
       await card
-        .getByRole("button", { name: new RegExp(`Move ${backlog.key} to another`) })
+        .getByRole("button", {
+          name: new RegExp(`Move ${backlog.key} to another`),
+        })
         .click();
 
       const menu = page.getByRole("menu", { name: `Move ${backlog.key}` });
       await expect(menu).toBeVisible();
       await expect(page).toHaveURL(new RegExp(`/sprints/${sprintId}$`));
 
-      await menu.getByRole("menuitem", { name: "Backlog" }).click();
-      await expect(page.getByText(`${backlog.key} moved to Backlog`)).toBeVisible({
+      await menu.getByRole("menuitem", { name: new RegExp(next.name) }).click();
+      await expect(
+        page.getByText(`${backlog.key} moved to ${next.name}`),
+      ).toBeVisible({
         timeout: 15_000,
       });
-      /* The click that chose Backlog did not also open the issue. */
+      /* The click that chose the sprint did not also open the issue. */
       await expect(page).toHaveURL(new RegExp(`/sprints/${sprintId}$`));
     });
   });
@@ -267,7 +298,9 @@ test.describe("A sprint card's whole surface opens the issue", () => {
     const { key, backlog } = await seedSprintWithBothGroups();
 
     await page.goto(`/projects/${key}/board`);
-    const card = page.locator(".prio-board__card").filter({ hasText: backlog.key });
+    const card = page
+      .locator(".prio-board__card")
+      .filter({ hasText: backlog.key });
     await expect(card).toBeVisible();
 
     const before = page.url();
@@ -276,6 +309,8 @@ test.describe("A sprint card's whole surface opens the issue", () => {
 
     /* The key still works — that path was never touched. */
     await card.locator(".prio-board__card-key").click();
-    await expect(page).toHaveURL(new RegExp(`/issues/${backlog.key.toLowerCase()}$`));
+    await expect(page).toHaveURL(
+      new RegExp(`/issues/${backlog.key.toLowerCase()}$`),
+    );
   });
 });

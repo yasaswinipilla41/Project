@@ -602,21 +602,18 @@ test.describe("The burndown's detail", () => {
     await expect(tip).toContainText("Completed: 10h of 30h committed");
     await expect(tip).toContainText("Issues: 1 completed · 1 remaining");
 
-    /* Why it stepped, and by how much. */
-    const change = tip.locator(".prio-burndown__tipchanges li");
-    await expect(change).toHaveCount(1);
-    await expect(change).toContainText(finished.key);
-    await expect(change).toContainText("finished");
-    await expect(change).toContainText("−10h");
+    /* The per-issue "Issues changed" list is gone from the card: the day's
+       burn opens its own details, and the table below lists the day. */
+    await expect(tip).not.toContainText("Issues changed");
 
     /* What the day itself did, which the cumulative figures above do not
-       say: ten hours went, and the count behind them. */
+       say: ten hours burned, and the count behind them. */
     await expect(
       tip.locator(".prio-burndown__tipfigures"),
       "the day's own step, among the effort figures",
     ).toContainText("Change since prev: −10h");
     const movement = tip.locator(".prio-burndown__tipchange");
-    await expect(movement).toContainText("Burned today: 10h");
+    await expect(movement).toContainText("Burn today: 10h");
     await expect(movement).toContainText("Completed: 1");
 
     /*
@@ -641,6 +638,8 @@ test.describe("The burndown's detail", () => {
       "Status",
       "Assignee",
       "Effort",
+      "Remaining",
+      "Burned",
     ]);
 
     /* Both of the day's issues: the one that was finished that day, and the
@@ -671,7 +670,7 @@ test.describe("The burndown's detail", () => {
     await expect(tip).toContainText("Remaining: 30h");
     await expect(tip).toContainText("Issues: 0 completed · 2 remaining");
     /* Nothing had happened yet, so there is nothing to explain. */
-    await expect(tip.locator(".prio-burndown__tipchanges")).toHaveCount(0);
+    await expect(tip.locator(".prio-burndown__burnlink")).toHaveCount(0);
     /* And the day says so rather than leaving an empty panel to be read as
        "no data": the first day has no day before it to have moved from. */
     await expect(tip.locator(".prio-burndown__tipfigures")).toContainText(
@@ -1135,28 +1134,279 @@ test.describe("The burndown's detail", () => {
     ).toHaveLength(1);
   });
 
-  test("a day with more to say than fits gives up rows, not its place", async ({
+  test("clicking a point pins its day, and Burn today opens what was burned", async ({
     page,
   }) => {
     /*
-     * Ten changes on one day, which no screen can list beside a point.
+     * Every day's point is a control: clicking it — or Enter on it — pins the
+     * day, so its card stays open and takes clicks. That is what makes "Burn
+     * today" usable at all, since a hover card lets the pointer through and
+     * ends the moment the pointer leaves the point. "Burn today" then opens
+     * the day's burned issues, which add up to the figure it quoted.
+     */
+    const { key, sprintId, finished } = await seedRunningSprint();
+    await page.goto(`/projects/${key}/sprints/${sprintId}`);
+    await openBurndown(page);
+    const chart = page.locator(".prio-burndown");
+    await chart.waitFor({ timeout: 45_000 });
+    const hits = chart.locator(".prio-burndown__hit");
+    const tip = chart.locator(".prio-burndown__tip");
+    const table = chart.locator(".prio-burndown__table");
+
+    /* Every reached day's point is a button, named for its day and value. */
+    const days = await hits.count();
+    for (let day = 0; day < days; day += 1) {
+      await expect(hits.nth(day)).toHaveAttribute("role", "button");
+      await expect(hits.nth(day)).toHaveAttribute(
+        "aria-label",
+        /^\d{2} \w{3} \d{4}: \d+(\.\d+)?h remaining\. Open the day's details$/,
+      );
+    }
+
+    /* Hovered, the card is a preview: it lets the pointer through and says
+       how to make it stay. */
+    await hits.nth(2).hover();
+    await expect(tip).toContainText("Burn today: 10h");
+    await expect(tip).toContainText("Click the point to pin this card");
+    expect(await tip.evaluate((node) => getComputedStyle(node).pointerEvents)).toBe(
+      "none",
+    );
+
+    /* Clicked, it is pinned: it stays when the pointer leaves, takes clicks,
+       and hovering another day moves neither it nor the table. */
+    await hits.nth(2).click();
+    await expect(tip).toHaveAttribute("data-pinned", "true");
+    await expect(hits.nth(2)).toHaveAttribute("aria-pressed", "true");
+    expect(await tip.evaluate((node) => getComputedStyle(node).pointerEvents)).toBe(
+      "auto",
+    );
+    const pinnedDate = await tip.locator(".prio-burndown__tipdate").innerText();
+    await hits.nth(5).hover();
+    await expect(tip.locator(".prio-burndown__tipdate")).toHaveText(pinnedDate);
+    await expect(table).toContainText(
+      `Issues on ${pinnedDate.split("\n")[0]!.trim()}`,
+      { ignoreCase: true },
+    );
+
+    /* Burn today opens the day's burned issues, in the product's dialog. */
+    await tip.getByRole("button", { name: /Burn today/ }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText("Burned on");
+    const rows = dialog.locator("tbody tr");
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText(finished.key);
+    await expect(rows.first()).toContainText("Finished");
+    await expect(rows.first()).toContainText("10h");
+    await expect(dialog.locator("tfoot")).toContainText("10h");
+    /* The key opens the issue, as it does everywhere else. */
+    await expect(rows.first().locator("a.prio-key")).toHaveAttribute(
+      "href",
+      `/issues/${finished.key.toLowerCase()}`,
+    );
+
+    /* Escape closes the dialog and leaves the day pinned; a second Escape
+       lets the day go. */
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(tip).toHaveAttribute("data-pinned", "true");
+    await page.keyboard.press("Escape");
+    await expect(tip).toHaveCount(0);
+
+    /* Clicking the same point again unpins it; so does a click outside the
+       chart. */
+    await hits.nth(2).click();
+    await expect(tip).toHaveAttribute("data-pinned", "true");
+    await hits.nth(2).click();
+    await expect(tip).not.toHaveAttribute("data-pinned", "true");
+    await hits.nth(2).click();
+    await page.mouse.click(5, 5);
+    await expect(tip).toHaveCount(0);
+
+    /* From the keyboard: Enter on a point pins it, like a click. */
+    await hits.nth(2).focus();
+    await page.keyboard.press("Enter");
+    await expect(tip).toHaveAttribute("data-pinned", "true");
+
+    /* A day with nothing burned offers no link to open. */
+    await page.keyboard.press("Escape");
+    await hits.nth(4).click();
+    await expect(tip).toContainText("No effort completed today");
+    await expect(tip.locator(".prio-burndown__burnlink")).toHaveCount(0);
+  });
+
+  test("the day's table says what each issue has left and has burned, and opens the burns", async ({
+    page,
+  }) => {
+    /*
+     * Remaining and Burned, beside Effort. Burned is everything an issue burned
+     * from the sprint's first day up to the day being read — the sum of the
+     * same per-day burns "Burn today" is made of — and clicking it opens those
+     * burns in a bordered modal whose rows add up to the figure.
+     */
+    const { key, sprintId, finished, open } = await seedRunningSprint();
+    await page.goto(`/projects/${key}/sprints/${sprintId}`);
+    await openBurndown(page);
+    const chart = page.locator(".prio-burndown");
+    await chart.waitFor({ timeout: 45_000 });
+    const table = chart.locator(".prio-burndown__table");
+
+    /* Before the finish (day 1): nothing burned yet. */
+    await chart.locator(".prio-burndown__hit").nth(1).click();
+    const early = table.locator("tbody tr").filter({ hasText: finished.key });
+    await expect(early.locator("td").nth(6)).toHaveText("10h");
+    await expect(early.locator("td").nth(7)).toHaveText("0h");
+    await expect(early.locator(".prio-burndown__burnlink")).toHaveCount(0);
+    await page.keyboard.press("Escape");
+
+    /* On the last day the open issue has 20h left and has burned nothing;
+       Effort is as it was. (The table lists the day's changed and open
+       issues, so the one finished days ago is not in it.) */
+    const days = await chart.locator(".prio-burndown__hit").count();
+    await chart.locator(".prio-burndown__hit").nth(days - 1).click();
+    const going = table.locator("tbody tr").filter({ hasText: open.key });
+    await expect(going.locator("td").nth(5)).toHaveText("20h");
+    await expect(going.locator("td").nth(6)).toHaveText("20h");
+    await expect(going.locator("td").nth(7)).toHaveText("0h");
+    await page.keyboard.press("Escape");
+
+    /* On the day it was finished (the third): nothing left, 10h burned. */
+    await chart.locator(".prio-burndown__hit").nth(2).click();
+    const done = table.locator("tbody tr").filter({ hasText: finished.key });
+    await expect(done.locator("td").nth(6)).toHaveText("0h");
+    const burned = done.locator(".prio-burndown__burnlink");
+    await expect(burned).toHaveText("10h");
+
+    /* Clicked, it opens the burns behind it. */
+    await burned.click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText(`${finished.key} · burned to`);
+    expect(
+      await dialog
+        .locator("thead th")
+        .evaluateAll((nodes) => nodes.map((node) => node.textContent!.trim())),
+    ).toEqual([
+      "Date",
+      "Issue key",
+      "Issue name",
+      "What happened",
+      "Assignee",
+      "Burned",
+    ]);
+    const rows = dialog.locator("tbody tr");
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText(finished.key);
+    await expect(rows.first()).toContainText("Ten hours, finished");
+    await expect(rows.first()).toContainText("10h");
+    await expect(dialog.locator("tfoot")).toContainText("10h");
+
+    /* A contained block: a border of its own, and the pinned day card sits
+       behind it rather than over its backdrop. */
+    expect(
+      await dialog.evaluate((node) => getComputedStyle(node).borderTopWidth),
+    ).toBe("1px");
+    await expect(chart.locator(".prio-burndown__tip")).toHaveAttribute(
+      "data-behind",
+      "true",
+    );
+
+    /* Its close icon closes it, and the card comes back in front. */
+    await dialog.getByRole("button", { name: /close/i }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(chart.locator(".prio-burndown__tip")).not.toHaveAttribute(
+      "data-behind",
+      "true",
+    );
+  });
+
+  test("lines Effort, Remaining and Burned up under their headings", async ({
+    page,
+  }) => {
+    /*
+     * The figures were right-aligned and their headings were not, so every
+     * heading sat to the left of the column it named; and on a phone the
+     * three columns fell to three different widths. Measured from the text
+     * itself: each heading ends where its figures end, on every row, and the
+     * three columns are one width — at a desktop size and a phone size, in
+     * both themes.
+     */
+    const { key, sprintId } = await seedRunningSprint();
+
+    for (const [width, height] of [
+      [1440, 900],
+      [390, 844],
+    ] as const) {
+      for (const theme of ["light", "dark"] as const) {
+        await page.setViewportSize({ width, height });
+        await page.goto(`/projects/${key}/sprints/${sprintId}`);
+        await page.evaluate(
+          (value) => document.documentElement.setAttribute("data-theme", value),
+          theme,
+        );
+        await openBurndown(page);
+        const table = page.locator(".prio-burndown__issuetable");
+        await table.waitFor({ timeout: 45_000 });
+
+        const columns = await table.evaluate((node) => {
+          const heads = Array.from(node.querySelectorAll("thead th"));
+          const rows = Array.from(node.querySelectorAll("tbody tr"));
+          /* Where a cell's own text ends, not where the cell does. */
+          const textRight = (cell: Element) => {
+            const range = document.createRange();
+            range.selectNodeContents(cell);
+            return Math.max(
+              ...Array.from(range.getClientRects())
+                .filter((rect) => rect.width > 0)
+                .map((rect) => rect.right),
+            );
+          };
+          return ["Effort", "Remaining", "Burned"].map((name) => {
+            const index = heads.findIndex(
+              (head) => head.textContent!.trim() === name,
+            );
+            return {
+              name,
+              width: Math.round(heads[index]!.getBoundingClientRect().width),
+              head: Math.round(textRight(heads[index]!)),
+              cells: rows.map((row) => Math.round(textRight(row.children[index]!))),
+            };
+          });
+        });
+
+        const where = `${width}px, ${theme}`;
+        for (const column of columns) {
+          expect(column.cells.length, where).toBeGreaterThan(0);
+          for (const cell of column.cells) {
+            expect(
+              Math.abs(cell - column.head),
+              `${where}: ${column.name} value not under its heading`,
+            ).toBeLessThanOrEqual(1);
+          }
+        }
+        expect(
+          new Set(columns.map((column) => column.width)).size,
+          `${where}: the three columns are different widths (${columns.map((column) => column.width).join(", ")})`,
+        ).toBe(1);
+      }
+    }
+  });
+
+  test("a busy day's card stays beside its point, without a list to grow", async ({
+    page,
+  }) => {
+    /*
+     * Ten changes on one day.
      *
-     * The panel used to take the other way out: too tall for the room between
-     * the chart and the table, it read in the flow under the chart — and on a
-     * window of ordinary height that is below the fold. The reader would go to
-     * scroll down to it and the panel would disappear as they did, because
-     * scrolling moves the page out from under the pointer and the hover ends
-     * with it. That is the fault this is about.
-     *
-     * So height is traded for position: the list gives up rows until the panel
-     * fits beside its day, and says how many it left out. Nothing is lost —
-     * the table under the chart lists the day in full, which is what the
-     * counting line points at.
+     * The card used to list them issue by issue, which made a busy day's card
+     * taller than the room beside its point — so it had to trim the list, or
+     * read under the chart where the reader could not reach it. The card no
+     * longer carries that list: the day's figures stay, "Burn today" opens its
+     * own details, and the table under the chart lists every issue. So a busy
+     * day's card is the same size as a quiet one's, and sits beside its point
+     * like any other, at every window size.
      */
     const { key, sprintId } = await seedBusyDay();
-
-    /** What the day added up to, per window: listed rows plus counted ones. */
-    const accounted: number[] = [];
 
     for (const [width, height] of [
       [1550, 950],
@@ -1172,24 +1422,24 @@ test.describe("The burndown's detail", () => {
       const hits = chart.locator(".prio-burndown__hit");
       const days = await hits.count();
 
-      /* The busy day is the one with the longest list — found rather than
-         counted out, so the fixture's dates are free to move. */
-      let busiest = { day: 0, rows: -1 };
+      /* The busy day is the one whose table names the most changed issues —
+         found rather than counted out, so the fixture's dates are free to
+         move. */
+      let busiest = { day: 0, marked: -1 };
       for (let day = 0; day < days; day += 1) {
         await hits.nth(day).hover();
         await expect(chart.locator(".prio-burndown__tip")).toBeVisible();
-        const rows = await chart
-          .locator(".prio-burndown__tipchanges > li")
+        const marked = await chart
+          .locator(".prio-burndown__table .prio-burndown__rowmark")
           .count();
-        if (rows > busiest.rows) busiest = { day, rows };
+        if (marked > busiest.marked) busiest = { day, marked };
       }
-      expect(
-        busiest.rows,
-        `${width}px: no day listed anything`,
-      ).toBeGreaterThan(1);
+      expect(busiest.marked, `${width}px: no busy day`).toBeGreaterThan(1);
 
       await hits.nth(busiest.day).hover();
-      await expect(chart.locator(".prio-burndown__tip")).toBeVisible();
+      const tip = chart.locator(".prio-burndown__tip");
+      await expect(tip).toBeVisible();
+      await expect(tip).not.toContainText("Issues changed");
 
       const seen = await page.evaluate(() => {
         const dot = document.querySelector("circle.prio-burndown__dot")!;
@@ -1221,13 +1471,6 @@ test.describe("The burndown's detail", () => {
             t.bottom <= tb.top ||
             t.top >= tb.bottom
           ),
-          /* The rows it is showing, and what it says about the rest. */
-          listed: tip.querySelectorAll(
-            ".prio-burndown__tipchanges > li:not(.prio-burndown__tipmore)",
-          ).length,
-          more: tip
-            .querySelector(".prio-burndown__tipmore")
-            ?.textContent?.trim(),
         };
       });
 
@@ -1239,31 +1482,7 @@ test.describe("The burndown's detail", () => {
       );
       expect(seen.offScreen, `${where}: off the screen`).toBe(0);
       expect(seen.coversTable, `${where}: covers the table`).toBe(false);
-
-      /*
-       * And the day is still accounted for in full.
-       *
-       * The rows given up are counted, and the count is of the rows actually
-       * given up — which is the part a trim can quietly get wrong, by dropping
-       * rows and leaving behind the number that was written for the untrimmed
-       * list. So what the panel lists plus what it says it left out has to be
-       * the same day whatever the window: the window decides how much of the
-       * day is shown, never how big the day was.
-       */
-      expect(
-        seen.more ?? "",
-        `${where}: nothing said about the rest`,
-      ).toContain("the table below has the day in full");
-      const left = Number(seen.more!.match(/and (\d+) more/)![1]);
-      expect(left, `${where}: says it left out nothing`).toBeGreaterThan(0);
-      expect(seen.listed, `${where}: lists nothing at all`).toBeGreaterThan(1);
-      accounted.push(seen.listed + left);
     }
-
-    expect(
-      new Set(accounted).size,
-      `the day came to ${accounted.join(", ")} as the window changed`,
-    ).toBe(1);
   });
 
   test("is the size of its own contents, at every point and every width", async ({
@@ -1601,17 +1820,18 @@ test.describe("The burndown's detail", () => {
     const tip = chart.locator(".prio-burndown__tip");
 
     /**
-     * The day whose panel has a row naming this issue and saying that.
+     * The day whose table has a row naming this issue and saying that.
      *
-     * Matched row by row rather than over the panel's whole text: a row reads
-     * "KEY Title" and then, on its second line, what happened to it — so the
-     * key and the words are not adjacent in the text.
+     * Read from the table under the chart, which follows the day being
+     * hovered and names each issue's reason for being in it. Matched row by
+     * row: the key and the words are in different cells.
      */
+    const table = chart.locator(".prio-burndown__table");
     const dayNaming = async (key: string, said: string) => {
       for (let day = 0; day < days; day += 1) {
         await hits.nth(day).hover();
         await expect(tip).toBeVisible();
-        const rows = await tip.locator("li").allTextContents();
+        const rows = await table.locator("tbody tr").allTextContents();
         if (rows.some((row) => row.includes(key) && row.includes(said))) {
           return day;
         }
@@ -1620,16 +1840,21 @@ test.describe("The burndown's detail", () => {
     };
 
     await dayNaming(added.key, "added to the sprint");
-    /* The line went up, and the panel says which half of the day did it. */
+    /* The line went up by work arriving: nothing was burned, and the card
+       says the ten hours were scope rather than calling them anything
+       else. */
+    await expect(tip.locator(".prio-burndown__tipfigures")).toContainText(
+      "Change since prev: +10h",
+    );
     await expect(tip.locator(".prio-burndown__tipchange")).toContainText(
-      "Added today: 10h",
+      "No effort completed today (+10h scope)",
     );
     await expect(tip.locator(".prio-burndown__tipchange")).toContainText(
       "Added: 1",
     );
-    await expect(tip.locator(".prio-burndown__tipchanges")).toContainText(
-      "+10h",
-    );
+    await expect(
+      table.locator("tbody tr").filter({ hasText: added.key }),
+    ).toContainText("+10h");
 
     // --------------------------------------------- the day it went to testing
     await dayNaming(toQa.key, "moved to QA");

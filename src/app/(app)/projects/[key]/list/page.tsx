@@ -87,6 +87,7 @@ export default async function ProjectListPage({
             id: sprint.id,
             name: `${sprint.name} (${formatDateRange(sprint.startDate, sprint.endDate)})`,
             completed: sprint.status === "COMPLETED",
+            active: sprint.status === "ACTIVE",
           }))}
         currentUserId={user.id}
         total={result.total}
