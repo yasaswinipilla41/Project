@@ -6,10 +6,16 @@ import { Button } from "@/components/ui/primitives";
 import { Dialog } from "@/components/ui/Dialog";
 import { IconBug } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/Toast";
-import { DEFAULT_PRIORITY, PRIORITIES, PRIORITY_LABEL } from "@/lib/domain";
+import {
+  DEFAULT_PRIORITY,
+  PRIORITIES,
+  PRIORITY_LABEL,
+  SEVERITIES,
+  SEVERITY_LABEL,
+} from "@/lib/domain";
 import { reportBug } from "@/server/issues";
 import type { FieldErrors } from "@/server/schemas";
-import type { Priority } from "@prisma/client";
+import type { Priority, Severity } from "@prisma/client";
 
 /**
  * "Report a problem" — a tester filing a bug against the work under test.
@@ -43,6 +49,7 @@ export function ReportBugDialog({
   const [title, setTitle] = useState("");
   const [affectedModule, setAffectedModule] = useState("");
   const [priority, setPriority] = useState<Priority>(DEFAULT_PRIORITY);
+  const [severity, setSeverity] = useState<Severity | "">("");
 
   if (assigneeId === currentUserId) return null;
 
@@ -50,6 +57,7 @@ export function ReportBugDialog({
     setTitle("");
     setAffectedModule("");
     setPriority(DEFAULT_PRIORITY);
+    setSeverity("");
     setErrors({});
   }
 
@@ -63,6 +71,7 @@ export function ReportBugDialog({
       title,
       affectedModule,
       priority,
+      severity: severity !== "" ? severity : undefined,
     });
 
     setSaving(false);
@@ -158,9 +167,8 @@ export function ReportBugDialog({
             </Field>
 
             <div className="row g-3">
-              {/* Priority alone in the row now that severity is gone; it keeps
-                  the half-width control the form was laid out around rather
-                  than stretching one select across the dialog. */}
+              {/* Priority and severity side by side: when it is needed, and
+                  how bad it is. */}
               <div className="col-12 col-md-6">
                 <Field id="bug-priority" label="Priority">
                   <select
@@ -172,6 +180,23 @@ export function ReportBugDialog({
                     {PRIORITIES.map((p) => (
                       <option key={p} value={p}>
                         {PRIORITY_LABEL[p]}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+              <div className="col-12 col-md-6">
+                <Field id="bug-severity" label="Severity">
+                  <select
+                    id="bug-severity"
+                    className="prio-select"
+                    value={severity}
+                    onChange={(e) => setSeverity(e.target.value as Severity | "")}
+                  >
+                    <option value="">Not set</option>
+                    {SEVERITIES.map((s) => (
+                      <option key={s} value={s}>
+                        {SEVERITY_LABEL[s]}
                       </option>
                     ))}
                   </select>

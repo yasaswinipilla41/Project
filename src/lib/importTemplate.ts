@@ -131,7 +131,7 @@ export const TEMPLATE_NOTES: Record<string, string> = {
   [IMPORT_COLUMNS.priority]: `Optional. Leave blank for ${PRIORITY_LABEL[DEFAULT_PRIORITY]}.`,
   [IMPORT_COLUMNS.assignee]:
     "Optional. The name or email of a member of this project.",
-  [IMPORT_COLUMNS.severity]: "Optional. Bug rows only.",
+  [IMPORT_COLUMNS.severity]: "Optional. High, Medium or Low.",
   [IMPORT_COLUMNS.parentIssue]:
     "Optional. The key of an existing work item in this project, e.g. ENG-12.",
 };

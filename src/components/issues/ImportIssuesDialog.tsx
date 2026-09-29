@@ -418,7 +418,7 @@ export function ImportIssuesDialog({
 
         <span className="prio-hint">
           Needs a <strong>Summary</strong> column. Description, Issue Type,
-          Status, Priority, Assignee, Severity (Bug rows only) and Parent Issue
+          Status, Priority, Assignee, Severity and Parent Issue
           are used when present.
         </span>
 

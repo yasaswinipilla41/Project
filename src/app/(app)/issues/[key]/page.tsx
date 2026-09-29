@@ -53,7 +53,6 @@ import {
   canEditDueDate,
   canEditIssueName,
   canEditPriority,
-  severityAppliesTo,
   canEditSprintIssues,
   doesDeveloperWork,
   doesQaWork,
@@ -432,10 +431,7 @@ export default async function IssueDetailPage({
             priority={issue.priority}
             canEdit={canEditPriority(workRole)}
           />
-          {/* A bug's own field: drawn for a bug and for nothing else. */}
-          {severityAppliesTo(issue.type) ? (
-            <SeverityControl issueId={issue.id} severity={issue.severity} />
-          ) : null}
+          <SeverityControl issueId={issue.id} severity={issue.severity} />
           <AssigneeControl
             issueId={issue.id}
             assignee={issue.assignee}

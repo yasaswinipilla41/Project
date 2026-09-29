@@ -502,22 +502,36 @@ function priorityLabelOrRaw(value: string): string {
 
 /* ---------------------------------------------------------------- severity
 
-   How bad a *bug* is: Critical, Major, Minor or Trivial. It applies to bugs
-   only — the create and edit forms offer it for that type and no other — and
-   it is optional. The stored values are the Prisma enum's; the labels below
-   are what is shown. */
-
-/** Severity belongs to bugs; every other issue type leaves it empty. */
-export function severityAppliesTo(type: IssueType): boolean {
-  return type === "BUG";
-}
+   How bad the problem is: High, Medium or Low. Optional, and offered on every
+   type of work item. As with priority, the stored value (`HIGH`) and the label
+   ("High") are kept apart, and this block is the only place they meet. The
+   order is most severe first, which is also what `orderBy: { severity }` sorts
+   on. */
 
 export const SEVERITIES = [
-  "CRITICAL",
-  "MAJOR",
-  "MINOR",
-  "TRIVIAL",
+  "HIGH",
+  "MEDIUM",
+  "LOW",
 ] as const satisfies readonly Severity[];
+
+/**
+ * The four-level scale severity used before, and where each value went.
+ *
+ * Read-only history: old activity entries still say "MAJOR", and a spreadsheet
+ * exported earlier says "Critical". Nothing that was serious is downgraded —
+ * Critical and Major both became High.
+ */
+export const LEGACY_SEVERITY: Readonly<Record<string, Severity>> = {
+  CRITICAL: "HIGH",
+  MAJOR: "HIGH",
+  MINOR: "MEDIUM",
+  TRIVIAL: "LOW",
+};
+
+/** A legacy severity word (any case) as today's value, or null. */
+export function severityFromLegacy(value: string): Severity | null {
+  return LEGACY_SEVERITY[value.trim().toUpperCase()] ?? null;
+}
 
 /* ------------------------------------------------------------ QA result */
 
@@ -553,10 +567,16 @@ export function isTestResult(value: string): value is TestResult {
 }
 
 export const SEVERITY_LABEL: Record<Severity, string> = {
-  CRITICAL: "Critical",
-  MAJOR: "Major",
-  MINOR: "Minor",
-  TRIVIAL: "Trivial",
+  HIGH: "High",
+  MEDIUM: "Medium",
+  LOW: "Low",
+};
+
+/** Descending weight — higher sorts first. */
+export const SEVERITY_WEIGHT: Record<Severity, number> = {
+  HIGH: 3,
+  MEDIUM: 2,
+  LOW: 1,
 };
 
 // -------------------------------------------------------------- issue type
@@ -943,8 +963,11 @@ export function humanizeEnumValue(field: string, value: string | null): string {
       return isPriority(value)
         ? PRIORITY_LABEL[value]
         : priorityLabelOrRaw(value);
-    case "severity":
-      return isSeverity(value) ? SEVERITY_LABEL[value] : value;
+    case "severity": {
+      /* Old entries hold CRITICAL/MAJOR/…; they read as the value they became. */
+      const current = isSeverity(value) ? value : severityFromLegacy(value);
+      return current ? SEVERITY_LABEL[current] : value;
+    }
     case "type":
       return isIssueType(value) ? ISSUE_TYPE_LABEL[value] : value;
     case "testResult":

@@ -12,6 +12,7 @@ import { ShareSheetDialog } from "@/components/issues/ShareSheetDialog";
 import {
   IssueTypeIcon,
   PriorityIndicator,
+  SeverityIndicator,
   StatusPill,
 } from "@/components/ui/Indicators";
 import {
@@ -29,6 +30,7 @@ import {
   ISSUE_TYPES,
   ISSUE_TYPE_LABEL,
   PRIORITIES,
+  SEVERITIES,
 } from "@/lib/domain";
 
 /**
@@ -311,6 +313,7 @@ export function IssueFilters({
     values("type").length +
     values("status").length +
     values("priority").length +
+    values("severity").length +
     values("assignee").length +
     values("reporter").length +
     values("label").length +
@@ -474,6 +477,17 @@ export function IssueFilters({
           options={PRIORITIES.map((p) => ({
             value: p,
             node: <PriorityIndicator priority={p} />,
+          }))}
+        />
+
+        <FilterMenu
+          label="Severity"
+          paramKey="severity"
+          selected={values("severity")}
+          onToggle={toggle}
+          options={SEVERITIES.map((s) => ({
+            value: s,
+            node: <SeverityIndicator severity={s} />,
           }))}
         />
 

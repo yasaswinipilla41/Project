@@ -208,8 +208,7 @@ test.describe("The issue page is one shape for every type", () => {
     expect(await sectionsOf(bug.key)).toEqual(await sectionsOf(task.key));
 
     // Description is one of them, and the header carries the same live
-    // controls on both: status, priority and assignee — plus, on a bug only,
-    // how severe it is.
+    // controls on both: status, priority, severity and assignee.
     for (const key of [task.key, bug.key]) {
       await page.goto(`/issues/${key.toLowerCase()}`);
       await expect(
@@ -217,7 +216,7 @@ test.describe("The issue page is one shape for every type", () => {
       ).toBeVisible();
       await expect(
         page.locator(".prio-issue__headmeta .prio-fieldtrigger"),
-      ).toHaveCount(key === bug.key ? 4 : 3);
+      ).toHaveCount(4);
     }
 
     // No bug-only environment block survives on the bug.

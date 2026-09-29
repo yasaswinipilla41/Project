@@ -1,5 +1,5 @@
 import type { Prisma } from "@prisma/client";
-import type { IssueType, Priority } from "@prisma/client";
+import type { IssueType, Priority, Severity } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
   completedByFilter,
@@ -21,7 +21,9 @@ import {
   isIssueStatus,
   isIssueType,
   isPriority,
+  isSeverity,
   priorityFromLegacy,
+  severityFromLegacy,
 } from "@/lib/domain";
 
 /**
@@ -37,6 +39,7 @@ export const SORT_FIELDS = [
   "updated",
   "created",
   "priority",
+  "severity",
   "due",
   "status",
   "key",
@@ -101,6 +104,7 @@ export interface IssueListRow {
   title: string;
   status: (typeof OPEN_STATUSES)[number] | (typeof CLOSED_STATUSES)[number];
   priority: Priority;
+  severity: Severity | null;
   dueDate: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -158,6 +162,16 @@ export function buildIssueWhere(
     ),
   ];
   if (priorities.length > 0) where.priority = { in: priorities };
+
+  /* Same for severity: an old `?severity=CRITICAL` reads as High. */
+  const severities = [
+    ...new Set(
+      (filters.severities ?? [])
+        .map((s) => (isSeverity(s) ? s : severityFromLegacy(s)))
+        .filter(isSeverity),
+    ),
+  ];
+  if (severities.length > 0) where.severity = { in: severities };
 
   if (filters.assigneeIds?.length) {
     // "unassigned" is a first-class choice, not the absence of a filter.
@@ -358,6 +372,12 @@ function buildOrderBy(
     case "priority":
       // P0 is first in the enum, so "desc" urgency is "asc" enum order.
       return [{ priority: dir === "desc" ? "asc" : "desc" }, { updatedAt: "desc" }];
+    case "severity":
+      // HIGH is first in the enum; unset severity sorts last either way.
+      return [
+        { severity: { sort: dir === "desc" ? "asc" : "desc", nulls: "last" } },
+        { updatedAt: "desc" },
+      ];
     case "due":
       // Items without a due date sort last regardless of direction.
       return [{ dueDate: { sort: dir, nulls: "last" } }, { updatedAt: "desc" }];
@@ -380,6 +400,7 @@ const LIST_SELECT = {
   title: true,
   status: true,
   priority: true,
+  severity: true,
   dueDate: true,
   completedAt: true,
   createdAt: true,

@@ -200,7 +200,7 @@ test.describe("Issue sheet export", () => {
 });
 
 test.describe("Bug management", () => {
-  test("shows only bugs, and no severity anywhere on the surface", async ({
+  test("shows only bugs, with a severity column and filter", async ({
     page,
   }) => {
     await page.goto("/bugs");
@@ -213,14 +213,12 @@ test.describe("Bug management", () => {
     expect(types.length).toBeGreaterThan(0);
     expect(new Set(types)).toEqual(new Set(["BUG"]));
 
-    /* Severity used to be a first-class column on this surface. It is gone
-       from the whole application, so the column, its chips and its filter are
-       all absent — the page is priority-led now. */
-    await expect(page.locator(".prio-severity")).toHaveCount(0);
+    /* Severity (High / Medium / Low) is a column and a filter here, as on
+       the full list. */
     await expect(
-      page.getByRole("columnheader", { name: "Severity" }),
-    ).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /^Severity/ })).toHaveCount(0);
+      page.getByRole("columnheader", { name: /Severity/ }),
+    ).toHaveCount(1);
+    await expect(page.getByRole("button", { name: /^Severity/ })).toHaveCount(1);
 
     // The type filter is hidden — this surface is locked to bugs.
     await expect(page.getByRole("button", { name: /^Type/ })).toHaveCount(0);

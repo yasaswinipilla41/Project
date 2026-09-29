@@ -6,6 +6,7 @@ import {
   IssueTypeIcon,
   LabelChip,
   PriorityIndicator,
+  SeverityIndicator,
   StatusPill,
 } from "@/components/ui/Indicators";
 import {
@@ -42,6 +43,7 @@ const COLUMNS: Column[] = [
   { id: "title", field: "title", label: "Summary" },
   { id: "status", field: "status", label: "Status", className: "prio-col-status" },
   { id: "priority", field: "priority", label: "Priority", className: "prio-col-priority" },
+  { id: "severity", field: "severity", label: "Severity", className: "prio-col-severity" },
   { id: "assignee", field: null, label: "Assignee", className: "prio-col-person" },
   { id: "reporter", field: null, label: "Reporter", className: "prio-col-person" },
   /* Who finished it, which is not the same question as who holds it — see the
@@ -272,6 +274,12 @@ export function IssueTable({
                   {show("priority") ? (
                     <td className="prio-col-priority">
                       <PriorityIndicator priority={issue.priority} />
+                    </td>
+                  ) : null}
+
+                  {show("severity") ? (
+                    <td className="prio-col-severity">
+                      <SeverityIndicator severity={issue.severity} />
                     </td>
                   ) : null}
 

@@ -93,7 +93,7 @@ async function seedSource(): Promise<Source> {
       title: "Child bug",
       status: "TODO",
       priority: "P3",
-      severity: "MAJOR",
+      severity: "HIGH",
       assigneeId: member.id,
       reporterId: admin.id,
       parentId: parent.id,

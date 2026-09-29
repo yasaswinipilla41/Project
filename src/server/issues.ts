@@ -6,6 +6,7 @@ import type {
   IssueType,
   Prisma,
   Priority,
+  Severity,
 } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { AUTOMATIC_ASSIGNMENT_ACTION } from "@/lib/activity";
@@ -26,7 +27,6 @@ import {
   canEditDueDate,
   canEditIssueName,
   canEditPriority,
-  severityAppliesTo,
   canSetDueDateInStatus,
   canSetStatus,
   doesDeveloperWork,
@@ -423,29 +423,6 @@ export async function updateIssue(
       throw new AuthorizationError(
         "How soon work is done is decided for you, not by you.",
       );
-    }
-
-    /*
-     * How bad a bug is describes the bug, so it exists only on one. Checked
-     * against the stored type rather than anything in the payload — the update
-     * schema does not carry the type, and a request that says "BUG" would be
-     * taking the caller's word. Clearing it (null) on a non-bug is a no-op and
-     * not refused; only setting a value is.
-     *
-     * No role gate beyond who may edit the issue at all: unlike priority, it
-     * says how serious the defect is, not when it gets done.
-     */
-    if (
-      "severity" in input &&
-      input.severity !== undefined &&
-      input.severity !== null &&
-      !severityAppliesTo(existing.type)
-    ) {
-      return {
-        ok: false,
-        error: "Severity applies to bugs only.",
-        fieldErrors: { severity: "Severity applies to bugs only." },
-      };
     }
 
     if ("dueDate" in input && input.dueDate !== undefined) {
@@ -1121,6 +1098,7 @@ export interface IssueCloneDraft {
   description: string | null;
   status: IssueStatus;
   priority: Priority;
+  severity: Severity | null;
   assigneeId: string | null;
   dueDate: string | null;
   labelIds: string[];
@@ -1146,6 +1124,7 @@ export async function issueCloneDraft(
         description: true,
         status: true,
         priority: true,
+        severity: true,
         assigneeId: true,
         dueDate: true,
         project: { select: { id: true, key: true, name: true } },
@@ -1178,6 +1157,7 @@ export async function issueCloneDraft(
         description: source.description,
         status: source.status,
         priority: source.priority,
+        severity: source.severity,
         assigneeId: source.assigneeId,
         dueDate: source.dueDate
           ? source.dueDate.toISOString().slice(0, 10)
@@ -1444,6 +1424,7 @@ export async function reportBug(
           title: input.title,
           affectedModule: input.affectedModule,
           priority: input.priority,
+          severity: input.severity ?? null,
           status: "TODO",
           reporterId: user.id,
           // Back to whoever owns the work being tested; unassigned if nobody

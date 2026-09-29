@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, it, vi } from "vitest";
 import ExcelJS from "exceljs";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { IMPORT_COLUMNS, TEMPLATE_HEADERS } from "@/lib/importTemplate";
 import { importWorkItems, validateWorkItemsImport } from "@/server/issueImport";
@@ -196,7 +197,8 @@ describe("a spreadsheet Prio can use", () => {
       status: "TODO",
       priority: "P0",
       assigneeId: member.user.id,
-      severity: "MAJOR",
+      /* "Major" in the sheet is an old word; it became High. */
+      severity: "HIGH",
       parentId: parent.id,
     });
   });
@@ -403,6 +405,44 @@ describe("all or nothing", () => {
         })
       ).issueSequence,
     ).toBe(sequenceBefore);
+  });
+
+  it("names the kind of failure without leaking the database's own words", async () => {
+    /*
+     * The real cause of a failed write goes to the server log; the person is
+     * told what kind of thing it was. A value the database does not accept
+     * (a server holding an older generated client than the database) says so,
+     * and the driver's message — which can carry SQL and paths — is not in it.
+     */
+    await actAs(ADMIN);
+    const project = await projectByKey("ENG");
+    const title = `Out of step ${Date.now()}`;
+
+    vi.mocked(creation.insertIssue).mockImplementationOnce(async () => {
+      throw new Prisma.PrismaClientValidationError(
+        "Invalid `prisma.issue.create()` at C:/secret/path: SELECT * FROM issue",
+        { clientVersion: "test" },
+      );
+    });
+
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const result = await importWorkItems(
+      formOf(await sheetFile([{ [S.summary]: title }]), project.id),
+    );
+    /* The underlying exception was logged, in full. */
+    expect(logged).toHaveBeenCalledWith(
+      expect.stringContaining("work item import failed"),
+      expect.any(Prisma.PrismaClientValidationError),
+    );
+    logged.mockRestore();
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/Nothing was imported/);
+      expect(result.error).toMatch(/disagree about a field/);
+      expect(result.error).not.toMatch(/SELECT|secret|prisma\.issue/i);
+    }
+    expect(await prisma.issue.count({ where: { title } })).toBe(0);
   });
 
   it("refuses a file that would overfill the project before writing any of it", async () => {

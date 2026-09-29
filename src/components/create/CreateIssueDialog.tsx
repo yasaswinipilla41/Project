@@ -29,7 +29,6 @@ import {
   PRIORITY_LABEL,
   SEVERITIES,
   SEVERITY_LABEL,
-  severityAppliesTo,
   STATUS_LABEL,
   filableStatusesFor,
   type WorkRole,
@@ -421,10 +420,7 @@ export function CreateIssueDialog({
       description: form.description,
       status: form.status,
       priority: form.priority,
-      severity:
-        severityAppliesTo(type) && form.severity !== ""
-          ? form.severity
-          : undefined,
+      severity: form.severity !== "" ? form.severity : undefined,
       assigneeId: form.assigneeId,
       labelIds,
       dueDate: filesAsTester ? null : form.dueDate,
@@ -655,28 +651,25 @@ export function CreateIssueDialog({
               </select>
             </FieldRow>
 
-            {/* How bad the bug is. A bug's own field, so it is not drawn for
-                any other type, and optional: "Not set" is a real answer for
-                a report whose seriousness nobody has judged yet. */}
-            {severityAppliesTo(type) ? (
-              <FieldRow label="Severity" htmlFor="create-severity">
-                <select
-                  id="create-severity"
-                  className="prio-select"
-                  value={form.severity}
-                  onChange={(e) => set("severity", e.target.value as Severity | "")}
-                  aria-invalid={invalid("severity")}
-                >
-                  <option value="">Not set</option>
-                  {SEVERITIES.map((s) => (
-                    <option key={s} value={s}>
-                      {SEVERITY_LABEL[s]}
-                    </option>
-                  ))}
-                </select>
-                <FieldError errors={errors} field="severity" />
-              </FieldRow>
-            ) : null}
+            {/* How bad the problem is. Optional on every type: "Not set" is a
+                real answer for work whose seriousness nobody has judged yet. */}
+            <FieldRow label="Severity" htmlFor="create-severity">
+              <select
+                id="create-severity"
+                className="prio-select"
+                value={form.severity}
+                onChange={(e) => set("severity", e.target.value as Severity | "")}
+                aria-invalid={invalid("severity")}
+              >
+                <option value="">Not set</option>
+                {SEVERITIES.map((s) => (
+                  <option key={s} value={s}>
+                    {SEVERITY_LABEL[s]}
+                  </option>
+                ))}
+              </select>
+              <FieldError errors={errors} field="severity" />
+            </FieldRow>
 
             {/* Assignee, for everybody who files. A tester hands work to
                 somebody who builds; the list below is narrowed to them, and
