@@ -66,7 +66,7 @@ collide with anything already installed locally.
 | ------------------------------ | ------------ | ------ |
 | `admin@symbiosystech.com`      | `Prio@12345` | Admin  |
 | `rahul.menon@symbiosystech.com`| `Prio@12345` | Admin  |
-| `priya.nair@symbiosystech.com` | `Prio@12345` | Member |
+| `priya.nair@symbiosystech.com` | `Priya@12345` | Member |
 
 Change `SEED_ADMIN_PASSWORD` / `SEED_DEFAULT_PASSWORD` in `.env` before seeding
 anything you intend to keep.
